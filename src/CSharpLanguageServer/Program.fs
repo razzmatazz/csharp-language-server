@@ -2,12 +2,18 @@ module CSharpLanguageServer.Program
 
 open System
 open System.IO
+open System.Threading
 open LSP
 open LSP.Types
 open LSP.Log
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp
+
 type Server(client: ILanguageClient) =
     let mutable deferredInitialize = async { () }
+
+    let mutable currentFileSyntax = null
 
     let todo() = raise (Exception "TODO")
 
@@ -17,7 +23,7 @@ type Server(client: ILanguageClient) =
                 return {
                    capabilities =
                        { defaultServerCapabilities with
-                             hoverProvider = false
+                             hoverProvider = true
                              completionProvider = None
                              signatureHelpProvider = None
                              documentSymbolProvider = false
@@ -26,11 +32,11 @@ type Server(client: ILanguageClient) =
                              definitionProvider = false
                              referencesProvider = false
                              renameProvider = false
-                             textDocumentSync =
-                             { defaultTextDocumentSyncOptions with
-                                   openClose = false
-                                   save = Some({ includeText = false })
-                                   change = TextDocumentSyncKind.Incremental
+                             textDocumentSync = {
+                                defaultTextDocumentSyncOptions with
+                                      openClose = false
+                                      save = Some({ includeText = false })
+                                      change = TextDocumentSyncKind.Full
                              }
                          }
                    }
@@ -41,7 +47,14 @@ type Server(client: ILanguageClient) =
 
         member __.Shutdown(): Async<unit> = todo()
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
-        member __.DidOpenTextDocument(_: DidOpenTextDocumentParams): Async<unit> = todo()
+        member __.DidOpenTextDocument(p: DidOpenTextDocumentParams): Async<unit> =
+            async {
+                let tree = CSharpSyntaxTree.ParseText(p.textDocument.text)
+                let syntax = tree.GetCompilationUnitRoot(CancellationToken.None)
+                currentFileSyntax <- syntax
+                ()
+            }
+
         member __.DidChangeTextDocument(_: DidChangeTextDocumentParams): Async<unit> = todo()
         member __.WillSaveTextDocument(_: WillSaveTextDocumentParams): Async<unit> = todo()
         member __.WillSaveWaitUntilTextDocument(_: WillSaveTextDocumentParams): Async<TextEdit list> = todo()
@@ -49,11 +62,22 @@ type Server(client: ILanguageClient) =
         member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> = todo()
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
         member __.Completion(_: TextDocumentPositionParams): Async<CompletionList option> = todo()
-        member __.Hover(_: TextDocumentPositionParams): Async<Hover option> = todo()
+
+        member __.Hover(_: TextDocumentPositionParams): Async<Hover option> =
+            async {
+                return match currentFileSyntax with
+                       | null -> None
+                       | _ ->
+                           let contents = [ HighlightedString("item description", "fsharp") ;
+                                            PlainString("hey") ]
+
+                           Some({ contents=contents; range=None })
+            }
+
         member __.ResolveCompletionItem(_: CompletionItem): Async<CompletionItem> = todo()
         member __.SignatureHelp(_: TextDocumentPositionParams): Async<SignatureHelp option> = todo()
-        member __.GotoDefinition(_: TextDocumentPositionParams): Async<Location list> = todo()
-        member __.FindReferences(_: ReferenceParams): Async<Location list> = todo()
+        member __.GotoDefinition(_: TextDocumentPositionParams): Async<LSP.Types.Location list> = todo()
+        member __.FindReferences(_: ReferenceParams): Async<LSP.Types.Location list> = todo()
         member __.DocumentHighlight(_: TextDocumentPositionParams): Async<DocumentHighlight list> = todo()
         member __.DocumentSymbols(_: DocumentSymbolParams): Async<SymbolInformation list> = todo()
         member __.WorkspaceSymbols(_: WorkspaceSymbolParams): Async<SymbolInformation list> = todo()
