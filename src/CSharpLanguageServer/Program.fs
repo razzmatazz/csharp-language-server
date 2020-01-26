@@ -3,17 +3,39 @@ module CSharpLanguageServer.Program
 open System
 open System.IO
 open System.Threading
+open System.Linq
 open LSP
 open LSP.Types
 open LSP.Log
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
+open Microsoft.CodeAnalysis.MSBuild
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Text;
+open FSharp.Control.Tasks.V2
+open Microsoft.Build.Locator
 
 type Server(client: ILanguageClient) =
-    let mutable deferredInitialize = async { () }
+    let mutable workspace: Workspace option = None
+    let mutable solutionLoaded: Solution option = None
 
-    let mutable currentFileSyntax = null
+    let logMessage message = client.ShowMessage { ``type`` = MessageType.Log ;
+                                                   message = "cs-lsp-server: " + message } |> ignore
+
+    let mutable deferredInitialize = async {
+        let solutionPath = "/Users/bob/src/omnisharp/test/test.sln"
+        logMessage ("in deferredInitialize, loading solution: " + solutionPath)
+
+        let msbuildWorkspace = MSBuildWorkspace.Create()
+        let! testSolution = msbuildWorkspace.OpenSolutionAsync(solutionPath)  |> Async.AwaitTask
+
+        logMessage "in deferredInitialize, ok solution loaded"
+
+        workspace <- Some(msbuildWorkspace :> Workspace)
+        solutionLoaded <- Some(testSolution)
+        ()
+    }
 
     let todo() = raise (Exception "TODO")
 
@@ -47,31 +69,53 @@ type Server(client: ILanguageClient) =
 
         member __.Shutdown(): Async<unit> = todo()
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
-        member __.DidOpenTextDocument(p: DidOpenTextDocumentParams): Async<unit> =
+        member __.DidOpenTextDocument(_: DidOpenTextDocumentParams): Async<unit> =
             async {
-                let tree = CSharpSyntaxTree.ParseText(p.textDocument.text)
-                let syntax = tree.GetCompilationUnitRoot(CancellationToken.None)
-                currentFileSyntax <- syntax
-                ()
+                return ()
             }
 
         member __.DidChangeTextDocument(_: DidChangeTextDocumentParams): Async<unit> = todo()
         member __.WillSaveTextDocument(_: WillSaveTextDocumentParams): Async<unit> = todo()
         member __.WillSaveWaitUntilTextDocument(_: WillSaveTextDocumentParams): Async<TextEdit list> = todo()
         member __.DidSaveTextDocument(_: DidSaveTextDocumentParams): Async<unit> = todo()
-        member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> = todo()
+        member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> =
+            async {
+                return ()
+            }
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
         member __.Completion(_: TextDocumentPositionParams): Async<CompletionList option> = todo()
 
-        member __.Hover(_: TextDocumentPositionParams): Async<Hover option> =
-            async {
-                return match currentFileSyntax with
-                       | null -> None
-                       | _ ->
-                           let contents = [ HighlightedString("item description", "fsharp") ;
-                                            PlainString("hey") ]
+        member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> =
 
-                           Some({ contents=contents; range=None })
+            let resolveHover (solution: Solution) = task {
+                let project = solution.Projects.Single(fun p -> p.Name = "test")
+                let! compilation = project.GetCompilationAsync()
+                let firstDoc = project.Documents.First()
+                let! sourceText = firstDoc.GetTextAsync()
+                let! semanticModel = firstDoc.GetSemanticModelAsync()
+
+                let position = sourceText.Lines.GetPosition(LinePosition(hoverPos.position.line, hoverPos.position.character))
+
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
+
+                let hoverText = match symbol with
+                                | null -> //logMessage "no symbol at this point"
+                                          ""
+                                | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
+                                         symbol.ToString() + "\n" +  symbol.GetDocumentationCommentXml()
+
+                return [ HighlightedString(hoverText, "fsharp") ;
+                         PlainString("hey") ]
+            }
+
+            async {
+                let! contents = match solutionLoaded with
+                                | Some solution -> resolveHover solution |> Async.AwaitTask
+                                | None -> async {
+                                             return [ HighlightedString("none", "fsharp") ;
+                                                      PlainString("none") ]
+                                         }
+                return Some({ contents=contents; range=None })
             }
 
         member __.ResolveCompletionItem(_: CompletionItem): Async<CompletionItem> = todo()
@@ -95,6 +139,8 @@ type Server(client: ILanguageClient) =
 
 [<EntryPoint>]
 let main(_: string array): int =
+    MSBuildLocator.RegisterDefaults() |> ignore
+
     let read = new BinaryReader(Console.OpenStandardInput())
     let write = new BinaryWriter(Console.OpenStandardOutput())
     let serverFactory(client) = Server(client) :> ILanguageServer
