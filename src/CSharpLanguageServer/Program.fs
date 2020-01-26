@@ -18,7 +18,6 @@ open Microsoft.Build.Locator
 
 type Server(client: ILanguageClient) =
     let mutable workspace: Workspace option = None
-    let mutable solutionLoaded: Solution option = None
 
     let logMessage message = client.ShowMessage { ``type`` = MessageType.Log ;
                                                    message = "cs-lsp-server: " + message } |> ignore
@@ -28,14 +27,17 @@ type Server(client: ILanguageClient) =
         logMessage ("in deferredInitialize, loading solution: " + solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
-        let! testSolution = msbuildWorkspace.OpenSolutionAsync(solutionPath)  |> Async.AwaitTask
+        let! testSolution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         logMessage "in deferredInitialize, ok solution loaded"
 
         workspace <- Some(msbuildWorkspace :> Workspace)
-        solutionLoaded <- Some(testSolution)
         ()
     }
+
+    let currentSolution () = match workspace with
+                             | Some ws -> Some ws.CurrentSolution
+                             | _ -> None
 
     let todo() = raise (Exception "TODO")
 
@@ -74,14 +76,43 @@ type Server(client: ILanguageClient) =
                 return ()
             }
 
-        member __.DidChangeTextDocument(_: DidChangeTextDocumentParams): Async<unit> = todo()
+        member __.DidChangeTextDocument(change: DidChangeTextDocumentParams): Async<unit> =
+            task {
+                match currentSolution () with
+                | Some solution ->
+                    let project = solution.Projects.Single(fun p -> p.Name = "test")
+                    let! compilation = project.GetCompilationAsync()
+                    let doc = project.Documents.First()
+
+                    let fullText = SourceText.From(change.contentChanges.[0].text)
+
+                    let updatedDoc = doc.WithText(fullText)
+                    let updatedSolution = updatedDoc.Project.Solution;
+
+                    let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
+
+                    if not applySucceeded then
+                        logMessage "workspace.TryApplyChanges has failed!"
+                    else
+                        logMessage "workspace.TryApplyChanges has succeeded!"
+
+                | _ -> ()
+
+                return ()
+            } |> Async.AwaitTask
+
         member __.WillSaveTextDocument(_: WillSaveTextDocumentParams): Async<unit> = todo()
         member __.WillSaveWaitUntilTextDocument(_: WillSaveTextDocumentParams): Async<TextEdit list> = todo()
-        member __.DidSaveTextDocument(_: DidSaveTextDocumentParams): Async<unit> = todo()
+        member __.DidSaveTextDocument(_: DidSaveTextDocumentParams): Async<unit> =
+            async {
+                return ()
+            }
+
         member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> =
             async {
                 return ()
             }
+
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
         member __.Completion(_: TextDocumentPositionParams): Async<CompletionList option> = todo()
 
@@ -109,7 +140,7 @@ type Server(client: ILanguageClient) =
             }
 
             async {
-                let! contents = match solutionLoaded with
+                let! contents = match currentSolution () with
                                 | Some solution -> resolveHover solution |> Async.AwaitTask
                                 | None -> async {
                                              return [ HighlightedString("none", "fsharp") ;
