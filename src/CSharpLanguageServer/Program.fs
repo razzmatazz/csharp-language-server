@@ -25,9 +25,13 @@ type Server(client: ILanguageClient) =
         logMessage ("in deferredInitialize, loading solution: " + solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
+        msbuildWorkspace.LoadMetadataForReferencedProjects <- true
         let! testSolution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         logMessage "in deferredInitialize, ok solution loaded"
+
+        for diag in msbuildWorkspace.Diagnostics do
+            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
         workspace <- Some(msbuildWorkspace :> Workspace)
         ()
@@ -165,7 +169,6 @@ type Server(client: ILanguageClient) =
                          []
                        | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
                          let symSource = sym.Locations.First().GetLineSpan()
-                         logMessage ("symSource = " + symSource.ToString())
                          [ { uri = def.textDocument.uri ;
                              range = { start = { line = symSource.StartLinePosition.Line ;
                                                  character = symSource.StartLinePosition.Character  }
