@@ -2,14 +2,12 @@ module CSharpLanguageServer.Program
 
 open System
 open System.IO
-open System.Threading
 open System.Linq
 open LSP
 open LSP.Types
 open LSP.Log
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text;
@@ -39,6 +37,27 @@ type Server(client: ILanguageClient) =
                              | Some ws -> Some ws.CurrentSolution
                              | _ -> None
 
+    let resolveSymbolAtPosition pos = async {
+        let withSolution fn = Option.map fn <| currentSolution ()
+
+        let symbolAtPosition (solution: Solution) = task {
+            let project = solution.Projects.Single(fun p -> p.Name = "test")
+            let firstDoc = project.Documents.First()
+            let! sourceText = firstDoc.GetTextAsync()
+            let! semanticModel = firstDoc.GetSemanticModelAsync()
+            let position = sourceText.Lines.GetPosition(LinePosition(pos.line, pos.character))
+            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
+            return match symbolRef with
+                   | null -> None
+                   | symbol -> Some symbol
+        }
+
+        match currentSolution () with
+        | Some sln -> let! symbol = symbolAtPosition sln |> Async.AwaitTask
+                      return symbol
+        | None -> return None
+    }
+
     let todo() = raise (Exception "TODO")
 
     interface ILanguageServer with
@@ -53,7 +72,7 @@ type Server(client: ILanguageClient) =
                              documentSymbolProvider = false
                              codeLensProvider = None
                              workspaceSymbolProvider = false
-                             definitionProvider = false
+                             definitionProvider = true
                              referencesProvider = false
                              renameProvider = false
                              textDocumentSync = {
@@ -81,7 +100,6 @@ type Server(client: ILanguageClient) =
                 match currentSolution () with
                 | Some solution ->
                     let project = solution.Projects.Single(fun p -> p.Name = "test")
-                    let! compilation = project.GetCompilationAsync()
                     let doc = project.Documents.First()
 
                     let fullText = SourceText.From(change.contentChanges.[0].text)
@@ -93,8 +111,6 @@ type Server(client: ILanguageClient) =
 
                     if not applySucceeded then
                         logMessage "workspace.TryApplyChanges has failed!"
-                    else
-                        logMessage "workspace.TryApplyChanges has succeeded!"
 
                 | _ -> ()
 
@@ -116,42 +132,56 @@ type Server(client: ILanguageClient) =
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
         member __.Completion(_: TextDocumentPositionParams): Async<CompletionList option> = todo()
 
-        member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> =
+        member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> = async {
+            let! maybeSymbol = resolveSymbolAtPosition hoverPos.position
+            let maybeHoverText = Option.map (fun (sym: ISymbol) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
 
-            let resolveHover (solution: Solution) = task {
+            let contents = [ HighlightedString(match maybeHoverText with
+                                               | None -> "", "fsharp"
+                                               | Some text -> text, "fsharp") ;
+                                PlainString("hey") ]
+
+            return Some({ contents=contents; range=None })
+        }
+
+
+        member __.ResolveCompletionItem(_: CompletionItem): Async<CompletionItem> = todo()
+        member __.SignatureHelp(_: TextDocumentPositionParams): Async<SignatureHelp option> = todo()
+
+        member __.GotoDefinition(def: TextDocumentPositionParams): Async<LSP.Types.Location list> =
+
+            let resolveDefinition (solution: Solution)  = task {
                 let project = solution.Projects.Single(fun p -> p.Name = "test")
-                let! compilation = project.GetCompilationAsync()
                 let firstDoc = project.Documents.First()
                 let! sourceText = firstDoc.GetTextAsync()
                 let! semanticModel = firstDoc.GetSemanticModelAsync()
 
-                let position = sourceText.Lines.GetPosition(LinePosition(hoverPos.position.line, hoverPos.position.character))
+                let position = sourceText.Lines.GetPosition(LinePosition(def.position.line, def.position.character))
 
                 let! symbol = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
 
-                let hoverText = match symbol with
-                                | null -> //logMessage "no symbol at this point"
-                                          ""
-                                | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                                         symbol.ToString() + "\n" +  symbol.GetDocumentationCommentXml()
-
-                return [ HighlightedString(hoverText, "fsharp") ;
-                         PlainString("hey") ]
+                return match symbol with
+                       | null -> //logMessage "no symbol at this point"
+                         []
+                       | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
+                         let symSource = sym.Locations.First().GetLineSpan()
+                         logMessage ("symSource = " + symSource.ToString())
+                         [ { uri = def.textDocument.uri ;
+                             range = { start = { line = symSource.StartLinePosition.Line ;
+                                                 character = symSource.StartLinePosition.Character  }
+                                       ``end`` = { line = symSource.EndLinePosition.Line ;
+                                                   character = symSource.EndLinePosition.Character  }
+                                   }
+                         } ]
             }
 
             async {
-                let! contents = match currentSolution () with
-                                | Some solution -> resolveHover solution |> Async.AwaitTask
-                                | None -> async {
-                                             return [ HighlightedString("none", "fsharp") ;
-                                                      PlainString("none") ]
-                                         }
-                return Some({ contents=contents; range=None })
+                match currentSolution () with
+                | Some solution -> let! locations = resolveDefinition solution |> Async.AwaitTask
+                                   return locations
+                | None -> return []
             }
 
-        member __.ResolveCompletionItem(_: CompletionItem): Async<CompletionItem> = todo()
-        member __.SignatureHelp(_: TextDocumentPositionParams): Async<SignatureHelp option> = todo()
-        member __.GotoDefinition(_: TextDocumentPositionParams): Async<LSP.Types.Location list> = todo()
         member __.FindReferences(_: ReferenceParams): Async<LSP.Types.Location list> = todo()
         member __.DocumentHighlight(_: TextDocumentPositionParams): Async<DocumentHighlight list> = todo()
         member __.DocumentSymbols(_: DocumentSymbolParams): Async<SymbolInformation list> = todo()
