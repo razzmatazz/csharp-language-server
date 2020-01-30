@@ -64,6 +64,12 @@ type Server(client: ILanguageClient) =
 
     let todo() = raise (Exception "TODO")
 
+    let makeRangeForLinePos (pos: FileLinePositionSpan) =
+        { start = { line = pos.StartLinePosition.Line ;
+                    character = pos.StartLinePosition.Character  }
+          ``end`` = { line = pos.EndLinePosition.Line ;
+                      character = pos.EndLinePosition.Character  } }
+
     interface ILanguageServer with
         member _.Initialize(_: InitializeParams) =
             async {
@@ -115,6 +121,34 @@ type Server(client: ILanguageClient) =
 
                     if not applySucceeded then
                         logMessage "workspace.TryApplyChanges has failed!"
+
+                    let! semanticModel = doc.GetSemanticModelAsync()
+
+                    let mapDiagSeverity s =
+                        match s with
+                        | DiagnosticSeverity.Info -> Some LSP.Types.DiagnosticSeverity.Information
+                        | DiagnosticSeverity.Warning -> Some LSP.Types.DiagnosticSeverity.Warning
+                        | DiagnosticSeverity.Error -> Some LSP.Types.DiagnosticSeverity.Error
+                        | DiagnosticSeverity.Hidden -> None
+                        | _ -> None
+
+                    let makeLspDiag (d: Diagnostic) =
+                        { range = makeRangeForLinePos(d.Location.GetLineSpan()) ;
+                          severity = mapDiagSeverity d.Severity ;
+                          code = None ;
+                          source = None ;
+                          message = d.GetMessage() }
+
+                    let diagnostics = semanticModel.GetDiagnostics()
+                                      |> Seq.map makeLspDiag
+                                      |> List.ofSeq
+
+                    logMessage (sprintf "DidChangeTextDocument: diagnostics.Len=%d"
+                                        diagnostics.Length)
+
+                    client.PublishDiagnostics { uri = change.textDocument.uri ;
+                                                diagnostics = diagnostics }
+                    ()
 
                 | _ -> ()
 
@@ -168,14 +202,10 @@ type Server(client: ILanguageClient) =
                        | null -> //logMessage "no symbol at this point"
                          []
                        | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                         let symSource = sym.Locations.First().GetLineSpan()
+                         let symPos = sym.Locations.First().GetLineSpan()
+
                          [ { uri = def.textDocument.uri ;
-                             range = { start = { line = symSource.StartLinePosition.Line ;
-                                                 character = symSource.StartLinePosition.Character  }
-                                       ``end`` = { line = symSource.EndLinePosition.Line ;
-                                                   character = symSource.EndLinePosition.Character  }
-                                   }
-                         } ]
+                             range = makeRangeForLinePos symPos } ]
             }
 
             async {
