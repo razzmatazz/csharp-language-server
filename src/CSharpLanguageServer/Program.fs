@@ -103,7 +103,7 @@ type Server(client: ILanguageClient) =
                              textDocumentSync = {
                                 defaultTextDocumentSyncOptions with
                                       openClose = false
-                                      save = Some({ includeText = false })
+                                      save = Some({ includeText = true })
                                       change = TextDocumentSyncKind.Full
                              }
                          }
@@ -114,7 +114,9 @@ type Server(client: ILanguageClient) =
             deferredInitialize
 
         member __.Shutdown(): Async<unit> = todo()
+
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
+
         member __.DidOpenTextDocument(openParams: DidOpenTextDocumentParams): Async<unit> =
             task {
                 match currentSolution () with
@@ -167,11 +169,37 @@ type Server(client: ILanguageClient) =
             } |> Async.AwaitTask
 
         member __.WillSaveTextDocument(_: WillSaveTextDocumentParams): Async<unit> = todo()
+
         member __.WillSaveWaitUntilTextDocument(_: WillSaveTextDocumentParams): Async<TextEdit list> = todo()
-        member __.DidSaveTextDocument(_: DidSaveTextDocumentParams): Async<unit> =
-            async {
+
+        member __.DidSaveTextDocument(saveParams: DidSaveTextDocumentParams): Async<unit> =
+            task {
+                match currentSolution () with
+                | Some solution -> let project = solution.Projects.Single(fun p -> p.Name = "test")
+                                   let doc = project.Documents.First()
+
+                                   let newDoc = match saveParams.text with
+                                                | Some text ->  let fullText = SourceText.From(text)
+                                                                let updatedDoc = doc.WithText(fullText)
+                                                                let updatedSolution = updatedDoc.Project.Solution;
+                                                                workspace.Value.TryApplyChanges(updatedSolution) |> ignore
+                                                                updatedDoc
+                                                | None -> doc
+
+                                   let! semanticModel = newDoc.GetSemanticModelAsync()
+
+                                   let diagnostics = semanticModel.GetDiagnostics()
+                                                    |> Seq.map makeLspDiag
+                                                    |> List.ofSeq
+
+                                   client.PublishDiagnostics { uri = saveParams.textDocument.uri ;
+                                                               diagnostics = diagnostics }
+                                   ()
+
+                | _ -> ()
+
                 return ()
-            }
+            } |> Async.AwaitTask
 
         member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> =
             async {
