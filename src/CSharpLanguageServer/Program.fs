@@ -11,6 +11,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text;
+open Microsoft.CodeAnalysis.Completion
 open FSharp.Control.Tasks.V2
 open Microsoft.Build.Locator
 
@@ -92,7 +93,7 @@ type Server(client: ILanguageClient) =
                    capabilities =
                        { defaultServerCapabilities with
                              hoverProvider = true
-                             completionProvider = None
+                             completionProvider = Some defaultCompletionOptions
                              signatureHelpProvider = None
                              documentSymbolProvider = false
                              codeLensProvider = None
@@ -207,7 +208,37 @@ type Server(client: ILanguageClient) =
             }
 
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
-        member __.Completion(_: TextDocumentPositionParams): Async<CompletionList option> = todo()
+
+        member __.Completion(posParams: TextDocumentPositionParams): Async<LSP.Types.CompletionList option> =
+            logMessage ("Completion at posParams: " + posParams.ToString())
+
+            task {
+                match currentSolution () with
+                | Some solution ->
+                      let project = solution.Projects.Single(fun p -> p.Name = "test")
+                      let doc = project.Documents.First()
+                      let completionService = CompletionService.GetService(doc)
+                      if isNull completionService then
+                          logMessage "doc has no completionService available"
+                          return ()
+
+                      let! docText = doc.GetTextAsync()
+                      let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
+
+                      let! completionResults = completionService.GetCompletionsAsync(doc, posInText)
+
+                      let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
+                        { defaultCompletionItem with
+                            label = item.DisplayText ;
+                            kind = Some LSP.Types.CompletionItemKind.Field ;
+                        }
+
+                      return Some { isIncomplete = true ;
+                                    items = completionResults.Items
+                                            |> Seq.map makeLspCompletionItem
+                                            |> List.ofSeq }
+                | None -> return None
+            } |> Async.AwaitTask
 
         member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> = async {
             let! maybeSymbol = resolveSymbolAtPosition hoverPos.position
@@ -222,7 +253,8 @@ type Server(client: ILanguageClient) =
         }
 
 
-        member __.ResolveCompletionItem(_: CompletionItem): Async<CompletionItem> = todo()
+        member __.ResolveCompletionItem(_: LSP.Types.CompletionItem): Async<LSP.Types.CompletionItem> = todo()
+
         member __.SignatureHelp(_: TextDocumentPositionParams): Async<SignatureHelp option> = todo()
 
         member __.GotoDefinition(def: TextDocumentPositionParams): Async<LSP.Types.Location list> =
