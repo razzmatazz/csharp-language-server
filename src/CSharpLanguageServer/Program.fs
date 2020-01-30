@@ -70,6 +70,21 @@ type Server(client: ILanguageClient) =
           ``end`` = { line = pos.EndLinePosition.Line ;
                       character = pos.EndLinePosition.Character  } }
 
+    let mapDiagSeverity s =
+        match s with
+        | DiagnosticSeverity.Info -> Some LSP.Types.DiagnosticSeverity.Information
+        | DiagnosticSeverity.Warning -> Some LSP.Types.DiagnosticSeverity.Warning
+        | DiagnosticSeverity.Error -> Some LSP.Types.DiagnosticSeverity.Error
+        | DiagnosticSeverity.Hidden -> None
+        | _ -> None
+
+    let makeLspDiag (d: Diagnostic) =
+        { range = makeRangeForLinePos(d.Location.GetLineSpan()) ;
+            severity = mapDiagSeverity d.Severity ;
+            code = None ;
+            source = None ;
+            message = d.GetMessage() }
+
     interface ILanguageServer with
         member _.Initialize(_: InitializeParams) =
             async {
@@ -100,10 +115,24 @@ type Server(client: ILanguageClient) =
 
         member __.Shutdown(): Async<unit> = todo()
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
-        member __.DidOpenTextDocument(_: DidOpenTextDocumentParams): Async<unit> =
-            async {
-                return ()
-            }
+        member __.DidOpenTextDocument(openParams: DidOpenTextDocumentParams): Async<unit> =
+            task {
+                match currentSolution () with
+                | Some solution ->
+                    let project = solution.Projects.Single(fun p -> p.Name = "test")
+                    let doc = project.Documents.First()
+
+                    let! semanticModel = doc.GetSemanticModelAsync()
+
+                    let diagnostics = semanticModel.GetDiagnostics()
+                                      |> Seq.map makeLspDiag
+                                      |> List.ofSeq
+
+                    client.PublishDiagnostics { uri = openParams.textDocument.uri ;
+                                                diagnostics = diagnostics }
+                    return ()
+                | None -> ()
+            } |> Async.AwaitTask
 
         member __.DidChangeTextDocument(change: DidChangeTextDocumentParams): Async<unit> =
             task {
@@ -115,36 +144,18 @@ type Server(client: ILanguageClient) =
                     let fullText = SourceText.From(change.contentChanges.[0].text)
 
                     let updatedDoc = doc.WithText(fullText)
-                    let updatedSolution = updatedDoc.Project.Solution;
 
-                    let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
+                    //let updatedSolution = updatedDoc.Project.Solution;
+                    //let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
 
-                    if not applySucceeded then
-                        logMessage "workspace.TryApplyChanges has failed!"
+                    //if not applySucceeded then
+                    //  logMessage "workspace.TryApplyChanges has failed!"
 
-                    let! semanticModel = doc.GetSemanticModelAsync()
-
-                    let mapDiagSeverity s =
-                        match s with
-                        | DiagnosticSeverity.Info -> Some LSP.Types.DiagnosticSeverity.Information
-                        | DiagnosticSeverity.Warning -> Some LSP.Types.DiagnosticSeverity.Warning
-                        | DiagnosticSeverity.Error -> Some LSP.Types.DiagnosticSeverity.Error
-                        | DiagnosticSeverity.Hidden -> None
-                        | _ -> None
-
-                    let makeLspDiag (d: Diagnostic) =
-                        { range = makeRangeForLinePos(d.Location.GetLineSpan()) ;
-                          severity = mapDiagSeverity d.Severity ;
-                          code = None ;
-                          source = None ;
-                          message = d.GetMessage() }
+                    let! semanticModel = updatedDoc.GetSemanticModelAsync()
 
                     let diagnostics = semanticModel.GetDiagnostics()
                                       |> Seq.map makeLspDiag
                                       |> List.ofSeq
-
-                    logMessage (sprintf "DidChangeTextDocument: diagnostics.Len=%d"
-                                        diagnostics.Length)
 
                     client.PublishDiagnostics { uri = change.textDocument.uri ;
                                                 diagnostics = diagnostics }
