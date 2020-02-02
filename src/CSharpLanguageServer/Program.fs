@@ -42,25 +42,30 @@ type Server(client: ILanguageClient) =
                              | Some ws -> Some ws.CurrentSolution
                              | _ -> None
 
-    let resolveSymbolAtPosition pos = async {
-        let withSolution fn = Option.map fn <| currentSolution ()
+    let getPathUri path = Uri("file://" + path)
 
-        let symbolAtPosition (solution: Solution) = task {
-            let project = solution.Projects.Single(fun p -> p.Name = "test")
-            let firstDoc = project.Documents.First()
-            let! sourceText = firstDoc.GetTextAsync()
-            let! semanticModel = firstDoc.GetSemanticModelAsync()
+    let getDocumentForUri (uri: Uri) =
+        match currentSolution () with
+        | Some solution -> let documents = solution.Projects |> Seq.collect (fun p -> p.Documents)
+                           let matchingDocuments = documents |> Seq.filter (fun d -> uri = getPathUri d.FilePath) |> List.ofSeq
+                           match matchingDocuments with
+                           | [d] -> logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
+                                    Some d
+                           | _ -> None
+        | None -> None
+
+    let getSymbolAtPosition documentUri pos = async {
+        match getDocumentForUri documentUri with
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(pos.line, pos.character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
+            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value) |> Async.AwaitTask
             return match symbolRef with
                    | null -> None
                    | symbol -> Some symbol
-        }
-
-        match currentSolution () with
-        | Some sln -> let! symbol = symbolAtPosition sln |> Async.AwaitTask
-                      return symbol
-        | None -> return None
+        | None ->
+            return None
     }
 
     let todo() = raise (Exception "TODO")
@@ -118,89 +123,80 @@ type Server(client: ILanguageClient) =
 
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
 
-        member __.DidOpenTextDocument(openParams: DidOpenTextDocumentParams): Async<unit> =
-            task {
-                match currentSolution () with
-                | Some solution ->
-                    let project = solution.Projects.Single(fun p -> p.Name = "test")
-                    let doc = project.Documents.First()
+        member __.DidOpenTextDocument(openParams: DidOpenTextDocumentParams): Async<unit> = async {
+            let document = getDocumentForUri openParams.textDocument.uri
 
-                    let! semanticModel = doc.GetSemanticModelAsync()
+            match document with
+            | Some doc ->
+                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
 
-                    let diagnostics = semanticModel.GetDiagnostics()
-                                      |> Seq.map makeLspDiag
-                                      |> List.ofSeq
+                let diagnostics = semanticModel.GetDiagnostics()
+                                    |> Seq.map makeLspDiag
+                                    |> List.ofSeq
 
-                    client.PublishDiagnostics { uri = openParams.textDocument.uri ;
-                                                diagnostics = diagnostics }
-                    return ()
-                | None -> ()
-            } |> Async.AwaitTask
-
-        member __.DidChangeTextDocument(change: DidChangeTextDocumentParams): Async<unit> =
-            task {
-                match currentSolution () with
-                | Some solution ->
-                    let project = solution.Projects.Single(fun p -> p.Name = "test")
-                    let doc = project.Documents.First()
-
-                    let fullText = SourceText.From(change.contentChanges.[0].text)
-
-                    let updatedDoc = doc.WithText(fullText)
-
-                    //let updatedSolution = updatedDoc.Project.Solution;
-                    //let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
-
-                    //if not applySucceeded then
-                    //  logMessage "workspace.TryApplyChanges has failed!"
-
-                    let! semanticModel = updatedDoc.GetSemanticModelAsync()
-
-                    let diagnostics = semanticModel.GetDiagnostics()
-                                      |> Seq.map makeLspDiag
-                                      |> List.ofSeq
-
-                    client.PublishDiagnostics { uri = change.textDocument.uri ;
-                                                diagnostics = diagnostics }
-                    ()
-
-                | _ -> ()
-
+                client.PublishDiagnostics { uri = openParams.textDocument.uri ;
+                                            diagnostics = diagnostics }
                 return ()
-            } |> Async.AwaitTask
+            | None -> ()
+        }
+
+        member __.DidChangeTextDocument(change: DidChangeTextDocumentParams): Async<unit> = async {
+            match getDocumentForUri change.textDocument.uri with
+            | Some doc ->
+                let fullText = SourceText.From(change.contentChanges.[0].text)
+
+                let updatedDoc = doc.WithText(fullText)
+
+                //let updatedSolution = updatedDoc.Project.Solution;
+                //let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
+
+                //if not applySucceeded then
+                //  logMessage "workspace.TryApplyChanges has failed!"
+
+                let! semanticModel = updatedDoc.GetSemanticModelAsync() |> Async.AwaitTask
+
+                let diagnostics = semanticModel.GetDiagnostics()
+                                    |> Seq.map makeLspDiag
+                                    |> List.ofSeq
+
+                client.PublishDiagnostics { uri = change.textDocument.uri ;
+                                            diagnostics = diagnostics }
+                ()
+
+            | _ -> ()
+
+            return ()
+        }
 
         member __.WillSaveTextDocument(_: WillSaveTextDocumentParams): Async<unit> = todo()
 
         member __.WillSaveWaitUntilTextDocument(_: WillSaveTextDocumentParams): Async<TextEdit list> = todo()
 
-        member __.DidSaveTextDocument(saveParams: DidSaveTextDocumentParams): Async<unit> =
-            task {
-                match currentSolution () with
-                | Some solution -> let project = solution.Projects.Single(fun p -> p.Name = "test")
-                                   let doc = project.Documents.First()
+        member __.DidSaveTextDocument(saveParams: DidSaveTextDocumentParams): Async<unit> = async {
+            match getDocumentForUri saveParams.textDocument.uri with
+            | Some doc ->
+                let newDoc = match saveParams.text with
+                             | Some text -> let fullText = SourceText.From(text)
+                                            let updatedDoc = doc.WithText(fullText)
+                                            let updatedSolution = updatedDoc.Project.Solution;
+                                            workspace.Value.TryApplyChanges(updatedSolution) |> ignore
+                                            updatedDoc
+                             | None -> doc
 
-                                   let newDoc = match saveParams.text with
-                                                | Some text ->  let fullText = SourceText.From(text)
-                                                                let updatedDoc = doc.WithText(fullText)
-                                                                let updatedSolution = updatedDoc.Project.Solution;
-                                                                workspace.Value.TryApplyChanges(updatedSolution) |> ignore
-                                                                updatedDoc
-                                                | None -> doc
+                let! semanticModel = newDoc.GetSemanticModelAsync() |> Async.AwaitTask
 
-                                   let! semanticModel = newDoc.GetSemanticModelAsync()
+                let diagnostics = semanticModel.GetDiagnostics()
+                                |> Seq.map makeLspDiag
+                                |> List.ofSeq
 
-                                   let diagnostics = semanticModel.GetDiagnostics()
-                                                    |> Seq.map makeLspDiag
-                                                    |> List.ofSeq
+                client.PublishDiagnostics { uri = saveParams.textDocument.uri ;
+                                            diagnostics = diagnostics }
+                ()
 
-                                   client.PublishDiagnostics { uri = saveParams.textDocument.uri ;
-                                                               diagnostics = diagnostics }
-                                   ()
+            | _ -> ()
 
-                | _ -> ()
-
-                return ()
-            } |> Async.AwaitTask
+            return ()
+        }
 
         member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> =
             async {
@@ -209,39 +205,40 @@ type Server(client: ILanguageClient) =
 
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
 
-        member __.Completion(posParams: TextDocumentPositionParams): Async<LSP.Types.CompletionList option> =
+        member __.Completion(posParams: TextDocumentPositionParams): Async<LSP.Types.CompletionList option> = async {
+
             logMessage ("Completion at posParams: " + posParams.ToString())
 
-            task {
-                match currentSolution () with
-                | Some solution ->
-                      let project = solution.Projects.Single(fun p -> p.Name = "test")
-                      let doc = project.Documents.First()
-                      let completionService = CompletionService.GetService(doc)
-                      if isNull completionService then
-                          logMessage "doc has no completionService available"
-                          return ()
+            match getDocumentForUri posParams.textDocument.uri with
+            | Some doc ->
+                    let completionService = CompletionService.GetService(doc)
+                    if isNull completionService then
+                        logMessage "doc has no completionService available"
+                        return ()
 
-                      let! docText = doc.GetTextAsync()
-                      let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
+                    let! docText = doc.GetTextAsync() |> Async.AwaitTask
+                    let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
 
-                      let! completionResults = completionService.GetCompletionsAsync(doc, posInText)
+                    let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
 
-                      let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
-                        { defaultCompletionItem with
-                            label = item.DisplayText ;
-                            kind = Some LSP.Types.CompletionItemKind.Field ;
-                        }
+                    match Option.ofObj maybeCompletionResults with
+                    | Some completionResults ->
+                        let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
+                            { defaultCompletionItem with
+                                label = item.DisplayText ;
+                                kind = Some LSP.Types.CompletionItemKind.Field ;
+                            }
 
-                      return Some { isIncomplete = true ;
+                        return Some { isIncomplete = true ;
                                     items = completionResults.Items
                                             |> Seq.map makeLspCompletionItem
                                             |> List.ofSeq }
-                | None -> return None
-            } |> Async.AwaitTask
+                    | None -> return None
+            | None -> return None
+        }
 
         member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> = async {
-            let! maybeSymbol = resolveSymbolAtPosition hoverPos.position
+            let! maybeSymbol = getSymbolAtPosition hoverPos.textDocument.uri hoverPos.position
             let maybeHoverText = Option.map (fun (sym: ISymbol) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
 
             let contents = [ HighlightedString(match maybeHoverText with
@@ -259,14 +256,11 @@ type Server(client: ILanguageClient) =
 
         member __.GotoDefinition(def: TextDocumentPositionParams): Async<LSP.Types.Location list> =
 
-            let resolveDefinition (solution: Solution)  = task {
-                let project = solution.Projects.Single(fun p -> p.Name = "test")
-                let firstDoc = project.Documents.First()
-                let! sourceText = firstDoc.GetTextAsync()
-                let! semanticModel = firstDoc.GetSemanticModelAsync()
-
+            let resolveDefinition (doc: Document)  = task {
+                let! sourceText = doc.GetTextAsync()
                 let position = sourceText.Lines.GetPosition(LinePosition(def.position.line, def.position.character))
 
+                let! semanticModel = doc.GetSemanticModelAsync()
                 let! symbol = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
 
                 return match symbol with
@@ -275,14 +269,14 @@ type Server(client: ILanguageClient) =
                        | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
                          let symPos = sym.Locations.First().GetLineSpan()
 
-                         [ { uri = def.textDocument.uri ;
+                         [ { uri = sym.Locations.First().SourceTree.FilePath |> getPathUri;
                              range = makeRangeForLinePos symPos } ]
             }
 
             async {
-                match currentSolution () with
-                | Some solution -> let! locations = resolveDefinition solution |> Async.AwaitTask
-                                   return locations
+                match getDocumentForUri def.textDocument.uri with
+                | Some doc -> let! locations = resolveDefinition doc |> Async.AwaitTask
+                              return locations
                 | None -> return []
             }
 
