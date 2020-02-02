@@ -211,29 +211,29 @@ type Server(client: ILanguageClient) =
 
             match getDocumentForUri posParams.textDocument.uri with
             | Some doc ->
-                    let completionService = CompletionService.GetService(doc)
-                    if isNull completionService then
-                        logMessage "doc has no completionService available"
-                        return ()
+                let completionService = CompletionService.GetService(doc)
+                if isNull completionService then
+                    logMessage "doc has no completionService available"
+                    return ()
 
-                    let! docText = doc.GetTextAsync() |> Async.AwaitTask
-                    let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
+                let! docText = doc.GetTextAsync() |> Async.AwaitTask
+                let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
 
-                    let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
+                let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
 
-                    match Option.ofObj maybeCompletionResults with
-                    | Some completionResults ->
-                        let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
-                            { defaultCompletionItem with
-                                label = item.DisplayText ;
-                                kind = Some LSP.Types.CompletionItemKind.Field ;
-                            }
+                match Option.ofObj maybeCompletionResults with
+                | Some completionResults ->
+                    let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
+                        { defaultCompletionItem with
+                            label = item.DisplayText ;
+                            kind = Some LSP.Types.CompletionItemKind.Field ;
+                        }
 
-                        return Some { isIncomplete = true ;
-                                    items = completionResults.Items
-                                            |> Seq.map makeLspCompletionItem
-                                            |> List.ofSeq }
-                    | None -> return None
+                    return Some { isIncomplete = true ;
+                                items = completionResults.Items
+                                        |> Seq.map makeLspCompletionItem
+                                        |> List.ofSeq }
+                | None -> return None
             | None -> return None
         }
 
@@ -254,9 +254,8 @@ type Server(client: ILanguageClient) =
 
         member __.SignatureHelp(_: TextDocumentPositionParams): Async<SignatureHelp option> = todo()
 
-        member __.GotoDefinition(def: TextDocumentPositionParams): Async<LSP.Types.Location list> =
-
-            let resolveDefinition (doc: Document)  = task {
+        member __.GotoDefinition(def: TextDocumentPositionParams): Async<LSP.Types.Location list> = async {
+            let resolveDefinition (doc: Document) = task {
                 let! sourceText = doc.GetTextAsync()
                 let position = sourceText.Lines.GetPosition(LinePosition(def.position.line, def.position.character))
 
@@ -267,18 +266,25 @@ type Server(client: ILanguageClient) =
                        | null -> //logMessage "no symbol at this point"
                          []
                        | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                         let symPos = sym.Locations.First().GetLineSpan()
+                         // TODO:
+                         //  - handle symbols in metadata
 
-                         [ { uri = sym.Locations.First().SourceTree.FilePath |> getPathUri;
-                             range = makeRangeForLinePos symPos } ]
+                         let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource) |> List.ofSeq
+
+                         match locationsInSource with
+                         | [] -> []
+                         | locations ->
+                             let locationToLspLocation (loc: Location) =
+                                 { uri = loc.SourceTree.FilePath |> getPathUri ;
+                                   range = loc.GetLineSpan() |> makeRangeForLinePos }
+                             locations |> Seq.map locationToLspLocation |> List.ofSeq
             }
 
-            async {
-                match getDocumentForUri def.textDocument.uri with
-                | Some doc -> let! locations = resolveDefinition doc |> Async.AwaitTask
-                              return locations
-                | None -> return []
-            }
+            match getDocumentForUri def.textDocument.uri with
+            | Some doc -> let! locations = resolveDefinition doc |> Async.AwaitTask
+                          return locations
+            | None -> return []
+        }
 
         member __.FindReferences(_: ReferenceParams): Async<LSP.Types.Location list> = todo()
         member __.DocumentHighlight(_: TextDocumentPositionParams): Async<DocumentHighlight list> = todo()
