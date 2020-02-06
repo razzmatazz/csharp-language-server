@@ -49,7 +49,7 @@ type Server(client: ILanguageClient) =
         | Some solution -> let documents = solution.Projects |> Seq.collect (fun p -> p.Documents)
                            let matchingDocuments = documents |> Seq.filter (fun d -> uri = getPathUri d.FilePath) |> List.ofSeq
                            match matchingDocuments with
-                           | [d] -> logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
+                           | [d] -> //logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
                                     Some d
                            | _ -> None
         | None -> None
@@ -61,9 +61,7 @@ type Server(client: ILanguageClient) =
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(pos.line, pos.character))
             let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value) |> Async.AwaitTask
-            return match symbolRef with
-                   | null -> None
-                   | symbol -> Some symbol
+            return symbolRef |> Option.ofObj
         | None ->
             return None
     }
@@ -91,6 +89,10 @@ type Server(client: ILanguageClient) =
             source = None ;
             message = d.GetMessage() }
 
+    let locationToLspLocation (loc: Location) =
+        { uri = loc.SourceTree.FilePath |> getPathUri ;
+          range = loc.GetLineSpan() |> makeRangeForLinePos }
+
     interface ILanguageServer with
         member _.Initialize(_: InitializeParams) =
             async {
@@ -104,7 +106,7 @@ type Server(client: ILanguageClient) =
                              codeLensProvider = None
                              workspaceSymbolProvider = false
                              definitionProvider = true
-                             referencesProvider = false
+                             referencesProvider = true
                              renameProvider = false
                              textDocumentSync = {
                                 defaultTextDocumentSyncOptions with
@@ -273,11 +275,7 @@ type Server(client: ILanguageClient) =
 
                          match locationsInSource with
                          | [] -> []
-                         | locations ->
-                             let locationToLspLocation (loc: Location) =
-                                 { uri = loc.SourceTree.FilePath |> getPathUri ;
-                                   range = loc.GetLineSpan() |> makeRangeForLinePos }
-                             locations |> Seq.map locationToLspLocation |> List.ofSeq
+                         | locations -> locations |> Seq.map locationToLspLocation |> List.ofSeq
             }
 
             match getDocumentForUri def.textDocument.uri with
@@ -286,7 +284,24 @@ type Server(client: ILanguageClient) =
             | None -> return []
         }
 
-        member __.FindReferences(_: ReferenceParams): Async<LSP.Types.Location list> = todo()
+        member __.FindReferences(refParams: ReferenceParams): Async<LSP.Types.Location list> = async {
+            match currentSolution () with
+            | Some solution ->
+                let! maybeSymbol = getSymbolAtPosition refParams.textDocument.uri refParams.position
+
+                match maybeSymbol with
+                | Some symbol ->
+                    let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
+                    return refs |> Seq.map (fun r -> r.Locations)
+                                |> Seq.concat
+                                |> Seq.map (fun rl -> rl.Location)
+                                |> Seq.map locationToLspLocation
+                                |> List.ofSeq
+                | None -> return []
+
+            | None -> return []
+        }
+
         member __.DocumentHighlight(_: TextDocumentPositionParams): Async<DocumentHighlight list> = todo()
         member __.DocumentSymbols(_: DocumentSymbolParams): Async<SymbolInformation list> = todo()
         member __.WorkspaceSymbols(_: WorkspaceSymbolParams): Async<SymbolInformation list> = todo()
