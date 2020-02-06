@@ -121,7 +121,9 @@ type Server(client: ILanguageClient) =
         member __.Initialized(): Async<unit> =
             deferredInitialize
 
-        member __.Shutdown(): Async<unit> = todo()
+        member __.Shutdown(): Async<unit> = async {
+            ()
+        }
 
         member __.DidChangeConfiguration(_: DidChangeConfigurationParams): Async<unit> = todo()
 
