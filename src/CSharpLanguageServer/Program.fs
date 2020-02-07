@@ -12,6 +12,7 @@ open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text;
 open Microsoft.CodeAnalysis.Completion
+open Microsoft.CodeAnalysis.Rename
 open FSharp.Control.Tasks.V2
 open Microsoft.Build.Locator
 
@@ -61,7 +62,7 @@ type Server(client: ILanguageClient) =
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(pos.line, pos.character))
             let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value) |> Async.AwaitTask
-            return symbolRef |> Option.ofObj
+            return if isNull symbolRef then None else Some (symbolRef, doc)
         | None ->
             return None
     }
@@ -107,7 +108,7 @@ type Server(client: ILanguageClient) =
                              workspaceSymbolProvider = false
                              definitionProvider = true
                              referencesProvider = true
-                             renameProvider = false
+                             renameProvider = true
                              textDocumentSync = {
                                 defaultTextDocumentSyncOptions with
                                       openClose = false
@@ -243,7 +244,7 @@ type Server(client: ILanguageClient) =
 
         member __.Hover(hoverPos: TextDocumentPositionParams): Async<Hover option> = async {
             let! maybeSymbol = getSymbolAtPosition hoverPos.textDocument.uri hoverPos.position
-            let maybeHoverText = Option.map (fun (sym: ISymbol) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
+            let maybeHoverText = Option.map (fun (sym: ISymbol, _: Document) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
 
             let contents = [ HighlightedString(match maybeHoverText with
                                                | None -> "", "fsharp"
@@ -292,7 +293,7 @@ type Server(client: ILanguageClient) =
                 let! maybeSymbol = getSymbolAtPosition refParams.textDocument.uri refParams.position
 
                 match maybeSymbol with
-                | Some symbol ->
+                | Some (symbol, doc) ->
                     let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
                     return refs |> Seq.map (fun r -> r.Locations)
                                 |> Seq.concat
@@ -315,7 +316,28 @@ type Server(client: ILanguageClient) =
         member __.DocumentFormatting(_: DocumentFormattingParams): Async<TextEdit list> = todo()
         member __.DocumentRangeFormatting(_: DocumentRangeFormattingParams): Async<TextEdit list> = todo()
         member __.DocumentOnTypeFormatting(_: DocumentOnTypeFormattingParams): Async<TextEdit list> = todo()
-        member __.Rename(_: RenameParams): Async<WorkspaceEdit> = todo()
+
+        member __.Rename(rename: RenameParams): Async<WorkspaceEdit> = async {
+            let renameSymbolInDoc symbol (doc: Document) = async {
+                let! updatedSolution = Renamer.RenameSymbolAsync(doc.Project.Solution,
+                                                                 symbol,
+                                                                 rename.newName,
+                                                                 doc.Project.Solution.Workspace.Options)
+                                       |> Async.AwaitTask
+
+                workspace.Value.TryApplyChanges(updatedSolution) |> ignore
+                ()
+            }
+
+            let! maybeSymbol = getSymbolAtPosition rename.textDocument.uri rename.position
+
+            do! match maybeSymbol with
+                      | Some (symbol, doc) -> renameSymbolInDoc symbol doc
+                      | None -> async { return () }
+
+            return { documentChanges = [] }
+        }
+
         member __.ExecuteCommand(_: ExecuteCommandParams): Async<unit> = todo()
         member __.DidChangeWorkspaceFolders(_: DidChangeWorkspaceFoldersParams): Async<unit> = todo()
 
