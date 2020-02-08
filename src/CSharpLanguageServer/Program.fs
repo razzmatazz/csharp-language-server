@@ -2,7 +2,7 @@ module CSharpLanguageServer.Program
 
 open System
 open System.IO
-open System.Linq
+open System.Collections.Generic
 open LSP
 open LSP.Types
 open LSP.Log
@@ -293,7 +293,7 @@ type Server(client: ILanguageClient) =
                 let! maybeSymbol = getSymbolAtPosition refParams.textDocument.uri refParams.position
 
                 match maybeSymbol with
-                | Some (symbol, doc) ->
+                | Some (symbol, _) ->
                     let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
                     return refs |> Seq.map (fun r -> r.Locations)
                                 |> Seq.concat
@@ -309,7 +309,7 @@ type Server(client: ILanguageClient) =
         member __.DocumentSymbols(_: DocumentSymbolParams): Async<SymbolInformation list> = todo()
         member __.WorkspaceSymbols(_: WorkspaceSymbolParams): Async<SymbolInformation list> = todo()
         member __.CodeActions(_: CodeActionParams): Async<Command list> = todo()
-        member __.CodeLens(_: CodeLensParams): Async<List<CodeLens>> = todo()
+        member __.CodeLens(_: CodeLensParams): Async<CodeLens list> = todo()
         member __.ResolveCodeLens(_: CodeLens): Async<CodeLens> = todo()
         member __.DocumentLink(_: DocumentLinkParams): Async<DocumentLink list> = todo()
         member __.ResolveDocumentLink(_: DocumentLink): Async<DocumentLink> = todo()
@@ -318,7 +318,8 @@ type Server(client: ILanguageClient) =
         member __.DocumentOnTypeFormatting(_: DocumentOnTypeFormattingParams): Async<TextEdit list> = todo()
 
         member __.Rename(rename: RenameParams): Async<WorkspaceEdit> = async {
-            let renameSymbolInDoc symbol (doc: Document) = async {
+            let renameSymbolInDoc symbol (doc: Document)= async {
+                let originalSolution = doc.Project.Solution
                 let! updatedSolution = Renamer.RenameSymbolAsync(doc.Project.Solution,
                                                                  symbol,
                                                                  rename.newName,
@@ -326,16 +327,47 @@ type Server(client: ILanguageClient) =
                                        |> Async.AwaitTask
 
                 workspace.Value.TryApplyChanges(updatedSolution) |> ignore
-                ()
+
+                // make a list of changes
+                let changedDocs = updatedSolution.GetChanges(originalSolution)
+                                                 .GetProjectChanges()
+                                  |> Seq.map (fun pc -> pc.GetChangedDocuments())
+                                  |> Seq.concat
+
+                let docTextEdits = List<TextDocumentEdit>()
+
+                for docId in changedDocs do
+                    let originalDoc = originalSolution.GetDocument(docId)
+                    let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
+                    let originalDocSpan = FileLinePositionSpan(originalDoc.FilePath,
+                                                               originalDocText.Lines.GetLinePosition(0),
+                                                               originalDocText.Lines.GetLinePosition(originalDocText.Length))
+
+                    let! updatedDocText = updatedSolution.GetDocument(docId).GetTextAsync() |> Async.AwaitTask
+
+                    let edits: TextEdit list =
+                        [ { range = makeRangeForLinePos originalDocSpan
+                            newText = "" } ;
+                          { range = { start = { line = 0; character = 0 }
+                                      ``end`` = { line = 0 ; character = 0 }
+                                    }
+                            newText = updatedDocText.ToString() }
+                        ]
+
+                    docTextEdits.Add({ textDocument = { uri = getPathUri originalDoc.FilePath
+                                                        version = 0 }
+                                       edits = edits })
+
+                return docTextEdits |> List.ofSeq
             }
 
             let! maybeSymbol = getSymbolAtPosition rename.textDocument.uri rename.position
 
-            do! match maybeSymbol with
-                      | Some (symbol, doc) -> renameSymbolInDoc symbol doc
-                      | None -> async { return () }
+            let! docChanges = match maybeSymbol with
+                              | Some (symbol, doc) -> renameSymbolInDoc symbol doc
+                              | None -> async { return [] }
 
-            return { documentChanges = [] }
+            return { documentChanges = docChanges }
         }
 
         member __.ExecuteCommand(_: ExecuteCommandParams): Async<unit> = todo()
