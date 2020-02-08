@@ -12,6 +12,7 @@ The code here is based on
  - formatting
  - ability to run tests
  - navigate all symbols on solution
+ - go-to definition on symbol in metada
  - code actions:
    - fix usings
    - more?
