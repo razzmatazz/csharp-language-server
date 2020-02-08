@@ -72,8 +72,8 @@ type DocumentStore() =
                 | Some range -> patch(doc.textDocument, range, change.text) 
                 | None -> replace(doc.textDocument, change.text) 
 
-    member this.GetText(file: FileInfo): string option = 
-        let found, value = activeDocuments.TryGetValue(file.FullName)
+    member this.GetTextForFilename(fullName: string): string option =
+        let found, value = activeDocuments.TryGetValue(fullName)
         if found then Some(value.text.ToString()) else None 
 
     member this.GetVersion(file: FileInfo): int option = 

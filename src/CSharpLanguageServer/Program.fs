@@ -3,6 +3,7 @@ module CSharpLanguageServer.Program
 open System
 open System.IO
 open System.Collections.Generic
+open System.Threading.Tasks
 open LSP
 open LSP.Types
 open LSP.Log
@@ -226,10 +227,16 @@ type Server(client: ILanguageClient) =
                     logMessage "doc has no completionService available"
                     return ()
 
-                let! docText = doc.GetTextAsync() |> Async.AwaitTask
-                let posInText = docText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
+                let maybeStoredText = docs.GetTextForFilename(posParams.textDocument.uri.LocalPath)
 
-                let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
+                let storedDoc = match maybeStoredText with
+                                | Some storedText -> doc.WithText(SourceText.From(storedText))
+                                | None -> doc
+                let! storedDocText = storedDoc.GetTextAsync() |> Async.AwaitTask
+
+                let posInText = storedDocText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
+
+                let! maybeCompletionResults = completionService.GetCompletionsAsync(storedDoc, posInText) |> Async.AwaitTask
 
                 match Option.ofObj maybeCompletionResults with
                 | Some completionResults ->
