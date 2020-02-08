@@ -5,8 +5,7 @@ trying to fix issues in omnisharp-roslyn LSP mode code and felt I could try to
 hack my own custom LSP server for C#.
 
 The code here is based on
- [https://github.com/fsprojects/fsharp-language-server](F# Language Server)
-code.
+[F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
 
 # TODO list
  - navigate all symbols on solution
