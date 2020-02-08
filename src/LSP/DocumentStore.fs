@@ -78,7 +78,11 @@ type DocumentStore() =
 
     member this.GetVersion(file: FileInfo): int option = 
         let found, value = activeDocuments.TryGetValue(file.FullName)
-        if found then Some(value.version) else None 
+        if found then Some(value.version) else None
+
+    member this.GetVersionForFilename(fullName: string): int option =
+        let found, value = activeDocuments.TryGetValue(fullName)
+        if found then Some(value.version) else None
 
     member this.Get(file: FileInfo): option<string * int> = 
         let found, value = activeDocuments.TryGetValue(file.FullName)

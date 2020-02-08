@@ -17,6 +17,8 @@ open FSharp.Control.Tasks.V2
 open Microsoft.Build.Locator
 
 type Server(client: ILanguageClient) =
+    let docs = DocumentStore()
+
     let mutable workspace: Workspace option = None
 
     let logMessage message = client.ShowMessage { ``type`` = MessageType.Log ;
@@ -69,11 +71,9 @@ type Server(client: ILanguageClient) =
 
     let todo() = raise (Exception "TODO")
 
-    let makeRangeForLinePos (pos: FileLinePositionSpan) =
-        { start = { line = pos.StartLinePosition.Line ;
-                    character = pos.StartLinePosition.Character  }
-          ``end`` = { line = pos.EndLinePosition.Line ;
-                      character = pos.EndLinePosition.Character  } }
+    let makeRangeForLinePosSpan (pos: LinePositionSpan) =
+        { start = { line = pos.Start.Line ; character = pos.Start.Character }
+          ``end`` = { line = pos.End.Line ; character = pos.End.Character } }
 
     let mapDiagSeverity s =
         match s with
@@ -84,7 +84,7 @@ type Server(client: ILanguageClient) =
         | _ -> None
 
     let makeLspDiag (d: Diagnostic) =
-        { range = makeRangeForLinePos(d.Location.GetLineSpan()) ;
+        { range = makeRangeForLinePosSpan(d.Location.GetLineSpan().Span) ;
             severity = mapDiagSeverity d.Severity ;
             code = None ;
             source = None ;
@@ -92,7 +92,7 @@ type Server(client: ILanguageClient) =
 
     let locationToLspLocation (loc: Location) =
         { uri = loc.SourceTree.FilePath |> getPathUri ;
-          range = loc.GetLineSpan() |> makeRangeForLinePos }
+          range = loc.GetLineSpan().Span |> makeRangeForLinePosSpan }
 
     interface ILanguageServer with
         member _.Initialize(_: InitializeParams) =
@@ -131,6 +131,8 @@ type Server(client: ILanguageClient) =
         member __.DidOpenTextDocument(openParams: DidOpenTextDocumentParams): Async<unit> = async {
             let document = getDocumentForUri openParams.textDocument.uri
 
+            docs.Open(openParams)
+
             match document with
             | Some doc ->
                 let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
@@ -146,6 +148,8 @@ type Server(client: ILanguageClient) =
         }
 
         member __.DidChangeTextDocument(change: DidChangeTextDocumentParams): Async<unit> = async {
+            docs.Change(change)
+               
             match getDocumentForUri change.textDocument.uri with
             | Some doc ->
                 let fullText = SourceText.From(change.contentChanges.[0].text)
@@ -203,10 +207,11 @@ type Server(client: ILanguageClient) =
             return ()
         }
 
-        member __.DidCloseTextDocument(_: DidCloseTextDocumentParams): Async<unit> =
-            async {
-                return ()
-            }
+        member __.DidCloseTextDocument(p: DidCloseTextDocumentParams): Async<unit> = async {
+            docs.Close(p)
+
+            return ()
+        }
 
         member __.DidChangeWatchedFiles(_: DidChangeWatchedFilesParams): Async<unit> = todo()
 
@@ -318,15 +323,13 @@ type Server(client: ILanguageClient) =
         member __.DocumentOnTypeFormatting(_: DocumentOnTypeFormattingParams): Async<TextEdit list> = todo()
 
         member __.Rename(rename: RenameParams): Async<WorkspaceEdit> = async {
-            let renameSymbolInDoc symbol (doc: Document)= async {
+            let renameSymbolInDoc symbol (doc: Document) = async {
                 let originalSolution = doc.Project.Solution
                 let! updatedSolution = Renamer.RenameSymbolAsync(doc.Project.Solution,
                                                                  symbol,
                                                                  rename.newName,
                                                                  doc.Project.Solution.Workspace.Options)
                                        |> Async.AwaitTask
-
-                workspace.Value.TryApplyChanges(updatedSolution) |> ignore
 
                 // make a list of changes
                 let changedDocs = updatedSolution.GetChanges(originalSolution)
@@ -339,24 +342,23 @@ type Server(client: ILanguageClient) =
                 for docId in changedDocs do
                     let originalDoc = originalSolution.GetDocument(docId)
                     let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
-                    let originalDocSpan = FileLinePositionSpan(originalDoc.FilePath,
-                                                               originalDocText.Lines.GetLinePosition(0),
-                                                               originalDocText.Lines.GetLinePosition(originalDocText.Length))
 
-                    let! updatedDocText = updatedSolution.GetDocument(docId).GetTextAsync() |> Async.AwaitTask
+                    let updatedDoc = updatedSolution.GetDocument(docId)
+                    let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
 
-                    let edits: TextEdit list =
-                        [ { range = makeRangeForLinePos originalDocSpan
-                            newText = "" } ;
-                          { range = { start = { line = 0; character = 0 }
-                                      ``end`` = { line = 0 ; character = 0 }
-                                    }
-                            newText = updatedDocText.ToString() }
-                        ]
+                    let diffEdits: TextEdit list =
+                        docChanges |> Seq.sortBy (fun c -> c.Span.Start)
+                                   |> Seq.map (fun c -> { range = originalDocText.Lines.GetLinePositionSpan(c.Span)
+                                                                  |> makeRangeForLinePosSpan
+                                                          newText = c.NewText })
+                                   |> List.ofSeq
 
-                    docTextEdits.Add({ textDocument = { uri = getPathUri originalDoc.FilePath
-                                                        version = 0 }
-                                       edits = edits })
+                    logMessage ("diffEdits = " + diffEdits.ToString())
+
+                    docTextEdits.Add(
+                        { textDocument = { uri = getPathUri originalDoc.FilePath
+                                           version = docs.GetVersionForFilename(originalDoc.FilePath) |> Option.defaultValue 0 }
+                          edits = diffEdits })
 
                 return docTextEdits |> List.ofSeq
             }
