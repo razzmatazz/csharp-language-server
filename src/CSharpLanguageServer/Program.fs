@@ -325,10 +325,18 @@ type Server(client: ILanguageClient) =
                 | Some (symbol, doc) ->
                     let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
                     let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet) |> Async.AwaitTask
-                    return refs |> Seq.collect (fun r -> r.Locations)
-                                |> Seq.map (fun rl -> { range = (locationToLspLocation rl.Location).range ;
-                                                        kind = DocumentHighlightKind.Read })
-                                |> List.ofSeq
+                    let locationsFromRefs = refs |> Seq.collect (fun r -> r.Locations) |> Seq.map (fun rl -> rl.Location)
+
+                    let! defRef = SymbolFinder.FindSourceDefinitionAsync(symbol, solution) |> Async.AwaitTask
+                    let locationsFromDef = match Option.ofObj defRef with
+                                           // TODO: we might need to skip locations that are on a different document than this one
+                                           | Some sym -> sym.Locations |> List.ofSeq
+                                           | None -> []
+
+                    return (Seq.append locationsFromRefs locationsFromDef)
+                           |> Seq.map (fun l -> { range = (locationToLspLocation l).range ;
+                                                  kind = DocumentHighlightKind.Read })
+                           |> List.ofSeq
                 | None -> return []
 
             | None -> return []
