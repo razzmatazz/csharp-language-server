@@ -8,7 +8,6 @@ The code here is based on
 [F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
 
 # TODO list
- - completion seems to be doing the wrong thing
  - formatting
  - ability to run tests
  - navigate all symbols on solution
@@ -18,4 +17,4 @@ The code here is based on
    - more?
  - send incremental changes to the server when file is changed
    - this should fix performance quite a bit on large files
-
+ - parse documentation into format needed for lsp

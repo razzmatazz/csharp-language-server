@@ -218,38 +218,38 @@ type Server(client: ILanguageClient) =
 
         member __.Completion(posParams: TextDocumentPositionParams): Async<LSP.Types.CompletionList option> = async {
 
-            logMessage ("Completion at posParams: " + posParams.ToString())
-
             match getDocumentForUri posParams.textDocument.uri with
             | Some doc ->
-                let completionService = CompletionService.GetService(doc)
-                if isNull completionService then
-                    logMessage "doc has no completionService available"
-                    return ()
-
                 let maybeStoredText = docs.GetTextForFilename(posParams.textDocument.uri.LocalPath)
 
                 let storedDoc = match maybeStoredText with
                                 | Some storedText -> doc.WithText(SourceText.From(storedText))
                                 | None -> doc
+
                 let! storedDocText = storedDoc.GetTextAsync() |> Async.AwaitTask
 
                 let posInText = storedDocText.Lines.GetPosition(LinePosition(posParams.position.line, posParams.position.character))
 
-                let! maybeCompletionResults = completionService.GetCompletionsAsync(storedDoc, posInText) |> Async.AwaitTask
+                let completionService = CompletionService.GetService(storedDoc)
+                if isNull completionService then
+                    return ()
+
+                let! maybeCompletionResults =
+                        completionService.GetCompletionsAsync(storedDoc, posInText) |> Async.AwaitTask
 
                 match Option.ofObj maybeCompletionResults with
                 | Some completionResults ->
                     let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
                         { defaultCompletionItem with
                             label = item.DisplayText ;
-                            kind = Some LSP.Types.CompletionItemKind.Field ;
-                        }
+                            kind = Some LSP.Types.CompletionItemKind.Method ;
+                            insertTextFormat = Some LSP.Types.InsertTextFormat.PlainText }
 
-                    return Some { isIncomplete = true ;
-                                items = completionResults.Items
-                                        |> Seq.map makeLspCompletionItem
-                                        |> List.ofSeq }
+                    return Some {
+                        isIncomplete = false ;
+                        items = completionResults.Items
+                                                 |> Seq.map makeLspCompletionItem
+                                                 |> List.ofSeq }
                 | None -> return None
             | None -> return None
         }
