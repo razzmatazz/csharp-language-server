@@ -7,6 +7,7 @@ open System.Collections.Immutable
 open LSP
 open LSP.Types
 open LSP.Log
+open Helpers
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
@@ -243,7 +244,7 @@ type Server(client: ILanguageClient) =
                     let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
                         { defaultCompletionItem with
                             label = item.DisplayText ;
-                            kind = Some LSP.Types.CompletionItemKind.Method ;
+                            kind = item.Tags |> Seq.head |> Helpers.roslynTagToLspCompletion |> Some ;
                             insertTextFormat = Some LSP.Types.InsertTextFormat.PlainText }
 
                     return Some {
@@ -382,8 +383,6 @@ type Server(client: ILanguageClient) =
                                                                   |> makeRangeForLinePosSpan
                                                           newText = c.NewText })
                                    |> List.ofSeq
-
-                    logMessage ("diffEdits = " + diffEdits.ToString())
 
                     docTextEdits.Add(
                         { textDocument = { uri = getPathUri originalDoc.FilePath
