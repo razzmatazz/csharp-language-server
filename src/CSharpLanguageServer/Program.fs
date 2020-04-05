@@ -3,7 +3,7 @@ module CSharpLanguageServer.Program
 open System
 open System.IO
 open System.Collections.Generic
-open System.Threading.Tasks
+open System.Collections.Immutable
 open LSP
 open LSP.Types
 open LSP.Log
@@ -31,7 +31,7 @@ type Server(client: ILanguageClient) =
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-        let! testSolution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+        let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         logMessage "in deferredInitialize, ok solution loaded"
 
@@ -109,6 +109,7 @@ type Server(client: ILanguageClient) =
                              workspaceSymbolProvider = false
                              definitionProvider = true
                              referencesProvider = true
+                             documentHighlightProvider = true
                              renameProvider = true
                              textDocumentSync = {
                                 defaultTextDocumentSyncOptions with
@@ -307,17 +308,32 @@ type Server(client: ILanguageClient) =
                 match maybeSymbol with
                 | Some (symbol, _) ->
                     let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
-                    return refs |> Seq.map (fun r -> r.Locations)
-                                |> Seq.concat
-                                |> Seq.map (fun rl -> rl.Location)
-                                |> Seq.map locationToLspLocation
+                    return refs |> Seq.collect (fun r -> r.Locations)
+                                |> Seq.map (fun rl -> locationToLspLocation rl.Location)
                                 |> List.ofSeq
                 | None -> return []
 
             | None -> return []
         }
 
-        member __.DocumentHighlight(_: TextDocumentPositionParams): Async<DocumentHighlight list> = todo()
+        member __.DocumentHighlight(docParams: TextDocumentPositionParams): Async<DocumentHighlight list> = async {
+            match currentSolution () with
+            | Some solution ->
+                let! maybeSymbol = getSymbolAtPosition docParams.textDocument.uri docParams.position
+
+                match maybeSymbol with
+                | Some (symbol, doc) ->
+                    let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
+                    let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet) |> Async.AwaitTask
+                    return refs |> Seq.collect (fun r -> r.Locations)
+                                |> Seq.map (fun rl -> { range = (locationToLspLocation rl.Location).range ;
+                                                        kind = DocumentHighlightKind.Read })
+                                |> List.ofSeq
+                | None -> return []
+
+            | None -> return []
+        }
+
         member __.DocumentSymbols(_: DocumentSymbolParams): Async<SymbolInformation list> = todo()
         member __.WorkspaceSymbols(_: WorkspaceSymbolParams): Async<SymbolInformation list> = todo()
         member __.CodeActions(_: CodeActionParams): Async<Command list> = todo()
@@ -341,8 +357,7 @@ type Server(client: ILanguageClient) =
                 // make a list of changes
                 let changedDocs = updatedSolution.GetChanges(originalSolution)
                                                  .GetProjectChanges()
-                                  |> Seq.map (fun pc -> pc.GetChangedDocuments())
-                                  |> Seq.concat
+                                  |> Seq.collect (fun pc -> pc.GetChangedDocuments())
 
                 let docTextEdits = List<TextDocumentEdit>()
 

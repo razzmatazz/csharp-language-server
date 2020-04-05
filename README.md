@@ -8,6 +8,9 @@ The code here is based on
 [F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
 
 # TODO list
+ - investigate faster sync for large files (no full doc sync)
+ - code lenses
+ - symbol higlighting
  - formatting
  - ability to run tests
  - navigate all symbols on solution
