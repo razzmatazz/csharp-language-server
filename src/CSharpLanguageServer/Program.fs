@@ -7,7 +7,6 @@ open System.Collections.Immutable
 open LSP
 open LSP.Types
 open LSP.Log
-open Helpers
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
@@ -26,21 +25,33 @@ type Server(client: ILanguageClient) =
     let logMessage message = client.ShowMessage { ``type`` = MessageType.Log ;
                                                    message = "cs-lsp-server: " + message } |> ignore
 
+    let firstSolutionOnDir dir =
+        let files = Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories) |> Seq.toList
+
+        match files with
+        | [x] -> Some x
+        | _ -> None
+
     let mutable deferredInitialize = async {
-        let solutionPath = "/Users/bob/src/omnisharp/test/test.sln"
-        logMessage ("in deferredInitialize, loading solution: " + solutionPath)
+        let cwd = Directory.GetCurrentDirectory()
+        logMessage ("in deferredInitialize, determining solutions on project root: " + cwd)
 
-        let msbuildWorkspace = MSBuildWorkspace.Create()
-        msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-        let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+        match firstSolutionOnDir(cwd) with
+        | None -> raise (Exception("no or multiple .sln files found on " + cwd))
+        | Some solutionPath ->
+            logMessage ("in deferredInitialize, loading solution: " + solutionPath)
 
-        logMessage "in deferredInitialize, ok solution loaded"
+            let msbuildWorkspace = MSBuildWorkspace.Create()
+            msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+            let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
-        for diag in msbuildWorkspace.Diagnostics do
-            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+            logMessage "in deferredInitialize, ok solution loaded"
 
-        workspace <- Some(msbuildWorkspace :> Workspace)
-        ()
+            for diag in msbuildWorkspace.Diagnostics do
+                logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+            workspace <- Some(msbuildWorkspace :> Workspace)
+            ()
     }
 
     let currentSolution () = match workspace with
