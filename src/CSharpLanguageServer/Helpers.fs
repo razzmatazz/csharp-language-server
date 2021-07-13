@@ -1,5 +1,5 @@
 module CSharpLanguageServer.Helpers
-open LSP.Types
+open LanguageServerProtocol.Types
 
 
 // mappings taken from omnisharp-roslyn
