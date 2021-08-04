@@ -1,7 +1,6 @@
 The MIT License (MIT)
 
-Copyright (c) [F# Language Server Contributors](https://github.com/fsprojects/fsharp-language-server/graphs/contributors)
-Copyright (c) 2020 Saulius Menkevicius
+Copyright (c) 2020-2021 Saulius Menkevičius
 All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
