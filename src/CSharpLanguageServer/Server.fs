@@ -62,7 +62,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     let docs = DocumentStore()
 
     let mutable clientCapabilities: ClientCapabilities option = None
-    let mutable workspace: Workspace option = None
+    //let mutable workspace: Workspace option = None
+    let mutable currentSolution: Solution option = None
 
     let logMessage message = lspClient.WindowShowMessage { Type = MessageType.Log ;
                                                            Message = "cs-lsp-server: " + message } |> ignore
@@ -93,7 +94,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                 for diag in msbuildWorkspace.Diagnostics do
                     logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
-                workspace <- Some(msbuildWorkspace :> Workspace)
+                //workspace <- Some(msbuildWorkspace :> Workspace)
+                currentSolution <- Some msbuildWorkspace.CurrentSolution
                 ()
             with
             | ex ->
@@ -101,15 +103,11 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                 return ()
     }
 
-    let currentSolution () = match workspace with
-                             | Some ws -> Some ws.CurrentSolution
-                             | _ -> None
-
     let getPathUri path = Uri("file://" + path)
 
     let getDocumentForUri u =
         let uri = Uri u
-        match currentSolution () with
+        match currentSolution with
         | Some solution -> let documents = solution.Projects |> Seq.collect (fun p -> p.Documents)
                            let matchingDocuments = documents |> Seq.filter (fun d -> uri = getPathUri d.FilePath) |> List.ofSeq
                            match matchingDocuments with
@@ -122,9 +120,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         match getDocumentForUri documentUri with
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value) |> Async.AwaitTask
+            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
             return if isNull symbolRef then None else Some (symbolRef, doc)
         | None ->
             return None
@@ -179,11 +176,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         DocumentRangeFormattingProvider = Some false
                         SignatureHelpProvider = None
                         CompletionProvider =
-                            Some {
-                                ResolveProvider = None
-                                TriggerCharacters = Some ([| '.'; '''; |])
-                                AllCommitCharacters = None //TODO: what chars shoudl commit completions?
-                            }
+                            Some { ResolveProvider = None
+                                   TriggerCharacters = Some ([| '.'; '''; |])
+                                   AllCommitCharacters = None
+                                 }
                         CodeLensProvider = None
                         CodeActionProvider = None
                         TextDocumentSync =
@@ -238,29 +234,23 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             let fullText = SourceText.From(change.ContentChanges.[0].Text)
 
             let updatedDoc = doc.WithText(fullText)
+            let updatedSolution = updatedDoc.Project.Solution;
 
-            //let updatedSolution = updatedDoc.Project.Solution;
-            //let applySucceeded = workspace.Value.TryApplyChanges(updatedSolution)
-
-            //if not applySucceeded then
-            //  logMessage "workspace.TryApplyChanges has failed!"
+            currentSolution <- Some updatedSolution
 
             let! semanticModel = updatedDoc.GetSemanticModelAsync() |> Async.AwaitTask
 
             let diagnostics = semanticModel.GetDiagnostics()
-                                |> Seq.map makeLspDiag
-                                |> Array.ofSeq
+                                           |> Seq.map makeLspDiag
+                                           |> Array.ofSeq
 
             do! lspClient.TextDocumentPublishDiagnostics {
                   Uri = change.TextDocument.Uri
                   Diagnostics = diagnostics }
-            ()
+            return ()
 
-        | _ -> ()
-
-        return ()
+        | _ -> return ()
     }
-
 
     override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
         match getDocumentForUri saveParams.TextDocument.Uri with
@@ -270,8 +260,9 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                 | Some text ->
                     let fullText = SourceText.From(text)
                     let updatedDoc = doc.WithText(fullText)
-                    let updatedSolution = updatedDoc.Project.Solution;
-                    workspace.Value.TryApplyChanges(updatedSolution) |> ignore
+                    let updatedSolution = updatedDoc.Project.Solution
+                    currentSolution <- Some updatedSolution
+                    //workspace.Value.TryApplyChanges(updatedSolution) |> ignore
                     updatedDoc
                 | None -> doc
 
@@ -284,11 +275,9 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             do! lspClient.TextDocumentPublishDiagnostics {
                 Uri = saveParams.TextDocument.Uri ;
                 Diagnostics = diagnostics }
-            ()
+            return ()
 
-        | _ -> ()
-
-        return ()
+        | _ -> return ()
     }
 
     override __.TextDocumentDidClose(closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
@@ -298,8 +287,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     override __.CodeLensResolve(arg1: Types.CodeLens): AsyncLspResult<Types.CodeLens> =
         failwith "Not Implemented"
+
     override __.CompletionItemResolve(arg1: Types.CompletionItem): AsyncLspResult<Types.CompletionItem> =
         failwith "Not Implemented"
+
     override __.DocumentLinkResolve(arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
         failwith "Not Implemented"
     override __.TextDocumentCodeAction(arg1: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> =
@@ -353,9 +344,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         let resolveDefinition (doc: Document) = task {
             let! sourceText = doc.GetTextAsync()
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-
-            let! semanticModel = doc.GetSemanticModelAsync()
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(semanticModel, position, workspace.Value)
+            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
 
             return match symbol with
                     | null -> //logMessage "no symbol at this point"
@@ -384,7 +373,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         failwith "Not Implemented"
 
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
-        match currentSolution () with
+        match currentSolution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition docParams.TextDocument.Uri docParams.Position
 
@@ -446,7 +435,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         failwith "Not Implemented"
 
     override __.TextDocumentReferences(refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
-        match currentSolution () with
+        match currentSolution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition refParams.TextDocument.Uri refParams.Position
 
@@ -473,9 +462,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                    |> Async.AwaitTask
 
             // make a list of changes
-            let changedDocs = updatedSolution.GetChanges(originalSolution)
-                                                .GetProjectChanges()
-                                |> Seq.collect (fun pc -> pc.GetChangedDocuments())
+            let changedDocs = updatedSolution
+                                  .GetChanges(originalSolution)
+                                  .GetProjectChanges()
+                                  |> Seq.collect (fun pc -> pc.GetChangedDocuments())
 
             let docTextEdits = List<TextDocumentEdit>()
 
