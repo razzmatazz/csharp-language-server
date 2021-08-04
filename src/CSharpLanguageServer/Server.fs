@@ -19,6 +19,7 @@ open LanguageServerProtocol.Types
 open LanguageServerProtocol.LspResult
 
 open Helpers
+open RoslynHelpers
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -127,12 +128,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             return None
     }
 
-    let todo() = raise (Exception "TODO")
-
-    let makeRangeForLinePosSpan (pos: LinePositionSpan) =
-        { Start = { Line = pos.Start.Line ; Character = pos.Start.Character }
-          End = { Line = pos.End.Line ; Character = pos.End.Character } }
-
     let mapDiagSeverity s =
         match s with
         | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some LanguageServerProtocol.Types.DiagnosticSeverity.Information
@@ -142,7 +137,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | _ -> None
 
     let makeLspDiag (d: Microsoft.CodeAnalysis.Diagnostic) =
-        { Range = makeRangeForLinePosSpan(d.Location.GetLineSpan().Span)
+        { Range = d.Location.GetLineSpan().Span |> makeRangeForLinePosSpan
           Severity = mapDiagSeverity d.Severity
           Code = None
           CodeDescription = None
@@ -170,7 +165,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         ImplementationProvider = Some false
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
-                        DocumentSymbolProvider = Some false
+                        DocumentSymbolProvider = Some true
                         WorkspaceSymbolProvider = Some false
                         DocumentFormattingProvider = Some false
                         DocumentRangeFormattingProvider = Some false
@@ -404,8 +399,19 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.TextDocumentDocumentLink(arg1: Types.DocumentLinkParams): AsyncLspResult<Types.DocumentLink [] option> =
         failwith "Not Implemented"
 
-    override __.TextDocumentDocumentSymbol(arg1: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> =
-        failwith "Not Implemented"
+    override __.TextDocumentDocumentSymbol(p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+        match getDocumentForUri p.TextDocument.Uri with
+        | Some doc ->
+            let collector = DocumentSymbolCollector2(p.TextDocument.Uri)
+
+            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            collector.Visit(syntaxTree.GetRoot())
+
+            return collector.GetSymbols() |> Some |> success
+
+        | None ->
+            return None |> success
+    }
 
     override __.TextDocumentFoldingRange(arg1: Types.FoldingRangeParams): AsyncLspResult<Types.FoldingRange list option> =
         failwith "Not Implemented"
