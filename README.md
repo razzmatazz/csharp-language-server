@@ -6,13 +6,17 @@ I felt I could try to hack my own custom LSP server for C#.
 The code here is based on
 [F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
 
-# TODO list
- - code lenses
- - formatting
- - ability to run tests
+# TODO lists
+## Next version
  - navigate all symbols on solution
- - go-to definition on symbol in metada
  - code actions:
    - fix usings
    - more?
+ - publish as `dotnet tool csharp-ls`
+
+## Wish list
+ - code lenses
+ - formatting
  - parse documentation into format needed for lsp
+ - go-to definition on symbol in metada
+ - ability to run tests
