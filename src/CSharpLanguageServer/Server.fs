@@ -402,7 +402,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.TextDocumentDocumentSymbol(p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         match getDocumentForUri p.TextDocument.Uri with
         | Some doc ->
-            let collector = DocumentSymbolCollector2(p.TextDocument.Uri)
+            let collector = DocumentSymbolCollector(p.TextDocument.Uri)
 
             let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
             collector.Visit(syntaxTree.GetRoot())

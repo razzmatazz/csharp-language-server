@@ -1,36 +1,43 @@
 module CSharpLanguageServer.RoslynHelpers
 
-open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open LanguageServerProtocol
 open Microsoft.CodeAnalysis.Text
+open Microsoft.CodeAnalysis
 
 let makeRangeForLinePosSpan (pos: LinePositionSpan): Types.Range =
     { Start = { Line = pos.Start.Line ; Character = pos.Start.Character }
       End = { Line = pos.End.Line ; Character = pos.End.Character } }
 
-type DocumentSymbolCollector2(documentUri) =
-    inherit CSharpSyntaxWalker()
+type DocumentSymbolCollector(documentUri) =
+    inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let mutable classSymbols: Types.SymbolInformation list = []
+    let mutable collectedSymbols: Types.SymbolInformation list = []
 
-    member __.GetSymbols() =
-        classSymbols
-        |> Array.ofList
-
-    override __.VisitClassDeclaration(node) =
+    let collect (identifier: SyntaxToken) kind =
         let location: Types.Location =
             { Uri = documentUri
-              Range = node.Identifier.GetLocation().GetLineSpan().Span
+              Range = identifier.GetLocation().GetLineSpan().Span
                       |> makeRangeForLinePosSpan
             }
 
         let symbol: Types.SymbolInformation =
-            { Name = node.Identifier.ToString()
-              Kind = Types.SymbolKind.Class
+            { Name = identifier.ToString()
+              Kind = kind
               Location = location
               ContainerName = None
             }
 
-        classSymbols <- symbol :: classSymbols
-        ()
+        collectedSymbols <- symbol :: collectedSymbols
+
+    member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
+
+    override __.VisitClassDeclaration(node) =
+        collect node.Identifier Types.SymbolKind.Class
+
+        base.VisitClassDeclaration(node)
+
+    override __.VisitMethodDeclaration(node) =
+        collect node.Identifier Types.SymbolKind.Method
+
+        base.VisitMethodDeclaration(node)

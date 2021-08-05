@@ -7,7 +7,6 @@ The code here is based on
 [F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
 
 # TODO list
- - navigation to symbol on file
  - code lenses
  - formatting
  - ability to run tests
