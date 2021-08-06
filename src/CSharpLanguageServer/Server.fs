@@ -18,7 +18,6 @@ open LanguageServerProtocol
 open LanguageServerProtocol.Types
 open LanguageServerProtocol.LspResult
 
-open Helpers
 open RoslynHelpers
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
@@ -166,7 +165,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
                         DocumentSymbolProvider = Some true
-                        WorkspaceSymbolProvider = Some false
+                        WorkspaceSymbolProvider = Some true
                         DocumentFormattingProvider = Some false
                         DocumentRangeFormattingProvider = Some false
                         SignatureHelpProvider = None
@@ -530,8 +529,11 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         failwith "Not Implemented"
     override __.WorkspaceExecuteCommand(arg1: Types.ExecuteCommandParams): AsyncLspResult<Newtonsoft.Json.Linq.JToken> =
         failwith "Not Implemented"
-    override __.WorkspaceSymbol(arg1: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> =
-        failwith "Not Implemented"
+
+    override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+        let! symbols = findSymbols currentSolution.Value symbolParams.Query (Some 20)
+        return symbols |> Array.ofSeq |> Some |> success
+    }
 
     override __.Dispose(): unit = ()
 

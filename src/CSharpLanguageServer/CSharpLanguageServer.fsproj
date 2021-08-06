@@ -9,7 +9,6 @@
   <ItemGroup>
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="DocumentStore.fs" />
-    <Compile Include="Helpers.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

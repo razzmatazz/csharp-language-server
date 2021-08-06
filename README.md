@@ -8,13 +8,12 @@ The code here is based on
 
 # TODO lists
 ## Next version
- - navigate all symbols on solution
- - code actions:
-   - fix usings
-   - more?
+ - implement TextDocumentCodeAction
  - publish as `dotnet tool csharp-ls`
 
 ## Wish list
+ - implement TextDocumentImplementation
+ - tests
  - code lenses
  - formatting
  - parse documentation into format needed for lsp
