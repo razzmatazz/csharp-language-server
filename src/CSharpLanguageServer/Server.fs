@@ -19,6 +19,8 @@ open LanguageServerProtocol.Types
 open LanguageServerProtocol.LspResult
 
 open RoslynHelpers
+open Microsoft.CodeAnalysis.CodeRefactorings
+open System.Threading
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -136,7 +138,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | _ -> None
 
     let makeLspDiag (d: Microsoft.CodeAnalysis.Diagnostic) =
-        { Range = d.Location.GetLineSpan().Span |> makeRangeForLinePosSpan
+        { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
           Severity = mapDiagSeverity d.Severity
           Code = None
           CodeDescription = None
@@ -148,7 +150,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     let locationToLspLocation (loc: Microsoft.CodeAnalysis.Location) =
         { Uri = loc.SourceTree.FilePath |> getPathUri |> string
-          Range = loc.GetLineSpan().Span |> makeRangeForLinePosSpan }
+          Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
 
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
@@ -175,7 +177,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                    AllCommitCharacters = None
                                  }
                         CodeLensProvider = None
-                        CodeActionProvider = None
+                        CodeActionProvider = Some true
                         TextDocumentSync =
                             Some { TextDocumentSyncOptions.Default with
                                      OpenClose = Some false
@@ -287,10 +289,38 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     override __.DocumentLinkResolve(arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
         failwith "Not Implemented"
-    override __.TextDocumentCodeAction(arg1: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> =
-        failwith "Not Implemented"
+
+    override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams):
+            AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
+
+        match getDocumentForUri actionParams.TextDocument.Uri with
+        | None ->
+            return None |> success
+
+        | Some doc ->
+            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+
+            let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
+                                              |> docText.Lines.GetTextSpan
+
+            let roslynCodeActions = List<CodeActions.CodeAction>()
+            let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
+            let context = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
+
+            for refactoringProvider in refactoringProviderInstances do
+                do! refactoringProvider.ComputeRefactoringsAsync(context) |> Async.AwaitTask
+
+            return roslynCodeActions
+                   |> Seq.map roslynCodeActionToLspCodeAction
+                   |> Array.ofSeq
+                   |> TextDocumentCodeActionResult.CodeActions
+                   |> Some
+                   |> success
+    }
+
     override __.TextDocumentCodeLens(arg1: Types.CodeLensParams): AsyncLspResult<Types.CodeLens [] option> =
         failwith "Not Implemented"
+
     override __.TextDocumentColorPresentation(arg1: Types.ColorPresentationParams): AsyncLspResult<Types.ColorPresentation []> =
         failwith "Not Implemented"
 
@@ -484,7 +514,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                 let diffEdits: TextEdit array =
                     docChanges |> Seq.sortBy (fun c -> c.Span.Start)
                                |> Seq.map (fun c -> { Range = originalDocText.Lines.GetLinePositionSpan(c.Span)
-                                                              |> makeRangeForLinePosSpan
+                                                              |> lspRangeForRoslynLinePosSpan
                                                       NewText = c.NewText })
                                |> Array.ofSeq
 
