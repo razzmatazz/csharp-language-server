@@ -8,6 +8,9 @@ open Microsoft.CodeAnalysis.FindSymbols
 open System
 open Microsoft.CodeAnalysis.CodeRefactorings
 open System.Reflection
+open System.Threading
+open Microsoft.CodeAnalysis.CodeActions
+open System.Collections.Generic
 
 
 let roslynTagToLspCompletion tag =
@@ -46,18 +49,67 @@ let lspRangeForRoslynLinePosSpan (pos: LinePositionSpan): Types.Range =
     { Start = lspPositionForRoslynLinePosition pos.Start
       End = lspPositionForRoslynLinePosition pos.End }
 
-let roslynCodeActionToLspCodeAction (ca: CodeActions.CodeAction): Types.CodeAction =
+let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.TextEdit =
+    { Range = docText.Lines.GetLinePositionSpan(c.Span) |> lspRangeForRoslynLinePosSpan
+      NewText = c.NewText }
+
+let lspDocChangesFromSolutionDiff
+        originalSolution
+        (updatedSolution: Solution)
+        (docs: DocumentStore): Async<Types.TextDocumentEdit list> = async {
+
+    let getPathUri path = Uri("file://" + path)
+
+    // make a list of changes
+    let changedDocs = updatedSolution
+                            .GetChanges(originalSolution)
+                            .GetProjectChanges()
+                            |> Seq.collect (fun pc -> pc.GetChangedDocuments())
+
+    let docTextEdits = List<Types.TextDocumentEdit>()
+
+    for docId in changedDocs do
+        let originalDoc = originalSolution.GetDocument(docId)
+        let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
+        let updatedDoc = updatedSolution.GetDocument(docId)
+        let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
+
+        let diffEdits: Types.TextEdit array =
+            docChanges
+            |> Seq.sortBy (fun c -> c.Span.Start)
+            |> Seq.map (lspTextEditForRoslynTextChange originalDocText)
+            |> Array.ofSeq
+
+        docTextEdits.Add(
+            { TextDocument = { Uri = originalDoc.FilePath |> getPathUri |> string
+                               Version = docs.GetVersionByFullName(originalDoc.FilePath) }
+              Edits = diffEdits })
+
+    return docTextEdits |> List.ofSeq
+}
+
+let roslynCodeActionToLspCodeAction originalSolution docs (ca: CodeActions.CodeAction): Async<Types.CodeAction> = async {
+    let! ops = ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask
+    let op = ops |> Seq.map (fun o -> o :?> ApplyChangesOperation)
+                 |> Seq.head
+
+    let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
+                                                     op.ChangedSolution
+                                                     docs
+
     let edit: Types.WorkspaceEdit = {
         Changes = None
-        DocumentChanges = None
+        DocumentChanges = docTextEdit |> Array.ofList |> Some
     }
 
-    { Title = ca.Title
-      Kind = None
-      Diagnostics = None
-      Edit = edit
-      Command = None
+    return {
+        Title = ca.Title
+        Kind = None
+        Diagnostics = None
+        Edit = edit
+        Command = None
     }
+}
 
 type DocumentSymbolCollector(documentUri) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)

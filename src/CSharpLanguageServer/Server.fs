@@ -290,8 +290,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.DocumentLinkResolve(arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
         failwith "Not Implemented"
 
-    override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams):
-            AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
+    override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
 
         match getDocumentForUri actionParams.TextDocument.Uri with
         | None ->
@@ -310,12 +309,13 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             for refactoringProvider in refactoringProviderInstances do
                 do! refactoringProvider.ComputeRefactoringsAsync(context) |> Async.AwaitTask
 
-            return roslynCodeActions
-                   |> Seq.map roslynCodeActionToLspCodeAction
-                   |> Array.ofSeq
-                   |> TextDocumentCodeActionResult.CodeActions
-                   |> Some
-                   |> success
+            let! lspCodeActions = roslynCodeActions
+                                  |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value docs)
+                                  |> Async.Parallel
+
+            return lspCodeActions |> TextDocumentCodeActionResult.CodeActions
+                                  |> Some
+                                  |> success
     }
 
     override __.TextDocumentCodeLens(arg1: Types.CodeLensParams): AsyncLspResult<Types.CodeLens [] option> =
@@ -496,34 +496,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                                              doc.Project.Solution.Workspace.Options)
                                    |> Async.AwaitTask
 
-            // make a list of changes
-            let changedDocs = updatedSolution
-                                  .GetChanges(originalSolution)
-                                  .GetProjectChanges()
-                                  |> Seq.collect (fun pc -> pc.GetChangedDocuments())
-
-            let docTextEdits = List<TextDocumentEdit>()
-
-            for docId in changedDocs do
-                let originalDoc = originalSolution.GetDocument(docId)
-                let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
-
-                let updatedDoc = updatedSolution.GetDocument(docId)
-                let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
-
-                let diffEdits: TextEdit array =
-                    docChanges |> Seq.sortBy (fun c -> c.Span.Start)
-                               |> Seq.map (fun c -> { Range = originalDocText.Lines.GetLinePositionSpan(c.Span)
-                                                              |> lspRangeForRoslynLinePosSpan
-                                                      NewText = c.NewText })
-                               |> Array.ofSeq
-
-                docTextEdits.Add(
-                    { TextDocument = { Uri = originalDoc.FilePath |> getPathUri |> string
-                                       Version = docs.GetVersionByFullName(originalDoc.FilePath) }
-                      Edits = diffEdits })
-
-            return docTextEdits |> List.ofSeq
+            let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
+                                                             updatedSolution
+                                                             docs
+            return docTextEdit
         }
 
         let! maybeSymbol = getSymbolAtPosition rename.TextDocument.Uri rename.Position
