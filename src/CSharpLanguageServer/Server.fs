@@ -77,12 +77,43 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | [x] -> Some x
         | _ -> None
 
+    let csprojFilesOnDir dir =
+        Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories) |> Seq.toList
+
     let mutable deferredInitialize = async {
         let cwd = Directory.GetCurrentDirectory()
-        logMessage ("in deferredInitialize, determining solutions on project root: " + cwd)
+        logMessage ("in deferredInitialize, determining solutions on project root: " + cwd + "..")
 
         match firstSolutionOnDir(cwd) with
-        | None -> raise (Exception("no or multiple .sln files found on " + cwd))
+        | None ->
+            logMessage ("no or multiple .sln files found on " + cwd)
+            logMessage ("looking for .csproj files on " + cwd + "..")
+
+            let csprojFiles = csprojFilesOnDir cwd
+
+            if csprojFiles.Length = 0 then
+                logMessage ("no or .csproj or sln files found on " + cwd)
+                ("no or .csproj or sln files found on " + cwd) |> Exception |> raise
+
+            let msbuildWorkspace = MSBuildWorkspace.Create()
+            msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
+            for file in csprojFiles do
+                logMessage ("loading csproj file " + file + "..")
+                let! _ = msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask
+                ()
+
+            logMessage "in deferredInitialize, ok project files loaded"
+
+            for diag in msbuildWorkspace.Diagnostics do
+                logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+            //workspace <- Some(msbuildWorkspace :> Workspace)
+            currentSolution <- Some msbuildWorkspace.CurrentSolution
+            ()
+
+            //Exception("no or multiple .sln files found on " + cwd) |> raise
+
         | Some solutionPath ->
             try
                 logMessage ("in deferredInitialize, loading solution: " + solutionPath)
