@@ -8,7 +8,7 @@ The code here is based on
 
 # TODO lists
 ## Next version
- - implement TextDocumentCodeAction
+ - work around sharp corners, test as daily tool
  - publish as `dotnet tool csharp-ls`
 
 ## Wish list
