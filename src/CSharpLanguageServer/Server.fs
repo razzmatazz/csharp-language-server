@@ -342,9 +342,13 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
             let! lspCodeActions = roslynCodeActions
                                   |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value docs)
-                                  |> Async.Parallel
+                                  |> Async.Sequential
 
-            return lspCodeActions |> TextDocumentCodeActionResult.CodeActions
+            return lspCodeActions |> Seq.collect (fun maybeAction -> match maybeAction with
+                                                                     | Some action -> [action]
+                                                                     | None -> [])
+                                  |> Array.ofSeq
+                                  |> TextDocumentCodeActionResult.CodeActions
                                   |> Some
                                   |> success
     }
@@ -484,8 +488,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         let maybeHoverText = Option.map (fun (sym: ISymbol, _: Document) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
 
         let contents = [ match maybeHoverText with
-                         | None -> MarkedString.WithLanguage { Language = "fsharp"; Value = "" }
-                         | Some text -> MarkedString.WithLanguage { Language = "fsharp"; Value = text }
+                         | None -> MarkedString.WithLanguage { Language = "csharp"; Value = "" }
+                         | Some text -> MarkedString.WithLanguage { Language = "csharp"; Value = text }
                        ]
 
         return Some { Contents = contents |> Array.ofList |> MarkedStrings

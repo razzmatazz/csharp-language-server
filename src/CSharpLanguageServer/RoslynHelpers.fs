@@ -7,6 +7,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open System
 open Microsoft.CodeAnalysis.CodeRefactorings
+open Microsoft.CodeAnalysis.ChangeSignature
 open System.Reflection
 open System.Threading
 open Microsoft.CodeAnalysis.CodeActions
@@ -88,27 +89,41 @@ let lspDocChangesFromSolutionDiff
     return docTextEdits |> List.ofSeq
 }
 
-let roslynCodeActionToLspCodeAction originalSolution docs (ca: CodeActions.CodeAction): Async<Types.CodeAction> = async {
-    let! ops = ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask
-    let op = ops |> Seq.map (fun o -> o :?> ApplyChangesOperation)
-                 |> Seq.head
+let roslynCodeActionToLspCodeAction originalSolution docs (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
 
-    let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
-                                                     op.ChangedSolution
-                                                     docs
-
-    let edit: Types.WorkspaceEdit = {
-        Changes = None
-        DocumentChanges = docTextEdit |> Array.ofList |> Some
+    let asyncMaybeOnException op = async {
+        try
+            let! value = op ()
+            return Some value
+        with _ ->
+            return None
     }
 
-    return {
-        Title = ca.Title
-        Kind = None
-        Diagnostics = None
-        Edit = edit
-        Command = None
-    }
+    let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask)
+
+    match maybeOps with
+    | None -> return None
+    | Some ops ->
+
+        let op = ops |> Seq.map (fun o -> o :?> ApplyChangesOperation)
+                    |> Seq.head
+
+        let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
+                                                        op.ChangedSolution
+                                                        docs
+
+        let edit: Types.WorkspaceEdit = {
+            Changes = None
+            DocumentChanges = docTextEdit |> Array.ofList |> Some
+        }
+
+        return Some {
+            Title = ca.Title
+            Kind = None
+            Diagnostics = None
+            Edit = edit
+            Command = None
+        }
 }
 
 type DocumentSymbolCollector(documentUri) =
@@ -197,9 +212,13 @@ let refactoringProviderInstances =
 
     let hasParameterlessConstructor (t: Type) = t.GetConstructor([| |]) <> null
 
+    let validProvider (t: Type) =
+        ((string t) <> "Microsoft.CodeAnalysis.ChangeSignature.ChangeSignatureCodeRefactoringProvider")
+
     types
         |> Seq.filter isCodeRefactoringProvider
         |> Seq.filter hasParameterlessConstructor
+        |> Seq.filter validProvider
         |> Seq.map Activator.CreateInstance
         |> Seq.filter (fun i -> i <> null)
         |> Seq.map (fun i -> i :?> CodeRefactoringProvider)
