@@ -4,7 +4,8 @@ This is a hacky Roslyn-based LSP server written in F#. After some experimentatio
 I felt I could try to hack my own custom LSP server for C#.
 
 The code here is based on
-[F# Language Server](https://github.com/fsprojects/fsharp-language-server) code.
+[F# Language Server](https://github.com/fsprojects/fsharp-language-server) and
+[FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code.
 
 # TODO lists
 ## Next version
