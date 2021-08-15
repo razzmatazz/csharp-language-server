@@ -1,18 +1,18 @@
 module CSharpLanguageServer.RoslynHelpers
 
-open Microsoft.CodeAnalysis.CSharp
-open LanguageServerProtocol
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
 open System
-open Microsoft.CodeAnalysis.CodeRefactorings
-open Microsoft.CodeAnalysis.ChangeSignature
+open System.Collections.Generic
+open System.IO
 open System.Reflection
 open System.Threading
+open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CodeActions
-open System.Collections.Generic
-
+open Microsoft.CodeAnalysis.CodeRefactorings
+open Microsoft.CodeAnalysis.CSharp
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Text
+open LanguageServerProtocol
+open Microsoft.CodeAnalysis.MSBuild
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -89,13 +89,14 @@ let lspDocChangesFromSolutionDiff
     return docTextEdits |> List.ofSeq
 }
 
-let roslynCodeActionToLspCodeAction originalSolution docs (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
+let roslynCodeActionToLspCodeAction originalSolution docs logMessage (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
 
     let asyncMaybeOnException op = async {
         try
             let! value = op ()
             return Some value
-        with _ ->
+        with ex ->
+            logMessage ("roslynCodeActionToLspCodeAction: failed on " + (string ca) + "; ex=" + (string ex))
             return None
     }
 
@@ -223,3 +224,72 @@ let refactoringProviderInstances =
         |> Seq.filter (fun i -> i <> null)
         |> Seq.map (fun i -> i :?> CodeRefactoringProvider)
         |> Seq.toArray
+
+let loadSolutionOnDir logMessage dir = async {
+    logMessage ("in deferredInitialize, determining solutions on project root: " + dir + "..")
+
+    let fileNotOnNodeModules (filename: string) =
+        filename.Split(Path.DirectorySeparatorChar)
+        |> Seq.contains "node_modules"
+        |> not
+
+    let firstSolutionOnDir dir =
+        let solutionFiles =
+            Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
+            |> Seq.filter fileNotOnNodeModules
+            |> Seq.toList
+
+        match solutionFiles with
+        | [x] -> Some x
+        | _ -> None
+
+    match firstSolutionOnDir(dir) with
+    | None ->
+        logMessage ("no or multiple .sln files found on " + dir)
+        logMessage ("looking for .csproj files on " + dir + "..")
+
+        let csprojFiles =
+            Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
+            |> Seq.filter fileNotOnNodeModules
+            |> Seq.toList
+
+        if csprojFiles.Length = 0 then
+            logMessage ("no or .csproj or sln files found on " + dir)
+            ("no or .csproj or sln files found on " + dir) |> Exception |> raise
+
+        let msbuildWorkspace = MSBuildWorkspace.Create()
+        msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
+        for file in csprojFiles do
+            logMessage ("loading csproj file " + file + "..")
+            let! _ = msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask
+            ()
+
+        logMessage "in deferredInitialize, ok project files loaded"
+
+        for diag in msbuildWorkspace.Diagnostics do
+            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+        //workspace <- Some(msbuildWorkspace :> Workspace)
+        return Some msbuildWorkspace.CurrentSolution
+
+    | Some solutionPath ->
+        try
+            logMessage ("in deferredInitialize, loading solution: " + solutionPath)
+
+            let msbuildWorkspace = MSBuildWorkspace.Create()
+            msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+            let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+
+            logMessage "in deferredInitialize, ok solution loaded"
+
+            for diag in msbuildWorkspace.Diagnostics do
+                logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+            //workspace <- Some(msbuildWorkspace :> Workspace)
+            return Some msbuildWorkspace.CurrentSolution
+        with
+        | ex ->
+            logMessage ("deferredInitialize failed with " + ex.ToString())
+            return None
+}
