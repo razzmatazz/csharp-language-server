@@ -8,7 +8,9 @@ The code here is based on
 [FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code.
 
 # TODO lists
+
 ## Next version
+ - document sync not always works, e.g. when trying to autocomplete..
  - work around sharp corners, test as daily tool
  - publish as `dotnet tool csharp-ls`
 
