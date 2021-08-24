@@ -13,6 +13,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
+open Microsoft.CodeAnalysis.CodeFixes
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -96,7 +97,12 @@ let roslynCodeActionToLspCodeAction originalSolution docs logMessage (ca: CodeAc
             let! value = op ()
             return Some value
         with ex ->
-            logMessage ("roslynCodeActionToLspCodeAction: failed on " + (string ca) + "; ex=" + (string ex))
+            (*
+            logMessage (sprintf "roslynCodeActionToLspCodeAction: failed on %s; ex=%s; inner ex=%s"
+                                (string ca)
+                                (string ex)
+                                (if ex.InnerException <> null then ex.InnerException.ToString() else "(none)" ))
+            *)
             return None
     }
 
@@ -189,7 +195,7 @@ let findSymbols (solution: Solution) pattern (limit: int option): Async<Types.Sy
     return Seq.map symbolToLspSymbolInformation symbolsFound |> List.ofSeq
 }
 
-let refactoringProviderInstances =
+let instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =
     let assemblies =
         [ "Microsoft.CodeAnalysis.Features"
           "Microsoft.CodeAnalysis.CSharp.Features"
@@ -209,21 +215,26 @@ let refactoringProviderInstances =
         |> Seq.filter validType
         |> Seq.toArray
 
-    let isCodeRefactoringProvider (t: Type) = t.IsAssignableTo(typeof<CodeRefactoringProvider>)
+    let isProviderType (t: Type) = t.IsAssignableTo(typeof<'ProviderType>)
 
-    let hasParameterlessConstructor (t: Type) = t.GetConstructor([| |]) <> null
-
-    let validProvider (t: Type) =
-        ((string t) <> "Microsoft.CodeAnalysis.ChangeSignature.ChangeSignatureCodeRefactoringProvider")
+    let hasParameterlessConstructor (t: Type) = t.GetConstructor(Array.empty) |> isNull |> not
 
     types
-        |> Seq.filter isCodeRefactoringProvider
+        |> Seq.filter isProviderType
         |> Seq.filter hasParameterlessConstructor
-        |> Seq.filter validProvider
+        |> Seq.filter isValidProvider
         |> Seq.map Activator.CreateInstance
         |> Seq.filter (fun i -> i <> null)
-        |> Seq.map (fun i -> i :?> CodeRefactoringProvider)
+        |> Seq.map (fun i -> i :?> 'ProviderType)
         |> Seq.toArray
+
+let refactoringProviderInstances =
+    instantiateRoslynProviders<CodeRefactoringProvider>
+        (fun t -> ((string t) <> "Microsoft.CodeAnalysis.ChangeSignature.ChangeSignatureCodeRefactoringProvider"))
+
+let codeFixProviderInstances =
+    instantiateRoslynProviders<CodeFixProvider>
+        (fun _ -> true)
 
 let loadSolutionOnDir logMessage dir = async {
     logMessage ("in deferredInitialize, determining solutions on project root: " + dir + "..")

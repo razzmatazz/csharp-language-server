@@ -2,6 +2,7 @@ module CSharpLanguageServer.Server
 
 open System
 open System.IO
+open System.Linq
 open System.Collections.Generic
 open System.Collections.Immutable
 
@@ -20,6 +21,8 @@ open LanguageServerProtocol.LspResult
 open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeRefactorings
 open System.Threading
+open Microsoft.CodeAnalysis.CodeFixes
+open Newtonsoft.Json
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -221,16 +224,16 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
         match getDocumentForUri saveParams.TextDocument.Uri with
         | Some doc ->
-            let newDoc =
+            let newDoc, newSolution =
                 match saveParams.Text with
                 | Some text ->
                     let fullText = SourceText.From(text)
                     let updatedDoc = doc.WithText(fullText)
                     let updatedSolution = updatedDoc.Project.Solution
-                    currentSolution <- Some updatedSolution
-                    //workspace.Value.TryApplyChanges(updatedSolution) |> ignore
-                    updatedDoc
-                | None -> doc
+                    (updatedDoc, Some updatedSolution)
+                | None -> (doc, currentSolution)
+
+            currentSolution <- newSolution
 
             let! semanticModel = newDoc.GetSemanticModelAsync() |> Async.AwaitTask
 
@@ -272,12 +275,52 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
                                               |> docText.Lines.GetTextSpan
 
+            // register code actions
             let roslynCodeActions = List<CodeActions.CodeAction>()
             let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
-            let context = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
+            let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
 
             for refactoringProvider in refactoringProviderInstances do
-                do! refactoringProvider.ComputeRefactoringsAsync(context) |> Async.AwaitTask
+                do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
+
+            // register code fixes
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+
+            let isDiagnosticsOnTextSpan (diag: Microsoft.CodeAnalysis.Diagnostic) =
+                diag.Location.SourceSpan.IntersectsWith(textSpan)
+
+            let relatedDiagnostics = semanticModel.GetDiagnostics() |> Seq.filter isDiagnosticsOnTextSpan |> List.ofSeq
+            //logMessage (sprintf "relatedDiagnostics.Count=%d" (relatedDiagnostics.Count()))
+
+            if relatedDiagnostics.Length > 0 then
+                let addCodeFix =
+                    Action<CodeActions.CodeAction, ImmutableArray<Microsoft.CodeAnalysis.Diagnostic>>(
+                        fun ca _ -> roslynCodeActions.Add(ca))
+
+                for refactoringProvider in codeFixProviderInstances do
+                    //logMessage (sprintf "%s: .FixableDiagnosticIds=%s" (refactoringProvider |> string)
+                    //                                                   (JsonConvert.SerializeObject(refactoringProvider.FixableDiagnosticIds)))
+
+                    for diag in relatedDiagnostics do
+                        let codeFixContext = CodeFixContext(doc, diag, addCodeFix, CancellationToken.None)
+
+                        logMessage (sprintf "%s: Id=%s" (diag |> string) diag.Id)
+
+                        let refactoringProviderOK =
+                            let translatedDiagId diagId =
+                                match diagId with
+                                | "CS8019" -> "RemoveUnnecessaryImportsFixable"
+                                | _ -> ""
+
+                            refactoringProvider.FixableDiagnosticIds.Contains(diag.Id)
+                            || refactoringProvider.FixableDiagnosticIds.Contains(translatedDiagId diag.Id)
+
+                        try
+                            if refactoringProviderOK then
+                                do! refactoringProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
+                        with ex ->
+                            //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
+                            ()
 
             let! lspCodeActions = roslynCodeActions
                                   |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value docs logMessage)
