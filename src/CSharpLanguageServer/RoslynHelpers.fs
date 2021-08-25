@@ -244,36 +244,45 @@ let loadSolutionOnDir logMessage dir = async {
         |> Seq.contains "node_modules"
         |> not
 
-    let firstSolutionOnDir dir =
-        let solutionFiles =
-            Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
-            |> Seq.filter fileNotOnNodeModules
-            |> Seq.toList
+    let solutionFiles =
+        Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
+        |> Seq.filter fileNotOnNodeModules
+        |> Seq.toList
 
+    logMessage (sprintf "%d solutions found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+
+    let firstSolutionOnDir =
         match solutionFiles with
         | [x] -> Some x
         | _ -> None
 
-    match firstSolutionOnDir(dir) with
+    match firstSolutionOnDir with
     | None ->
         logMessage ("no or multiple .sln files found on " + dir)
-        logMessage ("looking for .csproj files on " + dir + "..")
+        logMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
-        let csprojFiles =
-            Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
-            |> Seq.filter fileNotOnNodeModules
-            |> Seq.toList
+        let projFiles =
+            let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
+            let fsprojFiles = Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories)
 
-        if csprojFiles.Length = 0 then
-            logMessage ("no or .csproj or sln files found on " + dir)
-            ("no or .csproj or sln files found on " + dir) |> Exception |> raise
+            [ csprojFiles; fsprojFiles ] |> Seq.concat
+                                         |> Seq.filter fileNotOnNodeModules
+                                         |> Seq.toList
+
+        if projFiles.Length = 0 then
+            let message = "no or .csproj/.fsproj or sln files found on " + dir
+            logMessage message
+            Exception message |> raise
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
-        for file in csprojFiles do
-            logMessage ("loading csproj file " + file + "..")
-            let! _ = msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask
+        for file in projFiles do
+            logMessage ("loading proj file " + file + "..")
+            try
+                do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
+            with ex ->
+                logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
             ()
 
         logMessage "in deferredInitialize, ok project files loaded"
