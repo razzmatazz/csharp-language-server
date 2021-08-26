@@ -8,8 +8,6 @@ let entry args =
     MSBuildLocator.RegisterDefaults() |> ignore
 
     try
-      System.Threading.ThreadPool.SetMinThreads(16, 16) |> ignore
-
       // default the verbosity to warning
       Server.start ()
     with

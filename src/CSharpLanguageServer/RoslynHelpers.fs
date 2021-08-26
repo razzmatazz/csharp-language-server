@@ -58,7 +58,8 @@ let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.
 let lspDocChangesFromSolutionDiff
         originalSolution
         (updatedSolution: Solution)
-        (docs: DocumentStore): Async<Types.TextDocumentEdit list> = async {
+        (tryGetDocVersionByUri: string -> int option)
+        : Async<Types.TextDocumentEdit list> = async {
 
     let getPathUri path = Uri("file://" + path)
 
@@ -83,20 +84,24 @@ let lspDocChangesFromSolutionDiff
             |> Array.ofSeq
 
         docTextEdits.Add(
-            { TextDocument = { Uri = originalDoc.FilePath |> getPathUri |> string
-                               Version = docs.GetVersionByFullName(originalDoc.FilePath) }
+            { TextDocument =  { Uri = originalDoc.FilePath |> getPathUri |> string
+                                Version = originalDoc.FilePath |> getPathUri |> string |> tryGetDocVersionByUri }
               Edits = diffEdits })
 
     return docTextEdits |> List.ofSeq
 }
 
-let roslynCodeActionToLspCodeAction originalSolution docs logMessage (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
+let roslynCodeActionToLspCodeAction
+        originalSolution
+        tryGetDocVersionByUri
+        _logMessage
+        (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
 
     let asyncMaybeOnException op = async {
         try
             let! value = op ()
             return Some value
-        with ex ->
+        with _ex ->
             (*
             logMessage (sprintf "roslynCodeActionToLspCodeAction: failed on %s; ex=%s; inner ex=%s"
                                 (string ca)
@@ -116,8 +121,8 @@ let roslynCodeActionToLspCodeAction originalSolution docs logMessage (ca: CodeAc
                     |> Seq.head
 
         let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
-                                                        op.ChangedSolution
-                                                        docs
+                                                         op.ChangedSolution
+                                                         tryGetDocVersionByUri
 
         let edit: Types.WorkspaceEdit = {
             Changes = None
@@ -183,7 +188,7 @@ let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
       ContainerName = None }
 
 
-let findSymbols (solution: Solution) pattern (limit: int option): Async<Types.SymbolInformation list> = async {
+let findSymbols (solution: Solution) pattern (_limit: int option): Async<Types.SymbolInformation list> = async {
     let mutable symbolsFound = []
 
     for project in solution.Projects do

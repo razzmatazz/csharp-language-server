@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="DocumentStore.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Program.fs" />

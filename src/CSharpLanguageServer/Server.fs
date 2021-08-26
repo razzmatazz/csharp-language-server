@@ -2,7 +2,6 @@ module CSharpLanguageServer.Server
 
 open System
 open System.IO
-open System.Linq
 open System.Collections.Generic
 open System.Collections.Immutable
 
@@ -22,7 +21,6 @@ open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeRefactorings
 open System.Threading
 open Microsoft.CodeAnalysis.CodeFixes
-open Newtonsoft.Json
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -63,11 +61,9 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
 type CSharpLspServer(lspClient: CSharpLspClient) =
     inherit LspServer()
 
-    let docs = DocumentStore()
-
     let mutable clientCapabilities: ClientCapabilities option = None
-    //let mutable workspace: Workspace option = None
     let mutable currentSolution: Solution option = None
+    let mutable openDocVersions = Map.empty
 
     let logMessage message = lspClient.WindowShowMessage { Type = MessageType.Log ;
                                                            Message = "cs-lsp-server: " + message } |> ignore
@@ -177,7 +173,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) = async {
         let document = getDocumentForUri openParams.TextDocument.Uri
 
-        docs.Open(openParams)
+        openDocVersions <- openDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version)
 
         match document with
         | Some doc ->
@@ -195,12 +191,14 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | None -> ()
     }
 
-    override __.TextDocumentDidChange(change: Types.DidChangeTextDocumentParams): Async<unit> = async {
-        docs.Change(change)
+    override __.TextDocumentDidChange(changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
+        openDocVersions <- openDocVersions.Add(
+            changeParams.TextDocument.Uri,
+            changeParams.TextDocument.Version |> Option.defaultValue 0)
 
-        match getDocumentForUri change.TextDocument.Uri with
+        match getDocumentForUri changeParams.TextDocument.Uri with
         | Some doc ->
-            let fullText = SourceText.From(change.ContentChanges.[0].Text)
+            let fullText = SourceText.From(changeParams.ContentChanges.[0].Text)
 
             let updatedDoc = doc.WithText(fullText)
             let updatedSolution = updatedDoc.Project.Solution;
@@ -214,53 +212,29 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                            |> Array.ofSeq
 
             do! lspClient.TextDocumentPublishDiagnostics {
-                  Uri = change.TextDocument.Uri
+                  Uri = changeParams.TextDocument.Uri
                   Diagnostics = diagnostics }
             return ()
 
         | _ -> return ()
     }
 
-    override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
-        match getDocumentForUri saveParams.TextDocument.Uri with
-        | Some doc ->
-            let newDoc, newSolution =
-                match saveParams.Text with
-                | Some text ->
-                    let fullText = SourceText.From(text)
-                    let updatedDoc = doc.WithText(fullText)
-                    let updatedSolution = updatedDoc.Project.Solution
-                    (updatedDoc, Some updatedSolution)
-                | None -> (doc, currentSolution)
-
-            currentSolution <- newSolution
-
-            let! semanticModel = newDoc.GetSemanticModelAsync() |> Async.AwaitTask
-
-            let diagnostics = semanticModel.GetDiagnostics()
-                            |> Seq.map makeLspDiag
-                            |> Array.ofSeq
-
-            do! lspClient.TextDocumentPublishDiagnostics {
-                Uri = saveParams.TextDocument.Uri ;
-                Diagnostics = diagnostics }
-            return ()
-
-        | _ -> return ()
+    override __.TextDocumentDidSave(_: Types.DidSaveTextDocumentParams): Async<unit> = async {
+        ()
     }
 
     override __.TextDocumentDidClose(closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
-        docs.Close(closeParams)
+        openDocVersions <- openDocVersions.Remove(closeParams.TextDocument.Uri)
         return ()
     }
 
-    override __.CodeLensResolve(arg1: Types.CodeLens): AsyncLspResult<Types.CodeLens> =
+    override __.CodeLensResolve(_arg1: Types.CodeLens): AsyncLspResult<Types.CodeLens> =
         failwith "Not Implemented"
 
-    override __.CompletionItemResolve(arg1: Types.CompletionItem): AsyncLspResult<Types.CompletionItem> =
+    override __.CompletionItemResolve(_arg1: Types.CompletionItem): AsyncLspResult<Types.CompletionItem> =
         failwith "Not Implemented"
 
-    override __.DocumentLinkResolve(arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
+    override __.DocumentLinkResolve(_arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
         failwith "Not Implemented"
 
     override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
@@ -318,12 +292,14 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         try
                             if refactoringProviderOK then
                                 do! refactoringProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
-                        with ex ->
+                        with _ex ->
                             //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
                             ()
 
             let! lspCodeActions = roslynCodeActions
-                                  |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value docs logMessage)
+                                  |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value
+                                                                              openDocVersions.TryFind
+                                                                              logMessage)
                                   |> Async.Sequential
 
             return lspCodeActions |> Seq.collect (fun maybeAction -> match maybeAction with
@@ -335,33 +311,24 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                   |> success
     }
 
-    override __.TextDocumentCodeLens(arg1: Types.CodeLensParams): AsyncLspResult<Types.CodeLens [] option> =
+    override __.TextDocumentCodeLens(_arg1: Types.CodeLensParams): AsyncLspResult<Types.CodeLens [] option> =
         failwith "Not Implemented"
 
-    override __.TextDocumentColorPresentation(arg1: Types.ColorPresentationParams): AsyncLspResult<Types.ColorPresentation []> =
+    override __.TextDocumentColorPresentation(_arg1: Types.ColorPresentationParams): AsyncLspResult<Types.ColorPresentation []> =
         failwith "Not Implemented"
 
     override __.TextDocumentCompletion(posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
         match getDocumentForUri posParams.TextDocument.Uri with
         | Some doc ->
-            logMessage (sprintf "TextDocumentCompletion, posParams.TextDocument.Uri=%s" (posParams.TextDocument.Uri |> string))
+            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let posInText = docText.Lines.GetPosition(LinePosition(posParams.Position.Line, posParams.Position.Character))
 
-            let maybeStoredText = docs.GetTextByFullName(posParams.TextDocument.Uri)
-
-            let storedDoc = match maybeStoredText with
-                            | Some storedText -> doc.WithText(SourceText.From(storedText))
-                            | None -> doc
-
-            let! storedDocText = storedDoc.GetTextAsync() |> Async.AwaitTask
-
-            let posInText = storedDocText.Lines.GetPosition(LinePosition(posParams.Position.Line, posParams.Position.Character))
-
-            let completionService = CompletionService.GetService(storedDoc)
+            let completionService = CompletionService.GetService(doc)
             if isNull completionService then
                 return ()
 
-            let! maybeCompletionResults =
-                    completionService.GetCompletionsAsync(storedDoc, posInText) |> Async.AwaitTask
+            let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText)
+                                          |> Async.AwaitTask
 
             match Option.ofObj maybeCompletionResults with
             | Some completionResults ->
@@ -410,7 +377,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | None     -> return None |> success
     }
 
-    override __.TextDocumentDocumentColor(arg1: Types.DocumentColorParams): AsyncLspResult<Types.ColorInformation []> =
+    override __.TextDocumentDocumentColor(_arg1: Types.DocumentColorParams): AsyncLspResult<Types.ColorInformation []> =
         failwith "Not Implemented"
 
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
@@ -442,7 +409,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentDocumentLink(arg1: Types.DocumentLinkParams): AsyncLspResult<Types.DocumentLink [] option> =
+    override __.TextDocumentDocumentLink(_arg1: Types.DocumentLinkParams): AsyncLspResult<Types.DocumentLink [] option> =
         failwith "Not Implemented"
 
     override __.TextDocumentDocumentSymbol(p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
@@ -459,10 +426,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             return None |> success
     }
 
-    override __.TextDocumentFoldingRange(arg1: Types.FoldingRangeParams): AsyncLspResult<Types.FoldingRange list option> =
+    override __.TextDocumentFoldingRange(_arg1: Types.FoldingRangeParams): AsyncLspResult<Types.FoldingRange list option> =
         failwith "Not Implemented"
 
-    override __.TextDocumentFormatting(arg1: Types.DocumentFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
+    override __.TextDocumentFormatting(_arg1: Types.DocumentFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
         failwith "Not Implemented"
 
     override __.TextDocumentHover(hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
@@ -479,11 +446,13 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                |> success
     }
 
-    override __.TextDocumentImplementation(arg1: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
+    override __.TextDocumentImplementation(_arg1: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
         failwith "Not Implemented"
-    override __.TextDocumentOnTypeFormatting(arg1: Types.DocumentOnTypeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
+
+    override __.TextDocumentOnTypeFormatting(_arg1: Types.DocumentOnTypeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
         failwith "Not Implemented"
-    override __.TextDocumentRangeFormatting(arg1: Types.DocumentRangeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
+
+    override __.TextDocumentRangeFormatting(_arg1: Types.DocumentRangeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
         failwith "Not Implemented"
 
     override __.TextDocumentReferences(refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
@@ -515,7 +484,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
             let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
                                                              updatedSolution
-                                                             docs
+                                                             openDocVersions.TryFind
             return docTextEdit
         }
 
@@ -528,29 +497,29 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, clientCapabilities.Value) |> Some |> success
     }
 
-    override __.TextDocumentSelectionRange(arg1: Types.SelectionRangeParams): AsyncLspResult<Types.SelectionRange list option> =
+    override __.TextDocumentSelectionRange(_arg1: Types.SelectionRangeParams): AsyncLspResult<Types.SelectionRange list option> =
         failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensFull(arg1: Types.SemanticTokensParams): AsyncLspResult<Types.SemanticTokens option> =
+    override __.TextDocumentSemanticTokensFull(_arg1: Types.SemanticTokensParams): AsyncLspResult<Types.SemanticTokens option> =
         failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensFullDelta(arg1: Types.SemanticTokensDeltaParams): AsyncLspResult<U2<Types.SemanticTokens,Types.SemanticTokensDelta> option> =
+    override __.TextDocumentSemanticTokensFullDelta(_arg1: Types.SemanticTokensDeltaParams): AsyncLspResult<U2<Types.SemanticTokens,Types.SemanticTokensDelta> option> =
         failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensRange(arg1: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
+    override __.TextDocumentSemanticTokensRange(_arg1: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
         failwith "Not Implemented"
-    override __.TextDocumentSignatureHelp(arg1: Types.SignatureHelpParams): AsyncLspResult<Types.SignatureHelp option> =
+    override __.TextDocumentSignatureHelp(_arg1: Types.SignatureHelpParams): AsyncLspResult<Types.SignatureHelp option> =
         failwith "Not Implemented"
-    override __.TextDocumentTypeDefinition(def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
+    override __.TextDocumentTypeDefinition(_def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
         failwith "Not Implemented"
-    override __.TextDocumentWillSave(arg1: Types.WillSaveTextDocumentParams): Async<unit> =
+    override __.TextDocumentWillSave(_arg1: Types.WillSaveTextDocumentParams): Async<unit> =
         failwith "Not Implemented"
-    override __.TextDocumentWillSaveWaitUntil(arg1: Types.WillSaveTextDocumentParams): AsyncLspResult<Types.TextEdit [] option> =
+    override __.TextDocumentWillSaveWaitUntil(_arg1: Types.WillSaveTextDocumentParams): AsyncLspResult<Types.TextEdit [] option> =
         failwith "Not Implemented"
-    override __.WorkspaceDidChangeConfiguration(arg1: Types.DidChangeConfigurationParams): Async<unit> =
+    override __.WorkspaceDidChangeConfiguration(_arg1: Types.DidChangeConfigurationParams): Async<unit> =
         failwith "Not Implemented"
-    override __.WorkspaceDidChangeWatchedFiles(arg1: Types.DidChangeWatchedFilesParams): Async<unit> =
+    override __.WorkspaceDidChangeWatchedFiles(_arg1: Types.DidChangeWatchedFilesParams): Async<unit> =
         failwith "Not Implemented"
-    override __.WorkspaceDidChangeWorkspaceFolders(arg1: Types.DidChangeWorkspaceFoldersParams): Async<unit> =
+    override __.WorkspaceDidChangeWorkspaceFolders(_arg1: Types.DidChangeWorkspaceFoldersParams): Async<unit> =
         failwith "Not Implemented"
-    override __.WorkspaceExecuteCommand(arg1: Types.ExecuteCommandParams): AsyncLspResult<Newtonsoft.Json.Linq.JToken> =
+    override __.WorkspaceExecuteCommand(_arg1: Types.ExecuteCommandParams): AsyncLspResult<Newtonsoft.Json.Linq.JToken> =
         failwith "Not Implemented"
 
     override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
@@ -576,6 +545,6 @@ let start () =
         let result = startCore ()
         int result
     with
-    | ex ->
+    | _ex ->
         // logger.error (Log.setMessage "Start - LSP mode crashed" >> Log.addExn ex)
         3
