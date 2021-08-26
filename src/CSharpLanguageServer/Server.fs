@@ -21,6 +21,11 @@ open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeRefactorings
 open System.Threading
 open Microsoft.CodeAnalysis.CodeFixes
+open ICSharpCode.Decompiler.Metadata
+open ICSharpCode.Decompiler.CSharp
+open System.Reflection.PortableExecutable
+open ICSharpCode.Decompiler
+open ICSharpCode.Decompiler.CSharp.Transforms
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -63,7 +68,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     let mutable clientCapabilities: ClientCapabilities option = None
     let mutable currentSolution: Solution option = None
-    let mutable openDocVersions = Map.empty
+    let mutable openDocVersions = Map.empty<string, int>
+    let mutable decompiledMetadataUris = Map.empty<string, string>
 
     let logMessage message =
         let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
@@ -121,6 +127,27 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     let locationToLspLocation (loc: Microsoft.CodeAnalysis.Location) =
         { Uri = loc.SourceTree.FilePath |> getPathUri |> string
           Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
+
+    let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =
+        if (symbol :? INamedTypeSymbol) then
+            symbol :?> INamedTypeSymbol
+        else
+            symbol.ContainingType
+
+    let getFullReflectionName (containingType: INamedTypeSymbol) =
+        let stack = Stack<string>();
+        stack.Push(containingType.MetadataName);
+        let mutable ns = containingType.ContainingNamespace;
+
+        let mutable doContinue = true
+        while doContinue do
+            stack.Push(ns.Name);
+            ns <- ns.ContainingNamespace
+
+            doContinue <- ns <> null && not ns.IsGlobalNamespace
+
+        String.Join(".", stack)
+
 
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
@@ -354,19 +381,68 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             let! sourceText = doc.GetTextAsync()
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+            let! compilation = doc.Project.GetCompilationAsync()
 
-            return match symbol with
-                    | null -> //logMessage "no symbol at this point"
-                        []
-                    | sym -> //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                        // TODO:
-                        //  - handle symbols in metadata
+            let locations =
+                match symbol with
+                | null -> //logMessage "no symbol at this point"
+                    []
 
-                        let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource) |> List.ofSeq
+                | sym ->
+                    //logMessage ("have symbol " + sym.ToString() + " at this point!")
+                    // TODO:
+                    //  - handle symbols in metadata
 
-                        match locationsInSource with
+                    let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource)
+
+                    let locationsInMetadata = sym.Locations |> Seq.filter (fun l -> l.IsInMetadata)
+
+                    let haveLocationsInMetadata = locationsInMetadata |> Seq.isEmpty |> not
+
+                    if haveLocationsInMetadata then
+                        do logMessage (sprintf "have locations in metadata: %s" (String.Join(", ", locationsInMetadata |> Seq.map string)))
+
+                        let mdLocation = Seq.head locationsInMetadata
+                        let containingSym = sym |> getContainingTypeOrThis
+
+                        let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
+                        let peReference = reference :?> PortableExecutableReference |> Option.ofObj
+                        let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+
+                        do logMessage (sprintf "assemblyFilename = %s" assemblyLocation)
+
+                        // Load the assembly.
+                        // Initialize a decompiler with default settings.
+                        let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
+                        // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
+                        // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
+                        decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
+
+
+                        let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
+                        let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
+
+                        // Try to decompile; if an exception is thrown the caller will handle it
+                        let text = decompiler.DecompileTypeAsString(fullTypeName)
+
+                        do logMessage (sprintf "decompiled text = %s" text)
+
+                        let uri = $"omnisharp:/metadata/Project/{doc.Project.Name}/Assembly/{mdLocation.MetadataModule.ContainingAssembly.Name}/Symbol/{fullName}.cs"
+
+                        decompiledMetadataUris <- decompiledMetadataUris.Add(uri, text)
+
+                        let locationInMetadata = { Uri = uri
+                                                   Range = { Start = { Line = 1; Character = 1 }; End = { Line = 1; Character = 2 } } }
+
+                        do logMessage (sprintf "returing uri=%s" locationInMetadata.Uri)
+
+                        [locationInMetadata]
+                    else
+                        match List.ofSeq locationsInSource with
                         | [] -> []
                         | locations -> locations |> Seq.map locationToLspLocation |> List.ofSeq
+
+            return locations
         }
 
         match getDocumentForUri def.TextDocument.Uri with
@@ -526,6 +602,33 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbols currentSolution.Value symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
+    }
+
+    override __.OmnisharpMetadata (metadataParams: OmnisharpMetadataParams): AsyncLspResult<OmnisharpMetadataResponse option> = async {
+        let uri = $"omnisharp:/metadata/Project/{metadataParams.ProjectName}/Assembly/{metadataParams.AssemblyName}/Symbol/{metadataParams.TypeName}.cs"
+
+        logMessage (sprintf "OmnisharpMetadata: attempting to get source for uri %s" uri)
+
+        let maybeSource = Map.tryFind uri decompiledMetadataUris
+
+        //logMessage (sprintf "OmnisharpMetadata: got %s" (maybeSource |> Option.defaultValue "(none)"))
+
+        let normalizeComponent (c: string) = c.Replace(".", "/")
+
+        let sourceName = sprintf "$metadata$/Project/%s/Assembly/%s/Symbol/%s.cs"
+                                  (metadataParams.ProjectName |> normalizeComponent)
+                                  (metadataParams.AssemblyName |> normalizeComponent)
+                                  (metadataParams.TypeName |> normalizeComponent)
+
+        let yesNo opt = match opt with
+                        | Some _ -> "yes"
+                        | None -> "no"
+
+        logMessage (sprintf "sourceName: %s; have source: %s" sourceName (maybeSource |> yesNo))
+
+        return maybeSource
+               |> Option.map (fun source -> { SourceName = sourceName; Source = source })
+               |> success
     }
 
     override __.Dispose(): unit = ()
