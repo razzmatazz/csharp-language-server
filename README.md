@@ -10,7 +10,7 @@ The code here is based on
 # TODO lists
 
 ## Next version
- - document sync not always works, e.g. when trying to autocomplete..
+ - implement go to metadata
  - work around sharp corners, test as daily tool
  - publish as `dotnet tool csharp-ls`
 
@@ -18,7 +18,7 @@ The code here is based on
  - implement TextDocumentImplementation
  - tests
  - code lenses
- - formatting
+ - formatting, on type and otherwise
  - parse documentation into format needed for lsp
  - go-to definition on symbol in metada
  - ability to run tests

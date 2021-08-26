@@ -65,8 +65,9 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     let mutable currentSolution: Solution option = None
     let mutable openDocVersions = Map.empty
 
-    let logMessage message = lspClient.WindowShowMessage { Type = MessageType.Log ;
-                                                           Message = "cs-lsp-server: " + message } |> ignore
+    let logMessage message =
+        let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
+        do lspClient.WindowShowMessage messageParams |> ignore
 
     let mutable deferredInitialize = async {
         let cwd = Directory.GetCurrentDirectory()
