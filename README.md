@@ -21,5 +21,4 @@ The code here is based on [FSharpAutoComplete](https://github.com/fsharp/FsAutoC
  - code lenses
  - formatting, on type and otherwise
  - parse documentation into format needed for lsp
- - go-to definition on symbol in metada
  - ability to run tests

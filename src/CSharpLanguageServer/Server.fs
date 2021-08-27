@@ -63,6 +63,17 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
+type OmnisharpMetadataParams = {
+    ProjectName: string
+    AssemblyName: string
+    TypeName: string
+}
+
+type OmnisharpMetadataResponse = {
+    SourceName: string
+    Source: string
+}
+
 type CSharpLspServer(lspClient: CSharpLspClient) =
     inherit LspServer()
 
@@ -256,15 +267,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         return ()
     }
 
-    override __.CodeLensResolve(_arg1: Types.CodeLens): AsyncLspResult<Types.CodeLens> =
-        failwith "Not Implemented"
-
-    override __.CompletionItemResolve(_arg1: Types.CompletionItem): AsyncLspResult<Types.CompletionItem> =
-        failwith "Not Implemented"
-
-    override __.DocumentLinkResolve(_arg1: Types.DocumentLink): AsyncLspResult<Types.DocumentLink> =
-        failwith "Not Implemented"
-
     override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
 
         match getDocumentForUri actionParams.TextDocument.Uri with
@@ -338,12 +340,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                   |> Some
                                   |> success
     }
-
-    override __.TextDocumentCodeLens(_arg1: Types.CodeLensParams): AsyncLspResult<Types.CodeLens [] option> =
-        failwith "Not Implemented"
-
-    override __.TextDocumentColorPresentation(_arg1: Types.ColorPresentationParams): AsyncLspResult<Types.ColorPresentation []> =
-        failwith "Not Implemented"
 
     override __.TextDocumentCompletion(posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
         match getDocumentForUri posParams.TextDocument.Uri with
@@ -454,9 +450,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | None     -> return None |> success
     }
 
-    override __.TextDocumentDocumentColor(_arg1: Types.DocumentColorParams): AsyncLspResult<Types.ColorInformation []> =
-        failwith "Not Implemented"
-
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
         match currentSolution with
         | Some solution ->
@@ -486,9 +479,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentDocumentLink(_arg1: Types.DocumentLinkParams): AsyncLspResult<Types.DocumentLink [] option> =
-        failwith "Not Implemented"
-
     override __.TextDocumentDocumentSymbol(p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         match getDocumentForUri p.TextDocument.Uri with
         | Some doc ->
@@ -503,12 +493,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             return None |> success
     }
 
-    override __.TextDocumentFoldingRange(_arg1: Types.FoldingRangeParams): AsyncLspResult<Types.FoldingRange list option> =
-        failwith "Not Implemented"
-
-    override __.TextDocumentFormatting(_arg1: Types.DocumentFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
-        failwith "Not Implemented"
-
     override __.TextDocumentHover(hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
         let! maybeSymbol = getSymbolAtPosition hoverPos.TextDocument.Uri hoverPos.Position
         let maybeHoverText = Option.map (fun (sym: ISymbol, _: Document) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
@@ -522,15 +506,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                       Range = None }
                |> success
     }
-
-    override __.TextDocumentImplementation(_arg1: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
-        failwith "Not Implemented"
-
-    override __.TextDocumentOnTypeFormatting(_arg1: Types.DocumentOnTypeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
-        failwith "Not Implemented"
-
-    override __.TextDocumentRangeFormatting(_arg1: Types.DocumentRangeFormattingParams): AsyncLspResult<Types.TextEdit [] option> =
-        failwith "Not Implemented"
 
     override __.TextDocumentReferences(refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
         match currentSolution with
@@ -574,51 +549,26 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, clientCapabilities.Value) |> Some |> success
     }
 
-    override __.TextDocumentSelectionRange(_arg1: Types.SelectionRangeParams): AsyncLspResult<Types.SelectionRange list option> =
-        failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensFull(_arg1: Types.SemanticTokensParams): AsyncLspResult<Types.SemanticTokens option> =
-        failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensFullDelta(_arg1: Types.SemanticTokensDeltaParams): AsyncLspResult<U2<Types.SemanticTokens,Types.SemanticTokensDelta> option> =
-        failwith "Not Implemented"
-    override __.TextDocumentSemanticTokensRange(_arg1: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
-        failwith "Not Implemented"
-    override __.TextDocumentSignatureHelp(_arg1: Types.SignatureHelpParams): AsyncLspResult<Types.SignatureHelp option> =
-        failwith "Not Implemented"
-    override __.TextDocumentTypeDefinition(_def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> =
-        failwith "Not Implemented"
-    override __.TextDocumentWillSave(_arg1: Types.WillSaveTextDocumentParams): Async<unit> =
-        failwith "Not Implemented"
-    override __.TextDocumentWillSaveWaitUntil(_arg1: Types.WillSaveTextDocumentParams): AsyncLspResult<Types.TextEdit [] option> =
-        failwith "Not Implemented"
-    override __.WorkspaceDidChangeConfiguration(_arg1: Types.DidChangeConfigurationParams): Async<unit> =
-        failwith "Not Implemented"
-    override __.WorkspaceDidChangeWatchedFiles(_arg1: Types.DidChangeWatchedFilesParams): Async<unit> =
-        failwith "Not Implemented"
-    override __.WorkspaceDidChangeWorkspaceFolders(_arg1: Types.DidChangeWorkspaceFoldersParams): Async<unit> =
-        failwith "Not Implemented"
-    override __.WorkspaceExecuteCommand(_arg1: Types.ExecuteCommandParams): AsyncLspResult<Newtonsoft.Json.Linq.JToken> =
-        failwith "Not Implemented"
-
     override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbols currentSolution.Value symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
     }
 
-    override __.OmnisharpMetadata (metadataParams: OmnisharpMetadataParams): AsyncLspResult<OmnisharpMetadataResponse option> = async {
+    member __.OmnisharpMetadata (metadataParams: OmnisharpMetadataParams): AsyncLspResult<OmnisharpMetadataResponse option> = async {
         let uri = $"omnisharp:/metadata/Project/{metadataParams.ProjectName}/Assembly/{metadataParams.AssemblyName}/Symbol/{metadataParams.TypeName}.cs"
 
         logMessage (sprintf "OmnisharpMetadata: attempting to get source for uri %s" uri)
 
-        let maybeSource = Map.tryFind uri decompiledMetadataUris
+        let maybeSource = decompiledMetadataUris |> Map.tryFind uri
 
         //logMessage (sprintf "OmnisharpMetadata: got %s" (maybeSource |> Option.defaultValue "(none)"))
 
         let normalizeComponent (c: string) = c.Replace(".", "/")
 
         let sourceName = sprintf "$metadata$/Project/%s/Assembly/%s/Symbol/%s.cs"
-                                  (metadataParams.ProjectName |> normalizeComponent)
-                                  (metadataParams.AssemblyName |> normalizeComponent)
-                                  (metadataParams.TypeName |> normalizeComponent)
+                                 (metadataParams.ProjectName |> normalizeComponent)
+                                 (metadataParams.AssemblyName |> normalizeComponent)
+                                 (metadataParams.TypeName |> normalizeComponent)
 
         let yesNo opt = match opt with
                         | Some _ -> "yes"
@@ -633,12 +583,16 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     override __.Dispose(): unit = ()
 
+
 let startCore () =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
-    let requestsHandlings = defaultRequestHandlings<CSharpLspServer> ()
-    LanguageServerProtocol.Server.start requestsHandlings
+    let requestHandlings =
+        defaultRequestHandlings<CSharpLspServer> ()
+        |> Map.add "o#/metadata" (requestHandling (fun s p -> s.OmnisharpMetadata (p)))
+
+    LanguageServerProtocol.Server.start requestHandlings
                                         input
                                         output
                                         CSharpLspClient

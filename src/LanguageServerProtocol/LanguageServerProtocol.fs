@@ -2007,17 +2007,6 @@ module Types =
       Edits: SemanticTokensEdit[];
     }
 
-    type OmnisharpMetadataParams = {
-      ProjectName: string
-      AssemblyName: string
-      TypeName: string
-    }
-
-    type OmnisharpMetadataResponse = {
-      SourceName: string
-      Source: string
-    }
-
 module LowLevel =
     open System
     open System.IO
@@ -2540,9 +2529,6 @@ type LspServer() =
     abstract member TextDocumentSemanticTokensRange: SemanticTokensRangeParams -> AsyncLspResult<SemanticTokens option>
     default __.TextDocumentSemanticTokensRange(_) = notImplemented
 
-    abstract member OmnisharpMetadata: OmnisharpMetadataParams -> AsyncLspResult<OmnisharpMetadataResponse option>
-    default __.OmnisharpMetadata(_) = notImplemented
-
 module Server =
     open System.IO
     open Newtonsoft.Json
@@ -2658,7 +2644,6 @@ module Server =
             "workspace/executeCommand ", requestHandling (fun s p -> s.WorkspaceExecuteCommand (p))
             "shutdown", requestHandling (fun s () -> s.Shutdown() |> notificationSuccess)
             "exit", requestHandling (fun s () -> s.Exit() |> notificationSuccess)
-            "o#/metadata", requestHandling (fun s p -> s.OmnisharpMetadata (p))
         ]
         |> Map.ofList
 
