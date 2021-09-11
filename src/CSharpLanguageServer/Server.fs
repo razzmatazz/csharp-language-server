@@ -384,10 +384,10 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
             let! compilation = doc.Project.GetCompilationAsync()
 
-            let locations =
+            let! locations = task {
                 match symbol with
                 | null -> //logMessage "no symbol at this point"
-                    []
+                    return []
 
                 | sym ->
                     //logMessage ("have symbol " + sym.ToString() + " at this point!")
@@ -431,19 +431,33 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
                         decompiledMetadataDocs <- decompiledMetadataDocs |> Map.add uri mdDocument
 
-                        do logMessage (sprintf "have mdDocument added to project, filename %s" mdDocumentFilename)
+                        logMessage (sprintf "have mdDocument added to project, filename %s" mdDocumentFilename)
 
-                        // todo: figure out range
-                        let locationInMetadata = { Uri = uri
-                                                   Range = { Start = { Line = 1; Character = 1 }; End = { Line = 1; Character = 2 } } }
+                        // figure out location on the document (approx implementation)
+                        logMessage (sprintf "sym.Name = %s" sym.Name)
 
-                        logMessage (sprintf "returning uri=%s" locationInMetadata.Uri)
+                        let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
+                        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
+                        collector.Visit(syntaxTree.GetRoot())
 
-                        [locationInMetadata]
+                        let fallbackLocationInMetadata = {
+                            Uri = uri
+                            Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
+
+                        let locationInMetadata =
+                            (collector.GetLocations() @ [ fallbackLocationInMetadata ])
+                            |> Seq.head
+
+                        logMessage (sprintf "returning uri=%s; range=%s"
+                                            locationInMetadata.Uri
+                                            (locationInMetadata.Range |> string))
+
+                        return [locationInMetadata]
                     else
                         match List.ofSeq locationsInSource with
-                        | [] -> []
-                        | locations -> locations |> Seq.map locationToLspLocation |> List.ofSeq
+                        | [] -> return []
+                        | locations -> return locations |> Seq.map locationToLspLocation |> List.ofSeq
+                }
 
             return locations
         }

@@ -14,6 +14,7 @@ open Microsoft.CodeAnalysis.Text
 open LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
+open Microsoft.CodeAnalysis.CSharp.Syntax
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -170,6 +171,43 @@ type DocumentSymbolCollector(documentUri) =
         collect node.Identifier Types.SymbolKind.Method
 
         base.VisitMethodDeclaration(node)
+
+
+type DocumentSymbolCollectorForMatchingSymbolName (documentUri, symbolName: string) =
+    inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
+
+    let mutable collectedLocations: Types.Location list = []
+
+    let collectIdentifier (identifier: SyntaxToken) =
+        if identifier.ValueText = symbolName then
+            let location: Types.Location =
+                { Uri = documentUri
+                  Range = identifier.GetLocation().GetLineSpan().Span
+                          |> lspRangeForRoslynLinePosSpan }
+
+            collectedLocations <- location :: collectedLocations
+
+    member __.GetLocations() = collectedLocations |> Seq.rev |> List.ofSeq
+
+    override __.Visit(node) =
+        // TODO: collect other type of syntax nodes too
+        if node :? MethodDeclarationSyntax then
+            let methodDecl = node :?> MethodDeclarationSyntax
+            collectIdentifier methodDecl.Identifier
+
+        else if node :? TypeDeclarationSyntax then
+             let typeDecl = node :?> TypeDeclarationSyntax
+             collectIdentifier typeDecl.Identifier
+
+        else if node :? PropertyDeclarationSyntax then
+             let propertyDecl = node :?> PropertyDeclarationSyntax
+             collectIdentifier propertyDecl.Identifier
+
+        else if node :? EventDeclarationSyntax then
+             let eventDecl = node :?> EventDeclarationSyntax
+             collectIdentifier eventDecl.Identifier
+
+        base.Visit(node)
 
 
 let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
