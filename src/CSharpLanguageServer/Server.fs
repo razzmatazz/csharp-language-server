@@ -21,9 +21,7 @@ open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeRefactorings
 open System.Threading
 open Microsoft.CodeAnalysis.CodeFixes
-open ICSharpCode.Decompiler.Metadata
 open ICSharpCode.Decompiler.CSharp
-open System.Reflection.PortableExecutable
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 
@@ -64,14 +62,14 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
 type CSharpMetadataParams = {
-    ProjectName: string
-    AssemblyName: string
-    TypeName: string
+    TextDocument: TextDocumentIdentifier
 }
 
 type CSharpMetadataResponse = {
-    SourceName: string
-    Source: string
+    ProjectName: string;
+    AssemblyName: string;
+    SymbolName: string;
+    Source: string;
 }
 
 type CSharpLspServer(lspClient: CSharpLspClient) =
@@ -80,7 +78,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     let mutable clientCapabilities: ClientCapabilities option = None
     let mutable currentSolution: Solution option = None
     let mutable openDocVersions = Map.empty<string, int>
-    let mutable decompiledMetadataUris = Map.empty<string, string>
+    let mutable decompiledMetadataUris = Map.empty<string, CSharpMetadataResponse>
     let mutable decompiledMetadataDocs = Map.empty<string, Document>
 
     let logMessage message =
@@ -374,11 +372,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     }
 
     override __.TextDocumentDefinition(def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
-        logMessage (sprintf "TextDocumentDefinition: uri %s; pos %s" (def.TextDocument.Uri |> string) (def.Position |> string))
-
         let resolveDefinition (doc: Document) = task {
-            logMessage (sprintf "TextDocumentDefinition/resolveDefinition: resolving symbol @ %s in %s" (def.Position |> string) (doc |> string))
-
             let! sourceText = doc.GetTextAsync()
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -401,8 +395,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                     let haveLocationsInMetadata = locationsInMetadata |> Seq.isEmpty |> not
 
                     if haveLocationsInMetadata then
-                        do logMessage (sprintf "have locations in metadata: %s" (String.Join(", ", locationsInMetadata |> Seq.map string)))
-
                         let mdLocation = Seq.head locationsInMetadata
 
                         let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
@@ -422,7 +414,12 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
                         let uri = $"csharp:/metadata/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
 
-                        decompiledMetadataUris <- decompiledMetadataUris.Add(uri, text)
+                        let csharpMetadata = { ProjectName = doc.Project.Name;
+                                               AssemblyName = mdLocation.MetadataModule.ContainingAssembly.Name;
+                                               SymbolName = fullName;
+                                               Source = text }
+
+                        decompiledMetadataUris <- decompiledMetadataUris |> Map.add uri csharpMetadata
 
                         let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
                         let mdProject = doc.Project
@@ -431,11 +428,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
                         decompiledMetadataDocs <- decompiledMetadataDocs |> Map.add uri mdDocument
 
-                        logMessage (sprintf "have mdDocument added to project, filename %s" mdDocumentFilename)
-
                         // figure out location on the document (approx implementation)
-                        logMessage (sprintf "sym.Name = %s" sym.Name)
-
                         let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
                         let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
                         collector.Visit(syntaxTree.GetRoot())
@@ -447,10 +440,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         let locationInMetadata =
                             (collector.GetLocations() @ [ fallbackLocationInMetadata ])
                             |> Seq.head
-
-                        logMessage (sprintf "returning uri=%s; range=%s"
-                                            locationInMetadata.Uri
-                                            (locationInMetadata.Range |> string))
 
                         return [locationInMetadata]
                     else
@@ -578,30 +567,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     }
 
     member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
-        let uri = $"csharp:/metadata/projects/{metadataParams.ProjectName}/assemblies/{metadataParams.AssemblyName}/symbols/{metadataParams.TypeName}.cs"
-
-        logMessage (sprintf "CSharpMetadata: attempting to get source for uri %s" uri)
-
-        let maybeSource = decompiledMetadataUris |> Map.tryFind uri
-
-        //logMessage (sprintf "CSharpMetadata: got %s" (maybeSource |> Option.defaultValue "(none)"))
-
-        let normalizeComponent (c: string) = c.Replace(".", "/")
-
-        let sourceName = sprintf "$metadata$/projects/%s/assemblies/%s/symbols/%s.cs"
-                                 (metadataParams.ProjectName |> normalizeComponent)
-                                 (metadataParams.AssemblyName |> normalizeComponent)
-                                 (metadataParams.TypeName |> normalizeComponent)
-
-        let yesNo opt = match opt with
-                        | Some _ -> "yes"
-                        | None -> "no"
-
-        logMessage (sprintf "sourceName: %s; have source: %s" sourceName (maybeSource |> yesNo))
-
-        return maybeSource
-               |> Option.map (fun source -> { SourceName = sourceName; Source = source })
-               |> success
+        let uri = metadataParams.TextDocument.Uri
+        return decompiledMetadataUris |> Map.tryFind uri |> success
     }
 
     override __.Dispose(): unit = ()
