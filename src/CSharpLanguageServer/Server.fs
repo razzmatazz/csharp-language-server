@@ -63,13 +63,13 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
-type OmnisharpMetadataParams = {
+type CSharpMetadataParams = {
     ProjectName: string
     AssemblyName: string
     TypeName: string
 }
 
-type OmnisharpMetadataResponse = {
+type CSharpMetadataResponse = {
     SourceName: string
     Source: string
 }
@@ -81,6 +81,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     let mutable currentSolution: Solution option = None
     let mutable openDocVersions = Map.empty<string, int>
     let mutable decompiledMetadataUris = Map.empty<string, string>
+    let mutable decompiledMetadataDocs = Map.empty<string, Document>
 
     let logMessage message =
         let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
@@ -102,7 +103,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                            match matchingDocuments with
                            | [d] -> //logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
                                     Some d
-                           | _ -> None
+                           | _ -> Map.tryFind u decompiledMetadataDocs
         | None -> None
 
     let getSymbolAtPosition documentUri pos = async {
@@ -373,7 +374,11 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     }
 
     override __.TextDocumentDefinition(def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
+        logMessage (sprintf "TextDocumentDefinition: uri %s; pos %s" (def.TextDocument.Uri |> string) (def.Position |> string))
+
         let resolveDefinition (doc: Document) = task {
+            logMessage (sprintf "TextDocumentDefinition/resolveDefinition: resolving symbol @ %s in %s" (def.Position |> string) (doc |> string))
+
             let! sourceText = doc.GetTextAsync()
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -399,38 +404,40 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                         do logMessage (sprintf "have locations in metadata: %s" (String.Join(", ", locationsInMetadata |> Seq.map string)))
 
                         let mdLocation = Seq.head locationsInMetadata
-                        let containingSym = sym |> getContainingTypeOrThis
 
                         let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
                         let peReference = reference :?> PortableExecutableReference |> Option.ofObj
                         let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
 
-                        do logMessage (sprintf "assemblyFilename = %s" assemblyLocation)
-
-                        // Load the assembly.
-                        // Initialize a decompiler with default settings.
                         let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
+
                         // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
                         // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
                         decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
 
-
                         let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
                         let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
 
-                        // Try to decompile; if an exception is thrown the caller will handle it
                         let text = decompiler.DecompileTypeAsString(fullTypeName)
 
-                        do logMessage (sprintf "decompiled text = %s" text)
-
-                        let uri = $"omnisharp:/metadata/Project/{doc.Project.Name}/Assembly/{mdLocation.MetadataModule.ContainingAssembly.Name}/Symbol/{fullName}.cs"
+                        let uri = $"csharp:/metadata/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
 
                         decompiledMetadataUris <- decompiledMetadataUris.Add(uri, text)
 
+                        let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+                        let mdProject = doc.Project
+                        let mdDocumentEmpty = mdProject.AddDocument(mdDocumentFilename, String.Empty)
+                        let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
+
+                        decompiledMetadataDocs <- decompiledMetadataDocs |> Map.add uri mdDocument
+
+                        do logMessage (sprintf "have mdDocument added to project, filename %s" mdDocumentFilename)
+
+                        // todo: figure out range
                         let locationInMetadata = { Uri = uri
                                                    Range = { Start = { Line = 1; Character = 1 }; End = { Line = 1; Character = 2 } } }
 
-                        do logMessage (sprintf "returing uri=%s" locationInMetadata.Uri)
+                        logMessage (sprintf "returning uri=%s" locationInMetadata.Uri)
 
                         [locationInMetadata]
                     else
@@ -447,7 +454,9 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
                                        |> GotoResult.Multiple
                                        |> Some
                                        |> success
-        | None     -> return None |> success
+        | None     ->
+            logMessage (sprintf "TextDocumentDefinition: no document for uri %s" (def.TextDocument.Uri |> string))
+            return None |> success
     }
 
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
@@ -554,18 +563,18 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         return symbols |> Array.ofSeq |> Some |> success
     }
 
-    member __.OmnisharpMetadata (metadataParams: OmnisharpMetadataParams): AsyncLspResult<OmnisharpMetadataResponse option> = async {
-        let uri = $"omnisharp:/metadata/Project/{metadataParams.ProjectName}/Assembly/{metadataParams.AssemblyName}/Symbol/{metadataParams.TypeName}.cs"
+    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
+        let uri = $"csharp:/metadata/projects/{metadataParams.ProjectName}/assemblies/{metadataParams.AssemblyName}/symbols/{metadataParams.TypeName}.cs"
 
-        logMessage (sprintf "OmnisharpMetadata: attempting to get source for uri %s" uri)
+        logMessage (sprintf "CSharpMetadata: attempting to get source for uri %s" uri)
 
         let maybeSource = decompiledMetadataUris |> Map.tryFind uri
 
-        //logMessage (sprintf "OmnisharpMetadata: got %s" (maybeSource |> Option.defaultValue "(none)"))
+        //logMessage (sprintf "CSharpMetadata: got %s" (maybeSource |> Option.defaultValue "(none)"))
 
         let normalizeComponent (c: string) = c.Replace(".", "/")
 
-        let sourceName = sprintf "$metadata$/Project/%s/Assembly/%s/Symbol/%s.cs"
+        let sourceName = sprintf "$metadata$/projects/%s/assemblies/%s/symbols/%s.cs"
                                  (metadataParams.ProjectName |> normalizeComponent)
                                  (metadataParams.AssemblyName |> normalizeComponent)
                                  (metadataParams.TypeName |> normalizeComponent)
@@ -590,7 +599,7 @@ let startCore () =
 
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
-        |> Map.add "o#/metadata" (requestHandling (fun s p -> s.OmnisharpMetadata (p)))
+        |> Map.add "csharp/metadata" (requestHandling (fun s p -> s.CSharpMetadata (p)))
 
     LanguageServerProtocol.Server.start requestHandlings
                                         input
