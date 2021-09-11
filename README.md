@@ -1,5 +1,4 @@
 # Description
-
 This is a hacky Roslyn-based LSP server as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
@@ -9,16 +8,17 @@ The server code here is based on (copied from)
 # Features
  - Most of basic LSP features: rename/go-to-def/find references, etc;
  - Go-to-metadata (needs integration from your LSP client.)
+ 
+# Changelog
+See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
 
-## For the next version (v0.1-alpha)
- - publish as `dotnet tool csharp-ls`
- 
-## On queue
+## For the next version (v0.2.0)
  - ability to run tests
+
+## Wishlist
  - implement TextDocumentImplementation
- - tests
  - code lenses
  - formatting, on type and otherwise
  - parse documentation into format needed for lsp
