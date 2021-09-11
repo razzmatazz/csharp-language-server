@@ -1,24 +1,20 @@
 # Description
 
-This is a hacky Roslyn-based LSP server written in F#. After some experimentation
-I felt I could try to hack my own custom LSP server for C#.
+This is a hacky Roslyn-based LSP server as an alternative to 
+[omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
-The code here is based on [FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code.
+The server code here is based on (copied from) 
+[FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code.
 
-# TODO lists
+# TODO list
 
-## Next version
- - implement go to metadata
-   - link generated document to project so we can do recursive go-to-def in metadata
-   - fix an issue with SourceText/Source names when returning from OmnisharpMetadata()
-   - more things..
- - work around sharp corners, test as daily tool
+## For the next version (v0.1-alpha)
  - publish as `dotnet tool csharp-ls`
-
-## Wish list
+ 
+## On queue
+ - ability to run tests
  - implement TextDocumentImplementation
  - tests
  - code lenses
  - formatting, on type and otherwise
  - parse documentation into format needed for lsp
- - ability to run tests
