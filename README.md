@@ -22,3 +22,4 @@ The server code here is based on (copied from)
  - code lenses
  - formatting, on type and otherwise
  - parse documentation into format needed for lsp
+ - razorls integration (server-side)
