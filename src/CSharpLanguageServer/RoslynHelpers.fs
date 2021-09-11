@@ -328,7 +328,7 @@ let loadSolutionOnDir logMessage dir = async {
                 logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
             ()
 
-        logMessage "in deferredInitialize, ok project files loaded"
+        logMessage (sprintf "in deferredInitialize: OK, %d project files loaded" projFiles.Length)
 
         for diag in msbuildWorkspace.Diagnostics do
             logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
