@@ -5,13 +5,18 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
 
+    <Description>C# LSP language server</Description>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>csharp-ls</ToolCommandName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Saulius Menkevičius</Authors>
     <PackageOutputPath>./nupkg</PackageOutputPath>
-    <PackageVersion>0.1.0-alpha</PackageVersion>
+    <PackageId>csharp-ls</PackageId>
+    <PackageVersion>0.1.1-alpha</PackageVersion>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>csharp;lsp</PackageTags>
+    <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
