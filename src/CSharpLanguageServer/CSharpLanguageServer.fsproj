@@ -4,6 +4,14 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>csharp-ls</ToolCommandName>
+    <Version>0.1.0</Version>
+    <Authors>Saulius Menkevičius</Authors>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    <PackageVersion>0.1.0-alpha</PackageVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
