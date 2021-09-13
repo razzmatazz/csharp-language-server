@@ -16,6 +16,14 @@ open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
 
+let toLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
+    match s with
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some Types.DiagnosticSeverity.Warning
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some Types.DiagnosticSeverity.Error
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> None
+    | _ -> None
+
 let roslynTagToLspCompletion tag =
     match tag with
     | "Class"         -> Types.CompletionItemKind.Class
@@ -280,8 +288,6 @@ let codeFixProviderInstances =
         (fun _ -> true)
 
 let loadSolutionOnDir logMessage dir = async {
-    logMessage ("in deferredInitialize, determining solutions on project root: " + dir + "..")
-
     let fileNotOnNodeModules (filename: string) =
         filename.Split(Path.DirectorySeparatorChar)
         |> Seq.contains "node_modules"
@@ -328,7 +334,7 @@ let loadSolutionOnDir logMessage dir = async {
                 logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
             ()
 
-        logMessage (sprintf "in deferredInitialize: OK, %d project files loaded" projFiles.Length)
+        logMessage (sprintf "loadSolutionOnDir: OK, %d project files loaded" projFiles.Length)
 
         for diag in msbuildWorkspace.Diagnostics do
             logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
@@ -338,13 +344,11 @@ let loadSolutionOnDir logMessage dir = async {
 
     | Some solutionPath ->
         try
-            logMessage ("in deferredInitialize, loading solution: " + solutionPath)
+            logMessage ("loading solution: " + solutionPath)
 
             let msbuildWorkspace = MSBuildWorkspace.Create()
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
             let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
-
-            logMessage "in deferredInitialize, ok solution loaded"
 
             for diag in msbuildWorkspace.Diagnostics do
                 logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
@@ -353,6 +357,6 @@ let loadSolutionOnDir logMessage dir = async {
             return Some msbuildWorkspace.CurrentSolution
         with
         | ex ->
-            logMessage ("deferredInitialize failed with " + ex.ToString())
+            logMessage ("loadSolutionOnDir: failed with " + ex.ToString())
             return None
 }

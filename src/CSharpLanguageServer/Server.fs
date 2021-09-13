@@ -85,12 +85,6 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
         do lspClient.WindowShowMessage messageParams |> ignore
 
-    let mutable deferredInitialize = async {
-        let cwd = Directory.GetCurrentDirectory()
-        let! solutionLoaded = loadSolutionOnDir logMessage cwd
-        currentSolution <- solutionLoaded
-    }
-
     let getPathUri path = Uri("file://" + path)
 
     let getDocumentForUri u =
@@ -115,17 +109,9 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
             return None
     }
 
-    let mapDiagSeverity s =
-        match s with
-        | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some LanguageServerProtocol.Types.DiagnosticSeverity.Information
-        | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some LanguageServerProtocol.Types.DiagnosticSeverity.Warning
-        | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some LanguageServerProtocol.Types.DiagnosticSeverity.Error
-        | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> None
-        | _ -> None
-
     let makeLspDiag (d: Microsoft.CodeAnalysis.Diagnostic) =
         { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
-          Severity = mapDiagSeverity d.Severity
+          Severity = d.Severity |> RoslynHelpers.toLspDiagnosticSeverity
           Code = None
           CodeDescription = None
           Source = "lsp"
@@ -161,6 +147,17 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
+
+        logMessage (sprintf "Initialize: initializing, csharp-ls version %s"
+                            (typeof<CSharpLspServer>.Assembly.GetName().Version |> string))
+
+        let cwd = Directory.GetCurrentDirectory()
+        logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+
+        let! solutionLoaded = loadSolutionOnDir logMessage cwd
+        currentSolution <- solutionLoaded
+
+        logMessage "Initialize: ok solution loaded"
 
         return
             { InitializeResult.Default with
@@ -199,8 +196,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
         |> success
     }
 
-    override __.Initialized(_: InitializedParams) = async {
-        do! deferredInitialize
+    override this.Initialized(_: InitializedParams) = async {
+        logMessage "`Initialized` received from client"
         return ()
     }
 
