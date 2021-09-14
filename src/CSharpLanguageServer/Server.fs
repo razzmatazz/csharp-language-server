@@ -197,7 +197,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     }
 
     override __.Initialized(_: InitializedParams) = async {
-        logMessage "`Initialized` received from client"
+        //logMessage "`Initialized` received from client"
         return ()
     }
 
