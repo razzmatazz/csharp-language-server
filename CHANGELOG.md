@@ -1,3 +1,6 @@
+# (next)
+- Support `--help` and `--version` command line params.
+
 # 0.1.2
 - No -alpha version number suffix so you don't need --version to install with `dotnet tool install`;
 - Don't return from `initialize` until we actually load the solution;
