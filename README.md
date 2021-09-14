@@ -13,11 +13,7 @@ The server code here is based on (copied from)
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
-
-## For the next version (v0.2.0)
  - ability to run tests
-
-## Wishlist
  - implement TextDocumentImplementation
  - code lenses
  - formatting, on type and otherwise
