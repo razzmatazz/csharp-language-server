@@ -9,7 +9,8 @@ This is a hacky Roslyn-based LSP server as an alternative to
 # Acknowledgements
 - LSP interface code here is based on (copied from)  [FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code;
 - csharp-ls uses Roslyn to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
-- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
+- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source;
+- csharp-ls is not affiliated with Microsoft Corp.
 
 # Changelog
 See [CHANGELOG.md](CHANGELOG.md)

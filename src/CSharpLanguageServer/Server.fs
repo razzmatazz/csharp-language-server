@@ -150,6 +150,8 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
 
         logMessage (sprintf "Initialize: initializing, csharp-ls version %s"
                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string))
+        logMessage "Initialize: project url is https://github.com/razzmatazz/csharp-language-server"
+        logMessage "Initialize: csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
 
         let cwd = Directory.GetCurrentDirectory()
         logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
