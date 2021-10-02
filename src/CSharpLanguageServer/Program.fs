@@ -18,7 +18,11 @@ let entry args =
         MSBuildLocator.RegisterDefaults() |> ignore
 
         // default the verbosity to warning
-        Server.start ()
+        let serverOptions: Server.Options = {
+            SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
+        }
+
+        Server.start serverOptions
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message

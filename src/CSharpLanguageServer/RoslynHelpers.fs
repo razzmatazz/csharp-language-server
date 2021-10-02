@@ -287,7 +287,48 @@ let codeFixProviderInstances =
     instantiateRoslynProviders<CodeFixProvider>
         (fun _ -> true)
 
-let loadSolutionOnDir logMessage dir = async {
+let tryLoadSolutionOnPath logMessage solutionPath = async {
+    try
+        logMessage ("loadSolution: loading solution: " + solutionPath)
+
+        let msbuildWorkspace = MSBuildWorkspace.Create()
+        msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
+        let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+
+        for diag in msbuildWorkspace.Diagnostics do
+            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+        //workspace <- Some(msbuildWorkspace :> Workspace)
+        return Some msbuildWorkspace.CurrentSolution
+    with
+    | ex ->
+        logMessage ("loadSolution: failed with " + ex.ToString())
+        return None
+}
+
+let tryLoadSolutionFromProjectFiles logMessage (projFiles: string list) = async {
+    let msbuildWorkspace = MSBuildWorkspace.Create()
+    msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
+    for file in projFiles do
+        logMessage ("loading proj file " + file + "..")
+        try
+            do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
+        with ex ->
+            logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
+        ()
+
+    logMessage (sprintf "OK, %d project files loaded" projFiles.Length)
+
+    for diag in msbuildWorkspace.Diagnostics do
+        logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+
+    //workspace <- Some(msbuildWorkspace :> Workspace)
+    return Some msbuildWorkspace.CurrentSolution
+}
+
+let findAndLoadSolutionOnDir logMessage dir = async {
     let fileNotOnNodeModules (filename: string) =
         filename.Split(Path.DirectorySeparatorChar)
         |> Seq.contains "node_modules"
@@ -298,14 +339,14 @@ let loadSolutionOnDir logMessage dir = async {
         |> Seq.filter fileNotOnNodeModules
         |> Seq.toList
 
-    logMessage (sprintf "%d solutions found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+    logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
-    let firstSolutionOnDir =
+    let singleSolutionFound =
         match solutionFiles with
         | [x] -> Some x
         | _ -> None
 
-    match firstSolutionOnDir with
+    match singleSolutionFound with
     | None ->
         logMessage ("no or multiple .sln files found on " + dir)
         logMessage ("looking for .csproj/fsproj files on " + dir + "..")
@@ -315,48 +356,18 @@ let loadSolutionOnDir logMessage dir = async {
             let fsprojFiles = Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories)
 
             [ csprojFiles; fsprojFiles ] |> Seq.concat
-                                         |> Seq.filter fileNotOnNodeModules
-                                         |> Seq.toList
+                                            |> Seq.filter fileNotOnNodeModules
+                                            |> Seq.toList
 
         if projFiles.Length = 0 then
             let message = "no or .csproj/.fsproj or sln files found on " + dir
             logMessage message
             Exception message |> raise
 
-        let msbuildWorkspace = MSBuildWorkspace.Create()
-        msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-
-        for file in projFiles do
-            logMessage ("loading proj file " + file + "..")
-            try
-                do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
-            with ex ->
-                logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
-            ()
-
-        logMessage (sprintf "loadSolutionOnDir: OK, %d project files loaded" projFiles.Length)
-
-        for diag in msbuildWorkspace.Diagnostics do
-            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
-
-        //workspace <- Some(msbuildWorkspace :> Workspace)
-        return Some msbuildWorkspace.CurrentSolution
+        let! solution = tryLoadSolutionFromProjectFiles logMessage projFiles
+        return solution
 
     | Some solutionPath ->
-        try
-            logMessage ("loading solution: " + solutionPath)
-
-            let msbuildWorkspace = MSBuildWorkspace.Create()
-            msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-            let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
-
-            for diag in msbuildWorkspace.Diagnostics do
-                logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
-
-            //workspace <- Some(msbuildWorkspace :> Workspace)
-            return Some msbuildWorkspace.CurrentSolution
-        with
-        | ex ->
-            logMessage ("loadSolutionOnDir: failed with " + ex.ToString())
-            return None
+        let! solution = tryLoadSolutionOnPath logMessage solutionPath
+        return solution
 }

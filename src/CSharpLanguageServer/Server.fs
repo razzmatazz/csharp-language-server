@@ -24,6 +24,11 @@ open Microsoft.CodeAnalysis.CodeFixes
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
+open Newtonsoft.Json
+
+type Options = {
+    SolutionPath: string option;
+}
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -72,7 +77,7 @@ type CSharpMetadataResponse = {
     Source: string;
 }
 
-type CSharpLspServer(lspClient: CSharpLspClient) =
+type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
     let mutable clientCapabilities: ClientCapabilities option = None
@@ -148,18 +153,26 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
 
-        logMessage (sprintf "Initialize: initializing, csharp-ls version %s"
-                            (typeof<CSharpLspServer>.Assembly.GetName().Version |> string))
-        logMessage "Initialize: project url is https://github.com/razzmatazz/csharp-language-server"
-        logMessage "Initialize: csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
+        logMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+                            (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
+                            (JsonConvert.SerializeObject(options)))
+        logMessage "project url is https://github.com/razzmatazz/csharp-language-server"
+        logMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
 
-        let cwd = Directory.GetCurrentDirectory()
-        logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+        match options.SolutionPath with
+        | Some solutionPath ->
+            logMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
+            let! solutionLoaded = tryLoadSolutionOnPath logMessage solutionPath
+            currentSolution <- solutionLoaded
 
-        let! solutionLoaded = loadSolutionOnDir logMessage cwd
-        currentSolution <- solutionLoaded
+        | None ->
+            let cwd = Directory.GetCurrentDirectory()
+            logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
 
-        logMessage "Initialize: ok solution loaded"
+            let! solutionLoaded = findAndLoadSolutionOnDir logMessage cwd
+            currentSolution <- solutionLoaded
+
+        logMessage "ok, solution loaded -- initialization finished"
 
         return
             { InitializeResult.Default with
@@ -573,7 +586,7 @@ type CSharpLspServer(lspClient: CSharpLspClient) =
     override __.Dispose(): unit = ()
 
 
-let startCore () =
+let startCore options =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
@@ -585,11 +598,11 @@ let startCore () =
                                         input
                                         output
                                         CSharpLspClient
-                                        (fun lspClient -> new CSharpLspServer(lspClient))
+                                        (fun lspClient -> new CSharpLspServer(lspClient, options))
 
-let start () =
+let start options =
     try
-        let result = startCore ()
+        let result = startCore options
         int result
     with
     | _ex ->
