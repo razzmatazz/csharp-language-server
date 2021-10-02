@@ -1,5 +1,6 @@
-# (next)
+# 0.1.3
 - Support `--help` and `--version` command line params.
+- Support for `-s/--solution` param to load specific solution file.
 
 # 0.1.2
 - No -alpha version number suffix so you don't need --version to install with `dotnet tool install`;

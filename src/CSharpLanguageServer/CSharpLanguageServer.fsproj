@@ -15,8 +15,8 @@
     <PackageTags>csharp;lsp;roslyn</PackageTags>
     <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <Version>0.1.2</Version>
-    <PackageVersion>0.1.2</PackageVersion>
+    <Version>0.1.3</Version>
+    <PackageVersion>0.1.3</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
