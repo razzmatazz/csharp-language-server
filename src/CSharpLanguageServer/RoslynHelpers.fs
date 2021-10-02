@@ -16,14 +16,6 @@ open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
 
-let toLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
-    match s with
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some Types.DiagnosticSeverity.Warning
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some Types.DiagnosticSeverity.Error
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> None
-    | _ -> None
-
 let roslynTagToLspCompletion tag =
     match tag with
     | "Class"         -> Types.CompletionItemKind.Class
@@ -63,6 +55,12 @@ let lspRangeForRoslynLinePosSpan (pos: LinePositionSpan): Types.Range =
 let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.TextEdit =
     { Range = docText.Lines.GetLinePositionSpan(c.Span) |> lspRangeForRoslynLinePosSpan
       NewText = c.NewText }
+
+let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Location =
+    let getPathUri path = Uri("file://" + path)
+
+    { Uri = loc.SourceTree.FilePath |> getPathUri |> string
+      Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
 
 let lspDocChangesFromSolutionDiff
         originalSolution
@@ -233,6 +231,24 @@ let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
       Location = location
       ContainerName = None }
 
+let roslynToLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
+    match s with
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some Types.DiagnosticSeverity.Warning
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some Types.DiagnosticSeverity.Error
+    | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> None
+    | _ -> None
+
+let roslynToLspDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) : Types.Diagnostic =
+    { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
+      Severity = d.Severity |> roslynToLspDiagnosticSeverity
+      Code = None
+      CodeDescription = None
+      Source = "lsp"
+      Message = d.GetMessage()
+      RelatedInformation = None
+      Tags = None
+      Data = None }
 
 let findSymbols (solution: Solution) pattern (_limit: int option): Async<Types.SymbolInformation list> = async {
     let mutable symbolsFound = []

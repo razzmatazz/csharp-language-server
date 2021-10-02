@@ -1,3 +1,6 @@
+# (unreleased)
+- Don't publish diagnostics for C# documents generated from metadata.
+
 # 0.1.3
 - Support `--help` and `--version` command line params.
 - Support for `-s/--solution` param to load specific solution file.

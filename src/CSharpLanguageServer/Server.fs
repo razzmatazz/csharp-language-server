@@ -90,9 +90,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
         do lspClient.WindowShowMessage messageParams |> ignore
 
-    let getPathUri path = Uri("file://" + path)
-
     let getDocumentForUri u =
+        let getPathUri path = Uri("file://" + path)
+
         let uri = Uri u
         match currentSolution with
         | Some solution -> let documents = solution.Projects |> Seq.collect (fun p -> p.Documents)
@@ -103,31 +103,38 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                            | _ -> Map.tryFind u decompiledMetadataDocs
         | None -> None
 
-    let getSymbolAtPosition documentUri pos = async {
-        match getDocumentForUri documentUri with
+    let withDocumentOnUriOrNone fn u = async {
+        match getDocumentForUri u with
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-            return if isNull symbolRef then None else Some (symbolRef, doc)
+            let! fnResult = fn doc
+            return fnResult
         | None ->
             return None
     }
 
-    let makeLspDiag (d: Microsoft.CodeAnalysis.Diagnostic) =
-        { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
-          Severity = d.Severity |> RoslynHelpers.toLspDiagnosticSeverity
-          Code = None
-          CodeDescription = None
-          Source = "lsp"
-          Message = d.GetMessage()
-          RelatedInformation = None
-          Tags = None
-          Data = None }
+    let isUriADecompiledDoc u = Map.containsKey u decompiledMetadataDocs
 
-    let locationToLspLocation (loc: Microsoft.CodeAnalysis.Location) =
-        { Uri = loc.SourceTree.FilePath |> getPathUri |> string
-          Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
+    let withRegularDocumentOnUriOrUnit fn u = async {
+        match isUriADecompiledDoc u with
+        | true ->  ()
+        | false ->
+            match getDocumentForUri u with
+            | Some doc ->
+                let! fnResult = fn doc
+                return fnResult
+            | None ->
+                return ()
+    }
+
+    let getSymbolAtPosition uri pos =
+        let resolveSymbolOrNull (doc: Document) = async {
+           let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+           let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
+           let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+           return if isNull symbolRef then None else Some (symbolRef, doc)
+        }
+
+        withDocumentOnUriOrNone resolveSymbolOrNull uri
 
     let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =
         if (symbol :? INamedTypeSymbol) then
@@ -149,6 +156,19 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         String.Join(".", stack)
 
+    let publishDiagnosticsOnDocument docUri (doc: Document) = async {
+        let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+
+        let diagnostics = semanticModel.GetDiagnostics()
+                            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                            |> Array.ofSeq
+
+        do! lspClient.TextDocumentPublishDiagnostics {
+            Uri = docUri
+            Diagnostics = diagnostics }
+
+        return ()
+    }
 
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
@@ -211,66 +231,41 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         |> success
     }
 
-    override __.Initialized(_: InitializedParams) = async {
-        //logMessage "`Initialized` received from client"
-        return ()
-    }
+    override __.Initialized(_: InitializedParams) = async { return () }
 
     override __.Exit(): Async<unit> = async { return () }
 
     override __.Shutdown(): Async<unit> = async { return () }
 
-    override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) = async {
-        let document = getDocumentForUri openParams.TextDocument.Uri
-
+    override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) =
         openDocVersions <- openDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version)
 
-        match document with
-        | Some doc ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+        withRegularDocumentOnUriOrUnit
+            (publishDiagnosticsOnDocument openParams.TextDocument.Uri)
+            openParams.TextDocument.Uri
 
-            let diagnostics = semanticModel.GetDiagnostics()
-                              |> Seq.map makeLspDiag
-                              |> Array.ofSeq
-
-            do! lspClient.TextDocumentPublishDiagnostics {
-                Uri = openParams.TextDocument.Uri ;
-                Diagnostics = diagnostics }
-
-            return ()
-        | None -> ()
-    }
-
-    override __.TextDocumentDidChange(changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
-        openDocVersions <- openDocVersions.Add(
-            changeParams.TextDocument.Uri,
-            changeParams.TextDocument.Version |> Option.defaultValue 0)
-
-        match getDocumentForUri changeParams.TextDocument.Uri with
-        | Some doc ->
+    override __.TextDocumentDidChange(changeParams: Types.DidChangeTextDocumentParams): Async<unit> =
+        let publishDiagnosticsOnUpdatedDocument (doc: Document) = async {
             let fullText = SourceText.From(changeParams.ContentChanges.[0].Text)
 
             let updatedDoc = doc.WithText(fullText)
             let updatedSolution = updatedDoc.Project.Solution;
-
             currentSolution <- Some updatedSolution
 
-            let! semanticModel = updatedDoc.GetSemanticModelAsync() |> Async.AwaitTask
-
-            let diagnostics = semanticModel.GetDiagnostics()
-                                           |> Seq.map makeLspDiag
-                                           |> Array.ofSeq
-
-            do! lspClient.TextDocumentPublishDiagnostics {
-                  Uri = changeParams.TextDocument.Uri
-                  Diagnostics = diagnostics }
+            do! publishDiagnosticsOnDocument changeParams.TextDocument.Uri updatedDoc
             return ()
+        }
 
-        | _ -> return ()
-    }
+        openDocVersions <- openDocVersions.Add(
+            changeParams.TextDocument.Uri,
+            changeParams.TextDocument.Version |> Option.defaultValue 0)
+
+        withRegularDocumentOnUriOrUnit
+            publishDiagnosticsOnUpdatedDocument
+            changeParams.TextDocument.Uri
 
     override __.TextDocumentDidSave(_: Types.DidSaveTextDocumentParams): Async<unit> = async {
-        ()
+        return ()
     }
 
     override __.TextDocumentDidClose(closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
@@ -457,7 +452,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                     else
                         match List.ofSeq locationsInSource with
                         | [] -> return []
-                        | locations -> return locations |> Seq.map locationToLspLocation |> List.ofSeq
+                        | locations ->
+                            return locations
+                                   |> Seq.map lspLocationForRoslynLocation
+                                   |> List.ofSeq
                 }
 
             return locations
@@ -492,7 +490,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                        | None -> []
 
                 return (Seq.append locationsFromRefs locationsFromDef)
-                       |> Seq.map (fun l -> { Range = (locationToLspLocation l).Range ;
+                       |> Seq.map (fun l -> { Range = (lspLocationForRoslynLocation l).Range ;
                                               Kind = Some DocumentHighlightKind.Read })
                        |> Array.ofSeq
                        |> Some
@@ -540,7 +538,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             | Some (symbol, _) ->
                 let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
                 return refs |> Seq.collect (fun r -> r.Locations)
-                            |> Seq.map (fun rl -> locationToLspLocation rl.Location)
+                            |> Seq.map (fun rl -> lspLocationForRoslynLocation rl.Location)
                             |> Array.ofSeq
                             |> Some
                             |> success
