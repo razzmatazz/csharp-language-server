@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
+open System.Xml.Linq
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
@@ -76,6 +77,63 @@ type CSharpMetadataResponse = {
     SymbolName: string;
     Source: string;
 }
+
+
+let formatCSharpDocXml xmlDocumentation =
+    let doc = XDocument.Parse("<docroot>" + xmlDocumentation + "</docroot>")
+
+    let formatCref (cref: string) =
+        let parts = cref.Split(':')
+        let typeName = match parts.Length with
+                       | 1 -> cref
+                       | _ -> String.Join(":", parts |> Seq.skip 1)
+        "`" + typeName + "`"
+
+    let formatTextNode (n: XElement) =
+        let listOfOption o = match o with
+                             | Some v -> [v]
+                             | _ -> []
+
+        let formatNode (subnode: XNode) =
+            match subnode with
+            | :? XText as t -> [t.Value]
+            | :? XElement as e ->
+               match e.Name.LocalName with
+               | "see" -> e.Attribute(XName.Get("cref"))
+                           |> Option.ofObj
+                           |> listOfOption
+                           |> Seq.map (fun x -> x.Value)
+                           |> Seq.map formatCref
+                           |> List.ofSeq
+               | _ -> []
+            | _ -> []
+
+        String.Join("", n.Nodes() |> Seq.collect formatNode).Trim()
+
+    let elementToStringSeq (n: XElement) =
+        match n.Name.LocalName with
+        | "summary" -> [n |> formatTextNode; ""]
+        | "param" -> [sprintf "- Param `%s`: %s" (n.Attribute(XName.Get("name")).Value) (formatTextNode n)]
+        | "returns" -> [sprintf "- Returns: %s" (formatTextNode n)]
+        | "exception" -> [sprintf "- Exception %s: %s" (n.Attribute(XName.Get("cref")).Value |> formatCref)
+                                                     (formatTextNode n)]
+        | _ -> []
+
+    let rec nodeToStringSeq (n: XNode): string list =
+        match n with
+        | :? XElement as e ->
+          let thisItem = e |> elementToStringSeq
+          let subItems = e.Nodes() |> Seq.collect nodeToStringSeq |> List.ofSeq
+          thisItem |> Seq.append subItems |> List.ofSeq
+        | _ -> []
+
+    let formattedDoc =
+        doc.Root.Nodes()
+        |> Seq.collect nodeToStringSeq
+        |> (fun ss -> String.Join("\r\n", ss))
+
+    formattedDoc // + (xmlDocumentation)
+
 
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
@@ -517,11 +575,18 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
     override __.TextDocumentHover(hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
         let! maybeSymbol = getSymbolAtPosition hoverPos.TextDocument.Uri hoverPos.Position
-        let maybeHoverText = Option.map (fun (sym: ISymbol, _: Document) -> sym.ToString() + "\n" +  sym.GetDocumentationCommentXml()) maybeSymbol
+
+        let symbolDocumentation (sym: ISymbol) =
+            String.Join(", ", [| sym.ToString();
+                                 sym.GetDocumentationCommentXml() |> formatCSharpDocXml |])
+        
+        let maybeHoverText =
+            maybeSymbol
+            |> Option.map (fun (sym: ISymbol, _: Document) -> sym |> symbolDocumentation)
 
         let contents = [ match maybeHoverText with
-                         | None -> MarkedString.WithLanguage { Language = "csharp"; Value = "" }
-                         | Some text -> MarkedString.WithLanguage { Language = "csharp"; Value = text }
+                         | None -> MarkedString.WithLanguage { Language = "markdown"; Value = "" }
+                         | Some text -> MarkedString.WithLanguage { Language = "markdown"; Value = text }
                        ]
 
         return Some { Contents = contents |> Array.ofList |> MarkedStrings
