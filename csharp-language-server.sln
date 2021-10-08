@@ -9,6 +9,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LanguageServerProtocol", "s
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer", "src\CSharpLanguageServer\CSharpLanguageServer.fsproj", "{490C9EC4-F4F2-416C-A82A-25F1C97C62F9}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer.Tests", "src\CSharpLanguageServer.Tests\CSharpLanguageServer.Tests.fsproj", "{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,9 +48,22 @@ Global
 		{490C9EC4-F4F2-416C-A82A-25F1C97C62F9}.Release|x64.Build.0 = Release|Any CPU
 		{490C9EC4-F4F2-416C-A82A-25F1C97C62F9}.Release|x86.ActiveCfg = Release|Any CPU
 		{490C9EC4-F4F2-416C-A82A-25F1C97C62F9}.Release|x86.Build.0 = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|x64.Build.0 = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Debug|x86.Build.0 = Debug|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|x64.ActiveCfg = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|x64.Build.0 = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|x86.ActiveCfg = Release|Any CPU
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{416E8500-18B2-4CE6-A8C9-1C15F79482B7} = {1F7B5EDD-0253-453D-937D-D4EB7B0FA654}
 		{490C9EC4-F4F2-416C-A82A-25F1C97C62F9} = {1F7B5EDD-0253-453D-937D-D4EB7B0FA654}
+		{D42C93FF-5496-48AF-B6E8-10AAEF6EBA63} = {1F7B5EDD-0253-453D-937D-D4EB7B0FA654}
 	EndGlobalSection
 EndGlobal
