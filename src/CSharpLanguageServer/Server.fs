@@ -67,9 +67,11 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
+
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
 }
+
 
 type CSharpMetadataResponse = {
     ProjectName: string;
@@ -372,7 +374,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                     for diag in relatedDiagnostics do
                         let codeFixContext = CodeFixContext(doc, diag, addCodeFix, CancellationToken.None)
 
-                        logMessage (sprintf "%s: Id=%s" (diag |> string) diag.Id)
+                        //logMessage (sprintf "%s: Id=%s" (diag |> string) diag.Id)
 
                         let refactoringProviderOK =
                             let translatedDiagId diagId =

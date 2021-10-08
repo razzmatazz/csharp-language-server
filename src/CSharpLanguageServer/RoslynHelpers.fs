@@ -305,7 +305,7 @@ let codeFixProviderInstances =
 
 let tryLoadSolutionOnPath logMessage solutionPath = async {
     try
-        logMessage ("loadSolution: loading solution: " + solutionPath)
+        logMessage ("loading solution: " + solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -319,7 +319,7 @@ let tryLoadSolutionOnPath logMessage solutionPath = async {
         return Some msbuildWorkspace.CurrentSolution
     with
     | ex ->
-        logMessage ("loadSolution: failed with " + ex.ToString())
+        logMessage ("solution loading has failed with error: " + ex.ToString())
         return None
 }
 
