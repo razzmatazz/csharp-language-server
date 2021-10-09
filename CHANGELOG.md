@@ -1,4 +1,5 @@
 # (unreleased)
+- Expose C# docxml as markdown for more proper on-hover experience;
 - Don't publish diagnostics for C# documents generated from metadata.
 
 # 0.1.3

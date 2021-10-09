@@ -92,12 +92,12 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
     let symbolInfoLines =
         match typeName, typeAssemblyName with
         | "", "" -> []
-        | _ -> ["Full name `" + typeName + "`; Assembly `" + typeAssemblyName + "`"]
+        | _ -> [sprintf "`%s` from assembly `%s`"typeName typeAssemblyName]
 
     let formattedDoc =
-        symbolInfoLines
+        formattedDocLines
         |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
-        |> Seq.append formattedDocLines
+        |> Seq.append symbolInfoLines
         |> (fun ss -> String.Join("\r\n", ss))
 
     formattedDoc // + (xmlDocumentation)
