@@ -1,5 +1,5 @@
 open NUnit.Framework
-open CSharpLanguageServer.DocumentationUtil
+open CSharpLanguageServer.Documentation
 
 [<TestCase(
     "",
@@ -54,6 +54,35 @@ an `NUnit.Framework.AssertionException`.\r\n\
 - Exception `System.ObjectDisposedException`: The `System.IO.TextWriter` is closed.\r\n\
 - Exception `System.IO.IOException`: An I/O error occurs."
 )>]
+[<TestCase(
+    "\r\n\
+<member name=\"M:csharp_test.Test.TestSomething2\">\r\n\
+    <summary>\r\n\
+      Test method.\r\n\
+      Does another thing.\r\n\
+    </summary>\r\n\
+</member>\r\n\
+",
+    "", "",
+    "Test method. Does another thing.")>]
+[<TestCase(
+    "<summary>test <c>xx</c></summary>",
+    "", "",
+    "test `xx`")>]
+[<TestCase(
+    "<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
+    "", "",
+    "test contents-of-unknown-tag")>]
+[<TestCase(
+    "<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
+    "", "",
+    "test contents-of-unknown-inline-tag")>]
+[<TestCase(
+    "<summary>summary</summary>\r\n
+    <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
+    "", "",
+    "summary\r\n\
+<unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
 let testFormatDocXml (xml, typeName, typeAssemblyName, expectedMD) =
     Assert.AreEqual(
         expectedMD,

@@ -523,9 +523,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         let getSymbolDocumentation (sym: ISymbol) =
             let csharpMarkdownDoc =
-                DocumentationUtil.formatDocXml (sym.GetDocumentationCommentXml())
-                                               (sym.ToString())
-                                               sym.ContainingAssembly.Name
+                Documentation.formatDocXml
+                    (sym.GetDocumentationCommentXml())
+                    (sym.ToString())
+                    sym.ContainingAssembly.Name
 
             //logMessage (sprintf "debug: xml=%s; markdown=%s" (sym.GetDocumentationCommentXml()) csharpMarkdownDoc)
 
@@ -535,6 +536,15 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             match sym with
             | :? ILocalSymbol as ps -> ps.Type :> ISymbol
             | _ -> sym
+
+        (* TODO debugging code -- remove
+        match maybeSymbol with
+        | Some (sym, _) ->
+           logMessage (sprintf "have symbol on hover: %s; xml=%s"
+                               (sym |> string)
+                               (sym.GetDocumentationCommentXml()))
+        | _ -> ()
+        *)
 
         let contents =
             match maybeSymbol with

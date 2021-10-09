@@ -21,7 +21,7 @@
 
   <ItemGroup>
     <Compile Include="RoslynHelpers.fs" />
-    <Compile Include="DocumentationUtil.fs" />
+    <Compile Include="Documentation.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />

@@ -1,4 +1,4 @@
-module CSharpLanguageServer.DocumentationUtil
+module CSharpLanguageServer.Documentation
 
 open System
 open System.Xml.Linq
@@ -42,12 +42,13 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
             match subnode with
             | :? XElement as e ->
                 match e.Name.LocalName with
+                | "c" -> [sprintf "`%s`" e.Value]
                 | "see" -> formatSeeElement e
                 | "paramref" -> e.Attribute(XName.Get("name"))
                                 |> Option.ofObj
                                 |> Option.map (fun x -> sprintf "`%s`" x.Value)
                                 |> listOfOption
-                | _ -> []
+                | _ -> [e.Value]
             | :? XText as t -> t.Value |> normalizeWhitespace |> listOfOne
             | _ -> []
 
@@ -72,10 +73,18 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
                     (n.Attribute(XName.Get("cref")).Value |> formatCref)
                     (formatTextElement n)
             |> listOfOne
-        | _ -> []
+        | _ -> [n |> string] // default fallback, might not be always suitable
+
+    let unwrapDocRoot (root: XElement) =
+        let elementNames (el: XElement) =
+            el.Elements() |> Seq.map (fun e -> e.Name.LocalName) |> List.ofSeq
+
+        match elementNames root with
+        | ["member"] -> root.Element("member")
+        | _ -> root
 
     let formattedDocLines =
-        doc.Root.Elements()
+        (unwrapDocRoot doc.Root).Elements()
         |> Seq.collect elementToStrings
         |> Seq.map (fun s -> s.Trim())
         |> List.ofSeq
