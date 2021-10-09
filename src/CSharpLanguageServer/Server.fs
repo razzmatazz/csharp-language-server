@@ -531,9 +531,15 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             [MarkedString.WithLanguage { Language = "markdown"; Value = csharpMarkdownDoc }]
 
-        let contents = match maybeSymbol with
-                       | Some (sym, _) -> getSymbolDocumentation sym
-                       | _ -> []
+        let suggestUnderlyingSymbolType (sym: ISymbol) =
+            match sym with
+            | :? ILocalSymbol as ps -> ps.Type :> ISymbol
+            | _ -> sym
+
+        let contents =
+            match maybeSymbol with
+            | Some (sym, _) -> sym |> suggestUnderlyingSymbolType |> getSymbolDocumentation
+            | _ -> []
 
         return Some { Contents = contents |> Array.ofSeq |> MarkedStrings;
                       Range = None } |> success

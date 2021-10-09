@@ -78,6 +78,7 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
         doc.Root.Elements()
         |> Seq.collect elementToStrings
         |> Seq.map (fun s -> s.Trim())
+        |> List.ofSeq
 
     let symbolInfoLines =
         match typeName, typeAssemblyName with
@@ -86,6 +87,7 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
 
     let formattedDoc =
         symbolInfoLines
+        |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
         |> Seq.append formattedDocLines
         |> (fun ss -> String.Join("\r\n", ss))
 
