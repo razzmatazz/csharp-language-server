@@ -16,9 +16,11 @@ This is a hacky Roslyn-based LSP server as an alternative to
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
- - ability to run tests
+ - "generate field/property" code refactoring is missing
+ - selection range provider
+ - semantic tokens
  - implement TextDocumentImplementation
  - code lenses
  - formatting, on type and otherwise
- - parse documentation into format needed for lsp
+ - ability to run tests
  - razorls integration (server-side)
