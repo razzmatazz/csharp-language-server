@@ -522,9 +522,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         let! maybeSymbol = getSymbolAtPosition hoverPos.TextDocument.Uri hoverPos.Position
 
         let getSymbolDocumentation (sym: ISymbol) =
-            let csharpMarkdownDoc = DocumentationUtil.formatDocXml (sym.GetDocumentationCommentXml())
-                                                                   (sym.ToString())
-                                                                   sym.ContainingAssembly.Name
+            let csharpMarkdownDoc =
+                DocumentationUtil.formatDocXml (sym.GetDocumentationCommentXml())
+                                               (sym.ToString())
+                                               sym.ContainingAssembly.Name
+
+            //logMessage (sprintf "debug: xml=%s; markdown=%s" (sym.GetDocumentationCommentXml()) csharpMarkdownDoc)
 
             [MarkedString.WithLanguage { Language = "markdown"; Value = csharpMarkdownDoc }]
 

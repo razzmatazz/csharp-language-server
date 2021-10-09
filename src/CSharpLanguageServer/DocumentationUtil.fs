@@ -4,9 +4,10 @@ open System
 open System.Xml.Linq
 
 let listOfOption o = match o with | Some v -> [v] | _ -> []
+let listOfOne i = [i]
 
 let formatDocXml xmlDocumentation typeName typeAssemblyName =
-    printf "xmlDocumentation=%s" xmlDocumentation
+    //printf "xmlDocumentation=%s" xmlDocumentation
     let doc = XDocument.Parse("<docroot>" + xmlDocumentation + "</docroot>")
 
     let formatCref (cref: string) =
@@ -16,61 +17,67 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
                        | _ -> String.Join(":", parts |> Seq.skip 1)
         "`" + typeName + "`"
 
-    let formatTextNode (n: XElement) =
-        let formatNode (subnode: XNode) =
+    let normalizeWhitespace (s: string) =
+        s.Replace("\r\n", " ").Replace("\n", " ")
+
+    let formatTextElement (n: XElement) =
+
+        let formatSeeElement (e: XElement) =
+            let crefMaybe =
+                e.Attribute(XName.Get("cref"))
+                |> Option.ofObj
+                |> Option.map (fun x -> x.Value)
+                |> Option.map formatCref
+                |> listOfOption
+
+            let langWordMaybe =
+                e.Attribute(XName.Get("langword"))
+                |> Option.ofObj
+                |> Option.map (fun x -> sprintf "`%s`" x.Value)
+                |> listOfOption
+
+            crefMaybe |> Seq.append langWordMaybe |> List.ofSeq
+
+        let formatTextSubnode (subnode: XNode) =
             match subnode with
-            | :? XText as t -> [t.Value]
             | :? XElement as e ->
-               match e.Name.LocalName with
-               | "see" -> e.Attribute(XName.Get("cref"))
-                           |> Option.ofObj
-                           |> listOfOption
-                           |> Seq.map (fun x -> x.Value)
-                           |> Seq.map formatCref
-                           |> List.ofSeq
-               | _ -> []
+                match e.Name.LocalName with
+                | "see" -> formatSeeElement e
+                | "paramref" -> e.Attribute(XName.Get("name"))
+                                |> Option.ofObj
+                                |> Option.map (fun x -> sprintf "`%s`" x.Value)
+                                |> listOfOption
+                | _ -> []
+            | :? XText as t -> t.Value |> normalizeWhitespace |> listOfOne
             | _ -> []
 
-        let removeHeadingEmptyLines ss = ss |> Seq.skipWhile String.IsNullOrWhiteSpace
-        let removeTrailingEmptyLines ss = ss |> Seq.rev |> removeHeadingEmptyLines |> Seq.rev
+        n.Nodes()
+        |> Seq.collect formatTextSubnode
+        |> (fun ss -> String.Join("", ss))
 
-        let removeBaseWhitespace (ss: string seq) =
-            let baseWhitespaceCount =
-                ss |> Seq.map (fun s -> s |> Seq.takeWhile Char.IsWhiteSpace |> Seq.length)
-                   |> Seq.filter (fun l -> l > 0)
-                   |> (fun ss -> if Seq.isEmpty ss then 0 else Seq.min ss)
-
-            ss |> Seq.map (fun s -> if s.Length > baseWhitespaceCount then s.Substring(baseWhitespaceCount) else s)
-
-        let lines =
-            n.Nodes()
-            |> Seq.collect formatNode
-            |> Seq.collect (fun s -> s.Split("\n"))
-            |> Seq.map (fun s -> s.TrimEnd('\r', ' ', '\t'))
-            |> removeHeadingEmptyLines
-            |> removeTrailingEmptyLines
-            |> removeBaseWhitespace
-
-        String.Join(Environment.NewLine, lines)
-
-    let elementToStringSeq (n: XElement) =
+    let elementToStrings (n: XElement) =
         match n.Name.LocalName with
-        | "summary" -> [n |> formatTextNode]
-        | "param" -> [sprintf "- Param `%s`: %s" (n.Attribute(XName.Get("name")).Value) (formatTextNode n)]
-        | "returns" -> [sprintf "- Returns: %s" (formatTextNode n)]
-        | "exception" -> [sprintf "- Exception %s: %s" (n.Attribute(XName.Get("cref")).Value |> formatCref)
-                                                     (formatTextNode n)]
+        | "summary" ->
+            n |> formatTextElement |> listOfOne
+        | "param" ->
+            sprintf "- Param `%s`: %s"
+                    (n.Attribute(XName.Get("name")).Value)
+                    (formatTextElement n)
+            |> listOfOne
+        | "returns" ->
+            sprintf "- Returns: %s" (formatTextElement n)
+            |> listOfOne
+        | "exception" ->
+            sprintf "- Exception %s: %s"
+                    (n.Attribute(XName.Get("cref")).Value |> formatCref)
+                    (formatTextElement n)
+            |> listOfOne
         | _ -> []
 
-    let rec nodeToStringSeq (n: XNode): string list =
-        match n with
-        | :? XElement as e ->
-          let thisItem = e |> elementToStringSeq
-          let subItems = e.Nodes() |> Seq.collect nodeToStringSeq |> List.ofSeq
-          thisItem |> Seq.append subItems |> List.ofSeq
-        | _ -> []
-
-    let formattedDocLines = doc.Root.Nodes() |> Seq.collect nodeToStringSeq
+    let formattedDocLines =
+        doc.Root.Elements()
+        |> Seq.collect elementToStrings
+        |> Seq.map (fun s -> s.Trim())
 
     let symbolInfoLines =
         match typeName, typeAssemblyName with
