@@ -9,7 +9,7 @@ This is a hacky Roslyn-based LSP server as an alternative to
 # Installation
 `dotnet tool install --global csharp-ls`
 
-See [nuget csharp-ls page](https://www.nuget.org/packages/csharp-ls/)
+See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 # Acknowledgements
 - LSP interface code here is based on (copied from)  [FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code;
