@@ -28,7 +28,7 @@ let entry args =
         let serverOptions: Server.Options = {
             SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
             LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
-                       |> Option.defaultValue "info"
+                       |> Option.defaultValue "log"
                        |> parseLogLevel
         }
 

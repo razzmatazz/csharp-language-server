@@ -13,4 +13,4 @@ module Options =
                   match s with
                   | Version -> "display versioning information"
                   | Solution _ -> ".sln file to load (relative to CWD)"
-                  | LogLevel _ -> "log level, <log|info|warning|error>"
+                  | LogLevel _ -> "log level, <log|info|warning|error>; default is `log`"
