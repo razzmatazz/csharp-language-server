@@ -80,7 +80,7 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
             el.Elements() |> Seq.map (fun e -> e.Name.LocalName) |> List.ofSeq
 
         match elementNames root with
-        | ["member"] -> root.Element("member")
+        | ["member"] -> root.Element(XName.Get("member"))
         | _ -> root
 
     let formattedDocLines =
