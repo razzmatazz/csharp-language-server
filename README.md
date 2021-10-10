@@ -6,6 +6,11 @@ This is a hacky Roslyn-based LSP server as an alternative to
 - Most of basic LSP features: rename/go-to-def/find references, etc;
 - Go-to-metadata (needs integration from your LSP client.)
 
+# Installation
+`dotnet tool install --global csharp-ls`
+
+See [nuget csharp-ls page](https://www.nuget.org/packages/csharp-ls/)
+
 # Acknowledgements
 - LSP interface code here is based on (copied from)  [FSharpAutoComplete](https://github.com/fsharp/FsAutoComplete) code;
 - csharp-ls uses Roslyn to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
