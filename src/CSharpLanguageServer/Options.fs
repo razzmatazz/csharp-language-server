@@ -5,6 +5,7 @@ module Options =
 
   type CLIArguments =
       | [<AltCommandLine("-v")>] Version
+      | [<AltCommandLine("-l")>] LogLevel of level:string
       | [<AltCommandLine("-s")>] Solution of solution:string
       with
           interface IArgParserTemplate with
@@ -12,3 +13,4 @@ module Options =
                   match s with
                   | Version -> "display versioning information"
                   | Solution _ -> ".sln file to load (relative to CWD)"
+                  | LogLevel _ -> "log level, <log|info|warning|error>"

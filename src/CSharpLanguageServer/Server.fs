@@ -25,9 +25,11 @@ open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Newtonsoft.Json
+open Newtonsoft.Json.Converters
 
 type Options = {
     SolutionPath: string option;
+    LogLevel: Types.MessageType;
 }
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
@@ -89,9 +91,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     let mutable decompiledMetadataUris = Map.empty<string, CSharpMetadataResponse>
     let mutable decompiledMetadataDocs = Map.empty<string, Document>
 
-    let logMessage message =
-        let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
+    let logMessageWithLevel l message =
+        let messageParams = { Type = l ; Message = "csharp-ls: " + message }
         do lspClient.WindowShowMessage messageParams |> ignore
+
+    let logMessage = logMessageWithLevel MessageType.Log
+    let infoMessage = logMessageWithLevel MessageType.Info
+    let warningMessage = logMessageWithLevel MessageType.Warning
+    let errorMessage = logMessageWithLevel MessageType.Error
 
     let getDocumentForUri u =
         let getPathUri path = Uri("file://" + path)
@@ -176,26 +183,26 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     override _.Initialize(p: InitializeParams) = async {
         clientCapabilities <- p.Capabilities
 
-        logMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
-                            (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
-                            (JsonConvert.SerializeObject(options)))
-        logMessage "project url is https://github.com/razzmatazz/csharp-language-server"
-        logMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
+        infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
+                             (JsonConvert.SerializeObject(options, StringEnumConverter())))
+        infoMessage "project url is https://github.com/razzmatazz/csharp-language-server"
+        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
 
         match options.SolutionPath with
         | Some solutionPath ->
-            logMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
+            infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
             let! solutionLoaded = tryLoadSolutionOnPath logMessage solutionPath
             currentSolution <- solutionLoaded
 
         | None ->
             let cwd = Directory.GetCurrentDirectory()
-            logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+            infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
 
             let! solutionLoaded = findAndLoadSolutionOnDir logMessage cwd
             currentSolution <- solutionLoaded
 
-        logMessage "ok, solution loaded -- initialization finished"
+        infoMessage "ok, solution loaded -- initialization finished"
 
         return
             { InitializeResult.Default with
@@ -470,8 +477,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                        |> GotoResult.Multiple
                                        |> Some
                                        |> success
-        | None     ->
-            logMessage (sprintf "TextDocumentDefinition: no document for uri %s" (def.TextDocument.Uri |> string))
+        | None ->
+            logMessage (sprintf "getDocumentForUri: no document for uri %s" (def.TextDocument.Uri |> string))
             return None |> success
     }
 

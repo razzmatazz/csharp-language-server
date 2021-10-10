@@ -17,9 +17,19 @@ let entry args =
 
         MSBuildLocator.RegisterDefaults() |> ignore
 
+        let parseLogLevel (s: string) =
+            match s.ToLowerInvariant() with
+            | "log" -> LanguageServerProtocol.Types.MessageType.Log
+            | "info" -> LanguageServerProtocol.Types.MessageType.Info
+            | "warning" -> LanguageServerProtocol.Types.MessageType.Warning
+            | "error" -> LanguageServerProtocol.Types.MessageType.Error
+
         // default the verbosity to warning
         let serverOptions: Server.Options = {
             SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
+            LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
+                       |> Option.defaultValue "info"
+                       |> parseLogLevel
         }
 
         Server.start serverOptions
