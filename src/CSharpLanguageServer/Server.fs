@@ -529,10 +529,13 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         let getSymbolDocumentation (sym: ISymbol) =
             let csharpMarkdownDoc =
+                let containingAssemblyName =
+                    sym.ContainingAssembly |> Option.ofObj |> Option.map (fun a -> a.Name) |> Option.defaultValue ""
+
                 Documentation.formatDocXml
                     (sym.GetDocumentationCommentXml())
                     (sym.ToString())
-                    sym.ContainingAssembly.Name
+                    containingAssemblyName
 
             //logMessage (sprintf "debug: xml=%s; markdown=%s" (sym.GetDocumentationCommentXml()) csharpMarkdownDoc)
 

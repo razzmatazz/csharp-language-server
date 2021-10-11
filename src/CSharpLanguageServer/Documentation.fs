@@ -92,7 +92,8 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
     let symbolInfoLines =
         match typeName, typeAssemblyName with
         | "", "" -> []
-        | _ -> [sprintf "`%s` from assembly `%s`"typeName typeAssemblyName]
+        | typeName, "" -> [sprintf "`%s`" typeName]
+        | _, _ -> [sprintf "`%s` from assembly `%s`" typeName typeAssemblyName]
 
     let formattedDoc =
         formattedDocLines
