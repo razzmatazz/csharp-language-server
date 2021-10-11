@@ -186,8 +186,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                              (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
                              (JsonConvert.SerializeObject(options, StringEnumConverter())))
-        infoMessage "project url is https://github.com/razzmatazz/csharp-language-server"
-        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp."
+        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
         match options.SolutionPath with
         | Some solutionPath ->
