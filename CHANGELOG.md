@@ -1,4 +1,5 @@
 # (unreleased)
+- Update roslyn dependencies;
 - Adding new file works (i.e. no need to restart workspace anymore);
   - There is an issue that Roslyn adds (unnecessary) <Compile> to the project;
 - Don't highlight namespace symbols as those can cover all the symbols on the source file and that is not useful;
