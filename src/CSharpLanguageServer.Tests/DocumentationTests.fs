@@ -83,6 +83,10 @@ an `NUnit.Framework.AssertionException`.\r\n\
     "", "",
     "summary\r\n\
 <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
+[<TestCase(
+    "<summary>summary</summary><remarks>remarks</remarks>",
+    "", "",
+    "summary\r\nremarks")>]
 let testFormatDocXml (xml, typeName, typeAssemblyName, expectedMD) =
     Assert.AreEqual(
         expectedMD,

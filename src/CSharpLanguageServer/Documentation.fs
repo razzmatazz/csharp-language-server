@@ -58,8 +58,8 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
 
     let elementToStrings (n: XElement) =
         match n.Name.LocalName with
-        | "summary" ->
-            n |> formatTextElement |> listOfOne
+        | "summary" -> formatTextElement n |> listOfOne
+        | "remarks" -> formatTextElement n |> listOfOne
         | "param" ->
             sprintf "- Param `%s`: %s"
                     (n.Attribute(XName.Get("name")).Value)
