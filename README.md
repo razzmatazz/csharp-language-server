@@ -21,6 +21,9 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
+ - adding-new-file generates unnecessary `<Compile />` tag to the project;
+   - see https://github.com/dotnet/upgrade-assistant/issues/30
+   - and https://github.com/dotnet/roslyn/issues/36781
  - "generate field/property" code refactoring is missing
  - selection range provider
  - semantic tokens
