@@ -482,28 +482,39 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
+
+        let getSymbolLocations symbol doc solution = async {
+            let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
+            let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet) |> Async.AwaitTask
+            let locationsFromRefs = refs |> Seq.collect (fun r -> r.Locations) |> Seq.map (fun rl -> rl.Location)
+
+            let! defRef = SymbolFinder.FindSourceDefinitionAsync(symbol, solution) |> Async.AwaitTask
+            let locationsFromDef = match Option.ofObj defRef with
+                                   // TODO: we might need to skip locations that are on a different document than this one
+                                   | Some sym -> sym.Locations |> List.ofSeq
+                                   | None -> []
+
+            return (Seq.append locationsFromRefs locationsFromDef)
+                   |> Seq.map (fun l -> { Range = (lspLocationForRoslynLocation l).Range ;
+                                          Kind = Some DocumentHighlightKind.Read })
+        }
+
+        let shouldHighlight (symbol: ISymbol) =
+            match symbol with
+            | :? INamespaceSymbol -> false
+            | _ -> true
+
         match currentSolution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition docParams.TextDocument.Uri docParams.Position
 
             match maybeSymbol with
             | Some (symbol, doc) ->
-                let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
-                let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet) |> Async.AwaitTask
-                let locationsFromRefs = refs |> Seq.collect (fun r -> r.Locations) |> Seq.map (fun rl -> rl.Location)
-
-                let! defRef = SymbolFinder.FindSourceDefinitionAsync(symbol, solution) |> Async.AwaitTask
-                let locationsFromDef = match Option.ofObj defRef with
-                                       // TODO: we might need to skip locations that are on a different document than this one
-                                       | Some sym -> sym.Locations |> List.ofSeq
-                                       | None -> []
-
-                return (Seq.append locationsFromRefs locationsFromDef)
-                       |> Seq.map (fun l -> { Range = (lspLocationForRoslynLocation l).Range ;
-                                              Kind = Some DocumentHighlightKind.Read })
-                       |> Array.ofSeq
-                       |> Some
-                       |> success
+                if shouldHighlight symbol then
+                    let! locations = getSymbolLocations symbol doc solution
+                    return locations |> Array.ofSeq |> Some |> success
+                else
+                    return None |> success
 
             | None -> return None |> success
 
@@ -545,15 +556,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             match sym with
             | :? ILocalSymbol as ps -> ps.Type :> ISymbol
             | _ -> sym
-
-        (* TODO debugging code -- remove
-        match maybeSymbol with
-        | Some (sym, _) ->
-           logMessage (sprintf "have symbol on hover: %s; xml=%s"
-                               (sym |> string)
-                               (sym.GetDocumentationCommentXml()))
-        | _ -> ()
-        *)
 
         let contents =
             match maybeSymbol with
