@@ -105,12 +105,16 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         let uri = Uri u
         match currentSolution with
-        | Some solution -> let documents = solution.Projects |> Seq.collect (fun p -> p.Documents)
-                           let matchingDocuments = documents |> Seq.filter (fun d -> uri = getPathUri d.FilePath) |> List.ofSeq
+        | Some solution -> let matchingDocuments =
+                               solution.Projects
+                               |> Seq.collect (fun p -> p.Documents)
+                               |> Seq.filter (fun d -> uri = getPathUri d.FilePath) |> List.ofSeq
+
                            match matchingDocuments with
                            | [d] -> //logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
                                     Some d
-                           | _ -> Map.tryFind u decompiledMetadataDocs
+                           | _ -> //logMessage (sprintf "getDocumentForUri: no document on solution matching uri %s" (uri |> string))
+                                  Map.tryFind u decompiledMetadataDocs
         | None -> None
 
     let withDocumentOnUriOrNone fn u = async {
@@ -273,7 +277,40 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             publishDiagnosticsOnUpdatedDocument
             changeParams.TextDocument.Uri
 
-    override __.TextDocumentDidSave(_: Types.DidSaveTextDocumentParams): Async<unit> = async {
+    override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
+        // we need to add this file to solution if not already
+        match getDocumentForUri saveParams.TextDocument.Uri with
+        | None ->
+            let solution = currentSolution.Value
+            let docFilename = saveParams.TextDocument.Uri.Substring("file://".Length)
+            let docDir = Path.GetDirectoryName(docFilename)
+            //logMessage (sprintf "TextDocumentDidSave: docFilename=%s docDir=%s" docFilename docDir)
+
+            let matchesPath (p: Project) =
+                let projectDir = Path.GetDirectoryName(p.FilePath)
+                (docDir |> string).StartsWith(projectDir |> string)
+
+            let projectOnPath = solution.Projects |> Seq.filter matchesPath |> Seq.tryHead
+            match projectOnPath with
+            | Some proj ->
+                let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
+                let relativeDocPath = docFilename.Substring(projectBaseDir.Length+1)
+
+                logMessage (sprintf "Adding new file %s to project %s" relativeDocPath proj.FilePath)
+
+                let newDoc = proj.AddDocument(relativeDocPath, SourceText.From(saveParams.Text.Value))
+
+                let workspace = solution.Workspace
+
+                match workspace.TryApplyChanges(newDoc.Project.Solution) with
+                | true ->
+                    //logMessage "TextDocumentDidSave: adding file has succeded"
+                    currentSolution <- Some workspace.CurrentSolution
+                    ()
+                | _ -> ()
+            | None -> ()
+        | _ -> ()
+
         return ()
     }
 

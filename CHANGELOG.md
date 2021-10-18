@@ -1,4 +1,5 @@
 # (unreleased)
+- Adding new file works (i.e. no need to restart workspace anymore);
 - Don't highlight namespace symbols as those can cover all the symbols on the source file and that is not useful;
 - Add -l/--loglevel <debug|info|warning|error> param;
 - Expose C# docxml as markdown for more proper on-hover experience;
