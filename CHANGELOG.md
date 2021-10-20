@@ -1,4 +1,4 @@
-# (unreleased)
+# 0.1.4
 - Don't reference NuGet.* packages as those bind to particular(?) sdk -- things work better now, as it was not working for me with updated SDK dependencies;
 - Update roslyn dependencies;
 - Adding new file works (i.e. no need to restart workspace anymore);
