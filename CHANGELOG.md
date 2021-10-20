@@ -2,7 +2,7 @@
 - Don't reference NuGet.* packages as those bind to particular(?) sdk -- things work better now, as it was not working for me with updated SDK dependencies;
 - Update roslyn dependencies;
 - Adding new file works (i.e. no need to restart workspace anymore);
-  - There is an issue that Roslyn adds (unnecessary) <Compile> to the project;
+  - There is an issue that Roslyn adds (unnecessary) `<Compile>` to the project;
 - Don't highlight namespace symbols as those can cover all the symbols on the source file and that is not useful;
 - Add -l/--loglevel <debug|info|warning|error> param;
 - Expose C# docxml as markdown for more proper on-hover experience (still needs more love, FsAutoComplete does it beautifully);
