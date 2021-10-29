@@ -282,8 +282,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         match getDocumentForUri saveParams.TextDocument.Uri with
         | None ->
             let solution = currentSolution.Value
-            let docFilename = saveParams.TextDocument.Uri.Substring("file://".Length)
-            let docDir = Path.GetDirectoryName(docFilename)
+            let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
+            let docDir = Path.GetDirectoryName(docFilePath)
             //logMessage (sprintf "TextDocumentDidSave: docFilename=%s docDir=%s" docFilename docDir)
 
             let matchesPath (p: Project) =
@@ -294,20 +294,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             match projectOnPath with
             | Some proj ->
                 let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
-                let relativeDocPath = docFilename.Substring(projectBaseDir.Length+1)
+                let docName = docFilePath.Substring(projectBaseDir.Length+1)
 
-                logMessage (sprintf "Adding new file %s to project %s" relativeDocPath proj.FilePath)
+                logMessage (sprintf "Adding file %s (\"%s\") to project %s" docName docFilePath proj.FilePath)
 
-                let newDoc = proj.AddDocument(relativeDocPath, SourceText.From(saveParams.Text.Value))
+                let newDoc = proj.AddDocument(name=docName, text=SourceText.From(saveParams.Text.Value), folders=null, filePath=docFilePath)
 
-                let workspace = solution.Workspace
+                //logMessage (sprintf "newDoc.FilePath=%s" (newDoc.FilePath |> string))
 
-                match workspace.TryApplyChanges(newDoc.Project.Solution) with
-                | true ->
-                    //logMessage "TextDocumentDidSave: adding file has succeded"
-                    currentSolution <- Some workspace.CurrentSolution
-                    ()
-                | _ -> ()
+                currentSolution <- Some newDoc.Project.Solution
+
+                do! publishDiagnosticsOnDocument saveParams.TextDocument.Uri newDoc
             | None -> ()
         | _ -> ()
 

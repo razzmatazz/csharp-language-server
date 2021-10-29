@@ -1,3 +1,6 @@
+# (unreleased)
+- Fix how new .cs are added, also don't write unnecesary `<Compile>` when a new file is added.
+
 # 0.1.4
 - Don't reference NuGet.* packages as those bind to particular(?) sdk -- things work better now, as it was not working for me with updated SDK dependencies;
 - Update roslyn dependencies;
