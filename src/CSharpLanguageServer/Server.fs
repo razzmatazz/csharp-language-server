@@ -577,7 +577,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                 let containingAssemblyName =
                     sym.ContainingAssembly |> Option.ofObj |> Option.map (fun a -> a.Name) |> Option.defaultValue ""
 
-                Documentation.formatDocXml
+                Documentation.formatDocXmlWithTypeInfo
                     (sym.GetDocumentationCommentXml())
                     (sym.ToString())
                     containingAssemblyName

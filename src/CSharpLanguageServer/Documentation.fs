@@ -3,10 +3,12 @@ module CSharpLanguageServer.Documentation
 open System
 open System.Xml.Linq
 
+type TripleSlashComment = { Lines: string list }
+
 let listOfOption o = match o with | Some v -> [v] | _ -> []
 let listOfOne i = [i]
 
-let formatDocXml xmlDocumentation typeName typeAssemblyName =
+let parseToModel xmlDocumentation: TripleSlashComment =
     //printf "xmlDocumentation=%s" xmlDocumentation
     let doc = XDocument.Parse("<docroot>" + xmlDocumentation + "</docroot>")
 
@@ -83,11 +85,29 @@ let formatDocXml xmlDocumentation typeName typeAssemblyName =
         | ["member"] -> root.Element(XName.Get("member"))
         | _ -> root
 
-    let formattedDocLines =
-        (unwrapDocRoot doc.Root).Elements()
+    let lines =
+        doc.Root
+        |> unwrapDocRoot
+        |> fun r -> r.Elements()
         |> Seq.collect elementToStrings
         |> Seq.map (fun s -> s.Trim())
         |> List.ofSeq
+
+    { Lines = lines }
+
+
+let format model : string list =
+    model.Lines
+
+
+let formatDocXml xmlDocumentation =
+    let comment = parseToModel xmlDocumentation
+    String.Join("\r\n", comment.Lines)
+
+
+let formatDocXmlWithTypeInfo xmlDocumentation typeName typeAssemblyName =
+    let comment = parseToModel xmlDocumentation
+    let formattedDocLines = format comment
 
     let symbolInfoLines =
         match typeName, typeAssemblyName with
