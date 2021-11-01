@@ -17,13 +17,14 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source;
 - csharp-ls is not affiliated with Microsoft Corp.
 
-# Changelog
+# Change log
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
+ - "generate field/property" code refactoring is missing
  - on-hover has issues:
     - symbol displayed/assembly is not the most appropriate in some contexts; 
- - "generate field/property" code refactoring is missing
+    - some tags are still not supported, like `<typeparam>`
  - selection range provider
  - semantic tokens
  - implement TextDocumentImplementation
@@ -31,3 +32,5 @@ See [CHANGELOG.md](CHANGELOG.md)
  - formatting, on type and otherwise
  - ability to run tests
  - razorls integration (server-side)
+ - analyzer support
+ - code generator support
