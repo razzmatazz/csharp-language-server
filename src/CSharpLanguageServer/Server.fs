@@ -342,35 +342,46 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             let isDiagnosticsOnTextSpan (diag: Microsoft.CodeAnalysis.Diagnostic) =
                 diag.Location.SourceSpan.IntersectsWith(textSpan)
 
-            let relatedDiagnostics = semanticModel.GetDiagnostics() |> Seq.filter isDiagnosticsOnTextSpan |> List.ofSeq
-            //logMessage (sprintf "relatedDiagnostics.Count=%d" (relatedDiagnostics.Count()))
+            let relatedDiagnostics =
+                semanticModel.GetDiagnostics()
+                |> Seq.filter isDiagnosticsOnTextSpan
+                |> List.ofSeq
 
-            if relatedDiagnostics.Length > 0 then
+            let diagnosticsBySpan =
+                relatedDiagnostics
+                |> Seq.groupBy (fun d -> d.Location.SourceSpan)
+
+            for diagnosticSpan, diagnosticsWithSameSpan in diagnosticsBySpan do
+
+                //logMessage (sprintf "d=%s; dWithSameSpan.Count=%d" (string diagnosticSpan)
+                //                                                   (Seq.length diagnosticsWithSameSpan))
+
                 let addCodeFix =
                     Action<CodeActions.CodeAction, ImmutableArray<Microsoft.CodeAnalysis.Diagnostic>>(
                         fun ca _ -> roslynCodeActions.Add(ca))
 
-                for refactoringProvider in codeFixProviderInstances do
-                    //logMessage (sprintf "%s: .FixableDiagnosticIds=%s" (refactoringProvider |> string)
-                    //                                                   (JsonConvert.SerializeObject(refactoringProvider.FixableDiagnosticIds)))
+                for codeFixProvider in codeFixProviderInstances do
+                    //logMessage (sprintf "%s: .FixableDiagnosticIds=%s" (codeFixProvider |> string)
+                    //                                                   (JsonConvert.SerializeObject(codeFixProvider.FixableDiagnosticIds)))
 
-                    for diag in relatedDiagnostics do
-                        let codeFixContext = CodeFixContext(doc, diag, addCodeFix, CancellationToken.None)
+                    let refactoringProviderOK (diag: Microsoft.CodeAnalysis.Diagnostic) =
+                        let translatedDiagId diagId =
+                            match diagId with
+                            | "CS8019" -> "RemoveUnnecessaryImportsFixable"
+                            | _ -> ""
 
-                        //logMessage (sprintf "%s: Id=%s" (diag |> string) diag.Id)
+                        codeFixProvider.FixableDiagnosticIds.Contains(diag.Id)
+                        || codeFixProvider.FixableDiagnosticIds.Contains(translatedDiagId diag.Id)
 
-                        let refactoringProviderOK =
-                            let translatedDiagId diagId =
-                                match diagId with
-                                | "CS8019" -> "RemoveUnnecessaryImportsFixable"
-                                | _ -> ""
+                    let fixableDiagnostics =
+                        diagnosticsWithSameSpan
+                        |> Seq.filter refactoringProviderOK
 
-                            refactoringProvider.FixableDiagnosticIds.Contains(diag.Id)
-                            || refactoringProvider.FixableDiagnosticIds.Contains(translatedDiagId diag.Id)
+                    if not (Seq.isEmpty fixableDiagnostics) then
+                        let codeFixContext = CodeFixContext(doc, diagnosticSpan, fixableDiagnostics.ToImmutableArray(), addCodeFix, CancellationToken.None)
 
                         try
-                            if refactoringProviderOK then
-                                do! refactoringProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
+                            do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
                         with _ex ->
                             //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
                             ()
