@@ -22,7 +22,6 @@ See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
  - on-hover has issues:
-    - formatting needs more love (fsac does it nicely);
     - symbol displayed/assembly is not the most appropriate in some contexts; 
  - "generate field/property" code refactoring is missing
  - selection range provider

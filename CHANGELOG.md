@@ -1,5 +1,6 @@
 # (unreleased)
-- Fix how new .cs are added, also don't write unnecesary `<Compile>` when a new file is added.
+- Update how tooltip on hover is formatted; should be much nicer;
+- Fix how adding new file works -- don't write unnecesary `<Compile>` when a new file is added and trigger diagnostics update immediately.
 
 # 0.1.4
 - Don't reference NuGet.* packages as those bind to particular(?) sdk -- things work better now, as it was not working for me with updated SDK dependencies;
