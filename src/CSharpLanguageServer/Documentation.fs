@@ -23,15 +23,22 @@ let emptyTripleSlashComment = {
 let listOfOption o = match o with | Some v -> [v] | _ -> []
 let listOfOne i = [i]
 
-let formatCref (cref: string) =
+let parseCref (cref: string) =
     let parts = cref.Split(':')
-    let typeName = match parts.Length with
-                    | 1 -> cref
-                    | _ -> String.Join(":", parts |> Seq.skip 1)
-    "`" + typeName + "`"
+    match parts.Length with
+    | 1 -> cref
+    | _ -> String.Join(":", parts |> Seq.skip 1)
+
 
 let normalizeWhitespace (s: string) =
-    s.Replace("\r\n", " ").Replace("\n", " ")
+    let mutable modified = s
+    let mutable prevModified = ""
+    while modified <> prevModified do
+        prevModified <- modified
+        modified <- modified.Replace("  ", " ").Replace("\r\n", " ").Replace("\n", " ")
+
+    modified
+
 
 let formatTextElement (n: XElement) =
 
@@ -40,7 +47,8 @@ let formatTextElement (n: XElement) =
             e.Attribute(XName.Get("cref"))
             |> Option.ofObj
             |> Option.map (fun x -> x.Value)
-            |> Option.map formatCref
+            |> Option.map parseCref
+            |> Option.map (fun s -> sprintf "`%s`" s)
             |> listOfOption
 
         let langWordMaybe =
@@ -88,7 +96,7 @@ let extendCommentWithElement comment (n: XElement) =
         { comment with Returns = comment.Returns |> List.append [n] }
 
     | "exception" ->
-        let name = n.Attribute(XName.Get("cref")).Value |> formatCref
+        let name = n.Attribute(XName.Get("cref")).Value |> parseCref
         { comment with Exceptions = comment.Exceptions |> Map.add name n }
 
     | _ ->
@@ -96,7 +104,6 @@ let extendCommentWithElement comment (n: XElement) =
 
 
 let parseComment xmlDocumentation: TripleSlashComment =
-    //printf "xmlDocumentation=%s" xmlDocumentation
     let doc = XDocument.Parse("<docroot>" + xmlDocumentation + "</docroot>")
 
     let unwrapDocRoot (root: XElement) =
@@ -114,21 +121,37 @@ let parseComment xmlDocumentation: TripleSlashComment =
 
 
 let formatComment model : string list =
-    let formatParamItem (item: KeyValuePair<string, XElement>) =
-        sprintf "- Param `%s`: %s" item.Key (formatTextElement item.Value)
 
-    let formatExceptionItem (item: KeyValuePair<string, XElement>) =
-        sprintf "- Exception %s: %s" item.Key (formatTextElement item.Value)
+    let appendMapped name (kvs: KeyValuePair<string, XElement> seq) markdownLines =
+        match Seq.isEmpty kvs with
+        | true -> markdownLines
+        | false ->
+            let formatItem (item: KeyValuePair<string, XElement>) =
+                sprintf "- `%s`: %s" item.Key (formatTextElement item.Value)
 
-    let formatReturn n =
-        sprintf "- Returns: %s" (formatTextElement n)
+            markdownLines
+            |> List.append [name + ":"; ""]
+            |> List.append (kvs |> Seq.map formatItem |> List.ofSeq)
+
+    let appendFormatted name elms markdownLines =
+        match Seq.isEmpty elms with
+        | true -> markdownLines
+        | false ->
+            let formattedLines =
+                elms
+                |> List.map formatTextElement
+                |> List.map (fun s -> name + ": " + s)
+
+            markdownLines
+            |> List.append [""]
+            |> List.append formattedLines
 
     []
     |> List.append (model.Summary |> List.map formatTextElement)
-    |> List.append (model.Params |> Seq.map formatParamItem |> List.ofSeq)
-    |> List.append (model.Returns |> List.map formatReturn)
-    |> List.append (model.Exceptions |> Seq.map formatExceptionItem |> List.ofSeq)
-    |> List.append (model.Remarks |> List.map formatTextElement)
+    |> appendMapped "Parameters" model.Params
+    |> appendFormatted "Returns" model.Returns
+    |> appendMapped "Exceptions" model.Exceptions
+    |> appendFormatted "Remarks" model.Remarks
     |> List.append (model.OtherLines |> List.map string)
     |> List.rev
     |> List.map (fun s -> s.Trim())
@@ -136,7 +159,7 @@ let formatComment model : string list =
 
 let formatDocXml xmlDocumentation =
     let comment = parseComment xmlDocumentation
-    String.Join("\r\n", comment |> formatComment)
+    String.Join(Environment.NewLine, comment |> formatComment)
 
 
 let formatDocXmlWithTypeInfo xmlDocumentation typeName typeAssemblyName =

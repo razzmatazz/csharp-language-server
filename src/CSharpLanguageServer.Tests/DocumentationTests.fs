@@ -13,15 +13,18 @@ open System
     "doc string")>]
 [<TestCase(
     "<summary>doc string</summary>\r\n <param name=\"x\">y</param>",
-    "doc string\r\n" +
-    "- Param `x`: y")>]
+    """doc string
+
+Parameters:
+- `x`: y""")>]
 [<TestCase(
     "\r\n\
       <summary>Gets the standard error output stream.</summary>\r\n\
       <returns>A <see cref=\"T:System.IO.TextWriter\" /> that represents the standard error output stream.</returns>\r\n\
 ",
-    "Gets the standard error output stream.\r\n\
-- Returns: A `System.IO.TextWriter` that represents the standard error output stream."
+    """Gets the standard error output stream.
+
+Returns: A `System.IO.TextWriter` that represents the standard error output stream."""
 )>]
 [<TestCase(
     "\r\n\
@@ -32,9 +35,10 @@ open System
             <param name=\"condition\">The evaluated condition</param>\r\n\
  \r\n\
     ",
-    "Asserts that a condition is true. If the condition is false the method throws \
-an `NUnit.Framework.AssertionException`.\r\n\
-- Param `condition`: The evaluated condition"
+    """Asserts that a condition is true. If the condition is false the method throws an `NUnit.Framework.AssertionException`.
+
+Parameters:
+- `condition`: The evaluated condition"""
 )>]
 [<TestCase(
     "\r\n\
@@ -43,20 +47,23 @@ an `NUnit.Framework.AssertionException`.\r\n\
       <exception cref=\"T:System.ObjectDisposedException\">The <see cref=\"T:System.IO.TextWriter\" /> is closed.</exception>\r\n\
       <exception cref=\"T:System.IO.IOException\">An I/O error occurs.</exception>\r\n\
     ",
-    "Writes a string to the text stream, followed by a line terminator.\r\n\
-- Param `value`: The string to write. If `value` is `null`, only the line terminator is written.\r\n\
-- Exception `System.ObjectDisposedException`: The `System.IO.TextWriter` is closed.\r\n\
-- Exception `System.IO.IOException`: An I/O error occurs."
+    """Writes a string to the text stream, followed by a line terminator.
+
+Parameters:
+- `value`: The string to write. If `value` is `null`, only the line terminator is written.
+
+Exceptions:
+- `System.ObjectDisposedException`: The `System.IO.TextWriter` is closed.
+- `System.IO.IOException`: An I/O error occurs."""
 )>]
-[<TestCase(
-    "\r\n\
-<member name=\"M:csharp_test.Test.TestSomething2\">\r\n\
-    <summary>\r\n\
-      Test method.\r\n\
-      Does another thing.\r\n\
-    </summary>\r\n\
-</member>\r\n\
-",
+[<TestCase("""
+<member name="M:csharp_test.Test.TestSomething2">
+    <summary>
+      Test method.
+      Does another thing.
+    </summary>
+</member>
+""",
     "Test method. Does another thing.")>]
 [<TestCase(
     "<summary>test <c>xx</c></summary>",
@@ -70,10 +77,10 @@ an `NUnit.Framework.AssertionException`.\r\n\
 [<TestCase(
     "<summary>summary</summary>\r\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
-    "summary\r\n\
+    "summary\n\
 <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
 [<TestCase(
     "<summary>summary</summary><remarks>remarks</remarks>",
-    "summary\r\nremarks")>]
+    "summary\n\nRemarks: remarks")>]
 let testFormatDocXml (xml, expectedMD) =
     Assert.AreEqual(expectedMD, String.Join("\r\n", formatDocXml xml))
