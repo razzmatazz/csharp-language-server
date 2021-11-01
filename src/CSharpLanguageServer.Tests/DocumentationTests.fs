@@ -9,31 +9,31 @@ open System
     "<summary>doc string</summary>",
     "doc string")>]
 [<TestCase(
-    "<summary>\r\ndoc string\r\n\r\n</summary>",
+    "<summary>\ndoc string\n\n</summary>",
     "doc string")>]
 [<TestCase(
-    "<summary>doc string</summary>\r\n <param name=\"x\">y</param>",
+    "<summary>doc string</summary>\n <param name=\"x\">y</param>",
     """doc string
 
 Parameters:
 - `x`: y""")>]
 [<TestCase(
-    "\r\n\
-      <summary>Gets the standard error output stream.</summary>\r\n\
-      <returns>A <see cref=\"T:System.IO.TextWriter\" /> that represents the standard error output stream.</returns>\r\n\
+    "\n\
+      <summary>Gets the standard error output stream.</summary>\n\
+      <returns>A <see cref=\"T:System.IO.TextWriter\" /> that represents the standard error output stream.</returns>\n\
 ",
     """Gets the standard error output stream.
 
 Returns: A `System.IO.TextWriter` that represents the standard error output stream."""
 )>]
 [<TestCase(
-    "\r\n\
-            <summary>\r\n\
-            Asserts that a condition is true. If the condition is false the method throws\r\n\
-            an <see cref=\"T:NUnit.Framework.AssertionException\" />.\r\n\
-            </summary>\r\n\
-            <param name=\"condition\">The evaluated condition</param>\r\n\
- \r\n\
+    "\n\
+            <summary>\n\
+            Asserts that a condition is true. If the condition is false the method throws\n\
+            an <see cref=\"T:NUnit.Framework.AssertionException\" />.\n\
+            </summary>\n\
+            <param name=\"condition\">The evaluated condition</param>\n\
+ \n\
     ",
     """Asserts that a condition is true. If the condition is false the method throws an `NUnit.Framework.AssertionException`.
 
@@ -41,11 +41,11 @@ Parameters:
 - `condition`: The evaluated condition"""
 )>]
 [<TestCase(
-    "\r\n\
-      <summary>Writes a string to the text stream, followed by a line terminator.</summary>\r\n\
-      <param name=\"value\">The string to write. If <paramref name=\"value\" /> is <see langword=\"null\" />, only the line terminator is written.</param>\r\n\
-      <exception cref=\"T:System.ObjectDisposedException\">The <see cref=\"T:System.IO.TextWriter\" /> is closed.</exception>\r\n\
-      <exception cref=\"T:System.IO.IOException\">An I/O error occurs.</exception>\r\n\
+    "\n\
+      <summary>Writes a string to the text stream, followed by a line terminator.</summary>\n\
+      <param name=\"value\">The string to write. If <paramref name=\"value\" /> is <see langword=\"null\" />, only the line terminator is written.</param>\n\
+      <exception cref=\"T:System.ObjectDisposedException\">The <see cref=\"T:System.IO.TextWriter\" /> is closed.</exception>\n\
+      <exception cref=\"T:System.IO.IOException\">An I/O error occurs.</exception>\n\
     ",
     """Writes a string to the text stream, followed by a line terminator.
 
@@ -75,7 +75,7 @@ Exceptions:
     "<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
     "test contents-of-unknown-inline-tag")>]
 [<TestCase(
-    "<summary>summary</summary>\r\n
+    "<summary>summary</summary>\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
     "summary\n\
 <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
@@ -85,5 +85,5 @@ Exceptions:
 [<TestCase(
     "<summary>A</summary><returns></returns>",
     "A")>]
-let testFormatDocXml (xml, expectedMD) =
-    Assert.AreEqual(expectedMD, String.Join("\r\n", formatDocXml xml))
+let testFormatDocXml (xml, expectedMD: string) =
+    Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), String.Join("\n", formatDocXml xml))
