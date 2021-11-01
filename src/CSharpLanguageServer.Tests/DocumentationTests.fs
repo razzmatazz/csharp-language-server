@@ -82,5 +82,8 @@ Exceptions:
 [<TestCase(
     "<summary>summary</summary><remarks>remarks</remarks>",
     "summary\n\nRemarks: remarks")>]
+[<TestCase(
+    "<summary>A</summary><returns></returns>",
+    "A")>]
 let testFormatDocXml (xml, expectedMD) =
     Assert.AreEqual(expectedMD, String.Join("\r\n", formatDocXml xml))

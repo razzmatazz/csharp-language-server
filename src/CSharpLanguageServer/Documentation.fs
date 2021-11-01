@@ -134,17 +134,17 @@ let formatComment model : string list =
             |> List.append (kvs |> Seq.map formatItem |> List.ofSeq)
 
     let appendFormatted name elms markdownLines =
-        match Seq.isEmpty elms with
+        let formattedLines =
+            elms
+            |> List.map formatTextElement
+            |> List.filter (not << String.IsNullOrWhiteSpace)
+
+        match Seq.isEmpty formattedLines with
         | true -> markdownLines
         | false ->
-            let formattedLines =
-                elms
-                |> List.map formatTextElement
-                |> List.map (fun s -> name + ": " + s)
-
             markdownLines
             |> List.append [""]
-            |> List.append formattedLines
+            |> List.append (formattedLines |> List.map (fun s -> name + ": " + s))
 
     []
     |> List.append (model.Summary |> List.map formatTextElement)
