@@ -26,6 +26,7 @@ open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters
+open System.Reflection
 
 type Options = {
     SolutionPath: string option;
@@ -386,7 +387,21 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                             //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
                             ()
 
-            let! lspCodeActions = roslynCodeActions
+            let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                let nestedCAProp = ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance|||BindingFlags.NonPublic)
+                if not (isNull nestedCAProp) then
+                    let nestedCAs = nestedCAProp.GetValue(ca, null) :?> ImmutableArray<Microsoft.CodeAnalysis.CodeActions.CodeAction>
+                    match nestedCAs.Length with
+                    | 0 -> [ca].ToImmutableArray()
+                    | _ -> nestedCAs
+                else
+                    [ca].ToImmutableArray()
+
+            let unwrappedRoslynCodeActions =
+                roslynCodeActions
+                |> Seq.collect unwrapRoslynCodeAction
+
+            let! lspCodeActions = unwrappedRoslynCodeActions
                                   |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value
                                                                               openDocVersions.TryFind
                                                                               logMessage)

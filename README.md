@@ -21,7 +21,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
- - "generate field/property" code refactoring is missing
  - on-hover has issues:
     - symbol displayed/assembly is not the most appropriate in some contexts; 
     - some tags are still not supported, like `<typeparam>`

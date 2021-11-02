@@ -1,4 +1,5 @@
 # (unreleased)
+- Enable code actions that are nested, like "generate field/property/ro-field/ro-property";
 - Update how tooltip on hover is formatted; should be much nicer;
 - Fix how adding new file works -- don't write unnecesary `<Compile>` when a new file is added and trigger diagnostics update immediately.
 
