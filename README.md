@@ -21,6 +21,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
+ - implement codeaction/resolve to make faster code action resolution for large projects
+ - intellisense/autocomplete does not always trigger where it should be
  - on-hover has issues:
     - symbol displayed/assembly is not the most appropriate in some contexts; 
     - some tags are still not supported, like `<typeparam>`
