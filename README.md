@@ -21,9 +21,10 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
+ - build tool as stand-alone exec -- not to depend on installed sdk version
  - intellisense/autocomplete does not always trigger where it should be
  - on-hover has issues:
-    - symbol displayed/assembly is not the most appropriate in some contexts; 
+    - symbol displayed/assembly is not the most appropriate in some contexts
     - some tags are still not supported, like `<typeparam>`
  - selection range provider
  - semantic tokens
