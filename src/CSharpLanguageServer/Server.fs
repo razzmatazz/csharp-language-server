@@ -82,6 +82,10 @@ type CSharpMetadataResponse = {
     Source: string;
 }
 
+type CSharpCodeActionResolutionData = {
+    TextDocumentUri: string
+    Range: Range
+}
 
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
@@ -230,7 +234,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                    AllCommitCharacters = None
                                  }
                         CodeLensProvider = None
-                        CodeActionProvider = Some true
+                        CodeActionProvider =
+                            Some { CodeActionKinds = None
+                                   ResolveProvider = Some true
+                                 }
                         TextDocumentSync =
                             Some { TextDocumentSyncOptions.Default with
                                      OpenClose = Some false
@@ -318,7 +325,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
-
         match getDocumentForUri actionParams.TextDocument.Uri with
         | None ->
             return None |> success
@@ -329,91 +335,50 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
                                               |> docText.Lines.GetTextSpan
 
-            // register code actions
-            let roslynCodeActions = List<CodeActions.CodeAction>()
-            let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
-            let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
+            let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
-            for refactoringProvider in refactoringProviderInstances do
-                do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
+            let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                let resolutionData: CSharpCodeActionResolutionData =
+                    { TextDocumentUri = actionParams.TextDocument.Uri
+                      Range = actionParams.Range }
 
-            // register code fixes
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+                let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
+                { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
 
-            let isDiagnosticsOnTextSpan (diag: Microsoft.CodeAnalysis.Diagnostic) =
-                diag.Location.SourceSpan.IntersectsWith(textSpan)
+            let lspCodeActions = roslynCodeActions
+                                 |> Seq.map toUnresolvedLspCodeAction
+                                 |> Array.ofSeq
+                                 |> TextDocumentCodeActionResult.CodeActions
 
-            let relatedDiagnostics =
-                semanticModel.GetDiagnostics()
-                |> Seq.filter isDiagnosticsOnTextSpan
-                |> List.ofSeq
+            return lspCodeActions |> Some |> success
+    }
 
-            let diagnosticsBySpan =
-                relatedDiagnostics
-                |> Seq.groupBy (fun d -> d.Location.SourceSpan)
+    override __.CodeActionResolve(codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
+        let resolutionData = JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>(codeAction.Data :?> string)
 
-            for diagnosticSpan, diagnosticsWithSameSpan in diagnosticsBySpan do
+        match getDocumentForUri resolutionData.TextDocumentUri with
+        | None ->
+            return None |> success
 
-                //logMessage (sprintf "d=%s; dWithSameSpan.Count=%d" (string diagnosticSpan)
-                //                                                   (Seq.length diagnosticsWithSameSpan))
+        | Some doc ->
+            let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
-                let addCodeFix =
-                    Action<CodeActions.CodeAction, ImmutableArray<Microsoft.CodeAnalysis.Diagnostic>>(
-                        fun ca _ -> roslynCodeActions.Add(ca))
+            let textSpan = resolutionData.Range |> roslynLinePositionSpanForLspRange
+                                                |> docText.Lines.GetTextSpan
 
-                for codeFixProvider in codeFixProviderInstances do
-                    //logMessage (sprintf "%s: .FixableDiagnosticIds=%s" (codeFixProvider |> string)
-                    //                                                   (JsonConvert.SerializeObject(codeFixProvider.FixableDiagnosticIds)))
+            let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
-                    let refactoringProviderOK (diag: Microsoft.CodeAnalysis.Diagnostic) =
-                        let translatedDiagId diagId =
-                            match diagId with
-                            | "CS8019" -> "RemoveUnnecessaryImportsFixable"
-                            | _ -> ""
+            let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
 
-                        codeFixProvider.FixableDiagnosticIds.Contains(diag.Id)
-                        || codeFixProvider.FixableDiagnosticIds.Contains(translatedDiagId diag.Id)
+            let toResolvedLspCodeAction =
+                roslynCodeActionToResolvedLspCodeAction currentSolution.Value openDocVersions.TryFind logMessage
 
-                    let fixableDiagnostics =
-                        diagnosticsWithSameSpan
-                        |> Seq.filter refactoringProviderOK
+            let! maybeLspCodeAction =
+                match selectedCodeAction with
+                | Some ca -> async { return! toResolvedLspCodeAction ca }
+                | None -> async { return None }
 
-                    if not (Seq.isEmpty fixableDiagnostics) then
-                        let codeFixContext = CodeFixContext(doc, diagnosticSpan, fixableDiagnostics.ToImmutableArray(), addCodeFix, CancellationToken.None)
-
-                        try
-                            do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
-                        with _ex ->
-                            //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
-                            ()
-
-            let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-                let nestedCAProp = ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance|||BindingFlags.NonPublic)
-                if not (isNull nestedCAProp) then
-                    let nestedCAs = nestedCAProp.GetValue(ca, null) :?> ImmutableArray<Microsoft.CodeAnalysis.CodeActions.CodeAction>
-                    match nestedCAs.Length with
-                    | 0 -> [ca].ToImmutableArray()
-                    | _ -> nestedCAs
-                else
-                    [ca].ToImmutableArray()
-
-            let unwrappedRoslynCodeActions =
-                roslynCodeActions
-                |> Seq.collect unwrapRoslynCodeAction
-
-            let! lspCodeActions = unwrappedRoslynCodeActions
-                                  |> Seq.map (roslynCodeActionToLspCodeAction currentSolution.Value
-                                                                              openDocVersions.TryFind
-                                                                              logMessage)
-                                  |> Async.Sequential
-
-            return lspCodeActions |> Seq.collect (fun maybeAction -> match maybeAction with
-                                                                     | Some action -> [action]
-                                                                     | None -> [])
-                                  |> Array.ofSeq
-                                  |> TextDocumentCodeActionResult.CodeActions
-                                  |> Some
-                                  |> success
+            return maybeLspCodeAction |> success
     }
 
     override __.TextDocumentCompletion(posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {

@@ -15,6 +15,7 @@ open LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
+open System.Collections.Immutable
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -98,34 +99,38 @@ let lspDocChangesFromSolutionDiff
     return docTextEdits |> List.ofSeq
 }
 
-let roslynCodeActionToLspCodeAction
+type CodeActionData = { Url: string }
+
+let asyncMaybeOnException op = async {
+    try
+        let! value = op ()
+        return Some value
+    with _ex ->
+        return None
+}
+
+let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Types.CodeAction =
+    { Title = ca.Title
+      Kind = None
+      Diagnostics = None
+      Edit = None
+      Command = None
+      Data = null
+    }
+
+let roslynCodeActionToResolvedLspCodeAction
         originalSolution
         tryGetDocVersionByUri
         _logMessage
         (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
-
-    let asyncMaybeOnException op = async {
-        try
-            let! value = op ()
-            return Some value
-        with _ex ->
-            (*
-            logMessage (sprintf "roslynCodeActionToLspCodeAction: failed on %s; ex=%s; inner ex=%s"
-                                (string ca)
-                                (string ex)
-                                (if ex.InnerException <> null then ex.InnerException.ToString() else "(none)" ))
-            *)
-            return None
-    }
 
     let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask)
 
     match maybeOps with
     | None -> return None
     | Some ops ->
-
         let op = ops |> Seq.map (fun o -> o :?> ApplyChangesOperation)
-                    |> Seq.head
+                     |> Seq.head
 
         let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
                                                          op.ChangedSolution
@@ -140,8 +145,9 @@ let roslynCodeActionToLspCodeAction
             Title = ca.Title
             Kind = None
             Diagnostics = None
-            Edit = edit
+            Edit = Some edit
             Command = None
+            Data = null
         }
 }
 
@@ -386,4 +392,70 @@ let findAndLoadSolutionOnDir logMessage dir = async {
     | Some solutionPath ->
         let! solution = tryLoadSolutionOnPath logMessage solutionPath
         return solution
+}
+
+let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction list> = async {
+    let roslynCodeActions = List<CodeActions.CodeAction>()
+    let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
+    let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
+
+    for refactoringProvider in refactoringProviderInstances do
+        do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
+
+    // register code fixes
+    let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+
+    let isDiagnosticsOnTextSpan (diag: Microsoft.CodeAnalysis.Diagnostic) =
+        diag.Location.SourceSpan.IntersectsWith(textSpan)
+
+    let relatedDiagnostics =
+        semanticModel.GetDiagnostics()
+        |> Seq.filter isDiagnosticsOnTextSpan
+        |> List.ofSeq
+
+    let diagnosticsBySpan =
+        relatedDiagnostics
+        |> Seq.groupBy (fun d -> d.Location.SourceSpan)
+
+    for diagnosticSpan, diagnosticsWithSameSpan in diagnosticsBySpan do
+        let addCodeFix =
+            Action<CodeActions.CodeAction, ImmutableArray<Microsoft.CodeAnalysis.Diagnostic>>(
+                fun ca _ -> roslynCodeActions.Add(ca))
+
+        for codeFixProvider in codeFixProviderInstances do
+            let refactoringProviderOK (diag: Microsoft.CodeAnalysis.Diagnostic) =
+                let translatedDiagId diagId =
+                    match diagId with
+                    | "CS8019" -> "RemoveUnnecessaryImportsFixable"
+                    | _ -> ""
+
+                codeFixProvider.FixableDiagnosticIds.Contains(diag.Id)
+                || codeFixProvider.FixableDiagnosticIds.Contains(translatedDiagId diag.Id)
+
+            let fixableDiagnostics =
+                diagnosticsWithSameSpan
+                |> Seq.filter refactoringProviderOK
+
+            if not (Seq.isEmpty fixableDiagnostics) then
+                let codeFixContext = CodeFixContext(doc, diagnosticSpan, fixableDiagnostics.ToImmutableArray(), addCodeFix, CancellationToken.None)
+
+                try
+                    do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
+                with _ex ->
+                    //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
+                    ()
+
+    let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+        let nestedCAProp = ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance|||BindingFlags.NonPublic)
+        if not (isNull nestedCAProp) then
+            let nestedCAs = nestedCAProp.GetValue(ca, null) :?> ImmutableArray<Microsoft.CodeAnalysis.CodeActions.CodeAction>
+            match nestedCAs.Length with
+            | 0 -> [ca].ToImmutableArray()
+            | _ -> nestedCAs
+        else
+            [ca].ToImmutableArray()
+
+    return roslynCodeActions
+           |> Seq.collect unwrapRoslynCodeAction
+           |> List.ofSeq
 }

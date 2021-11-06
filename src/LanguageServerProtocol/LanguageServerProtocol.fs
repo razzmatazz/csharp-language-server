@@ -776,6 +776,19 @@ module Types =
         RetriggerCharacters: char[] option
     }
 
+    /// Code action options.
+    type CodeActionOptions = {
+        /// CodeActionKinds that this server may return.
+        ///
+        /// The list of kinds may be generic, such as `CodeActionKind.Refactor`,
+        /// or the server may list out every specific kind they provide.
+        CodeActionKinds: string[] option;
+
+        /// The server provides support to resolve additional
+        /// information for a code action.
+        ResolveProvider: bool option;
+    }
+
     /// Code Lens options.
     type CodeLensOptions = {
         /// Code lens has a resolve provider as well.
@@ -895,7 +908,7 @@ module Types =
         WorkspaceSymbolProvider: bool option
 
         /// The server provides code actions.
-        CodeActionProvider: bool option
+        CodeActionProvider: CodeActionOptions option
 
         /// The server provides code lens.
         CodeLensProvider: CodeLensOptions option
@@ -1659,12 +1672,16 @@ module Types =
         Diagnostics: Diagnostic[] option
 
         /// The workspace edit this code action performs.
-        Edit: WorkspaceEdit
+        Edit: WorkspaceEdit option
 
         /// A command this code action executes. If a code action
         /// provides an edit and a command, first the edit is
         /// executed and then the command.
         Command: Command option
+
+        /// A data entry field that is preserved on a code action between
+        /// a `textDocument/codeAction` and a `codeAction/resolve` request.
+        Data: obj
     }
 
     [<ErasedUnion>]
@@ -2407,6 +2424,14 @@ type LspServer() =
     abstract member TextDocumentCodeAction: CodeActionParams -> AsyncLspResult<TextDocumentCodeActionResult option>
     default __.TextDocumentCodeAction(_) = notImplemented
 
+    /// The code action request is sent from the client to the server to compute commands for a given text
+    /// document and range. These commands are typically code fixes to either fix problems or to
+    /// beautify/refactor code. The result of a textDocument/codeAction request is an array of Command literals
+    /// which are typically presented in the user interface. When the command is selected the server should be
+    /// contacted again (via the workspace/executeCommand) request to execute the command.
+    abstract member CodeActionResolve: CodeAction -> AsyncLspResult<CodeAction option>
+    default __.CodeActionResolve(_) = notImplemented
+
     /// The code lens request is sent from the client to the server to compute code lenses for a given
     /// text document.
     abstract member TextDocumentCodeLens: CodeLensParams -> AsyncLspResult<CodeLens[] option>
@@ -2615,6 +2640,7 @@ module Server =
             "textDocument/typeDefinition", requestHandling (fun s p -> s.TextDocumentTypeDefinition(p))
             "textDocument/implementation", requestHandling (fun s p -> s.TextDocumentImplementation(p))
             "textDocument/codeAction", requestHandling (fun s p -> s.TextDocumentCodeAction(p))
+            "codeAction/resolve", requestHandling (fun s p -> s.CodeActionResolve(p))
             "textDocument/codeLens", requestHandling (fun s p -> s.TextDocumentCodeLens(p))
             "codeLens/resolve", requestHandling (fun s p -> s.CodeLensResolve(p))
             "textDocument/references", requestHandling (fun s p -> s.TextDocumentReferences(p))
