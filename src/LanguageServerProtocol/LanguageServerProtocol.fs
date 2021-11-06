@@ -574,6 +574,56 @@ module Types =
         SymbolKind: SymbolKindCapabilities option
     }
 
+    type CodeActionClientCapabilityLiteralSupportCodeActionKind = {
+        /// The code action kind values the client supports. When this
+        /// property exists the client also guarantees that it will
+        /// handle values outside its set gracefully and falls back
+        /// to a default value when unknown.
+        ValueSet: string[] // CodeActionKind[]
+    }
+
+    type CodeActionClientCapabilityLiteralSupport = {
+        /// The code action kind is supported with the following value set.
+        CodeActionKind: CodeActionClientCapabilityLiteralSupportCodeActionKind
+    }
+
+    type CodeActionClientCapabilityResolveSupport = {
+        /// The properties that a client can resolve lazily.
+        Properties: string[]
+    };
+
+    /// capabilities specific to the `textDocument/codeAction`
+    type CodeActionClientCapabilities = {
+        /// Whether document symbol supports dynamic registration.
+        DynamicRegistration: bool option
+
+        /// The client supports code action literals as a valid
+        /// response of the `textDocument/codeAction` request.
+        CodeActionLiteralSupport: CodeActionClientCapabilityLiteralSupport option
+
+        /// Whether code action supports the `isPreferred` property.
+        IsPreferredSupport: bool option
+
+        /// Whether code action supports the `disabled` property.
+        DisabledSupport: bool option
+
+        /// Whether code action supports the `data` property which is
+        /// preserved between a `textDocument/codeAction` and a
+        /// `codeAction/resolve` request.
+        DataSupport: bool option
+
+        /// Whether the client supports resolving additional code action
+        /// properties via a separate `codeAction/resolve` request.
+        ResolveSupport: CodeActionClientCapabilityResolveSupport option
+
+        /// Whether the client honors the change annotations in
+        /// text edits and resource operations returned via the
+        /// `CodeAction#edit` property by for example presenting
+        /// the workspace edit in the user interface and asking
+        /// for confirmation.
+        HonorsChangeAnnotations: bool option
+    }
+
     [<RequireQualifiedAccess>]
     type DiagnosticTag =
         /// Unused or unnecessary code.
@@ -701,7 +751,7 @@ module Types =
         Definition: DynamicCapabilities option
 
         /// Capabilities specific to the `textDocument/codeAction`
-        CodeAction: DynamicCapabilities option
+        CodeAction: CodeActionClientCapabilities option
 
         /// Capabilities specific to the `textDocument/codeLens`
         CodeLens: DynamicCapabilities option

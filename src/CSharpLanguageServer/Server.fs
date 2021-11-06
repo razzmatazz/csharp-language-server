@@ -337,20 +337,47 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
-            let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-                let resolutionData: CSharpCodeActionResolutionData =
-                    { TextDocumentUri = actionParams.TextDocument.Uri
-                      Range = actionParams.Range }
+            let clientSupportsCodeActionEditResolveWithEditAndData =
+                clientCapabilities.IsSome
+                    && (clientCapabilities.Value.TextDocument.IsSome)
+                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.IsSome)
+                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.DataSupport = Some true)
+                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.IsSome)
+                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.Value.Properties |> Array.contains "edit")
 
-                let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
+            let! lspCodeActions =
+                match clientSupportsCodeActionEditResolveWithEditAndData with
+                | true -> async {
+                    let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                        let resolutionData: CSharpCodeActionResolutionData =
+                            { TextDocumentUri = actionParams.TextDocument.Uri
+                              Range = actionParams.Range }
 
-            let lspCodeActions = roslynCodeActions
-                                 |> Seq.map toUnresolvedLspCodeAction
-                                 |> Array.ofSeq
-                                 |> TextDocumentCodeActionResult.CodeActions
+                        let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
+                        { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
 
-            return lspCodeActions |> Some |> success
+                    return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> List.ofSeq
+                  }
+
+                | false -> async {
+                    let results = List<CodeAction>()
+
+                    for ca in roslynCodeActions do
+                        let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction currentSolution.Value
+                                                                                  openDocVersions.TryFind
+                                                                                  logMessage
+                                                                                  ca
+                        if maybeLspCa.IsSome then
+                           results.Add(maybeLspCa.Value)
+
+                    return results |> List.ofSeq
+                  }
+
+            return lspCodeActions
+                   |> Array.ofSeq
+                   |> TextDocumentCodeActionResult.CodeActions
+                   |> Some
+                   |> success
     }
 
     override __.CodeActionResolve(codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {

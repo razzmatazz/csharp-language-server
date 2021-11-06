@@ -1,3 +1,6 @@
+# (unreleased)
+- Support for `codeAction/resolve` so we have faster code action resolution/less overhead when working on large solutions.
+
 # 0.1.5
 - Enable code actions that are nested, like "generate field/property/ro-field/ro-property";
 - Update how tooltip on hover is formatted; should be much nicer;
