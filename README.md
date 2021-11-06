@@ -27,7 +27,6 @@ See [CHANGELOG.md](CHANGELOG.md)
     - some tags are still not supported, like `<typeparam>`
  - selection range provider
  - semantic tokens
- - implement TextDocumentImplementation
  - code lenses
  - formatting, on type and otherwise
  - ability to run tests

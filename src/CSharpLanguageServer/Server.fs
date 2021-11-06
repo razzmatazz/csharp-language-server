@@ -18,15 +18,12 @@ open LanguageServerProtocol.Types
 open LanguageServerProtocol.LspResult
 
 open RoslynHelpers
-open Microsoft.CodeAnalysis.CodeRefactorings
-open System.Threading
 open Microsoft.CodeAnalysis.CodeFixes
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters
-open System.Reflection
 
 type Options = {
     SolutionPath: string option;
@@ -220,7 +217,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         RenameProvider = Some true
                         DefinitionProvider = Some true
                         TypeDefinitionProvider = Some false
-                        ImplementationProvider = Some false
+                        ImplementationProvider = Some true
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
                         DocumentSymbolProvider = Some true
@@ -356,7 +353,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
                         { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
 
-                    return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> List.ofSeq
+                    return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
                   }
 
                 | false -> async {
@@ -370,11 +367,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         if maybeLspCa.IsSome then
                            results.Add(maybeLspCa.Value)
 
-                    return results |> List.ofSeq
+                    return results |> Array.ofSeq
                   }
 
             return lspCodeActions
-                   |> Array.ofSeq
                    |> TextDocumentCodeActionResult.CodeActions
                    |> Some
                    |> success
@@ -532,6 +528,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             logMessage (sprintf "getDocumentForUri: no document for uri %s" (def.TextDocument.Uri |> string))
             return None |> success
     }
+
+    override this.TextDocumentImplementation(pos: Types.TextDocumentPositionParams): AsyncLspResult<GotoResult option> =
+        this.TextDocumentDefinition(pos)
 
     override __.TextDocumentDocumentHighlight(docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
 
