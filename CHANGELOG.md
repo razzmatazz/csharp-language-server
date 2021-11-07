@@ -1,4 +1,5 @@
 # (unreleased)
+- Fix `workspace/symbol` to return correct locations;
 - Implement `textDocument/implementation` (alias for `textDocument/definition`) actually;
 - Support for `codeAction/resolve` so we have faster code action resolution/less overhead when working on large solutions.
 

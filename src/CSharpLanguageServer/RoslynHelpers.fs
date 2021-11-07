@@ -223,18 +223,11 @@ type DocumentSymbolCollectorForMatchingSymbolName (documentUri, symbolName: stri
 
 
 let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
-    let documentUri = "file:///xxx"
-
     let symbolLocation = symbol.Locations |> Seq.head
-
-    let location: Types.Location =
-        { Uri = documentUri
-          Range = symbolLocation.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
-        }
 
     { Name = symbol.Name
       Kind = Types.SymbolKind.File
-      Location = location
+      Location = symbolLocation |> lspLocationForRoslynLocation
       ContainerName = None }
 
 let roslynToLspDiagnosticSeverity s: Types.DiagnosticSeverity option =

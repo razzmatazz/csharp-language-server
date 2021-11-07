@@ -675,19 +675,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
     }
 
-    override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-        let! symbols = findSymbols state.Solution.Value symbolParams.Query (Some 20)
-        return symbols |> Array.ofSeq |> Some |> success
-    }
-
     override __.Dispose(): unit = ()
 
+let handleWorkspaceSymbol state (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+    let! symbols = findSymbols state.Solution.Value symbolParams.Query (Some 20)
+    return symbols |> Array.ofSeq |> Some |> success
+}
 
-let handleCSharpMetadata state (metadataParams: CSharpMetadataParams) = async {
+let handleCSharpMetadata state (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
     let uri = metadataParams.TextDocument.Uri
     return state.DecompiledMetadataUris |> Map.tryFind uri |> success
 }
-
 
 let startCore options =
     use input = Console.OpenStandardInput()
@@ -695,6 +693,7 @@ let startCore options =
 
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
+        |> Map.add "workspace/symbol" (requestHandling (fun s p -> handleWorkspaceSymbol s.State p))
         |> Map.add "csharp/metadata" (requestHandling (fun s p -> handleCSharpMetadata s.State p))
 
     LanguageServerProtocol.Server.start requestHandlings
