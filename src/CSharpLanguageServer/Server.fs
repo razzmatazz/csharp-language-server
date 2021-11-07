@@ -84,14 +84,24 @@ type CSharpCodeActionResolutionData = {
     Range: Range
 }
 
+type ServerState = {
+    ClientCapabilities: ClientCapabilities option
+    Solution: Solution option
+    OpenDocVersions: Map<string, int>
+    DecompiledMetadataUris: Map<string, CSharpMetadataResponse>
+    DecompiledMetadataDocs: Map<string, Document>
+}
+
+let emptyServerState = { ClientCapabilities = None
+                         Solution = None
+                         OpenDocVersions = Map.empty
+                         DecompiledMetadataUris = Map.empty
+                         DecompiledMetadataDocs = Map.empty }
+
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
-    let mutable clientCapabilities: ClientCapabilities option = None
-    let mutable currentSolution: Solution option = None
-    let mutable openDocVersions = Map.empty<string, int>
-    let mutable decompiledMetadataUris = Map.empty<string, CSharpMetadataResponse>
-    let mutable decompiledMetadataDocs = Map.empty<string, Document>
+    let mutable state: ServerState = emptyServerState
 
     let logMessageWithLevel l message =
         let messageParams = { Type = l ; Message = "csharp-ls: " + message }
@@ -106,7 +116,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         let getPathUri path = Uri("file://" + path)
 
         let uri = Uri u
-        match currentSolution with
+        match state.Solution with
         | Some solution -> let matchingDocuments =
                                solution.Projects
                                |> Seq.collect (fun p -> p.Documents)
@@ -116,7 +126,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                            | [d] -> //logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
                                     Some d
                            | _ -> //logMessage (sprintf "getDocumentForUri: no document on solution matching uri %s" (uri |> string))
-                                  Map.tryFind u decompiledMetadataDocs
+                                  Map.tryFind u state.DecompiledMetadataDocs
         | None -> None
 
     let withDocumentOnUriOrNone fn u = async {
@@ -128,7 +138,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None
     }
 
-    let isUriADecompiledDoc u = Map.containsKey u decompiledMetadataDocs
+    let isUriADecompiledDoc u = Map.containsKey u state.DecompiledMetadataDocs
 
     let withRegularDocumentOnUriOrUnit fn u = async {
         match isUriADecompiledDoc u with
@@ -186,8 +196,11 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return ()
     }
 
+    member _.State
+        with get() = state
+
     override _.Initialize(p: InitializeParams) = async {
-        clientCapabilities <- p.Capabilities
+        state <- { state with ClientCapabilities = p.Capabilities }
 
         infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                              (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
@@ -198,14 +211,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | Some solutionPath ->
             infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
             let! solutionLoaded = tryLoadSolutionOnPath logMessage solutionPath
-            currentSolution <- solutionLoaded
+            state <- { state with Solution = solutionLoaded }
 
         | None ->
             let cwd = Directory.GetCurrentDirectory()
             infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
 
             let! solutionLoaded = findAndLoadSolutionOnDir logMessage cwd
-            currentSolution <- solutionLoaded
+            state <- { state with Solution = solutionLoaded }
 
         infoMessage "ok, solution loaded -- initialization finished"
 
@@ -256,7 +269,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     override __.Shutdown(): Async<unit> = async { return () }
 
     override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) =
-        openDocVersions <- openDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version)
+        state <- { state with OpenDocVersions = state.OpenDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version) }
 
         withRegularDocumentOnUriOrUnit
             (publishDiagnosticsOnDocument openParams.TextDocument.Uri)
@@ -268,15 +281,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             let updatedDoc = doc.WithText(fullText)
             let updatedSolution = updatedDoc.Project.Solution;
-            currentSolution <- Some updatedSolution
+            state <- { state with Solution = Some updatedSolution }
 
             do! publishDiagnosticsOnDocument changeParams.TextDocument.Uri updatedDoc
             return ()
         }
 
-        openDocVersions <- openDocVersions.Add(
-            changeParams.TextDocument.Uri,
-            changeParams.TextDocument.Version |> Option.defaultValue 0)
+        state <- { state with OpenDocVersions = state.OpenDocVersions.Add(changeParams.TextDocument.Uri,
+                                                                          changeParams.TextDocument.Version |> Option.defaultValue 0) }
 
         withRegularDocumentOnUriOrUnit
             publishDiagnosticsOnUpdatedDocument
@@ -286,7 +298,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         // we need to add this file to solution if not already
         match getDocumentForUri saveParams.TextDocument.Uri with
         | None ->
-            let solution = currentSolution.Value
+            let solution = state.Solution.Value
             let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
             let docDir = Path.GetDirectoryName(docFilePath)
             //logMessage (sprintf "TextDocumentDidSave: docFilename=%s docDir=%s" docFilename docDir)
@@ -307,7 +319,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
                 //logMessage (sprintf "newDoc.FilePath=%s" (newDoc.FilePath |> string))
 
-                currentSolution <- Some newDoc.Project.Solution
+                state <- { state with Solution = Some newDoc.Project.Solution }
 
                 do! publishDiagnosticsOnDocument saveParams.TextDocument.Uri newDoc
             | None -> ()
@@ -317,7 +329,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDidClose(closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
-        openDocVersions <- openDocVersions.Remove(closeParams.TextDocument.Uri)
+        state <- { state with OpenDocVersions = state.OpenDocVersions.Remove(closeParams.TextDocument.Uri) }
         return ()
     }
 
@@ -333,6 +345,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                               |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions = getRoslynCodeActions doc textSpan
+
+            let clientCapabilities = state.ClientCapabilities
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
                 clientCapabilities.IsSome
@@ -360,8 +374,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                     let results = List<CodeAction>()
 
                     for ca in roslynCodeActions do
-                        let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction currentSolution.Value
-                                                                                  openDocVersions.TryFind
+                        let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction state.Solution.Value
+                                                                                  state.OpenDocVersions.TryFind
                                                                                   logMessage
                                                                                   ca
                         if maybeLspCa.IsSome then
@@ -394,7 +408,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
 
             let toResolvedLspCodeAction =
-                roslynCodeActionToResolvedLspCodeAction currentSolution.Value openDocVersions.TryFind logMessage
+                roslynCodeActionToResolvedLspCodeAction state.Solution.Value
+                                                        state.OpenDocVersions.TryFind
+                                                        logMessage
 
             let! maybeLspCodeAction =
                 match selectedCodeAction with
@@ -483,14 +499,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                                SymbolName = fullName;
                                                Source = text }
 
-                        decompiledMetadataUris <- decompiledMetadataUris |> Map.add uri csharpMetadata
+                        state <- { state with DecompiledMetadataUris = state.DecompiledMetadataUris |> Map.add uri csharpMetadata }
 
                         let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
                         let mdProject = doc.Project
                         let mdDocumentEmpty = mdProject.AddDocument(mdDocumentFilename, String.Empty)
                         let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
 
-                        decompiledMetadataDocs <- decompiledMetadataDocs |> Map.add uri mdDocument
+                        state <- { state with DecompiledMetadataDocs = state.DecompiledMetadataDocs |> Map.add uri mdDocument }
 
                         // figure out location on the document (approx implementation)
                         let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
@@ -555,7 +571,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             | :? INamespaceSymbol -> false
             | _ -> true
 
-        match currentSolution with
+        match state.Solution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition docParams.TextDocument.Uri docParams.Position
 
@@ -618,7 +634,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentReferences(refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
-        match currentSolution with
+        match state.Solution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition refParams.TextDocument.Uri refParams.Position
 
@@ -646,7 +662,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
                                                              updatedSolution
-                                                             openDocVersions.TryFind
+                                                             state.OpenDocVersions.TryFind
             return docTextEdit
         }
 
@@ -656,20 +672,21 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                             | Some (symbol, doc) -> renameSymbolInDoc symbol doc
                             | None -> async { return [] }
 
-        return WorkspaceEdit.Create (docChanges |> Array.ofList, clientCapabilities.Value) |> Some |> success
+        return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
     }
 
     override __.WorkspaceSymbol(symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-        let! symbols = findSymbols currentSolution.Value symbolParams.Query (Some 20)
+        let! symbols = findSymbols state.Solution.Value symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
     }
 
-    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
-        let uri = metadataParams.TextDocument.Uri
-        return decompiledMetadataUris |> Map.tryFind uri |> success
-    }
-
     override __.Dispose(): unit = ()
+
+
+let handleCSharpMetadata state (metadataParams: CSharpMetadataParams) = async {
+    let uri = metadataParams.TextDocument.Uri
+    return state.DecompiledMetadataUris |> Map.tryFind uri |> success
+}
 
 
 let startCore options =
@@ -678,7 +695,7 @@ let startCore options =
 
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
-        |> Map.add "csharp/metadata" (requestHandling (fun s p -> s.CSharpMetadata (p)))
+        |> Map.add "csharp/metadata" (requestHandling (fun s p -> handleCSharpMetadata s.State p))
 
     LanguageServerProtocol.Server.start requestHandlings
                                         input
