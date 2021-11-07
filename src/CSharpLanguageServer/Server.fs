@@ -179,6 +179,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
     member _.State
         with get() = state
+        and set(newState) = state <- newState
+
+    member __.LogMessage(s: string) = s |> logMessage
 
     override __.Dispose(): unit = ()
 
@@ -311,191 +314,185 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return ()
     }
 
-    override __.TextDocumentCodeAction(actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
-        match getDocumentForUri state actionParams.TextDocument.Uri with
-        | None ->
-            return None |> success
+let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
+    match getDocumentForUri state actionParams.TextDocument.Uri with
+    | None ->
+        return None |> success
 
-        | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+    | Some doc ->
+        let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
-            let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
-                                              |> docText.Lines.GetTextSpan
+        let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
+                                            |> docText.Lines.GetTextSpan
 
-            let! roslynCodeActions = getRoslynCodeActions doc textSpan
+        let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
-            let clientCapabilities = state.ClientCapabilities
+        let clientCapabilities = state.ClientCapabilities
 
-            let clientSupportsCodeActionEditResolveWithEditAndData =
-                clientCapabilities.IsSome
-                    && (clientCapabilities.Value.TextDocument.IsSome)
-                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.IsSome)
-                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.DataSupport = Some true)
-                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.IsSome)
-                    && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.Value.Properties |> Array.contains "edit")
+        let clientSupportsCodeActionEditResolveWithEditAndData =
+            clientCapabilities.IsSome
+                && (clientCapabilities.Value.TextDocument.IsSome)
+                && (clientCapabilities.Value.TextDocument.Value.CodeAction.IsSome)
+                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.DataSupport = Some true)
+                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.IsSome)
+                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.Value.Properties |> Array.contains "edit")
 
-            let! lspCodeActions =
-                match clientSupportsCodeActionEditResolveWithEditAndData with
-                | true -> async {
-                    let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-                        let resolutionData: CSharpCodeActionResolutionData =
-                            { TextDocumentUri = actionParams.TextDocument.Uri
-                              Range = actionParams.Range }
+        let! lspCodeActions =
+            match clientSupportsCodeActionEditResolveWithEditAndData with
+            | true -> async {
+                let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                    let resolutionData: CSharpCodeActionResolutionData =
+                        { TextDocumentUri = actionParams.TextDocument.Uri
+                          Range = actionParams.Range }
 
-                        let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                        { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
+                    let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
+                    { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
 
-                    return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
-                  }
+                return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
+              }
 
-                | false -> async {
-                    let results = List<CodeAction>()
+            | false -> async {
+                let results = List<CodeAction>()
 
-                    for ca in roslynCodeActions do
-                        let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction state.Solution.Value
-                                                                                  state.OpenDocVersions.TryFind
-                                                                                  logMessage
-                                                                                  ca
-                        if maybeLspCa.IsSome then
-                           results.Add(maybeLspCa.Value)
+                for ca in roslynCodeActions do
+                    let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction state.Solution.Value
+                                                                                state.OpenDocVersions.TryFind
+                                                                                logMessage
+                                                                                ca
+                    if maybeLspCa.IsSome then
+                        results.Add(maybeLspCa.Value)
 
-                    return results |> Array.ofSeq
-                  }
+                return results |> Array.ofSeq
+              }
 
-            return lspCodeActions
-                   |> TextDocumentCodeActionResult.CodeActions
-                   |> Some
-                   |> success
+        return lspCodeActions
+               |> TextDocumentCodeActionResult.CodeActions
+               |> Some
+               |> success
+}
+
+let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
+    let resolutionData = JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>(codeAction.Data :?> string)
+
+    match getDocumentForUri state resolutionData.TextDocumentUri with
+    | None ->
+        return None |> success
+
+    | Some doc ->
+        let! docText = doc.GetTextAsync() |> Async.AwaitTask
+
+        let textSpan = resolutionData.Range |> roslynLinePositionSpanForLspRange
+                                            |> docText.Lines.GetTextSpan
+
+        let! roslynCodeActions = getRoslynCodeActions doc textSpan
+
+        let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
+
+        let toResolvedLspCodeAction =
+            roslynCodeActionToResolvedLspCodeAction state.Solution.Value
+                                                    state.OpenDocVersions.TryFind
+                                                    logMessage
+
+        let! maybeLspCodeAction =
+            match selectedCodeAction with
+            | Some ca -> async { return! toResolvedLspCodeAction ca }
+            | None -> async { return None }
+
+        return maybeLspCodeAction |> success
+}
+
+let handleTextDocumentDefinitionOrImpl state logMessage (def: Types.TextDocumentPositionParams): Async<(LspResult<Types.GotoResult option> * ServerState)> = async {
+    let resolveDefinition (doc: Document) = task {
+        let! sourceText = doc.GetTextAsync()
+        let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
+        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+        let! compilation = doc.Project.GetCompilationAsync()
+
+        let! (locations, newState) = task {
+            match symbol with
+            | null -> //logMessage "no symbol at this point"
+                return ([], state)
+
+            | sym ->
+                //logMessage ("have symbol " + sym.ToString() + " at this point!")
+                // TODO:
+                //  - handle symbols in metadata
+
+                let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource)
+
+                let locationsInMetadata = sym.Locations |> Seq.filter (fun l -> l.IsInMetadata)
+
+                let haveLocationsInMetadata = locationsInMetadata |> Seq.isEmpty |> not
+
+                if haveLocationsInMetadata then
+                    let mdLocation = Seq.head locationsInMetadata
+
+                    let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
+                    let peReference = reference :?> PortableExecutableReference |> Option.ofObj
+                    let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+
+                    let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
+
+                    // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
+                    // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
+                    decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
+
+                    let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
+                    let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
+
+                    let text = decompiler.DecompileTypeAsString(fullTypeName)
+
+                    let uri = $"csharp:/metadata/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+
+                    let csharpMetadata = { ProjectName = doc.Project.Name;
+                                            AssemblyName = mdLocation.MetadataModule.ContainingAssembly.Name;
+                                            SymbolName = fullName;
+                                            Source = text }
+
+                    let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+                    let mdProject = doc.Project
+                    let mdDocumentEmpty = mdProject.AddDocument(mdDocumentFilename, String.Empty)
+                    let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
+
+                    let newState = { state with DecompiledMetadataUris = state.DecompiledMetadataUris |> Map.add uri csharpMetadata
+                                                DecompiledMetadataDocs = state.DecompiledMetadataDocs |> Map.add uri mdDocument }
+
+                    // figure out location on the document (approx implementation)
+                    let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
+                    let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
+                    collector.Visit(syntaxTree.GetRoot())
+
+                    let fallbackLocationInMetadata = {
+                        Uri = uri
+                        Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
+
+                    let locationInMetadata =
+                        (collector.GetLocations() @ [ fallbackLocationInMetadata ])
+                        |> Seq.head
+
+                    return ([locationInMetadata], newState)
+                else
+                    let lspLocations = match List.ofSeq locationsInSource with
+                                       | [] -> []
+                                       | locations -> locations
+                                                      |> Seq.map lspLocationForRoslynLocation
+                                                      |> List.ofSeq
+                    return (lspLocations, state)
+            }
+
+        return (locations, newState)
     }
 
-    override __.CodeActionResolve(codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
-        let resolutionData = JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>(codeAction.Data :?> string)
+    match getDocumentForUri state def.TextDocument.Uri with
+    | Some doc -> let! (locations, newState) = resolveDefinition doc |> Async.AwaitTask
+                  let result = locations |> Array.ofSeq |> GotoResult.Multiple
+                  return (Some result |> success, newState)
+    | None ->
+        logMessage (sprintf "getDocumentForUri: no document for uri %s" (def.TextDocument.Uri |> string))
+        return (None |> success, state)
+}
 
-        match getDocumentForUri state resolutionData.TextDocumentUri with
-        | None ->
-            return None |> success
-
-        | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
-
-            let textSpan = resolutionData.Range |> roslynLinePositionSpanForLspRange
-                                                |> docText.Lines.GetTextSpan
-
-            let! roslynCodeActions = getRoslynCodeActions doc textSpan
-
-            let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
-
-            let toResolvedLspCodeAction =
-                roslynCodeActionToResolvedLspCodeAction state.Solution.Value
-                                                        state.OpenDocVersions.TryFind
-                                                        logMessage
-
-            let! maybeLspCodeAction =
-                match selectedCodeAction with
-                | Some ca -> async { return! toResolvedLspCodeAction ca }
-                | None -> async { return None }
-
-            return maybeLspCodeAction |> success
-    }
-
-    override __.TextDocumentDefinition(def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
-        let resolveDefinition (doc: Document) = task {
-            let! sourceText = doc.GetTextAsync()
-            let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
-            let! compilation = doc.Project.GetCompilationAsync()
-
-            let! locations = task {
-                match symbol with
-                | null -> //logMessage "no symbol at this point"
-                    return []
-
-                | sym ->
-                    //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                    // TODO:
-                    //  - handle symbols in metadata
-
-                    let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource)
-
-                    let locationsInMetadata = sym.Locations |> Seq.filter (fun l -> l.IsInMetadata)
-
-                    let haveLocationsInMetadata = locationsInMetadata |> Seq.isEmpty |> not
-
-                    if haveLocationsInMetadata then
-                        let mdLocation = Seq.head locationsInMetadata
-
-                        let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
-                        let peReference = reference :?> PortableExecutableReference |> Option.ofObj
-                        let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
-
-                        let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
-
-                        // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
-                        // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
-                        decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
-
-                        let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
-                        let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
-
-                        let text = decompiler.DecompileTypeAsString(fullTypeName)
-
-                        let uri = $"csharp:/metadata/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-
-                        let csharpMetadata = { ProjectName = doc.Project.Name;
-                                               AssemblyName = mdLocation.MetadataModule.ContainingAssembly.Name;
-                                               SymbolName = fullName;
-                                               Source = text }
-
-                        state <- { state with DecompiledMetadataUris = state.DecompiledMetadataUris |> Map.add uri csharpMetadata }
-
-                        let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-                        let mdProject = doc.Project
-                        let mdDocumentEmpty = mdProject.AddDocument(mdDocumentFilename, String.Empty)
-                        let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
-
-                        state <- { state with DecompiledMetadataDocs = state.DecompiledMetadataDocs |> Map.add uri mdDocument }
-
-                        // figure out location on the document (approx implementation)
-                        let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
-                        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
-                        collector.Visit(syntaxTree.GetRoot())
-
-                        let fallbackLocationInMetadata = {
-                            Uri = uri
-                            Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
-
-                        let locationInMetadata =
-                            (collector.GetLocations() @ [ fallbackLocationInMetadata ])
-                            |> Seq.head
-
-                        return [locationInMetadata]
-                    else
-                        match List.ofSeq locationsInSource with
-                        | [] -> return []
-                        | locations ->
-                            return locations
-                                   |> Seq.map lspLocationForRoslynLocation
-                                   |> List.ofSeq
-                }
-
-            return locations
-        }
-
-        match getDocumentForUri state def.TextDocument.Uri with
-        | Some doc -> let! locations = resolveDefinition doc |> Async.AwaitTask
-                      return locations |> Array.ofSeq
-                                       |> GotoResult.Multiple
-                                       |> Some
-                                       |> success
-        | None ->
-            logMessage (sprintf "getDocumentForUri: no document for uri %s" (def.TextDocument.Uri |> string))
-            return None |> success
-    }
-
-    override this.TextDocumentImplementation(pos: Types.TextDocumentPositionParams): AsyncLspResult<GotoResult option> =
-        this.TextDocumentDefinition(pos)
-
-let handleTextDocumentCompletion state (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
+let handleTextDocumentCompletion state _logMessage (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
     match getDocumentForUri state posParams.TextDocument.Uri with
     | Some doc ->
         let! docText = doc.GetTextAsync() |> Async.AwaitTask
@@ -526,7 +523,7 @@ let handleTextDocumentCompletion state (posParams: Types.CompletionParams): Asyn
     | None -> return success None
 }
 
-let handleTextDocumentDocumentHighlight state (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
+let handleTextDocumentDocumentHighlight state _logMessage (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
 
     let getSymbolLocations symbol doc solution = async {
         let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
@@ -566,7 +563,7 @@ let handleTextDocumentDocumentHighlight state (docParams: Types.TextDocumentPosi
     | None -> return None |> success
 }
 
-let handleTextDocumentDocumentSymbol state (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
     match getDocumentForUri state p.TextDocument.Uri with
     | Some doc ->
         let collector = DocumentSymbolCollector(p.TextDocument.Uri)
@@ -580,7 +577,7 @@ let handleTextDocumentDocumentSymbol state (p: Types.DocumentSymbolParams): Asyn
         return None |> success
 }
 
-let handleTextDocumentHover state (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
+let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
     let! maybeSymbol = getSymbolAtPosition state hoverPos.TextDocument.Uri hoverPos.Position
 
     let getSymbolDocumentation (sym: ISymbol) =
@@ -611,7 +608,7 @@ let handleTextDocumentHover state (hoverPos: Types.TextDocumentPositionParams): 
                   Range = None } |> success
 }
 
-let handleTextDocumentReferences state (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
+let handleTextDocumentReferences state _logMessage (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
     match state.Solution with
     | Some solution ->
         let! maybeSymbol = getSymbolAtPosition state refParams.TextDocument.Uri refParams.Position
@@ -629,7 +626,7 @@ let handleTextDocumentReferences state (refParams: Types.ReferenceParams): Async
     | None -> return None |> success
 }
 
-let handleTextDocumentRename state (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
+let handleTextDocumentRename state _logMessage (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
     let renameSymbolInDoc symbol (doc: Document) = async {
         let originalSolution = doc.Project.Solution
 
@@ -656,12 +653,12 @@ let handleTextDocumentRename state (rename: Types.RenameParams): AsyncLspResult<
     return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
 }
 
-let handleWorkspaceSymbol state (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+let handleWorkspaceSymbol state _logMessage (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
     let! symbols = findSymbols state.Solution.Value symbolParams.Query (Some 20)
     return symbols |> Array.ofSeq |> Some |> success
 }
 
-let handleCSharpMetadata state (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
+let handleCSharpMetadata state _logMessage (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
     let uri = metadataParams.TextDocument.Uri
     return state.DecompiledMetadataUris |> Map.tryFind uri |> success
 }
@@ -670,16 +667,32 @@ let startCore options =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
+    let requestHandlingWithStateChange fn =
+        let wrappedHandler (s: CSharpLspServer) p = async {
+            let! (response, newState) = fn s.State s.LogMessage p
+            s.State <- newState
+            return response
+        }
+
+        requestHandling wrappedHandler
+
+    let requestHandlingWithState fn =
+        requestHandling (fun (s: CSharpLspServer) p -> fn s.State s.LogMessage p)
+
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
-        |> Map.add "textDocument/completion" (requestHandling (fun s p -> handleTextDocumentCompletion s.State p))
-        |> Map.add "textDocument/documentHighlight" (requestHandling (fun s p -> handleTextDocumentDocumentHighlight s.State p))
-        |> Map.add "textDocument/documentSymbol" (requestHandling (fun s p -> handleTextDocumentDocumentSymbol s.State p))
-        |> Map.add "textDocument/hover" (requestHandling (fun s p -> handleTextDocumentHover s.State p))
-        |> Map.add "textDocument/references" (requestHandling (fun s p -> handleTextDocumentReferences s.State p))
-        |> Map.add "textDocument/rename" (requestHandling (fun s p -> handleTextDocumentRename s.State p))
-        |> Map.add "workspace/symbol" (requestHandling (fun s p -> handleWorkspaceSymbol s.State p))
-        |> Map.add "csharp/metadata" (requestHandling (fun s p -> handleCSharpMetadata s.State p))
+        |> Map.add "textDocument/codeAction"        (handleTextDocumentCodeAction        |> requestHandlingWithState)
+        |> Map.add "codeAction/resolve"             (handleCodeActionResolve             |> requestHandlingWithState)
+        |> Map.add "textDocument/definition"        (handleTextDocumentDefinitionOrImpl  |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/implementation"    (handleTextDocumentDefinitionOrImpl  |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/completion"        (handleTextDocumentCompletion        |> requestHandlingWithState)
+        |> Map.add "textDocument/documentHighlight" (handleTextDocumentDocumentHighlight |> requestHandlingWithState)
+        |> Map.add "textDocument/documentSymbol"    (handleTextDocumentDocumentSymbol    |> requestHandlingWithState)
+        |> Map.add "textDocument/hover"             (handleTextDocumentHover             |> requestHandlingWithState)
+        |> Map.add "textDocument/references"        (handleTextDocumentReferences        |> requestHandlingWithState)
+        |> Map.add "textDocument/rename"            (handleTextDocumentRename            |> requestHandlingWithState)
+        |> Map.add "workspace/symbol"               (handleWorkspaceSymbol               |> requestHandlingWithState)
+        |> Map.add "csharp/metadata"                (handleCSharpMetadata                |> requestHandlingWithState)
 
     LanguageServerProtocol.Server.start requestHandlings
                                         input
