@@ -452,3 +452,24 @@ let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction 
            |> Seq.collect unwrapRoslynCodeAction
            |> List.ofSeq
 }
+
+
+let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =
+    if (symbol :? INamedTypeSymbol) then
+        symbol :?> INamedTypeSymbol
+    else
+        symbol.ContainingType
+
+let getFullReflectionName (containingType: INamedTypeSymbol) =
+    let stack = Stack<string>();
+    stack.Push(containingType.MetadataName);
+    let mutable ns = containingType.ContainingNamespace;
+
+    let mutable doContinue = true
+    while doContinue do
+        stack.Push(ns.Name);
+        ns <- ns.ContainingNamespace
+
+        doContinue <- ns <> null && not ns.IsGlobalNamespace
+
+    String.Join(".", stack)
