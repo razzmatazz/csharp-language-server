@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-2019, ubuntu-20.04]
-        dotnet: [5.0.402]
+        dotnet: [6.0.100]
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
