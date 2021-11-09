@@ -3,8 +3,10 @@ This is a hacky Roslyn-based LSP server as an alternative to
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
 # Features
-- Most of basic LSP features: rename/go-to-def/find references, etc;
+- Basic LSP features: rename/go-to-def/find references, etc;
 - Go-to-metadata (needs integration from your LSP client.)
+
+See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
 # Installation
 `dotnet tool install --global csharp-ls`
@@ -16,9 +18,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls uses Roslyn to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
 - csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source;
 - csharp-ls is not affiliated with Microsoft Corp.
-
-# Change log
-See [CHANGELOG.md](CHANGELOG.md)
 
 # TODO list
  - intellisense/autocomplete does not always trigger where it should be
@@ -34,3 +33,4 @@ See [CHANGELOG.md](CHANGELOG.md)
  - razorls integration (server-side)
  - analyzer support
  - code generator support
+ - remove dependency on Newtonsoft.Json
