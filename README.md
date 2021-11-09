@@ -35,6 +35,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
     - does not show arg names when hovering on method/.ctor
     - type displayed is not the most appropriate in some contexts
     - some tags are still not supported, like `<typeparam>`
+ - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider
  - semantic tokens
  - code lenses
