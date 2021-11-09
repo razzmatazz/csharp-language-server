@@ -2,9 +2,19 @@
 This is a hacky Roslyn-based LSP server as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
-# Features
-- Basic LSP features: rename/go-to-def/find references, etc;
-- Go-to-metadata (needs integration from your LSP client.)
+`csharp-ls` unapologetically requires .NET 6 SDK to work and (probably) does not
+support .NET 3/4.x projects (.NET Framework)
+
+## Features
+- symbol rename;
+- go-to-definition/implementation;
+- find references;
+- document/workspace symbol search;
+- `textDocument/documentHighlight` support:
+  - highlighting other symbol references in the document on hover;
+- `codeAction/resolve` support for better performance when invoking code actions;
+- go-to-definition in metadata support:
+  - (needs integration from your LSP client -- `emacs-lsp/lsp-mode` has it.).
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
