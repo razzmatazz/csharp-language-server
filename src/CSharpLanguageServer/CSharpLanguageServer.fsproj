@@ -3,7 +3,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Description>C# LSP language server</Description>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>csharp-ls</ToolCommandName>
@@ -34,7 +34,6 @@
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.1.0.6543" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="TaskBuilder.fs" Version="2.1.0" />
 
     <PackageReference Include="Microsoft.Build.Locator" Version="1.4.1" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="3.11.0">

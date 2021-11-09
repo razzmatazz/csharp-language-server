@@ -1,4 +1,5 @@
 # (unreleased)
+- Use .NET 6.0 for runtime;
 - Fix `workspace/symbol` to return correct locations;
 - Implement `textDocument/implementation` (alias to `textDocument/definition` actually);
 - Support for `codeAction/resolve` so we have faster code action resolution/less overhead when working on large solutions.

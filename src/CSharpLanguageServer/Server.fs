@@ -10,7 +10,6 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
-open FSharp.Control.Tasks.V2
 
 open LanguageServerProtocol.Server
 open LanguageServerProtocol
