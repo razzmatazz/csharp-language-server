@@ -1,4 +1,4 @@
-# (unreleased)
+# 0.1.6
 - Update roslyn+msbuild libs to support for `net6.0` projects;
 - Use .NET 6.0 for runtime;
 - Fix `workspace/symbol` to return correct locations;
