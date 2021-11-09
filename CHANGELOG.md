@@ -1,4 +1,5 @@
 # (unreleased)
+- Update roslyn+msbuild libs to support for `net6.0` projects;
 - Use .NET 6.0 for runtime;
 - Fix `workspace/symbol` to return correct locations;
 - Implement `textDocument/implementation` (alias to `textDocument/definition` actually);
