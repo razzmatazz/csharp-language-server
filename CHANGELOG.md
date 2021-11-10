@@ -1,5 +1,5 @@
 # (unreleased)
-- Disable incorrectly implemented `textDocument/implementation` provider [csharp-language-server#4][https://github.com/razzmatazz/csharp-language-server/issues/4];
+- Disable incorrectly implemented `textDocument/implementation` provider [csharp-language-server#4](https://github.com/razzmatazz/csharp-language-server/issues/4);
 
 # 0.1.6
 - Update roslyn+msbuild libs to support for `net6.0` projects;
