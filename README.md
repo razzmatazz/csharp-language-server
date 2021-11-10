@@ -7,7 +7,7 @@ support .NET 3/4.x projects (.NET Framework)
 
 ## Features
 - symbol rename;
-- go-to-definition/implementation;
+- go-to-definition;
 - find references;
 - document/workspace symbol search;
 - `textDocument/documentHighlight` support:
@@ -30,6 +30,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - `textDocument/implementation` missing;
  - intellisense/autocomplete does not always trigger where it should be
  - on-hover has issues:
     - does not show arg names when hovering on method/.ctor

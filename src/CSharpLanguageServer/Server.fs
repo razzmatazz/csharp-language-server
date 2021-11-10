@@ -214,14 +214,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         HoverProvider = Some true
                         RenameProvider = Some true
                         DefinitionProvider = Some true
-                        TypeDefinitionProvider = Some false
-                        ImplementationProvider = Some true
+                        TypeDefinitionProvider = None
+                        ImplementationProvider = None
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
                         DocumentSymbolProvider = Some true
                         WorkspaceSymbolProvider = Some true
-                        DocumentFormattingProvider = Some false
-                        DocumentRangeFormattingProvider = Some false
+                        DocumentFormattingProvider = None
+                        DocumentRangeFormattingProvider = None
                         SignatureHelpProvider = None
                         CompletionProvider =
                             Some { ResolveProvider = None
@@ -235,12 +235,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                                  }
                         TextDocumentSync =
                             Some { TextDocumentSyncOptions.Default with
-                                     OpenClose = Some false
+                                     OpenClose = None
                                      Save = Some { IncludeText = Some true }
                                      Change = Some TextDocumentSyncKind.Full
                                  }
-                        FoldingRangeProvider = Some false
-                        SelectionRangeProvider = Some false
+                        FoldingRangeProvider = None
+                        SelectionRangeProvider = None
                         SemanticTokensProvider = None
                     }
             }
@@ -400,7 +400,7 @@ let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspR
         return maybeLspCodeAction |> success
 }
 
-let handleTextDocumentDefinitionOrImpl state logMessage (def: Types.TextDocumentPositionParams): Async<(LspResult<Types.GotoResult option> * ServerState)> = async {
+let handleTextDocumentDefinition state logMessage (def: Types.TextDocumentPositionParams): Async<(LspResult<Types.GotoResult option> * ServerState)> = async {
     let resolveDefinition (doc: Document) = task {
         let! sourceText = doc.GetTextAsync()
         let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
@@ -682,8 +682,7 @@ let startCore options =
         defaultRequestHandlings<CSharpLspServer> ()
         |> Map.add "textDocument/codeAction"        (handleTextDocumentCodeAction        |> requestHandlingWithState)
         |> Map.add "codeAction/resolve"             (handleCodeActionResolve             |> requestHandlingWithState)
-        |> Map.add "textDocument/definition"        (handleTextDocumentDefinitionOrImpl  |> requestHandlingWithStateChange)
-        |> Map.add "textDocument/implementation"    (handleTextDocumentDefinitionOrImpl  |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/definition"        (handleTextDocumentDefinition        |> requestHandlingWithStateChange)
         |> Map.add "textDocument/completion"        (handleTextDocumentCompletion        |> requestHandlingWithState)
         |> Map.add "textDocument/documentHighlight" (handleTextDocumentDocumentHighlight |> requestHandlingWithState)
         |> Map.add "textDocument/documentSymbol"    (handleTextDocumentDocumentSymbol    |> requestHandlingWithState)
