@@ -6,16 +6,16 @@ open System.Collections.Generic
 
 type TripleSlashComment = {
      Summary: XElement list;
-     Params: Map<string, XElement>;
-     Exceptions: Map<string, XElement>;
+     Params: (string * XElement) list;
+     Exceptions: (string * XElement) list;
      Returns: XElement list;
      Remarks: XElement list;
      OtherLines: XElement list; }
 
 let emptyTripleSlashComment = {
     Summary = []
-    Params = Map.empty
-    Exceptions = Map.empty
+    Params = []
+    Exceptions = []
     Returns = []
     Remarks = []
     OtherLines = [] }
@@ -90,14 +90,14 @@ let extendCommentWithElement comment (n: XElement) =
 
     | "param" ->
         let name = n.Attribute(XName.Get("name")).Value
-        { comment with Params = comment.Params |> Map.add name n }
+        { comment with Params = comment.Params |> List.append [(name, n)] }
 
     | "returns" ->
         { comment with Returns = comment.Returns |> List.append [n] }
 
     | "exception" ->
         let name = n.Attribute(XName.Get("cref")).Value |> parseCref
-        { comment with Exceptions = comment.Exceptions |> Map.add name n }
+        { comment with Exceptions = comment.Exceptions |> List.append [(name, n)] }
 
     | _ ->
         { comment with OtherLines = comment.OtherLines |> List.append [n] }
@@ -122,12 +122,12 @@ let parseComment xmlDocumentation: TripleSlashComment =
 
 let formatComment model : string list =
 
-    let appendMapped name (kvs: KeyValuePair<string, XElement> seq) markdownLines =
+    let appendNamed name (kvs: (string * XElement) seq) markdownLines =
         match Seq.isEmpty kvs with
         | true -> markdownLines
         | false ->
-            let formatItem (item: KeyValuePair<string, XElement>) =
-                sprintf "- `%s`: %s" item.Key (formatTextElement item.Value)
+            let formatItem (key, value) =
+                sprintf "- `%s`: %s" key (formatTextElement value)
 
             markdownLines
             |> List.append [name + ":"; ""]
@@ -148,9 +148,9 @@ let formatComment model : string list =
 
     []
     |> List.append (model.Summary |> List.map formatTextElement)
-    |> appendMapped "Parameters" model.Params
+    |> appendNamed "Parameters" model.Params
     |> appendFormatted "Returns" model.Returns
-    |> appendMapped "Exceptions" model.Exceptions
+    |> appendNamed "Exceptions" model.Exceptions
     |> appendFormatted "Remarks" model.Remarks
     |> List.append (model.OtherLines |> List.map string)
     |> List.rev

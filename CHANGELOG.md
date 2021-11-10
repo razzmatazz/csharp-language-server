@@ -1,4 +1,5 @@
 # (unreleased)
+- List params and exceptions in the same order as they appear on docxml on the symbol (instead of random order) -- [csharp-language-server#6](https://github.com/razzmatazz/csharp-language-server/issues/6);
 - Disable incorrectly implemented `textDocument/implementation` provider [csharp-language-server#4](https://github.com/razzmatazz/csharp-language-server/issues/4);
 
 # 0.1.6
