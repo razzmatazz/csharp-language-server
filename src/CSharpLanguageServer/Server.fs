@@ -308,10 +308,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return ()
     }
 
-    override __.TextDocumentDidClose(closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
-        state <- { state with OpenDocVersions = state.OpenDocVersions.Remove(closeParams.TextDocument.Uri) }
-        return ()
-    }
+let handleTextDocumentDidClose state logMessage (closeParams: Types.DidCloseTextDocumentParams): Async<(unit * ServerState)> = async {
+    let newOpenDocVersions = state.OpenDocVersions.Remove(closeParams.TextDocument.Uri)
+    return (), { state with OpenDocVersions = newOpenDocVersions }
+}
 
 let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
     match getDocumentForUri state actionParams.TextDocument.Uri with
@@ -666,6 +666,15 @@ let startCore options =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
+    let notificationHandlingWithStateChange fn =
+        let wrappedHandler (s: CSharpLspServer) p = async {
+            let! (response, newState) = fn s.State s.LogMessage p
+            s.State <- newState
+            return Result.Ok ()
+        }
+
+        requestHandling wrappedHandler
+
     let requestHandlingWithStateChange fn =
         let wrappedHandler (s: CSharpLspServer) p = async {
             let! (response, newState) = fn s.State s.LogMessage p
@@ -680,6 +689,7 @@ let startCore options =
 
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
+        |> Map.add "textDocument/didClose"          (handleTextDocumentDidClose          |> notificationHandlingWithStateChange)
         |> Map.add "textDocument/codeAction"        (handleTextDocumentCodeAction        |> requestHandlingWithState)
         |> Map.add "codeAction/resolve"             (handleCodeActionResolve             |> requestHandlingWithState)
         |> Map.add "textDocument/definition"        (handleTextDocumentDefinition        |> requestHandlingWithStateChange)
