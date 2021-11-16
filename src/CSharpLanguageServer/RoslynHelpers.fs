@@ -12,7 +12,7 @@ open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
-open LanguageServerProtocol
+open Ionide.LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -146,7 +146,9 @@ let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Type
       Diagnostics = None
       Edit = None
       Command = None
-      Data = null
+      Data = None
+      IsPreferred = None
+      Disabled = None
     }
 
 let roslynCodeActionToResolvedLspCodeAction
@@ -181,7 +183,9 @@ let roslynCodeActionToResolvedLspCodeAction
             Diagnostics = None
             Edit = Some edit
             Command = None
-            Data = null
+            Data = None
+            IsPreferred = None
+            Disabled = None
         }
 }
 

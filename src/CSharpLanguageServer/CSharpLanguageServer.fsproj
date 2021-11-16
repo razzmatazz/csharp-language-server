@@ -27,12 +27,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LanguageServerProtocol\LanguageServerProtocol.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.1.0.6543" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
 
     <PackageReference Include="Microsoft.Build.Locator" Version="1.4.1" />
