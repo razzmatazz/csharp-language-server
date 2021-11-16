@@ -19,11 +19,11 @@ let entry args =
 
         let parseLogLevel (s: string) =
             match s.ToLowerInvariant() with
-            | "error" -> LanguageServerProtocol.Types.MessageType.Error
-            | "warning" -> LanguageServerProtocol.Types.MessageType.Warning
-            | "info" -> LanguageServerProtocol.Types.MessageType.Info
-            | "log" -> LanguageServerProtocol.Types.MessageType.Log
-            | _ -> LanguageServerProtocol.Types.MessageType.Log
+            | "error" -> Ionide.LanguageServerProtocol.Types.MessageType.Error
+            | "warning" -> Ionide.LanguageServerProtocol.Types.MessageType.Warning
+            | "info" -> Ionide.LanguageServerProtocol.Types.MessageType.Info
+            | "log" -> Ionide.LanguageServerProtocol.Types.MessageType.Log
+            | _ -> Ionide.LanguageServerProtocol.Types.MessageType.Log
 
         // default the verbosity to warning
         let serverOptions: Server.Options = {

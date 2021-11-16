@@ -11,10 +11,10 @@ open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
 
-open LanguageServerProtocol.Server
-open LanguageServerProtocol
-open LanguageServerProtocol.Types
-open LanguageServerProtocol.LspResult
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.LspResult
 
 open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeFixes
@@ -354,8 +354,10 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
                         { TextDocumentUri = actionParams.TextDocument.Uri
                           Range = actionParams.Range }
 
+                    let caData = JsonConvert.SerializeObject(resolutionData)
+
                     let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                    { lspCa with Data = JsonConvert.SerializeObject(resolutionData) }
+                    { lspCa with Data = Some caData }
 
                 return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
               }
@@ -386,17 +388,18 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
 
 let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
     let resolutionData =
-        (codeAction.Data :?> string)
-        |> JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
+        codeAction.Data
+        |> Option.map (fun x -> x :?> string)
+        |> Option.map JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
 
-    match getDocumentForUri state resolutionData.TextDocumentUri with
+    match getDocumentForUri state resolutionData.Value.TextDocumentUri with
     | None ->
         return None |> success
 
     | Some doc ->
         let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
-        let textSpan = resolutionData.Range
+        let textSpan = resolutionData.Value.Range
                        |> roslynLinePositionSpanForLspRange
                        |> docText.Lines.GetTextSpan
 
@@ -721,7 +724,7 @@ let startCore options =
         |> Map.add "workspace/symbol"               (handleWorkspaceSymbol               |> requestHandlingWithState)
         |> Map.add "csharp/metadata"                (handleCSharpMetadata                |> requestHandlingWithState)
 
-    LanguageServerProtocol.Server.start requestHandlings
+    Ionide.LanguageServerProtocol.Server.start requestHandlings
                                         input
                                         output
                                         CSharpLspClient
