@@ -1,6 +1,7 @@
 module CSharpLanguageServer.RoslynHelpers
 
 open System
+open System.Linq
 open System.Collections.Generic
 open System.IO
 open System.Reflection
@@ -67,17 +68,47 @@ let lspDocChangesFromSolutionDiff
         originalSolution
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
+        logMessage
+        (originatingDoc: Document)
         : Async<Types.TextDocumentEdit list> = async {
 
     let getPathUri path = Uri("file://" + path)
 
     // make a list of changes
-    let changedDocs = updatedSolution
-                            .GetChanges(originalSolution)
-                            .GetProjectChanges()
-                            |> Seq.collect (fun pc -> pc.GetChangedDocuments())
+    let solutionProjectChanges = updatedSolution.GetChanges(originalSolution).GetProjectChanges()
 
     let docTextEdits = List<Types.TextDocumentEdit>()
+
+    let addedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetAddedDocuments())
+
+    for docId in addedDocs do
+        let newDoc = updatedSolution.GetDocument(docId)
+        let! newDocText = newDoc.GetTextAsync() |> Async.AwaitTask
+
+        let edit: Types.TextEdit =
+            { Range = { Start = { Line=0; Character=0 }; End = { Line=0; Character=0 } }
+              NewText = newDocText.ToString() }
+
+        let newDocFilePathMaybe =
+            if String.IsNullOrWhiteSpace(newDoc.FilePath)
+                   || (not <| Path.IsPathRooted(newDoc.FilePath)) then
+                if String.IsNullOrWhiteSpace(originatingDoc.FilePath) then
+                    None
+                else
+                    let directory = Path.GetDirectoryName(originatingDoc.FilePath)
+                    Path.Combine(directory, newDoc.Name) |> Some
+            else
+                Some newDoc.FilePath
+
+        match newDocFilePathMaybe with
+        | Some newDocFilePath ->
+            docTextEdits.Add(
+                { TextDocument = { Uri = newDocFilePath |> getPathUri |> string
+                                   Version = newDocFilePath |> getPathUri |> string |> tryGetDocVersionByUri }
+                  Edits = [| edit |] })
+        | None -> ()
+
+    let changedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetChangedDocuments())
 
     for docId in changedDocs do
         let originalDoc = originalSolution.GetDocument(docId)
@@ -121,8 +152,10 @@ let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Type
 let roslynCodeActionToResolvedLspCodeAction
         originalSolution
         tryGetDocVersionByUri
-        _logMessage
-        (ca: CodeActions.CodeAction): Async<Types.CodeAction option> = async {
+        logMessage
+        (originatingDoc: Document)
+        (ca: CodeActions.CodeAction)
+    : Async<Types.CodeAction option> = async {
 
     let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask)
 
@@ -135,7 +168,8 @@ let roslynCodeActionToResolvedLspCodeAction
         let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution
                                                          op.ChangedSolution
                                                          tryGetDocVersionByUri
-
+                                                         logMessage
+                                                         originatingDoc
         let edit: Types.WorkspaceEdit = {
             Changes = None
             DocumentChanges = docTextEdit |> Array.ofList |> Some
@@ -473,3 +507,30 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
         doContinue <- ns <> null && not ns.IsGlobalNamespace
 
     String.Join(".", stack)
+
+let tryAddDocument logMessage
+                   (docFilePath: string)
+                   (text: string)
+                   (solution: Solution)
+                   : Document option =
+
+    let docDir = Path.GetDirectoryName(docFilePath)
+    //logMessage (sprintf "TextDocumentDidOpen: docFilename=%s docDir=%s" docFilename docDir)
+
+    let matchesPath (p: Project) =
+        let projectDir = Path.GetDirectoryName(p.FilePath)
+        (docDir |> string).StartsWith(projectDir |> string)
+
+    let projectOnPath = solution.Projects |> Seq.filter matchesPath |> Seq.tryHead
+
+    match projectOnPath with
+    | Some proj ->
+        let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
+        let docName = docFilePath.Substring(projectBaseDir.Length+1)
+
+        //logMessage (sprintf "Adding file %s (\"%s\") to project %s" docName docFilePath proj.FilePath)
+
+        let newDoc = proj.AddDocument(name=docName, text=SourceText.From(text), folders=null, filePath=docFilePath)
+        Some newDoc
+
+    | None -> None

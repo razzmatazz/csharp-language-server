@@ -248,12 +248,32 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) =
-        state <- { state with OpenDocVersions = state.OpenDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version) }
+        match getDocumentForUri state openParams.TextDocument.Uri with
+        | Some doc -> async {
+            state <- { state with OpenDocVersions = state.OpenDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version) }
 
-        withRegularDocumentOnUriOrUnit
-            state
-            (publishDiagnosticsOnDocument openParams.TextDocument.Uri)
-            openParams.TextDocument.Uri
+            do! publishDiagnosticsOnDocument openParams.TextDocument.Uri doc
+
+            return ()
+          }
+
+        | None -> async {
+            let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
+
+            let newDocMaybe = tryAddDocument logMessage
+                                             docFilePath
+                                             openParams.TextDocument.Text
+                                             state.Solution.Value
+            match newDocMaybe with
+            | Some newDoc ->
+                state <- { state with Solution = Some newDoc.Project.Solution }
+
+                do! publishDiagnosticsOnDocument openParams.TextDocument.Uri newDoc
+                return ()
+
+            | None ->
+                return ()
+        }
 
     override __.TextDocumentDidChange(changeParams: Types.DidChangeTextDocumentParams): Async<unit> =
         let publishDiagnosticsOnUpdatedDocument (doc: Document) = async {
@@ -274,39 +294,28 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             publishDiagnosticsOnUpdatedDocument
             changeParams.TextDocument.Uri
 
-    override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
+    override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> =
         // we need to add this file to solution if not already
         match getDocumentForUri state saveParams.TextDocument.Uri with
         | None ->
-            let solution = state.Solution.Value
             let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
-            let docDir = Path.GetDirectoryName(docFilePath)
-            //logMessage (sprintf "TextDocumentDidSave: docFilename=%s docDir=%s" docFilename docDir)
-
-            let matchesPath (p: Project) =
-                let projectDir = Path.GetDirectoryName(p.FilePath)
-                (docDir |> string).StartsWith(projectDir |> string)
-
-            let projectOnPath = solution.Projects |> Seq.filter matchesPath |> Seq.tryHead
-            match projectOnPath with
-            | Some proj ->
-                let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
-                let docName = docFilePath.Substring(projectBaseDir.Length+1)
-
-                logMessage (sprintf "Adding file %s (\"%s\") to project %s" docName docFilePath proj.FilePath)
-
-                let newDoc = proj.AddDocument(name=docName, text=SourceText.From(saveParams.Text.Value), folders=null, filePath=docFilePath)
-
-                //logMessage (sprintf "newDoc.FilePath=%s" (newDoc.FilePath |> string))
-
+            let newDocMaybe = tryAddDocument logMessage
+                                             docFilePath
+                                             saveParams.Text.Value
+                                             state.Solution.Value
+            match newDocMaybe with
+            | Some newDoc -> async {
                 state <- { state with Solution = Some newDoc.Project.Solution }
 
                 do! publishDiagnosticsOnDocument saveParams.TextDocument.Uri newDoc
-            | None -> ()
-        | _ -> ()
 
-        return ()
-    }
+                return ()
+              }
+
+            | None ->
+                async { return () }
+
+        | _ -> async { return () }
 
 let handleTextDocumentDidClose state logMessage (closeParams: Types.DidCloseTextDocumentParams): Async<(unit * ServerState)> = async {
     let newOpenDocVersions = state.OpenDocVersions.Remove(closeParams.TextDocument.Uri)
@@ -322,7 +331,7 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
         let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
         let textSpan = actionParams.Range |> roslynLinePositionSpanForLspRange
-                                            |> docText.Lines.GetTextSpan
+                                          |> docText.Lines.GetTextSpan
 
         let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
@@ -354,10 +363,14 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
                 let results = List<CodeAction>()
 
                 for ca in roslynCodeActions do
-                    let! maybeLspCa = roslynCodeActionToResolvedLspCodeAction state.Solution.Value
-                                                                                state.OpenDocVersions.TryFind
-                                                                                logMessage
-                                                                                ca
+                    let! maybeLspCa =
+                        roslynCodeActionToResolvedLspCodeAction
+                            state.Solution.Value
+                            state.OpenDocVersions.TryFind
+                            logMessage
+                            doc
+                            ca
+
                     if maybeLspCa.IsSome then
                         results.Add(maybeLspCa.Value)
 
@@ -371,7 +384,9 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
 }
 
 let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
-    let resolutionData = JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>(codeAction.Data :?> string)
+    let resolutionData =
+        (codeAction.Data :?> string)
+        |> JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
 
     match getDocumentForUri state resolutionData.TextDocumentUri with
     | None ->
@@ -380,8 +395,9 @@ let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspR
     | Some doc ->
         let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
-        let textSpan = resolutionData.Range |> roslynLinePositionSpanForLspRange
-                                            |> docText.Lines.GetTextSpan
+        let textSpan = resolutionData.Range
+                       |> roslynLinePositionSpanForLspRange
+                       |> docText.Lines.GetTextSpan
 
         let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
@@ -391,6 +407,7 @@ let handleCodeActionResolve state logMessage (codeAction: CodeAction): AsyncLspR
             roslynCodeActionToResolvedLspCodeAction state.Solution.Value
                                                     state.OpenDocVersions.TryFind
                                                     logMessage
+                                                    doc
 
         let! maybeLspCodeAction =
             match selectedCodeAction with
@@ -625,7 +642,7 @@ let handleTextDocumentReferences state _logMessage (refParams: Types.ReferencePa
     | None -> return None |> success
 }
 
-let handleTextDocumentRename state _logMessage (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
+let handleTextDocumentRename state logMessage (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
     let renameSymbolInDoc symbol (doc: Document) = async {
         let originalSolution = doc.Project.Solution
 
@@ -640,6 +657,8 @@ let handleTextDocumentRename state _logMessage (rename: Types.RenameParams): Asy
             lspDocChangesFromSolutionDiff originalSolution
                                           updatedSolution
                                           state.OpenDocVersions.TryFind
+                                          logMessage
+                                          doc
         return docTextEdit
     }
 
