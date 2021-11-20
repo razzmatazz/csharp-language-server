@@ -33,6 +33,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 # TODO list
  - `textDocument/implementation` missing;
+ - extract inner class to another file does not work;
+ - extract interface does not work; probably we need to show UI(?)
  - intellisense/autocomplete does not always trigger where it should be
  - on-hover has issues:
     - does not show arg names when hovering on method/.ctor
