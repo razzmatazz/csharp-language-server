@@ -9,6 +9,7 @@ type TripleSlashComment = {
      Params: (string * XElement) list;
      Exceptions: (string * XElement) list;
      Returns: XElement list;
+     Types: (string * XElement) list;
      Remarks: XElement list;
      OtherLines: XElement list; }
 
@@ -17,6 +18,7 @@ let emptyTripleSlashComment = {
     Params = []
     Exceptions = []
     Returns = []
+    Types = []
     Remarks = []
     OtherLines = [] }
 
@@ -99,6 +101,10 @@ let extendCommentWithElement comment (n: XElement) =
         let name = n.Attribute(XName.Get("cref")).Value |> parseCref
         { comment with Exceptions = comment.Exceptions |> List.append [(name, n)] }
 
+    | "typeparam" ->
+        let name = n.Attribute(XName.Get("name")).Value
+        { comment with Types = comment.Types |> List.append [(name, n)] }
+
     | _ ->
         { comment with OtherLines = comment.OtherLines |> List.append [n] }
 
@@ -151,6 +157,7 @@ let formatComment model : string list =
     |> appendNamed "Parameters" model.Params
     |> appendFormatted "Returns" model.Returns
     |> appendNamed "Exceptions" model.Exceptions
+    |> appendNamed "Types" model.Types
     |> appendFormatted "Remarks" model.Remarks
     |> List.append (model.OtherLines |> List.map string)
     |> List.rev

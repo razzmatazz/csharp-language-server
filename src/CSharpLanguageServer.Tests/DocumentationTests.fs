@@ -91,5 +91,11 @@ Exceptions:
 Parameters:
 - `x`: y
 - `a`: b""")>]
+[<TestCase(
+    "<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
+    """desc
+
+Types:
+- `x`: y""")>]
 let testFormatDocXml (xml, expectedMD: string) =
     Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), String.Join("\n", formatDocXml xml))
