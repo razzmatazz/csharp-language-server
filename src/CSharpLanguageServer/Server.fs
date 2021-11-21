@@ -83,19 +83,19 @@ type CSharpCodeActionResolutionData = {
     Range: Range
 }
 
+type DecompiledMetadata = { Metadata: CSharpMetadataResponse; Document: Document }
+
 type ServerState = {
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
-    DecompiledMetadataUris: Map<string, CSharpMetadataResponse>
-    DecompiledMetadataDocs: Map<string, Document>
+    DecompiledMetadata: Map<string, DecompiledMetadata>
 }
 
 let emptyServerState = { ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
-                         DecompiledMetadataUris = Map.empty
-                         DecompiledMetadataDocs = Map.empty }
+                         DecompiledMetadata = Map.empty }
 
 let getDocumentForUri state u =
     let getPathUri path = Uri("file://" + path)
@@ -111,7 +111,8 @@ let getDocumentForUri state u =
         | [d] -> //logMessage ("resolved to document " + d.FilePath + " while looking for " + uri.ToString())
                 Some d
         | _ -> //logMessage (sprintf "getDocumentForUri: no document on solution matching uri %s" (uri |> string))
-                Map.tryFind u state.DecompiledMetadataDocs
+                Map.tryFind u state.DecompiledMetadata
+                |> Option.map (fun x -> x.Document)
 
     | None -> None
 
@@ -134,9 +135,9 @@ let getSymbolAtPosition state uri pos =
 
     withDocumentOnUriOrNone state resolveSymbolOrNull uri
 
-let isUriADecompiledDoc state u = Map.containsKey u state.DecompiledMetadataDocs
-
 let withRegularDocumentOnUriOrUnit state fn u = async {
+    let isUriADecompiledDoc state u = Map.containsKey u state.DecompiledMetadata
+
     match isUriADecompiledDoc state u with
     | true ->  ()
     | false ->
@@ -421,19 +422,15 @@ let handleTextDocumentDefinition state logMessage (def: Types.TextDocumentPositi
     let resolveDefinition (doc: Document) = task {
         let! sourceText = doc.GetTextAsync()
         let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+        let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position)
         let! compilation = doc.Project.GetCompilationAsync()
 
-        let! (locations, newState) = task {
-            match symbol with
-            | null -> //logMessage "no symbol at this point"
+        let! (locations, newState) = async {
+            match Option.ofObj symbolMaybe with
+            | None ->
                 return ([], state)
 
-            | sym ->
-                //logMessage ("have symbol " + sym.ToString() + " at this point!")
-                // TODO:
-                //  - handle symbols in metadata
-
+            | Some sym ->
                 let locationsInSource = sym.Locations |> Seq.filter (fun l -> l.IsInSource)
 
                 let locationsInMetadata = sym.Locations |> Seq.filter (fun l -> l.IsInMetadata)
@@ -466,15 +463,14 @@ let handleTextDocumentDefinition state logMessage (def: Types.TextDocumentPositi
                                             Source = text }
 
                     let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-                    let mdProject = doc.Project
-                    let mdDocumentEmpty = mdProject.AddDocument(mdDocumentFilename, String.Empty)
+                    let mdDocumentEmpty = doc.Project.AddDocument(mdDocumentFilename, String.Empty)
                     let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
 
-                    let newState = { state with DecompiledMetadataUris = state.DecompiledMetadataUris |> Map.add uri csharpMetadata
-                                                DecompiledMetadataDocs = state.DecompiledMetadataDocs |> Map.add uri mdDocument }
+                    let newDecompiledMetadataMap = state.DecompiledMetadata |> Map.add uri { Metadata = csharpMetadata; Document = mdDocument }
+                    let newState = { state with DecompiledMetadata = newDecompiledMetadataMap }
 
                     // figure out location on the document (approx implementation)
-                    let! syntaxTree = mdDocument.GetSyntaxTreeAsync()
+                    let! syntaxTree = mdDocument.GetSyntaxTreeAsync() |> Async.AwaitTask
                     let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
                     collector.Visit(syntaxTree.GetRoot())
 
@@ -678,7 +674,11 @@ let handleWorkspaceSymbol state _logMessage (symbolParams: Types.WorkspaceSymbol
 
 let handleCSharpMetadata state _logMessage (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
     let uri = metadataParams.TextDocument.Uri
-    return state.DecompiledMetadataUris |> Map.tryFind uri |> success
+
+    return state.DecompiledMetadata
+           |> Map.tryFind uri
+           |> Option.map (fun x -> x.Metadata)
+           |> success
 }
 
 let startCore options =
