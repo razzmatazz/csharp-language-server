@@ -1,4 +1,5 @@
 # (unreleased)
+- Expose more bits from xmldoc properly on tip on hover;
 - Drop local LanguageServerProtocol clone from FSAC and use [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol) instead;
 - Fix file creation via code actions (e.g. when extracting an interface or inner class to another file);
 - List params and exceptions in the same order as they appear on docxml on the symbol (instead of random order) -- [csharp-language-server#6](https://github.com/razzmatazz/csharp-language-server/issues/6);
