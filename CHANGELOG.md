@@ -1,4 +1,5 @@
 # (unreleased)
+- Add support for `textDocument/implementation`;
 - Expose more bits from xmldoc properly on tip on hover;
 - Drop local LanguageServerProtocol clone from FSAC and use [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol) instead;
 - Fix file creation via code actions (e.g. when extracting an interface or inner class to another file);
