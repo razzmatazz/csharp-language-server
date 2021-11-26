@@ -1,4 +1,5 @@
-# (unreleased)
+# 0.1.7
+- Bump roslyn libs to a newer version;
 - Add support for `textDocument/implementation`;
 - Expose more bits from xmldoc properly on tip on hover;
 - Drop local LanguageServerProtocol clone from FSAC and use [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol) instead;
