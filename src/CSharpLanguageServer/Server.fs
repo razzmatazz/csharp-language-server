@@ -29,6 +29,8 @@ type Options = {
     LogLevel: Types.MessageType;
 }
 
+let emptyOptions = { SolutionPath = None; LogLevel = Types.MessageType.Log }
+
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
 
@@ -90,12 +92,14 @@ type ServerState = {
     Solution: Solution option
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadata>
+    Options: Options
 }
 
 let emptyServerState = { ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
-                         DecompiledMetadata = Map.empty }
+                         DecompiledMetadata = Map.empty
+                         Options = emptyOptions }
 
 let getDocumentForUri state u =
     let getPathUri path = Uri("file://" + path)
@@ -135,80 +139,73 @@ let getSymbolAtPosition state uri pos =
 
     withDocumentOnUriOrNone state resolveSymbolOrNull uri
 
-let withRegularDocumentOnUriOrUnit state fn u = async {
-    let isUriADecompiledDoc state u = Map.containsKey u state.DecompiledMetadata
-
-    match isUriADecompiledDoc state u with
-    | true ->  ()
-    | false ->
-        match getDocumentForUri state u with
-        | Some doc ->
-            let! fnResult = fn doc
-            return fnResult
-        | None ->
-            return ()
+type HandlerResult<'Result> = {
+    State: ServerState
+    DiagnosticsToPublishOnDocument: (string * Microsoft.CodeAnalysis.Document) list
+    MessagesToLog: (MessageType * string) list
+    LspResult: LspResult<'Result>;
 }
+
+let emptyNotificationHandlerResult = {
+        State = emptyServerState
+        DiagnosticsToPublishOnDocument = []
+        MessagesToLog = []
+        LspResult = Result.Ok () }
+
+let emptyNotificationHandlerResultWithState state = { emptyNotificationHandlerResult with State = state }
+
+let handlerResultOf result state = {
+        State = state;
+        DiagnosticsToPublishOnDocument = [];
+        MessagesToLog = [];
+        LspResult = success result }
 
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
-    let mutable state: ServerState = emptyServerState
-
-    let logMessageWithLevel l message =
-        let messageParams = { Type = l ; Message = "csharp-ls: " + message }
-        do lspClient.WindowShowMessage messageParams |> ignore
-
-    let logMessage = logMessageWithLevel MessageType.Log
-    let infoMessage = logMessageWithLevel MessageType.Info
-    let warningMessage = logMessageWithLevel MessageType.Warning
-    let errorMessage = logMessageWithLevel MessageType.Error
-
-    let publishDiagnosticsOnDocument docUri (doc: Document) = async {
-        let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-
-        let diagnostics = semanticModel.GetDiagnostics()
-                            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                            |> Array.ofSeq
-
-        do! lspClient.TextDocumentPublishDiagnostics {
-            Uri = docUri
-            Diagnostics = diagnostics }
-
-        return ()
-    }
+    let mutable state: ServerState = { emptyServerState with Options = options }
 
     member _.State
         with get() = state
         and set(newState) = state <- newState
 
-    member __.LogMessage(s: string) = s |> logMessage
+    member _.LspClient
+        with get() = lspClient
 
     override __.Dispose(): unit = ()
 
-    override _.Initialize(p: InitializeParams) = async {
-        state <- { state with ClientCapabilities = p.Capabilities }
 
-        infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
-                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
-                             (JsonConvert.SerializeObject(options, StringEnumConverter())))
-        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+let handleInitialize state (p: InitializeParams): Async<HandlerResult<InitializeResult>> = async {
+    let options = state.Options
 
+    let logMessages = List<(MessageType * string)>()
+    let logMessage m = logMessages.Add((MessageType.Log, m))
+    let infoMessage m = logMessages.Add((MessageType.Log, m))
+
+    infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+                            (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
+                            (JsonConvert.SerializeObject(options, StringEnumConverter())))
+    infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+
+    let! solution =
         match options.SolutionPath with
-        | Some solutionPath ->
+        | Some solutionPath -> async {
             infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
-            let! solutionLoaded = tryLoadSolutionOnPath logMessage solutionPath
-            state <- { state with Solution = solutionLoaded }
+            return! tryLoadSolutionOnPath logMessage solutionPath
+          }
 
-        | None ->
+        | None -> async {
             let cwd = Directory.GetCurrentDirectory()
             infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+            return! findAndLoadSolutionOnDir logMessage cwd
+          }
 
-            let! solutionLoaded = findAndLoadSolutionOnDir logMessage cwd
-            state <- { state with Solution = solutionLoaded }
+    let newState = { state with Solution = solution
+                                ClientCapabilities = p.Capabilities }
 
-        infoMessage "ok, solution loaded -- initialization finished"
+    infoMessage "ok, solution loaded -- initialization finished"
 
-        return
+    let result =
             { InitializeResult.Default with
                 Capabilities =
                     { ServerCapabilities.Default with
@@ -245,83 +242,97 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         SemanticTokensProvider = None
                     }
             }
-        |> success
-    }
 
-    override __.TextDocumentDidOpen(openParams: Types.DidOpenTextDocumentParams) =
-        match getDocumentForUri state openParams.TextDocument.Uri with
-        | Some doc -> async {
-            state <- { state with OpenDocVersions = state.OpenDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version) }
+    return { handlerResultOf result newState with
+                 MessagesToLog = logMessages |> List.ofSeq }
+}
 
-            do! publishDiagnosticsOnDocument openParams.TextDocument.Uri doc
+let handleTextDocumentDidOpen state (openParams: Types.DidOpenTextDocumentParams): Async<HandlerResult<unit>> =
+    match getDocumentForUri state openParams.TextDocument.Uri with
+    | Some doc -> async {
+        let newState = { state with OpenDocVersions = state.OpenDocVersions.Add(openParams.TextDocument.Uri, openParams.TextDocument.Version) }
 
-            return ()
-          }
+        return { emptyNotificationHandlerResult with
+                     State = newState;
+                     DiagnosticsToPublishOnDocument = [(openParams.TextDocument.Uri, doc)] }
+      }
 
-        | None -> async {
-            let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
+    | None -> async {
+        let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
 
-            let newDocMaybe = tryAddDocument logMessage
+        let logMessages = List<string>()
+        let logMessage m = logMessages.Add(m)
+
+        let newDocMaybe = tryAddDocument logMessage
                                              docFilePath
                                              openParams.TextDocument.Text
                                              state.Solution.Value
-            match newDocMaybe with
-            | Some newDoc ->
-                state <- { state with Solution = Some newDoc.Project.Solution }
+        match newDocMaybe with
+        | Some newDoc ->
+            return { emptyNotificationHandlerResult with
+                         State = { state with Solution = Some newDoc.Project.Solution }
+                         DiagnosticsToPublishOnDocument = [(openParams.TextDocument.Uri, newDoc)] }
 
-                do! publishDiagnosticsOnDocument openParams.TextDocument.Uri newDoc
-                return ()
+        | None ->
+            return emptyNotificationHandlerResultWithState state
+      }
 
-            | None ->
-                return ()
-        }
+let handleTextDocumentDidChange state (changeParams: Types.DidChangeTextDocumentParams): Async<HandlerResult<unit>> =
+    let handlerResult =
+        emptyNotificationHandlerResultWithState
+            { state with OpenDocVersions = state.OpenDocVersions.Add(changeParams.TextDocument.Uri,
+                                                                     changeParams.TextDocument.Version |> Option.defaultValue 0) }
 
-    override __.TextDocumentDidChange(changeParams: Types.DidChangeTextDocumentParams): Async<unit> =
-        let publishDiagnosticsOnUpdatedDocument (doc: Document) = async {
+
+    let isUriADecompiledDoc state u = Map.containsKey u state.DecompiledMetadata
+
+    match isUriADecompiledDoc state changeParams.TextDocument.Uri with
+    | true -> async { return handlerResult }
+    | false ->
+        match getDocumentForUri state changeParams.TextDocument.Uri with
+        | Some doc ->
             let fullText = SourceText.From(changeParams.ContentChanges.[0].Text)
 
             let updatedDoc = doc.WithText(fullText)
             let updatedSolution = updatedDoc.Project.Solution;
-            state <- { state with Solution = Some updatedSolution }
 
-            do! publishDiagnosticsOnDocument changeParams.TextDocument.Uri updatedDoc
-            return ()
-        }
-
-        state <- { state with OpenDocVersions = state.OpenDocVersions.Add(changeParams.TextDocument.Uri,
-                                                                          changeParams.TextDocument.Version |> Option.defaultValue 0) }
-        withRegularDocumentOnUriOrUnit
-            state
-            publishDiagnosticsOnUpdatedDocument
-            changeParams.TextDocument.Uri
-
-    override __.TextDocumentDidSave(saveParams: Types.DidSaveTextDocumentParams): Async<unit> =
-        // we need to add this file to solution if not already
-        match getDocumentForUri state saveParams.TextDocument.Uri with
+            async { return { handlerResult with
+                                State = { handlerResult.State with Solution = Some updatedSolution }
+                                DiagnosticsToPublishOnDocument = [(changeParams.TextDocument.Uri, updatedDoc)]
+                        } }
         | None ->
-            let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
-            let newDocMaybe = tryAddDocument logMessage
+            async { return handlerResult }
+
+let handleTextDocumentDidSave state (saveParams: Types.DidSaveTextDocumentParams): Async<HandlerResult<unit>> =
+    // we need to add this file to solution if not already
+    match getDocumentForUri state saveParams.TextDocument.Uri with
+    | None ->
+        let logMessages = List<string>()
+        let logMessage m = logMessages.Add(m)
+
+        let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
+        let newDocMaybe = tryAddDocument logMessage
                                              docFilePath
                                              saveParams.Text.Value
                                              state.Solution.Value
-            match newDocMaybe with
-            | Some newDoc -> async {
-                state <- { state with Solution = Some newDoc.Project.Solution }
+        match newDocMaybe with
+        | Some newDoc -> async {
+            let newState = { state with Solution = Some newDoc.Project.Solution }
 
-                do! publishDiagnosticsOnDocument saveParams.TextDocument.Uri newDoc
+            return { emptyNotificationHandlerResult with
+                         State = newState
+                         DiagnosticsToPublishOnDocument = [(saveParams.TextDocument.Uri, newDoc)] }
+          }
 
-                return ()
-              }
+        | None ->
+            async { return emptyNotificationHandlerResultWithState state }
 
-            | None ->
-                async { return () }
+    | _ -> async { return emptyNotificationHandlerResultWithState state }
 
-        | _ -> async { return () }
-
-let handleTextDocumentDidClose state logMessage (closeParams: Types.DidCloseTextDocumentParams): Async<(unit * ServerState)> = async {
+let handleTextDocumentDidClose state (closeParams: Types.DidCloseTextDocumentParams): Async<HandlerResult<unit>> =
     let newOpenDocVersions = state.OpenDocVersions.Remove(closeParams.TextDocument.Uri)
-    return (), { state with OpenDocVersions = newOpenDocVersions }
-}
+    let newState = { state with OpenDocVersions = newOpenDocVersions }
+    async { return emptyNotificationHandlerResultWithState newState }
 
 let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
     match getDocumentForUri state actionParams.TextDocument.Uri with
@@ -357,7 +368,7 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
                     let caData = JsonConvert.SerializeObject(resolutionData)
 
                     let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                    { lspCa with Data = Some caData }
+                    { lspCa with Data = Some (caData :> obj) }
 
                 return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
               }
@@ -502,7 +513,7 @@ let resolveSymbolLocations state
     return (lspLocations, aggregatedState)
 }
 
-let handleTextDocumentDefinition state logMessage (def: Types.TextDocumentPositionParams): Async<(LspResult<Types.GotoResult option> * ServerState)> =
+let handleTextDocumentDefinition state (def: Types.TextDocumentPositionParams): Async<HandlerResult<Types.GotoResult option>> =
     match getDocumentForUri state def.TextDocument.Uri with
     | Some doc ->
         async {
@@ -517,15 +528,15 @@ let handleTextDocumentDefinition state logMessage (def: Types.TextDocumentPositi
 
             let! (locations, newState) = resolveSymbolLocations state doc symbols
 
-            let result = locations |> Array.ofSeq |> GotoResult.Multiple
+            let result = locations |> Array.ofSeq |> GotoResult.Multiple |> Some
 
-            return (result |> Some |> success, newState)
+            return handlerResultOf result newState
         }
 
     | None ->
-        async { return (None |> success, state) }
+        async { return handlerResultOf None state }
 
-let handleTextDocumentImplementation state logMessage (def: Types.TextDocumentPositionParams): Async<(LspResult<Types.GotoResult option> * ServerState)> =
+let handleTextDocumentImplementation state (def: Types.TextDocumentPositionParams): Async<HandlerResult<Types.GotoResult option>> =
     match getDocumentForUri state def.TextDocument.Uri with
     | Some doc ->
         async {
@@ -543,13 +554,13 @@ let handleTextDocumentImplementation state logMessage (def: Types.TextDocumentPo
 
             let! (locations, newState) = resolveSymbolLocations state doc symbols
 
-            let result = locations |> Array.ofSeq |> GotoResult.Multiple
+            let result = locations |> Array.ofSeq |> GotoResult.Multiple |> Some
 
-            return (result |> Some |> success, newState)
+            return handlerResultOf result newState
         }
 
     | None ->
-        async { return (None |> success, state) }
+        async { return handlerResultOf None state }
 
 let handleTextDocumentCompletion state _logMessage (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
     match getDocumentForUri state posParams.TextDocument.Uri with
@@ -728,34 +739,55 @@ let handleCSharpMetadata state _logMessage (metadataParams: CSharpMetadataParams
            |> success
 }
 
+let publishDiagnosticsOnDocument (lspClient: LspClient) docUri (doc: Document) = async {
+    let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+
+    let diagnostics =
+        semanticModel.GetDiagnostics()
+        |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+        |> Array.ofSeq
+
+    do! lspClient.TextDocumentPublishDiagnostics {
+        Uri = docUri
+        Diagnostics = diagnostics }
+
+    return ()
+}
+
+let logMessageWithLevel (lspClient: LspClient) l message =
+    let messageParams = { Type = l ; Message = "csharp-ls: " + message }
+    do lspClient.WindowShowMessage messageParams |> ignore
+
 let startCore options =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
-    let notificationHandlingWithStateChange fn =
-        let wrappedHandler (s: CSharpLspServer) p = async {
-            let! (response, newState) = fn s.State s.LogMessage p
-            s.State <- newState
-            return Result.Ok ()
-        }
-
-        requestHandling wrappedHandler
-
     let requestHandlingWithStateChange fn =
         let wrappedHandler (s: CSharpLspServer) p = async {
-            let! (response, newState) = fn s.State s.LogMessage p
-            s.State <- newState
-            return response
+            let! result = fn s.State p
+            s.State <- result.State
+
+            for mt, m in result.MessagesToLog do
+                do logMessageWithLevel s.LspClient mt m
+
+            for uri, doc in result.DiagnosticsToPublishOnDocument do
+                do! publishDiagnosticsOnDocument s.LspClient uri doc
+
+            return result.LspResult
         }
 
         requestHandling wrappedHandler
 
     let requestHandlingWithState fn =
-        requestHandling (fun (s: CSharpLspServer) p -> fn s.State s.LogMessage p)
+        requestHandling (fun (s: CSharpLspServer) p -> fn s.State (fun m -> logMessageWithLevel s.LspClient MessageType.Log m) p)
 
     let requestHandlings =
         defaultRequestHandlings<CSharpLspServer> ()
-        |> Map.add "textDocument/didClose"          (handleTextDocumentDidClose          |> notificationHandlingWithStateChange)
+        |> Map.add "initialize"                     (handleInitialize                    |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/didOpen"           (handleTextDocumentDidOpen           |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/didChange"         (handleTextDocumentDidChange         |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/didSave"           (handleTextDocumentDidSave           |> requestHandlingWithStateChange)
+        |> Map.add "textDocument/didClose"          (handleTextDocumentDidClose          |> requestHandlingWithStateChange)
         |> Map.add "textDocument/codeAction"        (handleTextDocumentCodeAction        |> requestHandlingWithState)
         |> Map.add "codeAction/resolve"             (handleCodeActionResolve             |> requestHandlingWithState)
         |> Map.add "textDocument/definition"        (handleTextDocumentDefinition        |> requestHandlingWithStateChange)
@@ -769,11 +801,12 @@ let startCore options =
         |> Map.add "workspace/symbol"               (handleWorkspaceSymbol               |> requestHandlingWithState)
         |> Map.add "csharp/metadata"                (handleCSharpMetadata                |> requestHandlingWithState)
 
-    Ionide.LanguageServerProtocol.Server.start requestHandlings
-                                        input
-                                        output
-                                        CSharpLspClient
-                                        (fun lspClient -> new CSharpLspServer(lspClient, options))
+    Ionide.LanguageServerProtocol.Server.start
+        requestHandlings
+        input
+        output
+        CSharpLspClient
+        (fun lspClient -> new CSharpLspServer(lspClient, options))
 
 let start options =
     try

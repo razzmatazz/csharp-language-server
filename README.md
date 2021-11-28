@@ -40,7 +40,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
  - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider
  - semantic tokens
- - code lenses
+ - code lenses (show references)
  - formatting, on type and otherwise
  - ability to run tests
  - razorls integration (server-side)
