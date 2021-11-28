@@ -357,7 +357,7 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
                     let caData = JsonConvert.SerializeObject(resolutionData)
 
                     let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                    { lspCa with Data = Some caData }
+                    { lspCa with Data = Some (caData :> obj) }
 
                 return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
               }
