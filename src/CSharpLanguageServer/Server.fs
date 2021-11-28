@@ -307,8 +307,8 @@ let handleTextDocumentDidSave state (saveParams: Types.DidSaveTextDocumentParams
     // we need to add this file to solution if not already
     match getDocumentForUri state saveParams.TextDocument.Uri with
     | None ->
-        let logMessages = List<string>()
-        let logMessage m = logMessages.Add(m)
+        let logMessages = List<(MessageType * string)>()
+        let logMessage m = logMessages.Add((MessageType.Log, m))
 
         let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
         let newDocMaybe = tryAddDocument logMessage
@@ -321,7 +321,8 @@ let handleTextDocumentDidSave state (saveParams: Types.DidSaveTextDocumentParams
 
             return { emptyNotificationHandlerResult with
                          State = newState
-                         DiagnosticsToPublishOnDocument = [(saveParams.TextDocument.Uri, newDoc)] }
+                         DiagnosticsToPublishOnDocument = [(saveParams.TextDocument.Uri, newDoc)]
+                         MessagesToLog = logMessages |> List.ofSeq }
           }
 
         | None ->
