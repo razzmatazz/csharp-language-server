@@ -1,7 +1,7 @@
 # (unreleased)
 - Nicer on-hover markdown that should match the context better;
 - Expose properties & events on textDocument/documentSymbol;
-- Pull `add using import` code action to the top of action list, mark it prefered and with `Kind`. 
+- Pull `add using import` code action to the top of action list, mark it prefered and with `Kind`, [csharp-language-server#9](https://github.com/razzmatazz/csharp-language-server/issues/9). 
 
 # 0.1.7
 - Bump roslyn libs to a newer version;
