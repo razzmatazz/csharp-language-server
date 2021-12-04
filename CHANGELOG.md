@@ -1,3 +1,6 @@
+# (unreleased)
+- Pull `add using import` code action to the top of action list, mark it prefered and with `Kind`. 
+
 # 0.1.7
 - Bump roslyn libs to a newer version;
 - Add support for `textDocument/implementation`;

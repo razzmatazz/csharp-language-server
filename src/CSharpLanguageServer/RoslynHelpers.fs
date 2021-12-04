@@ -140,21 +140,22 @@ let asyncMaybeOnException op = async {
         return None
 }
 
-let lspCodeActionTypeByRoslynCA ca =
+let lspCodeActionDetailsFromRoslynCA ca =
     let typeName = ca.GetType() |> string
     if typeName.Contains("CodeAnalysis.AddImport") then
-        Some Types.CodeActionKind.SourceOrganizeImports
+        Some Types.CodeActionKind.SourceOrganizeImports, Some true
     else
-        None
+        None, None
 
 let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Types.CodeAction =
+    let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
     { Title = ca.Title
-      Kind = lspCodeActionTypeByRoslynCA ca
+      Kind = caKind
       Diagnostics = None
       Edit = None
       Command = None
       Data = None
-      IsPreferred = None
+      IsPreferred = caIsPreferred
       Disabled = None
     }
 
@@ -184,14 +185,16 @@ let roslynCodeActionToResolvedLspCodeAction
             DocumentChanges = docTextEdit |> Array.ofList |> Some
         }
 
+        let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
+
         return Some {
             Title = ca.Title
-            Kind = lspCodeActionTypeByRoslynCA ca
+            Kind = caKind
             Diagnostics = None
             Edit = Some edit
             Command = None
             Data = None
-            IsPreferred = None
+            IsPreferred = caIsPreferred
             Disabled = None
         }
 }

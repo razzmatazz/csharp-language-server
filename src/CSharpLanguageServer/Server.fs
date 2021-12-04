@@ -393,6 +393,8 @@ let handleTextDocumentCodeAction state logMessage (actionParams: Types.CodeActio
               }
 
         return lspCodeActions
+               |> Seq.sortByDescending (fun ca -> ca.IsPreferred)
+               |> Array.ofSeq
                |> TextDocumentCodeActionResult.CodeActions
                |> Some
                |> success
