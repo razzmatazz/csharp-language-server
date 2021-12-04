@@ -292,6 +292,11 @@ type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
         collect symbol node.Identifier Types.SymbolKind.Class
         base.VisitClassDeclaration(node)
 
+    override __.VisitConstructorDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier Types.SymbolKind.Constructor
+        base.VisitConstructorDeclaration(node)
+
     override __.VisitMethodDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
         collect symbol node.Identifier Types.SymbolKind.Method
