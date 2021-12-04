@@ -667,7 +667,9 @@ let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPosit
 
     let suggestUnderlyingSymbolType (sym: ISymbol) =
         match sym with
-        | :? ILocalSymbol as ps -> ps.Type :> ISymbol
+        | :? ILocalSymbol as ls -> ls.Type :> ISymbol
+        | :? IFieldSymbol as fs -> fs.Type :> ISymbol
+        | :? IPropertySymbol as ps -> ps.Type :> ISymbol
         | _ -> sym
 
     let contents =
