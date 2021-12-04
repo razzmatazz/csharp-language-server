@@ -235,14 +235,28 @@ let formatMethodSymbol (ms: IMethodSymbol) =
              ms.Name
              paramList).Trim()
 
-let formatSymbol (sym: ISymbol) =
-    match sym with
-    | :? ILocalSymbol as ls -> ls.Type :> ISymbol |> string
-    | :? IFieldSymbol as fs -> formatFieldOrProperty fs (fs.Type :> ISymbol)
-    | :? IPropertySymbol as ps -> formatFieldOrProperty ps (ps.Type :> ISymbol)
-    | :? IMethodSymbol as ms -> formatMethodSymbol ms
-    | _ -> sym.ToString()
+let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
+    let (symbolName, symbolKind) =
+        match symbol with
+        | :? ILocalSymbol as ls ->
+            (ls.Type :> ISymbol |> string, Types.SymbolKind.Variable)
 
+        | :? IFieldSymbol as fs ->
+            (formatFieldOrProperty fs (fs.Type :> ISymbol), Types.SymbolKind.Field)
+
+        | :? IPropertySymbol as ps ->
+            (formatFieldOrProperty ps (ps.Type :> ISymbol), Types.SymbolKind.Property)
+
+        | :? IMethodSymbol as ms ->
+            (formatMethodSymbol ms, Types.SymbolKind.Method)
+
+        | _ ->
+            (symbol.ToString(), Types.SymbolKind.File)
+
+    { Name = symbolName
+      Kind = symbolKind
+      Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
+      ContainerName = None }
 
 type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -250,18 +264,12 @@ type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
     let mutable collectedSymbols: Types.SymbolInformation list = []
 
     let collect (symbol: ISymbol) (identifier: SyntaxToken) kind =
-        let location: Types.Location =
+        let identifierLocation: Types.Location =
             { Uri = documentUri
-              Range = identifier.GetLocation().GetLineSpan().Span
-                      |> lspRangeForRoslynLinePosSpan
+              Range = identifier.GetLocation().GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
             }
 
-        let symbol: Types.SymbolInformation =
-            { Name = formatSymbol symbol
-              Kind = kind
-              Location = location
-              ContainerName = None
-            }
+        let symbol = { symbolToLspSymbolInformation symbol with Location = identifierLocation }
 
         collectedSymbols <- symbol :: collectedSymbols
 
@@ -324,15 +332,6 @@ type DocumentSymbolCollectorForMatchingSymbolName (documentUri, symbolName: stri
 
         base.Visit(node)
 
-
-let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
-    let symbolLocation = symbol.Locations |> Seq.head
-
-    { Name = symbol.Name
-      Kind = Types.SymbolKind.File
-      Location = symbolLocation |> lspLocationForRoslynLocation
-      ContainerName = None }
-
 let roslynToLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
     match s with
     | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
@@ -352,16 +351,21 @@ let roslynToLspDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) : Types.Diagnos
       Tags = None
       Data = None }
 
-let findSymbols (solution: Solution) pattern (_limit: int option): Async<Types.SymbolInformation list> = async {
+let findSymbolsInSolution (solution: Solution)
+                          pattern
+                          (_limit: int option)
+        : Async<Types.SymbolInformation list> = async {
     let mutable symbolsFound = []
 
     for project in solution.Projects do
         let! symbols = SymbolFinder.FindSourceDeclarationsWithPatternAsync(
                            project, pattern, SymbolFilter.TypeAndMember)
                        |> Async.AwaitTask
+
         symbolsFound <- (List.ofSeq symbols) @ symbolsFound
 
-    return Seq.map symbolToLspSymbolInformation symbolsFound |> List.ofSeq
+    return Seq.map symbolToLspSymbolInformation symbolsFound
+           |> List.ofSeq
 }
 
 let instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =

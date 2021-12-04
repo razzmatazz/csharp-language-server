@@ -653,17 +653,17 @@ let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolP
 
 let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> =
     let csharpMarkdownDocForSymbol (sym: ISymbol) =
-        let symName = formatSymbol sym
+        let symbolInfo = symbolToLspSymbolInformation sym
         let symAssemblyName = sym.ContainingAssembly
                                  |> Option.ofObj
                                  |> Option.map (fun a -> a.Name)
                                  |> Option.defaultValue ""
 
         let symbolInfoLines =
-            match symName, symAssemblyName with
+            match symbolInfo.Name, symAssemblyName with
             | "", "" -> []
             | typeName, "" -> [sprintf "`%s`" typeName]
-            | _, _ -> [sprintf "`%s` from assembly `%s`" symName symAssemblyName]
+            | _, _ -> [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
 
         let comment = Documentation.parseComment (sym.GetDocumentationCommentXml())
         let formattedDocLines = Documentation.formatComment comment
@@ -736,7 +736,7 @@ let handleTextDocumentRename state logMessage (rename: Types.RenameParams): Asyn
 }
 
 let handleWorkspaceSymbol state _logMessage (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-    let! symbols = findSymbols state.Solution.Value symbolParams.Query (Some 20)
+    let! symbols = findSymbolsInSolution state.Solution.Value symbolParams.Query (Some 20)
     return symbols |> Array.ofSeq |> Some |> success
 }
 
