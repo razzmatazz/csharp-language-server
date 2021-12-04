@@ -140,9 +140,16 @@ let asyncMaybeOnException op = async {
         return None
 }
 
+let lspCodeActionTypeByRoslynCA ca =
+    let typeName = ca.GetType() |> string
+    if typeName.Contains("CodeAnalysis.AddImport") then
+        Some Types.CodeActionKind.SourceOrganizeImports
+    else
+        None
+
 let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Types.CodeAction =
     { Title = ca.Title
-      Kind = None
+      Kind = lspCodeActionTypeByRoslynCA ca
       Diagnostics = None
       Edit = None
       Command = None
@@ -179,7 +186,7 @@ let roslynCodeActionToResolvedLspCodeAction
 
         return Some {
             Title = ca.Title
-            Kind = None
+            Kind = lspCodeActionTypeByRoslynCA ca
             Diagnostics = None
             Edit = Some edit
             Command = None
