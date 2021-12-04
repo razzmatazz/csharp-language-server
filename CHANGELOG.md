@@ -1,4 +1,6 @@
 # (unreleased)
+- Properly format method names on hover and elsewhere;
+- Expose properties & events on textDocument/documentSymbol;
 - Pull `add using import` code action to the top of action list, mark it prefered and with `Kind`. 
 
 # 0.1.7

@@ -636,52 +636,57 @@ let handleTextDocumentDocumentHighlight state _logMessage (docParams: Types.Text
     | None -> return None |> success
 }
 
-let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> =
     match getDocumentForUri state p.TextDocument.Uri with
-    | Some doc ->
-        let collector = DocumentSymbolCollector(p.TextDocument.Uri)
+    | Some doc -> async {
+        let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+        let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel)
 
         let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
         collector.Visit(syntaxTree.GetRoot())
 
         return collector.GetSymbols() |> Some |> success
+      }
 
     | None ->
-        return None |> success
-}
+        async { return None |> success }
 
-let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
-    let! maybeSymbol = getSymbolAtPosition state hoverPos.TextDocument.Uri hoverPos.Position
+let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> =
+    let csharpMarkdownDocForSymbol (sym: ISymbol) =
+        let symName = formatSymbol sym
+        let symAssemblyName = sym.ContainingAssembly
+                                 |> Option.ofObj
+                                 |> Option.map (fun a -> a.Name)
+                                 |> Option.defaultValue ""
 
-    let getSymbolDocumentation (sym: ISymbol) =
-        let csharpMarkdownDoc =
-            let containingAssemblyName =
-                sym.ContainingAssembly |> Option.ofObj |> Option.map (fun a -> a.Name) |> Option.defaultValue ""
+        let symbolInfoLines =
+            match symName, symAssemblyName with
+            | "", "" -> []
+            | typeName, "" -> [sprintf "`%s`" typeName]
+            | _, _ -> [sprintf "`%s` from assembly `%s`" symName symAssemblyName]
 
-            Documentation.formatDocXmlWithTypeInfo
-                (sym.GetDocumentationCommentXml())
-                (sym.ToString())
-                containingAssemblyName
+        let comment = Documentation.parseComment (sym.GetDocumentationCommentXml())
+        let formattedDocLines = Documentation.formatComment comment
 
-        //logMessage (sprintf "debug: xml=%s; markdown=%s" (sym.GetDocumentationCommentXml()) csharpMarkdownDoc)
+        let formattedDoc =
+            formattedDocLines
+            |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
+            |> Seq.append symbolInfoLines
+            |> (fun ss -> String.Join("\n", ss))
 
-        [MarkedString.WithLanguage { Language = "markdown"; Value = csharpMarkdownDoc }]
+        [MarkedString.WithLanguage { Language = "markdown"; Value = formattedDoc }]
 
-    let suggestUnderlyingSymbolType (sym: ISymbol) =
-        match sym with
-        | :? ILocalSymbol as ls -> ls.Type :> ISymbol
-        | :? IFieldSymbol as fs -> fs.Type :> ISymbol
-        | :? IPropertySymbol as ps -> ps.Type :> ISymbol
-        | _ -> sym
+    async {
+        let! maybeSymbol = getSymbolAtPosition state hoverPos.TextDocument.Uri hoverPos.Position
 
-    let contents =
-        match maybeSymbol with
-        | Some (sym, _) -> sym |> suggestUnderlyingSymbolType |> getSymbolDocumentation
-        | _ -> []
+        let contents =
+            match maybeSymbol with
+            | Some (sym, _) -> sym |> csharpMarkdownDocForSymbol
+            | _ -> []
 
-    return Some { Contents = contents |> Array.ofSeq |> MarkedStrings
-                  Range = None } |> success
-}
+        return Some { Contents = contents |> Array.ofSeq |> MarkedStrings
+                      Range = None } |> success
+    }
 
 let handleTextDocumentReferences state _logMessage (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
     match state.Solution with

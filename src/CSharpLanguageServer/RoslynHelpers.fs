@@ -199,12 +199,57 @@ let roslynCodeActionToResolvedLspCodeAction
         }
 }
 
-type DocumentSymbolCollector(documentUri) =
+let formatModifers (ms: ISymbol) =
+    [ (ms.IsStatic, "static")
+      (ms.IsAbstract, "abstract")
+      (ms.IsVirtual , "virtual")
+    ]
+    |> Seq.filter fst
+    |> Seq.map snd
+    |> fun xs -> String.Join (" ", xs)
+
+let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) =
+    (sprintf "%s %s %s.%s"
+             (formatModifers sym)
+             (typeSym.ToString())
+             sym.ContainingType.Name
+             sym.Name).Trim()
+
+let formatMethodSymbol (ms: IMethodSymbol) =
+    let returnType = if ms.ReturnsVoid then "void" else ms.ReturnType |> string
+
+    let formatParamSymbol (ps: IParameterSymbol) =
+        sprintf "%s%s %s"
+                (if ps.IsThis then "this " else "")
+                (ps.Type |> string)
+                ps.Name
+
+    let paramList = ms.Parameters
+                      |> Seq.map formatParamSymbol
+                      |> fun ps -> String.Join(", ", ps)
+
+    (sprintf "%s %s %s.%s(%s)"
+             (formatModifers ms)
+             returnType
+             ms.ContainingType.Name
+             ms.Name
+             paramList).Trim()
+
+let formatSymbol (sym: ISymbol) =
+    match sym with
+    | :? ILocalSymbol as ls -> ls.Type :> ISymbol |> string
+    | :? IFieldSymbol as fs -> formatFieldOrProperty fs (fs.Type :> ISymbol)
+    | :? IPropertySymbol as ps -> formatFieldOrProperty ps (ps.Type :> ISymbol)
+    | :? IMethodSymbol as ms -> formatMethodSymbol ms
+    | _ -> sym.ToString()
+
+
+type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedSymbols: Types.SymbolInformation list = []
 
-    let collect (identifier: SyntaxToken) kind =
+    let collect (symbol: ISymbol) (identifier: SyntaxToken) kind =
         let location: Types.Location =
             { Uri = documentUri
               Range = identifier.GetLocation().GetLineSpan().Span
@@ -212,7 +257,7 @@ type DocumentSymbolCollector(documentUri) =
             }
 
         let symbol: Types.SymbolInformation =
-            { Name = identifier.ToString()
+            { Name = formatSymbol symbol
               Kind = kind
               Location = location
               ContainerName = None
@@ -223,14 +268,24 @@ type DocumentSymbolCollector(documentUri) =
     member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitClassDeclaration(node) =
-        collect node.Identifier Types.SymbolKind.Class
-
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier Types.SymbolKind.Class
         base.VisitClassDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
-        collect node.Identifier Types.SymbolKind.Method
-
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier Types.SymbolKind.Method
         base.VisitMethodDeclaration(node)
+
+    override __.VisitPropertyDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier Types.SymbolKind.Property
+        base.VisitPropertyDeclaration(node)
+
+    override __.VisitEventDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier Types.SymbolKind.Event
+        base.VisitEventDeclaration(node)
 
 
 type DocumentSymbolCollectorForMatchingSymbolName (documentUri, symbolName: string) =

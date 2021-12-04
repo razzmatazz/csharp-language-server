@@ -167,21 +167,3 @@ let formatComment model : string list =
 let formatDocXml xmlDocumentation =
     String.Join("\n", xmlDocumentation |> parseComment |> formatComment)
 
-
-let formatDocXmlWithTypeInfo xmlDocumentation typeName typeAssemblyName =
-    let comment = parseComment xmlDocumentation
-    let formattedDocLines = formatComment comment
-
-    let symbolInfoLines =
-        match typeName, typeAssemblyName with
-        | "", "" -> []
-        | typeName, "" -> [sprintf "`%s`" typeName]
-        | _, _ -> [sprintf "`%s` from assembly `%s`" typeName typeAssemblyName]
-
-    let formattedDoc =
-        formattedDocLines
-        |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
-        |> Seq.append symbolInfoLines
-        |> (fun ss -> String.Join("\n", ss))
-
-    formattedDoc // + (xmlDocumentation)
