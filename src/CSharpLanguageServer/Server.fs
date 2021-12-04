@@ -652,18 +652,24 @@ let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolP
         async { return None |> success }
 
 let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> =
-    let csharpMarkdownDocForSymbol (sym: ISymbol) =
+    let csharpMarkdownDocForSymbol (sym: ISymbol) (docAssembly: IAssemblySymbol) =
         let symbolInfo = symbolToLspSymbolInformation sym
-        let symAssemblyName = sym.ContainingAssembly
-                                 |> Option.ofObj
-                                 |> Option.map (fun a -> a.Name)
-                                 |> Option.defaultValue ""
+
+        let symAssemblyName =
+            sym.ContainingAssembly
+            |> Option.ofObj
+            |> Option.map (fun a -> a.Name)
+            |> Option.defaultValue ""
 
         let symbolInfoLines =
             match symbolInfo.Name, symAssemblyName with
             | "", "" -> []
             | typeName, "" -> [sprintf "`%s`" typeName]
-            | _, _ -> [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
+            | _, _ ->
+                if symAssemblyName = docAssembly.Name then
+                    [sprintf "`%s`" symbolInfo.Name]
+                else
+                    [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
 
         let comment = Documentation.parseComment (sym.GetDocumentationCommentXml())
         let formattedDocLines = Documentation.formatComment comment
@@ -679,10 +685,13 @@ let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPosit
     async {
         let! maybeSymbol = getSymbolAtPosition state hoverPos.TextDocument.Uri hoverPos.Position
 
-        let contents =
+        let! contents =
             match maybeSymbol with
-            | Some (sym, _) -> sym |> csharpMarkdownDocForSymbol
-            | _ -> []
+            | Some (sym, doc) -> async {
+                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+                return csharpMarkdownDocForSymbol sym semanticModel.Compilation.Assembly
+              }
+            | _ -> async { return [] }
 
         return Some { Contents = contents |> Array.ofSeq |> MarkedStrings
                       Range = None } |> success

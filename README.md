@@ -33,9 +33,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 # TODO list
  - intellisense/autocomplete does not always trigger where it should be
- - on-hover has issues:
-    - type displayed is not the most appropriate in some contexts
-    - some tags are still not supported, like `<typeparam>`
  - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider
  - semantic tokens
