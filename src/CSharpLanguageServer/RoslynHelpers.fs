@@ -59,10 +59,14 @@ let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.
       NewText = c.NewText }
 
 let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Location =
-    let getPathUri path = Uri("file://" + path)
+    if loc.IsInSource then
+        let getPathUri path = Uri("file://" + path)
 
-    { Uri = loc.SourceTree.FilePath |> getPathUri |> string
-      Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
+        { Uri = loc.SourceTree.FilePath |> getPathUri |> string
+          Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
+    else
+        { Uri = "";
+          Range = { Start = { Line=0; Character=0; }; End = { Line=0; Character=0; } } }
 
 let lspDocChangesFromSolutionDiff
         originalSolution
@@ -216,13 +220,21 @@ let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) =
              sym.Name).Trim()
 
 let formatMethodSymbol (ms: IMethodSymbol) =
-    let returnType = if ms.ReturnsVoid then "void" else ms.ReturnType |> string
+    let returnType =
+        match ms.MethodKind with
+        | MethodKind.Constructor -> ""
+        | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType |> string
 
     let formatParamSymbol (ps: IParameterSymbol) =
         sprintf "%s%s %s"
                 (if ps.IsThis then "this " else "")
                 (ps.Type |> string)
                 ps.Name
+
+    let methodName =
+        match ms.MethodKind with
+        | MethodKind.Constructor -> ms.ContainingType.Name
+        | _ -> ms.Name
 
     let paramList = ms.Parameters
                       |> Seq.map formatParamSymbol
@@ -232,7 +244,7 @@ let formatMethodSymbol (ms: IMethodSymbol) =
              (formatModifers ms)
              returnType
              ms.ContainingType.Name
-             ms.Name
+             methodName
              paramList).Trim()
 
 let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
