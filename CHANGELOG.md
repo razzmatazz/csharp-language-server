@@ -1,5 +1,5 @@
 # (unreleased)
-- Initial implementation for code lens that shows number of references w/ `csharp.showReferences`;
+- Initial implementation for code lens that shows number of references w/ `csharp.showReferences` (disabled for now);
 - Nicer on-hover markdown that should match the context better;
 - Expose properties & events on textDocument/documentSymbol;
 - Pull `add using import` code action to the top of action list, mark it prefered and with `Kind`, [csharp-language-server#9](https://github.com/razzmatazz/csharp-language-server/issues/9). 

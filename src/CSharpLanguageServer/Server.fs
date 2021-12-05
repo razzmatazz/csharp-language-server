@@ -227,8 +227,8 @@ let handleInitialize state (p: InitializeParams): Async<HandlerResult<Initialize
                                    TriggerCharacters = Some ([| '.'; '''; |])
                                    AllCommitCharacters = None
                                  }
-                        CodeLensProvider =
-                            Some { ResolveProvider = Some true }
+                        CodeLensProvider = None
+                            // DISABLED for now; Some { ResolveProvider = Some true }
                         CodeActionProvider =
                             Some { CodeActionKinds = None
                                    ResolveProvider = Some true
