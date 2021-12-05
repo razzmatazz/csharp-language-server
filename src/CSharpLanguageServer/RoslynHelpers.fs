@@ -270,7 +270,8 @@ let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
       Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
       ContainerName = None }
 
-type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
+
+type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedSymbols: Types.SymbolInformation list = []
@@ -310,6 +311,42 @@ type DocumentSymbolCollector(documentUri, semanticModel: SemanticModel) =
     override __.VisitEventDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
         collect symbol node.Identifier Types.SymbolKind.Event
+        base.VisitEventDeclaration(node)
+
+
+type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
+    inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
+
+    let mutable collectedSymbols: (ISymbol * Location) list = []
+
+    let collect (symbol: ISymbol) (identifier: SyntaxToken) =
+        collectedSymbols <- (symbol, identifier.GetLocation()) :: collectedSymbols
+
+    member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
+
+    override __.VisitClassDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier
+        base.VisitClassDeclaration(node)
+
+    override __.VisitConstructorDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier
+        base.VisitConstructorDeclaration(node)
+
+    override __.VisitMethodDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier
+        base.VisitMethodDeclaration(node)
+
+    override __.VisitPropertyDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier
+        base.VisitPropertyDeclaration(node)
+
+    override __.VisitEventDeclaration(node) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
+        collect symbol node.Identifier
         base.VisitEventDeclaration(node)
 
 

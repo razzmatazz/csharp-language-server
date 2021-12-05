@@ -23,6 +23,7 @@ open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Newtonsoft.Json
 open Newtonsoft.Json.Converters
+open Newtonsoft.Json.Linq
 
 type Options = {
     SolutionPath: string option;
@@ -226,7 +227,8 @@ let handleInitialize state (p: InitializeParams): Async<HandlerResult<Initialize
                                    TriggerCharacters = Some ([| '.'; '''; |])
                                    AllCommitCharacters = None
                                  }
-                        CodeLensProvider = None
+                        CodeLensProvider =
+                            Some { ResolveProvider = Some true }
                         CodeActionProvider =
                             Some { CodeActionKinds = None
                                    ResolveProvider = Some true
@@ -516,6 +518,76 @@ let resolveSymbolLocations state
     return (lspLocations, aggregatedState)
 }
 
+type CodeLensData = { DocumentUri: string; Position: Position  }
+let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
+
+let handleTextDocumentCodeLens state _logMessage (lensParams: CodeLensParams)
+        : AsyncLspResult<CodeLens[] option> =
+    match getDocumentForUri state lensParams.TextDocument.Uri with
+    | Some doc ->
+        async {
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+
+            let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
+            collector.Visit(syntaxTree.GetRoot())
+
+            let makeCodeLens (symbol: ISymbol, location: Microsoft.CodeAnalysis.Location): CodeLens =
+                let start = location.GetLineSpan().Span.Start
+
+                let lensData: CodeLensData = {
+                    DocumentUri = lensParams.TextDocument.Uri
+                    Position = start |> lspPositionForRoslynLinePosition
+                }
+
+                { Range = (location.GetLineSpan().Span) |> lspRangeForRoslynLinePosSpan
+                  Command = None
+                  Data = lensData |> JToken.FromObject |> Some
+                }
+
+            let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
+
+            return codeLens |> Array.ofSeq |> Some |> success
+        }
+
+    | None ->
+        async { return None |> success }
+
+let handleCodeLensResolve state _logMessage (codeLens: CodeLens)
+        : AsyncLspResult<CodeLens> =
+    let lensData =
+        codeLens.Data
+        |> Option.map (fun t -> t.ToObject<CodeLensData>())
+        |> Option.defaultValue emptyCodeLensData
+
+    async {
+        let docMaybe = lensData.DocumentUri |> getDocumentForUri state
+        let doc = docMaybe.Value
+        let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+        let position = sourceText.Lines.GetPosition(LinePosition(lensData.Position.Line, lensData.Position.Character))
+        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+
+        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution) |> Async.AwaitTask
+
+        let formattedRefCount =
+            let refCount = refs |> Seq.length
+
+            if refCount - 1 = 1 then
+                "1 Reference"
+            elif refCount = 0 then
+                "0 References"
+            else
+                sprintf "%d Reference(s)" (refCount - 1)
+
+        let command =
+            { Title = formattedRefCount
+              Command = "csharp.showReferences"
+              Arguments = None
+            }
+
+        return { codeLens with Command=Some command } |> success
+    }
+
 let handleTextDocumentDefinition state (def: Types.TextDocumentPositionParams): Async<HandlerResult<Types.GotoResult option>> =
     match getDocumentForUri state def.TextDocument.Uri with
     | Some doc ->
@@ -710,6 +782,7 @@ let handleTextDocumentReferences state _logMessage (refParams: Types.ReferencePa
                         |> Array.ofSeq
                         |> Some
                         |> success
+
         | None -> return None |> success
 
     | None -> return None |> success
@@ -809,6 +882,8 @@ let startCore options =
         |> Map.add "textDocument/didClose"          (handleTextDocumentDidClose          |> requestHandlingWithStateChange)
         |> Map.add "textDocument/codeAction"        (handleTextDocumentCodeAction        |> requestHandlingWithState)
         |> Map.add "codeAction/resolve"             (handleCodeActionResolve             |> requestHandlingWithState)
+        |> Map.add "textDocument/codeLens"          (handleTextDocumentCodeLens          |> requestHandlingWithState)
+        |> Map.add "codeLens/resolve"               (handleCodeLensResolve               |> requestHandlingWithState)
         |> Map.add "textDocument/definition"        (handleTextDocumentDefinition        |> requestHandlingWithStateChange)
         |> Map.add "textDocument/implementation"    (handleTextDocumentImplementation    |> requestHandlingWithStateChange)
         |> Map.add "textDocument/completion"        (handleTextDocumentCompletion        |> requestHandlingWithState)
