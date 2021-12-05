@@ -582,13 +582,15 @@ let handleCodeLensResolve state _logMessage (codeLens: CodeLens)
         let command =
             { Title = formattedRefCount
               Command = "csharp.showReferences"
-              Arguments = None
+              Arguments = None // TODO: we really want to pass some more info to the client
             }
 
         return { codeLens with Command=Some command } |> success
     }
 
-let handleTextDocumentDefinition state (def: Types.TextDocumentPositionParams): Async<HandlerResult<Types.GotoResult option>> =
+let handleTextDocumentDefinition state (def: Types.TextDocumentPositionParams)
+        : Async<HandlerResult<Types.GotoResult option>> =
+
     match getDocumentForUri state def.TextDocument.Uri with
     | Some doc ->
         async {
