@@ -215,7 +215,7 @@ let formatModifers (ms: ISymbol) =
 let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) =
     (sprintf "%s %s %s.%s"
              (formatModifers sym)
-             (typeSym.ToString())
+             typeSym.Name
              sym.ContainingType.Name
              sym.Name).Trim()
 
@@ -223,12 +223,12 @@ let formatMethodSymbol (ms: IMethodSymbol) =
     let returnType =
         match ms.MethodKind with
         | MethodKind.Constructor -> ""
-        | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType |> string
+        | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType.Name |> string
 
     let formatParamSymbol (ps: IParameterSymbol) =
         sprintf "%s%s %s"
                 (if ps.IsThis then "this " else "")
-                (ps.Type |> string)
+                (ps.Type.Name |> string)
                 ps.Name
 
     let methodName =

@@ -32,6 +32,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - we get "out of range" exceptions when modifying new file after saving it for some reason;
  - intellisense/autocomplete does not always trigger where it should be
  - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider
