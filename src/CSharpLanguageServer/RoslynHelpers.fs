@@ -212,6 +212,12 @@ let formatModifers (ms: ISymbol) =
     |> Seq.map snd
     |> fun xs -> String.Join (" ", xs)
 
+let formatLocalSymbol (sym: ISymbol) (typeSym: ISymbol) =
+    (sprintf "%s %s.%s"
+             typeSym.Name
+             sym.ContainingType.Name
+             sym.Name).Trim()
+
 let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) =
     (sprintf "%s %s %s.%s"
              (formatModifers sym)
@@ -251,7 +257,7 @@ let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
     let (symbolName, symbolKind) =
         match symbol with
         | :? ILocalSymbol as ls ->
-            (ls.Type :> ISymbol |> string, Types.SymbolKind.Variable)
+            (formatLocalSymbol ls (ls.Type :> ISymbol), Types.SymbolKind.Variable)
 
         | :? IFieldSymbol as fs ->
             (formatFieldOrProperty fs (fs.Type :> ISymbol), Types.SymbolKind.Field)
