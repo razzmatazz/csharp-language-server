@@ -227,8 +227,8 @@ let handleInitialize state (p: InitializeParams): Async<HandlerResult<Initialize
                                    TriggerCharacters = Some ([| '.'; '''; |])
                                    AllCommitCharacters = None
                                  }
-                        CodeLensProvider = None
-                            // DISABLED for now; Some { ResolveProvider = Some true }
+                        CodeLensProvider =
+                             Some { ResolveProvider = Some true }
                         CodeActionProvider =
                             Some { CodeActionKinds = None
                                    ResolveProvider = Some true
@@ -561,23 +561,21 @@ let handleCodeLensResolve state _logMessage (codeLens: CodeLens)
         |> Option.defaultValue emptyCodeLensData
 
     async {
-        let docMaybe = lensData.DocumentUri |> getDocumentForUri state
-        let doc = docMaybe.Value
+        let doc = lensData.DocumentUri |> getDocumentForUri state |> fun o -> o.Value
         let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-        let position = sourceText.Lines.GetPosition(LinePosition(lensData.Position.Line, lensData.Position.Character))
+
+        let position =
+            LinePosition(lensData.Position.Line, lensData.Position.Character)
+            |> sourceText.Lines.GetPosition
+
         let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
 
         let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution) |> Async.AwaitTask
 
-        let formattedRefCount =
-            let refCount = refs |> Seq.length
+        let locations = refs |> Seq.collect (fun r -> r.Locations)
 
-            if refCount - 1 = 1 then
-                "1 Reference"
-            elif refCount = 0 then
-                "0 References"
-            else
-                sprintf "%d Reference(s)" (refCount - 1)
+        let formattedRefCount =
+            locations |> Seq.length |> sprintf "%d Reference(s)"
 
         let command =
             { Title = formattedRefCount
