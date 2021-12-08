@@ -1,5 +1,5 @@
-# (unreleased)
-- Initial implementation for code lens that shows number of references;
+# 0.1.8
+- Implementation for code lens that shows number of references;
   - Needs client implementation of `workspace/executeCommand`: `csharp.showReferences`;
 - Nicer on-hover markdown that should match the context better;
 - Expose properties & events on textDocument/documentSymbol;
