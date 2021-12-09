@@ -32,7 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - cancellation support, most obvious to be needed when we have code lenses enabled;
+ - cancellation support w/internally-forced timeout for roslyn queries that go for minutes;
+   - most obviously needed when we have code lenses enabled and some find-references code lenses take too long;
  - hover issues:
    - nullable scalar values are not properly shown;
    - dotnet uses backticks for generic type names which is not ok when formatting them into markdown; 

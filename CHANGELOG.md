@@ -1,3 +1,6 @@
+# (unreleased)
+- Don't show symbol attributes on textDocument/documentSymbol response;
+
 # 0.1.8
 - Implementation for code lens that shows number of references;
   - Needs client implementation of `workspace/executeCommand`: `csharp.showReferences`;

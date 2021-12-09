@@ -712,7 +712,8 @@ let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolP
     match getDocumentForUri state p.TextDocument.Uri with
     | Some doc -> async {
         let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-        let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel)
+        let showAttributes = false
+        let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel, showAttributes)
 
         let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
         collector.Visit(syntaxTree.GetRoot())
@@ -725,7 +726,7 @@ let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolP
 
 let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> =
     let csharpMarkdownDocForSymbol (sym: ISymbol) (docAssembly: IAssemblySymbol) =
-        let symbolInfo = symbolToLspSymbolInformation sym
+        let symbolInfo = symbolToLspSymbolInformation true sym
 
         let symAssemblyName =
             sym.ContainingAssembly

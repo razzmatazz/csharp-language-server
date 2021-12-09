@@ -212,61 +212,77 @@ let formatModifers (ms: ISymbol) =
     |> Seq.map snd
     |> fun xs -> String.Join (" ", xs)
 
-let formatLocalSymbol (sym: ISymbol) (typeSym: ISymbol) =
-    (sprintf "%s %s.%s"
-             typeSym.Name
-             sym.ContainingType.Name
-             sym.Name).Trim()
+let containedSymbolName symName (containerSym: ISymbol) =
+    sprintf "%s.%s" containerSym.Name symName
 
-let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) =
-    (sprintf "%s %s %s.%s"
-             (formatModifers sym)
-             typeSym.Name
-             sym.ContainingType.Name
-             sym.Name).Trim()
+let formatLocalSymbol (sym: ISymbol) (typeSym: ISymbol) showAttributes =
+    match showAttributes with
+    | true -> (sprintf "%s %s" typeSym.Name (containedSymbolName sym.Name sym.ContainingType))
+    | false -> sym.Name
 
-let formatMethodSymbol (ms: IMethodSymbol) =
-    let returnType =
-        match ms.MethodKind with
-        | MethodKind.Constructor -> ""
-        | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType.Name |> string
+let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) showAttributes =
+    match showAttributes with
+    | true ->
+        (sprintf "%s %s %s"
+                (formatModifers sym)
+                typeSym.Name
+                (containedSymbolName sym.Name sym.ContainingType))
 
-    let formatParamSymbol (ps: IParameterSymbol) =
-        sprintf "%s%s %s"
-                (if ps.IsThis then "this " else "")
-                (ps.Type.Name |> string)
-                ps.Name
+    | false -> sym.Name
 
+let formatMethodSymbol (ms: IMethodSymbol) showAttributes =
     let methodName =
         match ms.MethodKind with
         | MethodKind.Constructor -> ms.ContainingType.Name
         | _ -> ms.Name
 
-    let paramList = ms.Parameters
-                      |> Seq.map formatParamSymbol
-                      |> fun ps -> String.Join(", ", ps)
+    match showAttributes with
+    | true ->
+        let returnType =
+            match ms.MethodKind with
+            | MethodKind.Constructor -> ""
+            | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType.Name |> string
 
-    (sprintf "%s %s %s.%s(%s)"
-             (formatModifers ms)
-             returnType
-             ms.ContainingType.Name
-             methodName
-             paramList).Trim()
+        let formatParamSymbol (ps: IParameterSymbol) =
+            sprintf "%s%s %s"
+                    (if ps.IsThis then "this " else "")
+                    (ps.Type.Name |> string)
+                    ps.Name
 
-let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
+        let paramList = ms.Parameters
+                        |> Seq.map formatParamSymbol
+                        |> fun ps -> String.Join(", ", ps)
+
+        (sprintf "%s %s %s(%s)"
+                (formatModifers ms)
+                returnType
+                (containedSymbolName methodName ms.ContainingType)
+                paramList
+            ).Trim()
+
+    | false ->
+        methodName
+
+let symbolToLspSymbolInformation showAttributes (symbol: ISymbol): Types.SymbolInformation =
     let (symbolName, symbolKind) =
         match symbol with
         | :? ILocalSymbol as ls ->
-            (formatLocalSymbol ls (ls.Type :> ISymbol), Types.SymbolKind.Variable)
+            (formatLocalSymbol ls (ls.Type :> ISymbol) showAttributes,
+             Types.SymbolKind.Variable)
 
         | :? IFieldSymbol as fs ->
-            (formatFieldOrProperty fs (fs.Type :> ISymbol), Types.SymbolKind.Field)
+            (formatFieldOrProperty fs (fs.Type :> ISymbol) showAttributes,
+             Types.SymbolKind.Field)
 
         | :? IPropertySymbol as ps ->
-            (formatFieldOrProperty ps (ps.Type :> ISymbol), Types.SymbolKind.Property)
+            (formatFieldOrProperty ps (ps.Type :> ISymbol) showAttributes,
+             Types.SymbolKind.Property)
 
         | :? IMethodSymbol as ms ->
-            (formatMethodSymbol ms, Types.SymbolKind.Method)
+            (formatMethodSymbol ms showAttributes,
+             match ms.MethodKind with
+                | MethodKind.Constructor -> Types.SymbolKind.Constructor
+                | _ -> Types.SymbolKind.Method)
 
         | _ ->
             (symbol.ToString(), Types.SymbolKind.File)
@@ -277,18 +293,18 @@ let symbolToLspSymbolInformation (symbol: ISymbol): Types.SymbolInformation =
       ContainerName = None }
 
 
-type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel) =
+type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel, showAttributes) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedSymbols: Types.SymbolInformation list = []
 
-    let collect (symbol: ISymbol) (identifier: SyntaxToken) kind =
+    let collect (symbol: ISymbol) (identifier: SyntaxToken) =
         let identifierLocation: Types.Location =
             { Uri = documentUri
               Range = identifier.GetLocation().GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
             }
 
-        let symbol = { symbolToLspSymbolInformation symbol with Location = identifierLocation }
+        let symbol = { symbolToLspSymbolInformation showAttributes symbol with Location = identifierLocation }
 
         collectedSymbols <- symbol :: collectedSymbols
 
@@ -296,27 +312,27 @@ type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel) =
 
     override __.VisitClassDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier Types.SymbolKind.Class
+        collect symbol node.Identifier
         base.VisitClassDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier Types.SymbolKind.Constructor
+        collect symbol node.Identifier
         base.VisitConstructorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier Types.SymbolKind.Method
+        collect symbol node.Identifier
         base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier Types.SymbolKind.Property
+        collect symbol node.Identifier
         base.VisitPropertyDeclaration(node)
 
     override __.VisitEventDeclaration(node) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier Types.SymbolKind.Event
+        collect symbol node.Identifier
         base.VisitEventDeclaration(node)
 
 
@@ -424,7 +440,7 @@ let findSymbolsInSolution (solution: Solution)
 
         symbolsFound <- (List.ofSeq symbols) @ symbolsFound
 
-    return Seq.map symbolToLspSymbolInformation symbolsFound
+    return Seq.map (symbolToLspSymbolInformation true) symbolsFound
            |> List.ofSeq
 }
 
