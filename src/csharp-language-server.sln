@@ -3,11 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30114.105
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{902A53ED-454B-44A8-88DA-773A8F547A31}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer", "CSharpLanguageServer\CSharpLanguageServer.fsproj", "{35027907-179F-410A-892B-88F201AB1A30}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer", "src\CSharpLanguageServer\CSharpLanguageServer.fsproj", "{35027907-179F-410A-892B-88F201AB1A30}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer.Tests", "src\CSharpLanguageServer.Tests\CSharpLanguageServer.Tests.fsproj", "{8A82B6C3-2A05-4CF8-A499-7474058EBCEF}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer.Tests", "CSharpLanguageServer.Tests\CSharpLanguageServer.Tests.fsproj", "{8A82B6C3-2A05-4CF8-A499-7474058EBCEF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
