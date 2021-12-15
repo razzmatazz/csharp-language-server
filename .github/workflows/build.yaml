@@ -11,6 +11,9 @@ jobs:
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src
 
     steps:
     - uses: actions/checkout@v1
