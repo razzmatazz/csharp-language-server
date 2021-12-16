@@ -203,83 +203,37 @@ let roslynCodeActionToResolvedLspCodeAction
         }
 }
 
-let formatModifers (ms: ISymbol) =
-    [ (ms.IsStatic, "static")
-      (ms.IsAbstract, "abstract")
-      (ms.IsVirtual , "virtual")
-    ]
-    |> Seq.filter fst
-    |> Seq.map snd
-    |> fun xs -> String.Join (" ", xs)
+let formatSymbol (sym: ISymbol)
+                 showAttributes
+                 (semanticModelMaybe: SemanticModel option)
+                 (posMaybe: int option) =
+    match showAttributes, semanticModelMaybe, posMaybe with
+    | true, Some semanticModel, Some pos -> sym.ToMinimalDisplayString(semanticModel, pos)
+    | true, _, _ -> sym.ToDisplayString()
+    | false, _, _ -> sym.Name
 
-let containedSymbolName symName (containerSym: ISymbol) =
-    sprintf "%s.%s" containerSym.Name symName
-
-let formatLocalSymbol (sym: ISymbol) (typeSym: ISymbol) showAttributes =
-    match showAttributes with
-    | true -> (sprintf "%s %s" typeSym.Name (containedSymbolName sym.Name sym.ContainingType))
-    | false -> sym.Name
-
-let formatFieldOrProperty (sym: ISymbol) (typeSym: ISymbol) showAttributes =
-    match showAttributes with
-    | true ->
-        (sprintf "%s %s %s"
-                (formatModifers sym)
-                typeSym.Name
-                (containedSymbolName sym.Name sym.ContainingType))
-
-    | false -> sym.Name
-
-let formatMethodSymbol (ms: IMethodSymbol) showAttributes =
-    let methodName =
-        match ms.MethodKind with
-        | MethodKind.Constructor -> ms.ContainingType.Name
-        | _ -> ms.Name
-
-    match showAttributes with
-    | true ->
-        let returnType =
-            match ms.MethodKind with
-            | MethodKind.Constructor -> ""
-            | _ -> if ms.ReturnsVoid then "void" else ms.ReturnType.Name |> string
-
-        let formatParamSymbol (ps: IParameterSymbol) =
-            sprintf "%s%s %s"
-                    (if ps.IsThis then "this " else "")
-                    (ps.Type.Name |> string)
-                    ps.Name
-
-        let paramList = ms.Parameters
-                        |> Seq.map formatParamSymbol
-                        |> fun ps -> String.Join(", ", ps)
-
-        (sprintf "%s %s %s(%s)"
-                (formatModifers ms)
-                returnType
-                (containedSymbolName methodName ms.ContainingType)
-                paramList
-            ).Trim()
-
-    | false ->
-        methodName
-
-let symbolToLspSymbolInformation showAttributes (symbol: ISymbol): Types.SymbolInformation =
+let symbolToLspSymbolInformation
+        showAttributes
+        (symbol: ISymbol)
+        (semanticModel: SemanticModel option)
+        (pos: int option)
+        : Types.SymbolInformation =
     let (symbolName, symbolKind) =
         match symbol with
         | :? ILocalSymbol as ls ->
-            (formatLocalSymbol ls (ls.Type :> ISymbol) showAttributes,
+            (formatSymbol ls showAttributes semanticModel pos,
              Types.SymbolKind.Variable)
 
         | :? IFieldSymbol as fs ->
-            (formatFieldOrProperty fs (fs.Type :> ISymbol) showAttributes,
+            (formatSymbol fs showAttributes semanticModel pos,
              Types.SymbolKind.Field)
 
         | :? IPropertySymbol as ps ->
-            (formatFieldOrProperty ps (ps.Type :> ISymbol) showAttributes,
+            (formatSymbol ps showAttributes semanticModel pos,
              Types.SymbolKind.Property)
 
         | :? IMethodSymbol as ms ->
-            (formatMethodSymbol ms showAttributes,
+            (formatSymbol ms showAttributes semanticModel pos,
              match ms.MethodKind with
                 | MethodKind.Constructor -> Types.SymbolKind.Constructor
                 | _ -> Types.SymbolKind.Method)
@@ -304,7 +258,8 @@ type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel, showAtt
               Range = identifier.GetLocation().GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
             }
 
-        let symbol = { symbolToLspSymbolInformation showAttributes symbol with Location = identifierLocation }
+        let rawSymbol = symbolToLspSymbolInformation showAttributes symbol None None
+        let symbol = { rawSymbol with Location = identifierLocation }
 
         collectedSymbols <- symbol :: collectedSymbols
 
@@ -440,7 +395,7 @@ let findSymbolsInSolution (solution: Solution)
 
         symbolsFound <- (List.ofSeq symbols) @ symbolsFound
 
-    return Seq.map (symbolToLspSymbolInformation true) symbolsFound
+    return Seq.map (fun s -> symbolToLspSymbolInformation true s None None) symbolsFound
            |> List.ofSeq
 }
 

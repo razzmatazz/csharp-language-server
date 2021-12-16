@@ -135,7 +135,7 @@ let getSymbolAtPosition state uri pos =
         let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
         let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
         let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-        return if isNull symbolRef then None else Some (symbolRef, doc)
+        return if isNull symbolRef then None else Some (symbolRef, doc, position)
     }
 
     withDocumentOnUriOrNone state resolveSymbolOrNull uri
@@ -696,7 +696,7 @@ let handleTextDocumentDocumentHighlight state _logMessage (docParams: Types.Text
         let! maybeSymbol = getSymbolAtPosition state docParams.TextDocument.Uri docParams.Position
 
         match maybeSymbol with
-        | Some (symbol, doc) ->
+        | Some (symbol, doc, _) ->
             if shouldHighlight symbol then
                 let! locations = getSymbolLocations symbol doc solution
                 return locations |> Array.ofSeq |> Some |> success
@@ -725,8 +725,8 @@ let handleTextDocumentDocumentSymbol state _logMessage (p: Types.DocumentSymbolP
         async { return None |> success }
 
 let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> =
-    let csharpMarkdownDocForSymbol (sym: ISymbol) (docAssembly: IAssemblySymbol) =
-        let symbolInfo = symbolToLspSymbolInformation true sym
+    let csharpMarkdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
+        let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
 
         let symAssemblyName =
             sym.ContainingAssembly
@@ -739,6 +739,7 @@ let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPosit
             | "", "" -> []
             | typeName, "" -> [sprintf "`%s`" typeName]
             | _, _ ->
+                let docAssembly = semanticModel.Compilation.Assembly
                 if symAssemblyName = docAssembly.Name then
                     [sprintf "`%s`" symbolInfo.Name]
                 else
@@ -760,9 +761,9 @@ let handleTextDocumentHover state _logMessage (hoverPos: Types.TextDocumentPosit
 
         let! contents =
             match maybeSymbol with
-            | Some (sym, doc) -> async {
+            | Some (sym, doc, pos) -> async {
                 let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-                return csharpMarkdownDocForSymbol sym semanticModel.Compilation.Assembly
+                return csharpMarkdownDocForSymbol sym semanticModel pos
               }
             | _ -> async { return [] }
 
@@ -776,7 +777,7 @@ let handleTextDocumentReferences state _logMessage (refParams: Types.ReferencePa
         let! maybeSymbol = getSymbolAtPosition state refParams.TextDocument.Uri refParams.Position
 
         match maybeSymbol with
-        | Some (symbol, _) ->
+        | Some (symbol, _, _) ->
             let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
             return refs |> Seq.collect (fun r -> r.Locations)
                         |> Seq.map (fun rl -> lspLocationForRoslynLocation rl.Location)
@@ -812,7 +813,7 @@ let handleTextDocumentRename state logMessage (rename: Types.RenameParams): Asyn
     let! maybeSymbol = getSymbolAtPosition state rename.TextDocument.Uri rename.Position
 
     let! docChanges = match maybeSymbol with
-                      | Some (symbol, doc) -> renameSymbolInDoc symbol doc
+                      | Some (symbol, doc, _) -> renameSymbolInDoc symbol doc
                       | None -> async { return [] }
 
     return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
