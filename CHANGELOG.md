@@ -1,4 +1,5 @@
 # (unreleased)
+- Fix, hopefully in the final form, how symbols are formatted by using roslyn To*DisplayString() methods;
 - Don't show symbol attributes on textDocument/documentSymbol response;
 
 # 0.1.8
