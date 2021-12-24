@@ -21,16 +21,16 @@ open System.Collections.Immutable
 let roslynTagToLspCompletion tag =
     match tag with
     | "Class"         -> Types.CompletionItemKind.Class
-    | "Delegate"      -> Types.CompletionItemKind.Class
+    | "Delegate"      -> Types.CompletionItemKind.Function
     | "Enum"          -> Types.CompletionItemKind.Enum
+    | "EnumMember"    -> Types.CompletionItemKind.EnumMember
     | "Interface"     -> Types.CompletionItemKind.Interface
-    | "Struct"        -> Types.CompletionItemKind.Class
+    | "Struct"        -> Types.CompletionItemKind.Struct
     | "Local"         -> Types.CompletionItemKind.Variable
     | "Parameter"     -> Types.CompletionItemKind.Variable
     | "RangeVariable" -> Types.CompletionItemKind.Variable
-    | "Const"         -> Types.CompletionItemKind.Value
-    | "EnumMember"    -> Types.CompletionItemKind.Enum
-    | "Event"         -> Types.CompletionItemKind.Function
+    | "Const"         -> Types.CompletionItemKind.Constant
+    | "Event"         -> Types.CompletionItemKind.Event
     | "Field"         -> Types.CompletionItemKind.Field
     | "Method"        -> Types.CompletionItemKind.Method
     | "Property"      -> Types.CompletionItemKind.Property
