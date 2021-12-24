@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
+open System.Threading.Tasks
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
@@ -526,8 +527,9 @@ let handleTextDocumentCodeLens state _logMessage (lensParams: CodeLensParams)
     match getDocumentForUri state lensParams.TextDocument.Uri with
     | Some doc ->
         async {
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
             collector.Visit(syntaxTree.GetRoot())
@@ -553,24 +555,33 @@ let handleTextDocumentCodeLens state _logMessage (lensParams: CodeLensParams)
     | None ->
         async { return None |> success }
 
-let handleCodeLensResolve state _logMessage (codeLens: CodeLens)
+let handleCodeLensResolve state logMessage (codeLens: CodeLens)
         : AsyncLspResult<CodeLens> =
+    logMessage "codelens resolve: enter!"
+
     let lensData =
         codeLens.Data
         |> Option.map (fun t -> t.ToObject<CodeLensData>())
         |> Option.defaultValue emptyCodeLensData
 
     async {
+        let! ct = Async.CancellationToken
+        try
+            do! Task.Delay(30*1000, ct) |> Async.AwaitTask
+        with
+        | :? Exception as ex ->
+            logMessage ("cancelled!!! yes: " + (ex.ToString()))
+
         let doc = lensData.DocumentUri |> getDocumentForUri state |> fun o -> o.Value
-        let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
         let position =
             LinePosition(lensData.Position.Line, lensData.Position.Character)
             |> sourceText.Lines.GetPosition
 
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution) |> Async.AwaitTask
+        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
 
         let locations = refs |> Seq.collect (fun r -> r.Locations)
 
@@ -582,6 +593,8 @@ let handleCodeLensResolve state _logMessage (codeLens: CodeLens)
               Command = "csharp.showReferences"
               Arguments = None // TODO: we really want to pass some more info to the client
             }
+
+        logMessage "codelens resolve: exit!"
 
         return { codeLens with Command=Some command } |> success
     }
