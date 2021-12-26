@@ -1,4 +1,5 @@
 # (unreleased)
+- Refactor server state tracking to fix some issues with document sync/versioning;
 - Fix, hopefully in the final form, how symbols are formatted by using roslyn To*DisplayString() methods;
 - Don't show symbol attributes on textDocument/documentSymbol response;
 
