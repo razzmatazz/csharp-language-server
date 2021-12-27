@@ -16,14 +16,28 @@ jobs:
         working-directory: src
 
     steps:
-    - uses: actions/checkout@v1
+    - name: Checkout
+      uses: actions/checkout@v1
+
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: ${{ matrix.dotnet }}
+
     - name: Restore tools
       run: dotnet tool restore
+
     - name: Run Build
       run: dotnet build
+
     - name: Run Tests
       run: dotnet test --no-build
+
+    - name: Run publish
+      run: (cd CSharpLanguageServer && dotnet pack -c Release -o build/release)
+
+    - name: Upload NuGet packages
+      uses: actions/upload-artifact@v2
+      with:
+        name: packages
+        path: CSharpLanguageServer/build/release/
