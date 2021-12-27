@@ -34,10 +34,10 @@ jobs:
       run: dotnet test --no-build
 
     - name: Run publish
-      run: (cd CSharpLanguageServer && dotnet pack -c Release -o build/release)
+      run: (cd CSharpLanguageServer && dotnet pack -c Release -o release)
 
     - name: Upload NuGet packages
       uses: actions/upload-artifact@v2
       with:
         name: packages
-        path: CSharpLanguageServer/build/release/
+        path: src/CSharpLanguageServer/release/
