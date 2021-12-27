@@ -163,37 +163,56 @@ let getSymbolAtPosition state uri pos =
 
     withDocumentOnUriOrNone state resolveSymbolOrNull uri
 
-let resolveSymbolLocation (compilation: Microsoft.CodeAnalysis.Compilation)
-                          (doc: Microsoft.CodeAnalysis.Document)
-                          sym
-                          (l: Microsoft.CodeAnalysis.Location) = async {
+let makeDocumentFromMetadata
+        (compilation: Microsoft.CodeAnalysis.Compilation)
+        (project: Microsoft.CodeAnalysis.Project)
+        (l: Microsoft.CodeAnalysis.Location)
+        (fullName: string) =
+    let mdLocation = l
+    let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
+    let peReference = reference :?> PortableExecutableReference |> Option.ofObj
+    let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+
+    let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
+
+    // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
+    // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
+    decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
+
+    let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
+
+    let text = decompiler.DecompileTypeAsString(fullTypeName)
+
+    let mdDocumentFilename = $"$metadata$/projects/{project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+    let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
+
+    let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
+    (mdDocument, text)
+
+let resolveSymbolLocation
+        (state: ServerState)
+        (compilation: Microsoft.CodeAnalysis.Compilation)
+        (project: Microsoft.CodeAnalysis.Project)
+        sym
+        (l: Microsoft.CodeAnalysis.Location) = async {
+
     if l.IsInMetadata then
         let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
-        let uri = $"csharp:/metadata/projects/{doc.Project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+        let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
 
-        let mdLocation = l
-        let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
-        let peReference = reference :?> PortableExecutableReference |> Option.ofObj
-        let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+        let mdDocument, stateChanges =
+            match Map.tryFind uri state.DecompiledMetadata with
+            | Some value ->
+                (value.Document, [])
+            | None ->
+                let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
 
-        let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
-
-        // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
-        // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
-        decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
-
-        let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
-
-        let text = decompiler.DecompileTypeAsString(fullTypeName)
-
-        let csharpMetadata = { ProjectName = doc.Project.Name;
-                                AssemblyName = mdLocation.MetadataModule.ContainingAssembly.Name;
-                                SymbolName = fullName;
-                                Source = text }
-
-        let mdDocumentFilename = $"$metadata$/projects/{doc.Project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-        let mdDocumentEmpty = doc.Project.AddDocument(mdDocumentFilename, String.Empty)
-        let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
+                let csharpMetadata = { ProjectName = project.Name
+                                       AssemblyName = l.MetadataModule.ContainingAssembly.Name
+                                       SymbolName = fullName
+                                       Source = text }
+                (documentFromMd, [
+                     DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = documentFromMd })])
 
         // figure out location on the document (approx implementation)
         let! syntaxTree = mdDocument.GetSyntaxTreeAsync() |> Async.AwaitTask
@@ -209,10 +228,6 @@ let resolveSymbolLocation (compilation: Microsoft.CodeAnalysis.Compilation)
             | [] -> [fallbackLocationInMetadata]
             | ls -> ls
 
-        let stateChanges = [
-            DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = mdDocument })
-        ]
-
         return resolved, stateChanges
 
     else if l.IsInSource then
@@ -223,9 +238,11 @@ let resolveSymbolLocation (compilation: Microsoft.CodeAnalysis.Compilation)
         return [], []
 }
 
-let resolveSymbolLocations (doc: Document)
-                           (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
-    let! compilation = doc.Project.GetCompilationAsync() |> Async.AwaitTask
+let resolveSymbolLocations
+        (state: ServerState)
+        (project: Microsoft.CodeAnalysis.Project)
+        (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
+    let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
 
     let mutable aggregatedLspLocations = []
     let mutable aggregatedStateChanges = []
@@ -233,7 +250,7 @@ let resolveSymbolLocations (doc: Document)
     for sym in symbols do
         for l in sym.Locations do
             let! (symLspLocations, stateChanges) =
-                resolveSymbolLocation compilation doc sym l
+                resolveSymbolLocation state compilation project sym l
 
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
             aggregatedStateChanges <- aggregatedStateChanges @ stateChanges
@@ -286,16 +303,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         with get() = lspClient
 
     override __.Dispose(): unit = ()
-
-    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> =
-        let uri = metadataParams.TextDocument.Uri
-
-        let metadataMaybe =
-            state.DecompiledMetadata
-            |> Map.tryFind uri
-            |> Option.map (fun x -> x.Metadata)
-
-        async { return metadataMaybe |> success }
 
     override __.WorkspaceSymbol (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution state.Solution.Value symbolParams.Query (Some 20)
@@ -395,9 +402,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
           }
 
     override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
-        let isUriADecompiledDoc state u = Map.containsKey u state.DecompiledMetadata
+        let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
 
-        if not (isUriADecompiledDoc state changeParams.TextDocument.Uri) then
+        if not (isUriADecompiledDoc changeParams.TextDocument.Uri) then
             match getDocumentForUri state changeParams.TextDocument.Uri with
             | Some doc ->
                 let fullText = SourceText.From(changeParams.ContentChanges.[0].Text)
@@ -619,7 +626,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                 | Some sym -> [sym]
                 | None -> []
 
-            let! (locations, stateChanges) = resolveSymbolLocations doc symbols
+            let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
             do applyServerStateChanges stateChanges
 
             return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
@@ -643,7 +650,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                 | None -> return []
             }
 
-            let! (locations, stateChanges) = resolveSymbolLocations doc symbols
+            let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
             do applyServerStateChanges stateChanges
 
             return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
@@ -834,6 +841,16 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
     }
+
+    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> =
+        let uri = metadataParams.TextDocument.Uri
+
+        let metadataMaybe =
+            state.DecompiledMetadata
+            |> Map.tryFind uri
+            |> Option.map (fun x -> x.Metadata)
+
+        async { return metadataMaybe |> success }
 
 let startCore options =
     use input = Console.OpenStandardInput()
