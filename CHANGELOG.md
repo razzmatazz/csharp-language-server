@@ -1,3 +1,6 @@
+# (unrelease)
+- Handle $/cancellationRequest's to handle cancellation requests properly.
+
 # 0.1.9
 - Refactor server state tracking to (hopefully) fix some issues with document sync/versioning;
 - Fix, hopefully in the final form, how symbols are formatted by using roslyn To*DisplayString() methods;
