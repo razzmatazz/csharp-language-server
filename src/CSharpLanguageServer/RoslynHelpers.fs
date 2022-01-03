@@ -76,6 +76,8 @@ let lspDocChangesFromSolutionDiff
         (originatingDoc: Document)
         : Async<Types.TextDocumentEdit list> = async {
 
+    let! ct = Async.CancellationToken
+
     let getPathUri path = Uri("file://" + path)
 
     // make a list of changes
@@ -87,7 +89,7 @@ let lspDocChangesFromSolutionDiff
 
     for docId in addedDocs do
         let newDoc = updatedSolution.GetDocument(docId)
-        let! newDocText = newDoc.GetTextAsync() |> Async.AwaitTask
+        let! newDocText = newDoc.GetTextAsync(ct) |> Async.AwaitTask
 
         let edit: Types.TextEdit =
             { Range = { Start = { Line=0; Character=0 }; End = { Line=0; Character=0 } }
@@ -116,9 +118,9 @@ let lspDocChangesFromSolutionDiff
 
     for docId in changedDocs do
         let originalDoc = originalSolution.GetDocument(docId)
-        let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
+        let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
         let updatedDoc = updatedSolution.GetDocument(docId)
-        let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
+        let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
         let diffEdits: Types.TextEdit array =
             docChanges
@@ -171,7 +173,9 @@ let roslynCodeActionToResolvedLspCodeAction
         (ca: CodeActions.CodeAction)
     : Async<Types.CodeAction option> = async {
 
-    let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(CancellationToken.None) |> Async.AwaitTask)
+    let! ct = Async.CancellationToken
+
+    let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(ct) |> Async.AwaitTask)
 
     match maybeOps with
     | None -> return None
@@ -526,15 +530,17 @@ let findAndLoadSolutionOnDir logMessage dir = async {
 }
 
 let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction list> = async {
+    let! ct = Async.CancellationToken
+
     let roslynCodeActions = List<CodeActions.CodeAction>()
     let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
-    let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, CancellationToken.None)
+    let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, ct)
 
     for refactoringProvider in refactoringProviderInstances do
         do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
 
     // register code fixes
-    let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+    let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
     let isDiagnosticsOnTextSpan (diag: Microsoft.CodeAnalysis.Diagnostic) =
         diag.Location.SourceSpan.IntersectsWith(textSpan)
@@ -568,7 +574,7 @@ let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction 
                 |> Seq.filter refactoringProviderOK
 
             if not (Seq.isEmpty fixableDiagnostics) then
-                let codeFixContext = CodeFixContext(doc, diagnosticSpan, fixableDiagnostics.ToImmutableArray(), addCodeFix, CancellationToken.None)
+                let codeFixContext = CodeFixContext(doc, diagnosticSpan, fixableDiagnostics.ToImmutableArray(), addCodeFix, ct)
 
                 try
                     do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask

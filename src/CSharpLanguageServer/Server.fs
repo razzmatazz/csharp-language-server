@@ -154,10 +154,12 @@ let withDocumentOnUriOrNone state fn u = async {
 }
 
 let getSymbolAtPosition state uri pos =
+
     let resolveSymbolOrNull (doc: Document) = async {
-        let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+        let! ct = Async.CancellationToken
+        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
         let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-        let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+        let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
         return if isNull symbolRef then None else Some (symbolRef, doc, position)
     }
 
@@ -196,6 +198,8 @@ let resolveSymbolLocation
         sym
         (l: Microsoft.CodeAnalysis.Location) = async {
 
+    let! ct = Async.CancellationToken
+
     if l.IsInMetadata then
         let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
         let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
@@ -215,7 +219,7 @@ let resolveSymbolLocation
                      DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = documentFromMd })])
 
         // figure out location on the document (approx implementation)
-        let! syntaxTree = mdDocument.GetSyntaxTreeAsync() |> Async.AwaitTask
+        let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
         let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
         collector.Visit(syntaxTree.GetRoot())
 
@@ -242,7 +246,8 @@ let resolveSymbolLocations
         (state: ServerState)
         (project: Microsoft.CodeAnalysis.Project)
         (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
-    let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
+    let! ct = Async.CancellationToken
+    let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
     let mutable aggregatedLspLocations = []
     let mutable aggregatedStateChanges = []
@@ -283,7 +288,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                   state <- List.fold applyServerStateChange state changes)
 
     let publishDiagnosticsOnDocument docUri (doc: Document) = async {
-        let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+        let! ct = Async.CancellationToken
+
+        let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
         let diagnostics =
             semanticModel.GetDiagnostics()
@@ -449,12 +456,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentCodeAction (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state actionParams.TextDocument.Uri with
         | None ->
             return None |> success
 
         | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let textSpan = actionParams.Range
                                           |> roslynLinePositionSpanForLspRange
@@ -521,12 +530,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             |> Option.map (fun x -> x :?> string)
             |> Option.map JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
 
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state resolutionData.Value.TextDocumentUri with
         | None ->
             return None |> success
 
         | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let textSpan =
                        resolutionData.Value.Range
@@ -553,10 +564,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentCodeLens (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state lensParams.TextDocument.Uri with
         | Some doc ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
             collector.Visit(syntaxTree.GetRoot())
@@ -589,15 +602,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             |> Option.defaultValue emptyCodeLensData
 
         let doc = lensData.DocumentUri |> getDocumentForUri state |> fun o -> o.Value
-        let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+
+        let! ct = Async.CancellationToken
+        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
         let position =
             LinePosition(lensData.Position.Line, lensData.Position.Character)
             |> sourceText.Lines.GetPosition
 
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution) |> Async.AwaitTask
+        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
 
         let locations = refs |> Seq.collect (fun r -> r.Locations)
 
@@ -614,12 +629,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
+        let! ct = Async.CancellationToken
 
         match getDocumentForUri state def.TextDocument.Uri with
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
             let symbols =
                 match Option.ofObj symbolMaybe with
@@ -636,16 +653,21 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentImplementation (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state def.TextDocument.Uri with
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
             let! symbols = async {
                 match Option.ofObj symbolMaybe with
                 | Some sym ->
-                    let! implSymbols = SymbolFinder.FindImplementationsAsync(sym, state.Solution.Value) |> Async.AwaitTask
+                    let! implSymbols =
+                        SymbolFinder.FindImplementationsAsync(sym, state.Solution.Value)
+                        |> Async.AwaitTask
+
                     return implSymbols |> List.ofSeq
                 | None -> return []
             }
@@ -660,9 +682,11 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentCompletion (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state posParams.TextDocument.Uri with
         | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let posInText = docText.Lines.GetPosition(LinePosition(posParams.Position.Line, posParams.Position.Character))
 
             let completionService = CompletionService.GetService(doc)
@@ -687,21 +711,25 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
                 return success (Some completionList)
             | None -> return success None
+
         | None -> return success None
     }
 
     override __.TextDocumentDocumentHighlight (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
+        let! ct = Async.CancellationToken
 
         let getSymbolLocations symbol doc solution = async {
             let docSet = ImmutableHashSet<Document>.Empty.Add(doc)
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet) |> Async.AwaitTask
+            let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, docSet, ct) |> Async.AwaitTask
             let locationsFromRefs = refs |> Seq.collect (fun r -> r.Locations) |> Seq.map (fun rl -> rl.Location)
 
-            let! defRef = SymbolFinder.FindSourceDefinitionAsync(symbol, solution) |> Async.AwaitTask
-            let locationsFromDef = match Option.ofObj defRef with
-                                    // TODO: we might need to skip locations that are on a different document than this one
-                                    | Some sym -> sym.Locations |> List.ofSeq
-                                    | None -> []
+            let! defRef = SymbolFinder.FindSourceDefinitionAsync(symbol, solution, ct) |> Async.AwaitTask
+
+            let locationsFromDef =
+                match Option.ofObj defRef with
+                // TODO: we might need to skip locations that are on a different document than this one
+                | Some sym -> sym.Locations |> List.ofSeq
+                | None -> []
 
             return (Seq.append locationsFromRefs locationsFromDef)
                     |> Seq.map (fun l -> { Range = (lspLocationForRoslynLocation l).Range ;
@@ -731,13 +759,15 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDocumentSymbol (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+        let! ct = Async.CancellationToken
+
         match getDocumentForUri state p.TextDocument.Uri with
         | Some doc ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let showAttributes = false
             let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel, showAttributes)
 
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             collector.Visit(syntaxTree.GetRoot())
 
             return collector.GetSymbols() |> Some |> success
@@ -747,6 +777,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentHover (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
+        let! ct = Async.CancellationToken
+
         let csharpMarkdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
             let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
 
@@ -783,7 +815,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         let! contents =
             match maybeSymbol with
             | Some (sym, doc, pos) -> async {
-                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
                 return csharpMarkdownDocForSymbol sym semanticModel pos
               }
             | _ -> async { return [] }
@@ -793,13 +825,15 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentReferences (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
+        let! ct = Async.CancellationToken
+
         match state.Solution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition state refParams.TextDocument.Uri refParams.Position
 
             match maybeSymbol with
             | Some (symbol, _, _) ->
-                let! refs = SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
+                let! refs = SymbolFinder.FindReferencesAsync(symbol, solution, ct) |> Async.AwaitTask
                 return refs
                         |> Seq.collect (fun r -> r.Locations)
                         |> Seq.map (fun rl -> lspLocationForRoslynLocation rl.Location)
