@@ -271,7 +271,21 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
     let mutable state: ServerState = { emptyServerState with Options = options }
-    let stateMutex = obj()
+    let stateRWLock = new Nito.AsyncEx.AsyncReaderWriterLock()
+
+    let withStateWrite asyncOp = async {
+        let! ct = Async.CancellationToken
+        use! rwLock = stateRWLock.WriterLockAsync(ct).AsTask() |> Async.AwaitTask
+        let! opResult = asyncOp
+        return opResult
+    }
+
+    let withStateRead asyncOp = async {
+        let! ct = Async.CancellationToken
+        use! rwLock = stateRWLock.ReaderLockAsync(ct).AsTask() |> Async.AwaitTask
+        let! opResult = asyncOp
+        return opResult
+    }
 
     let logMessageWithLevel l message =
         let messageParams = { Type = l ; Message = "csharp-ls: " + message }
@@ -283,9 +297,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     let errorMessage = logMessageWithLevel MessageType.Error
 
     let applyServerStateChanges changes =
-        lock stateMutex
-             (fun () ->
-                  state <- List.fold applyServerStateChange state changes)
+        state <- List.fold applyServerStateChange state changes
 
     let publishDiagnosticsOnDocument docUri (doc: Document) = async {
         let! ct = Async.CancellationToken
@@ -311,12 +323,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
     override __.Dispose(): unit = ()
 
-    override __.WorkspaceSymbol (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-        let! symbols = findSymbolsInSolution state.Solution.Value symbolParams.Query (Some 20)
-        return symbols |> Array.ofSeq |> Some |> success
-    }
-
-    override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
+    override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = withStateWrite <| async {
         let options = state.Options
 
         infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
@@ -384,15 +391,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return result |> success
     }
 
-    override __.TextDocumentDidOpen (openParams: Types.DidOpenTextDocumentParams): Async<unit> =
+    override __.TextDocumentDidOpen (openParams: Types.DidOpenTextDocumentParams): Async<unit> = withStateWrite <| async {
         match getDocumentForUri state openParams.TextDocument.Uri with
-        | Some doc -> async {
+        | Some doc ->
             do applyServerStateChanges [ OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version) ]
             do! publishDiagnosticsOnDocument openParams.TextDocument.Uri doc
             return ()
-          }
 
-        | None -> async {
+        | None ->
             let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
 
             let newDocMaybe = tryAddDocument logMessage
@@ -406,9 +412,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             | None ->
                 return ()
-          }
+    }
 
-    override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
+    override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = withStateWrite <| async {
         let! ct = Async.CancellationToken
 
         let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
@@ -417,14 +423,15 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             match getDocumentForUri state changeParams.TextDocument.Uri with
             | Some doc ->
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-                //infoMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
-                //infoMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
+                //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
+                //logMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
 
-                let updatedSourceText = sourceText |> applyLspContentChangesOnRoslynSourceText logMessage changeParams.ContentChanges
+                let updatedSourceText = sourceText |> applyLspContentChangesOnRoslynSourceText changeParams.ContentChanges
                 let updatedDoc = doc.WithText(updatedSourceText)
-                let updatedSolution = updatedDoc.Project.Solution;
 
-                //infoMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
+                //logMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
+
+                let updatedSolution = updatedDoc.Project.Solution
 
                 do applyServerStateChanges [
                            SolutionChange updatedSolution;
@@ -437,7 +444,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return ()
     }
 
-    override __.TextDocumentDidSave (saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
+    override __.TextDocumentDidSave (saveParams: Types.DidSaveTextDocumentParams): Async<unit> = withStateWrite <| async {
         // we need to add this file to solution if not already
         match getDocumentForUri state saveParams.TextDocument.Uri with
         | Some _ -> ()
@@ -457,12 +464,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return ()
     }
 
-    override __.TextDocumentDidClose (closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
+    override __.TextDocumentDidClose (closeParams: Types.DidCloseTextDocumentParams): Async<unit> = withStateWrite <| async {
         do applyServerStateChanges [ OpenDocVersionRemove closeParams.TextDocument.Uri ]
         return ()
     }
 
-    override __.TextDocumentCodeAction (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
+    override __.TextDocumentCodeAction (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state actionParams.TextDocument.Uri with
@@ -531,7 +538,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                |> success
     }
 
-    override __.CodeActionResolve (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
+    override __.CodeActionResolve (codeAction: CodeAction): AsyncLspResult<CodeAction option> = withStateRead <| async {
         let resolutionData =
             codeAction.Data
             |> Option.map (fun x -> x :?> string)
@@ -570,7 +577,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return maybeLspCodeAction |> success
     }
 
-    override __.TextDocumentCodeLens (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
+    override __.TextDocumentCodeLens (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state lensParams.TextDocument.Uri with
@@ -602,7 +609,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.CodeLensResolve (codeLens: CodeLens) : AsyncLspResult<CodeLens> = async {
+    override __.CodeLensResolve (codeLens: CodeLens) : AsyncLspResult<CodeLens> = withStateRead <| async {
         let lensData =
             codeLens.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
@@ -635,7 +642,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return { codeLens with Command=Some command } |> success
     }
 
-    override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
+    override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = withStateWrite <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state def.TextDocument.Uri with
@@ -659,7 +666,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.TextDocumentImplementation (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
+    override __.TextDocumentImplementation (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = withStateWrite <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state def.TextDocument.Uri with
@@ -688,7 +695,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.TextDocumentCompletion (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
+    override __.TextDocumentCompletion (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state posParams.TextDocument.Uri with
@@ -722,7 +729,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return success None
     }
 
-    override __.TextDocumentDocumentHighlight (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
+    override __.TextDocumentDocumentHighlight (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         let getSymbolLocations symbol doc solution = async {
@@ -765,7 +772,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentDocumentSymbol (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+    override __.TextDocumentDocumentSymbol (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         match getDocumentForUri state p.TextDocument.Uri with
@@ -783,7 +790,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.TextDocumentHover (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
+    override __.TextDocumentHover (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         let csharpMarkdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
@@ -831,7 +838,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                       Range = None } |> success
     }
 
-    override __.TextDocumentReferences (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
+    override __.TextDocumentReferences (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = withStateRead <| async {
         let! ct = Async.CancellationToken
 
         match state.Solution with
@@ -853,7 +860,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentRename (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
+    override __.TextDocumentRename (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = withStateWrite <| async {
         let renameSymbolInDoc symbol (doc: Document) = async {
             let originalSolution = doc.Project.Solution
 
@@ -883,7 +890,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
     }
 
-    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> =
+    override __.WorkspaceSymbol (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = withStateRead <| async {
+        let! symbols = findSymbolsInSolution state.Solution.Value symbolParams.Query (Some 20)
+        return symbols |> Array.ofSeq |> Some |> success
+    }
+
+    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = withStateRead <| async {
         let uri = metadataParams.TextDocument.Uri
 
         let metadataMaybe =
@@ -891,7 +903,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             |> Map.tryFind uri
             |> Option.map (fun x -> x.Metadata)
 
-        async { return metadataMaybe |> success }
+        return metadataMaybe |> success
+    }
 
 let startCore options =
     use input = Console.OpenStandardInput()

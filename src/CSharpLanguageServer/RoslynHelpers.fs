@@ -76,7 +76,7 @@ let lspContentChangeEventToRoslynTextChange (sourceText: SourceText) (change: Ty
 
     TextChange(changeTextSpan, change.Text)
 
-let applyLspContentChangesOnRoslynSourceText (_logMessage: string -> unit) (changes: Types.TextDocumentContentChangeEvent[]) (sourceText: SourceText) =
+let applyLspContentChangesOnRoslynSourceText (changes: Types.TextDocumentContentChangeEvent[]) (sourceText: SourceText) =
     changes
     |> Seq.map (lspContentChangeEventToRoslynTextChange sourceText)
     |> sourceText.WithChanges

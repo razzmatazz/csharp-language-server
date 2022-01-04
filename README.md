@@ -32,6 +32,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - progress support;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
  - intellisense/autocomplete does not always trigger where it should be

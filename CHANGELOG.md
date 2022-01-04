@@ -1,4 +1,6 @@
 # (unreleased)
+- Actually fix sync issues by serializing writes to server state;
+  - not a 100% perfect solution, i.e. we're using AsyncReaderWriterLock which ALWAYS prioritizes writes even if we might want to run some reads between the writes, but seems to work in most cases where I had problems;
 - Implement incremental file change sync to improve performance for large files;
 - Handle $/cancellationRequest's to handle cancellation requests properly.
 
