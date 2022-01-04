@@ -32,6 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - we probably want to reload file from disk in case the editor closes the file;
+   - this will help us to fix sync problems as well, as now we're stuck if the file is out of sync and need to restart LSP;
  - don't ignore notifications but queued and run them after initialization;
    - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
  - progress support;
