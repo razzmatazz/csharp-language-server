@@ -370,7 +370,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                             Some { TextDocumentSyncOptions.Default with
                                      OpenClose = None
                                      Save = Some { IncludeText = Some true }
-                                     Change = Some TextDocumentSyncKind.Full
+                                     Change = Some TextDocumentSyncKind.Incremental
                                  }
                         FoldingRangeProvider = None
                         SelectionRangeProvider = None
@@ -409,15 +409,22 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
           }
 
     override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
+        let! ct = Async.CancellationToken
+
         let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
 
         if not (isUriADecompiledDoc changeParams.TextDocument.Uri) then
             match getDocumentForUri state changeParams.TextDocument.Uri with
             | Some doc ->
-                let fullText = SourceText.From(changeParams.ContentChanges.[0].Text)
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                //infoMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
+                //infoMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
 
-                let updatedDoc = doc.WithText(fullText)
+                let updatedSourceText = sourceText |> applyLspContentChangesOnRoslynSourceText logMessage changeParams.ContentChanges
+                let updatedDoc = doc.WithText(updatedSourceText)
                 let updatedSolution = updatedDoc.Project.Solution;
+
+                //infoMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
 
                 do applyServerStateChanges [
                            SolutionChange updatedSolution;

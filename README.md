@@ -34,11 +34,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 # TODO list
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
- - handle partial text document change (don't request full document to be submitted from the editor);
-   - will help performance;
-   - should fix issues with emacs file sync problems(?);
- - we get "out of range" exceptions when modifying new file after saving it for some reason;
-   - probably file sync issues from above;
  - intellisense/autocomplete does not always trigger where it should be
  - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider

@@ -1,4 +1,5 @@
-# (unrelease)
+# (unreleased)
+- Implement incremental file change sync to improve performance for large files;
 - Handle $/cancellationRequest's to handle cancellation requests properly.
 
 # 0.1.9
