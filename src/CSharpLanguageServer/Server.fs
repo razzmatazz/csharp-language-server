@@ -63,7 +63,7 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
         sendServerRequest.Send "workspace/applyEdit" (box p)
 
     override __.WorkspaceSemanticTokensRefresh () =
-      sendServerNotification "workspace/semanticTokens/refresh" () |> Async.Ignore
+        sendServerNotification "workspace/semanticTokens/refresh" () |> Async.Ignore
 
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
@@ -275,7 +275,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
     let logMessageWithLevel l message =
         let messageParams = { Type = l ; Message = "csharp-ls: " + message }
-        do lspClient.WindowShowMessage messageParams |> ignore
+        do lspClient.WindowShowMessage messageParams |> Async.StartAsTask |> ignore
 
     let logMessage = logMessageWithLevel MessageType.Log
     let infoMessage = logMessageWithLevel MessageType.Info
