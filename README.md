@@ -32,6 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
+   - or we could limit concurrency level;
  - handle partial text document change (don't request full document to be submitted from the editor);
    - will help performance;
    - should fix issues with emacs file sync problems(?);
