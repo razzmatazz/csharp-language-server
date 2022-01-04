@@ -32,6 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - don't ignore notifications but queued and run them after initialization;
+   - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
  - progress support;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
