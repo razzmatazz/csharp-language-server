@@ -391,14 +391,23 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDidOpen (openParams: Types.DidOpenTextDocumentParams): Async<unit> = withStateEffects <| fun state -> async {
+        let! ct = Async.CancellationToken
+        let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
+
         let effects =
             match getDocumentForUri state openParams.TextDocument.Uri with
-            | Some doc -> [ OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version)
-                            PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, doc) ]
+            | Some doc ->
+                // we want to load the document in case it has been changed since we have the solution loaded
+                // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
+                // went out of sync with editor
+                let updatedDoc = SourceText.From(openParams.TextDocument.Text) |> doc.WithText
+
+                [ OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version)
+                  SolutionChange updatedDoc.Project.Solution
+                  PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, updatedDoc) ]
 
             | None ->
-                let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
-
+                // ok, this document is not on solution, register a new one
                 let newDocMaybe = tryAddDocument logMessage
                                                  docFilePath
                                                  openParams.TextDocument.Text
