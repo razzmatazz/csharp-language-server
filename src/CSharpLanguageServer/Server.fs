@@ -358,8 +358,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                         DocumentHighlightProvider = Some true
                         DocumentSymbolProvider = Some true
                         WorkspaceSymbolProvider = Some true
-                        DocumentFormattingProvider = None
-                        DocumentRangeFormattingProvider = None
+                        DocumentFormattingProvider = Some true
+                        DocumentRangeFormattingProvider = Some true
+                        DocumentOnTypeFormattingProvider =
+                               Some
+                                    { FirstTriggerCharacter = ';'
+                                      MoreTriggerCharacter = Some([| '}'; ')' |]) }
                         SignatureHelpProvider = None
                         CompletionProvider =
                             Some { ResolveProvider = None
@@ -915,6 +919,33 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
         return metadataMaybe |> success
     }
+
+    override __.TextDocumentFormatting(format: Types.DocumentFormattingParams) : AsyncLspResult<Types.TextEdit [] option> = withStateRead <| fun state -> async {
+            let maybeDocument = getDocumentForUri state format.TextDocument.Uri
+            let! formattingChanges =
+                match maybeDocument with
+                | Some doc -> handleTextDocumentFormatAsync doc
+                | None -> async { return Array.empty<Types.TextEdit> }
+            return formattingChanges |> Some |> success
+        }
+
+    override __.TextDocumentRangeFormatting(format: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
+             let maybeDocument = getDocumentForUri state format.TextDocument.Uri
+             let! formattingChanges =
+                 match maybeDocument with
+                 | Some doc -> handleTextDocumentRangeFormatAsync doc format.Range
+                 | None -> async { return Array.empty<Types.TextEdit> }
+             return formattingChanges |> Some |> success
+        }
+
+    override __.TextDocumentOnTypeFormatting(format: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
+            let maybeDocument = getDocumentForUri state format.TextDocument.Uri
+            let! formattingChanges =
+                match maybeDocument with
+                | Some doc -> handleTextOnTypeFormatAsync doc format.Ch format.Position
+                | None -> async { return Array.empty<Types.TextEdit> }
+            return formattingChanges |> Some |> success
+        }
 
 let startCore options =
     use input = Console.OpenStandardInput()
