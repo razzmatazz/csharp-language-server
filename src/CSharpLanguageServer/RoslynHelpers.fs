@@ -6,11 +6,13 @@ open System.Collections.Generic
 open System.IO
 open System.Reflection
 open System.Threading
+open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CodeActions
 open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Formatting
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
@@ -638,3 +640,113 @@ let tryAddDocument logMessage
         Some newDoc
 
     | None -> None
+
+let processChange(oldText: SourceText, change: TextChange) : TextEdit =
+    let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =
+           { NewText = newText
+             Range = {
+                 Start = { Line = linePosition.Start.Line
+                           Character = linePosition.Start.Character }
+                 End = { Line = linePosition.End.Line
+                         Character = linePosition.End.Character } } }
+
+    let defaultTextEdit(oldText: SourceText, change: TextChange) : TextEdit =
+        let linePosition = oldText.Lines.GetLinePositionSpan change.Span
+        mapToTextEdit(linePosition, change.NewText)
+
+    let padLeft(span: TextSpan) : TextSpan =
+        TextSpan.FromBounds(span.Start - 1, span.End)
+    let padRight(span: TextSpan): TextSpan =
+        TextSpan.FromBounds(span.Start, span.End + 1)
+
+    let rec checkSpanLineEndings(newText: string, oldText: SourceText, span: TextSpan, prefix: string) : TextEdit =
+        if span.Start > 0 && newText[0].Equals('\n') && oldText[span.Start - 1].Equals('\r') then
+           checkSpanLineEndings(newText, oldText, padLeft(span), "\r") |> ignore
+        if span.End < oldText.Length - 1 && newText[newText.Length - 1].Equals('\r') && oldText[span.End].Equals('\n') then
+           let linePosition = oldText.Lines.GetLinePositionSpan(padRight(span))
+           mapToTextEdit(linePosition, (prefix + newText.ToString() + "\n"))
+        else
+            let linePosition = oldText.Lines.GetLinePositionSpan span
+            mapToTextEdit(linePosition, newText.ToString())
+
+    let newText = change.NewText
+
+    if newText.Length > 0 then
+        checkSpanLineEndings(newText, oldText, change.Span, String.Empty)
+    else
+        defaultTextEdit(oldText, change)
+
+let convert (oldText: SourceText) (changes: TextChange[]) : TextEdit[] =
+    //why doesnt it pick up that TextSpan implements IComparable<T>?
+    //one of life's many mysteries
+    let comparer (lhs: TextChange) (rhs: TextChange) : int =
+        lhs.Span.CompareTo(rhs.Span)
+    changes
+    |> Seq.sortWith comparer
+    |> Seq.map(fun x -> processChange(oldText, x))
+    |> Seq.toArray
+
+let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> =
+    async {
+        let! changes = doc.GetTextChangesAsync oldDoc |> Async.AwaitTask
+        let! oldText = oldDoc.GetTextAsync() |> Async.AwaitTask
+        return convert oldText (changes |> Seq.toArray)    
+    }
+
+let handleTextDocumentFormatAsync (doc: Document) : Async<TextEdit[]> =
+    async {
+        let options = doc.Project.Solution.Options
+        let! newDoc = Formatter.FormatAsync(doc, options) |> Async.AwaitTask
+        return! getChanges newDoc doc
+    }
+
+let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
+    if token.IsKind(SyntaxKind.EndOfFileToken) then
+        getSyntaxNode(token.GetPreviousToken())
+    else
+        match token.Kind() with
+        | SyntaxKind.SemicolonToken -> token.Parent |> Some
+        | SyntaxKind.CloseBraceToken ->
+            let parent = token.Parent
+            match parent.Kind() with
+            | SyntaxKind.Block -> parent.Parent |> Some
+            | _ -> parent |> Some
+        | SyntaxKind.CloseParenToken ->
+            if token.GetPreviousToken().IsKind(SyntaxKind.SemicolonToken) && token.Parent.IsKind(SyntaxKind.ForStatement) then
+                token.Parent |> Some
+            else
+                None
+        | _ -> None
+
+let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
+    let token = root.FindToken position
+    getSyntaxNode token
+
+let handleTextDocumentRangeFormatAsync (doc: Document) (range: Range) : Async<TextEdit[]> =
+    async {
+        let options = doc.Project.Solution.Options
+        let! text = doc.GetTextAsync() |> Async.AwaitTask
+        let startPos = text.Lines.GetPosition(new LinePosition(range.Start.Line, range.Start.Character))
+        let endPos = text.Lines.GetPosition(new LinePosition(range.End.Line, range.End.Character))
+        let! syntaxTree = doc.GetSyntaxRootAsync() |> Async.AwaitTask
+        let tokenStart = syntaxTree.FindToken(startPos).FullSpan.Start
+        let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(tokenStart, endPos), options) |> Async.AwaitTask
+        return! getChanges newDoc doc
+    }
+
+let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) : Async<TextEdit[]> =
+    async {
+        let options = doc.Project.Solution.Options
+        let! text = doc.GetTextAsync() |> Async.AwaitTask
+        let pos = text.Lines.GetPosition(new LinePosition(position.Line, position.Character))
+        match ch with
+        | ';' | '}' ->
+            let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
+            let maybeNode = findFormatTarget root pos
+            match maybeNode with
+            | Some node ->
+                let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(root.FullSpan.Start, root.FullSpan.End), options) |> Async.AwaitTask
+                return! getChanges newDoc doc
+            | None -> return Array.empty<TextEdit>
+        | _ -> return Array.empty<TextEdit>
+    }
