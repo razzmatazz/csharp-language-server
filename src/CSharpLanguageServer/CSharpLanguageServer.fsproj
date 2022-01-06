@@ -27,9 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Ionide.LanguageServerProtocol\Ionide.LanguageServerProtocol.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.1.0.6543" />
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.4.1" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.0.1">
@@ -46,5 +49,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.0.1" />
     <PackageReference Include="Microsoft.Build" Version="17.0.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Framework" Version="17.0.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Nito.AsyncEx" Version="5.1.2" />
   </ItemGroup>
 </Project>

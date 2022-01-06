@@ -32,9 +32,14 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - cancellation support w/internally-forced timeout for roslyn queries that go for minutes;
-   - most obviously needed when we have code lenses enabled and some find-references code lenses take too long;
- - we get "out of range" exceptions when modifying new file after saving it for some reason;
+ - asyncwrlock still does not provide us proper sequencing, operation scheduling needs proper impl:
+   - to avoid problems where r-o operation is sequenced BEFORE r-w operation but r-w is execute first because thats how asyncrwlock works..;
+ - don't publish diagnostics on every keypress, but every 1-2-3 seconds instead;
+ - don't ignore notifications but queue and run them after initialization;
+   - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
+ - progress support;
+ - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
+   - or we could limit concurrency level;
  - intellisense/autocomplete does not always trigger where it should be
  - `textDocument/signatureHelp` support for overload listing/selection
  - selection range provider

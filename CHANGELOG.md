@@ -1,3 +1,11 @@
+# (unreleased)
+- Fix `textDocument/didOpen` handler:
+  - we will now refresh roslyn solution with file contents as reported by the editor, as our state could have been outdated since;
+- Actually fix sync issues by serializing writes to server state;
+  - not a 100% perfect solution, i.e. we're using AsyncReaderWriterLock which ALWAYS prioritizes writes even if we might want to run some reads between the writes, but seems to work in most cases where I had problems;
+- Implement incremental file change sync to improve performance for large files;
+- Handle $/cancellationRequest's to handle cancellation requests properly.
+
 # 0.1.9
 - Refactor server state tracking to (hopefully) fix some issues with document sync/versioning;
 - Fix, hopefully in the final form, how symbols are formatted by using roslyn To*DisplayString() methods;

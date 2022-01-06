@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FsLibLog.fs came verbatim from
+         https://github.com/TheAngryByrd/FsLibLog/blob/f81cba440bf0476bb4e2262b57a067a0d6ab78a7/src/FsLibLog/FsLibLog.fs
+    -->
+    <Compile Include="FsLibLog.fs" />
+    <Compile Include="LanguageServerProtocol.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="FSharp.Core" Version="6.0.1" />
+    <PackageReference Include="StreamJsonRpc" Version="2.9.85" />
+  </ItemGroup>
+</Project>
