@@ -920,8 +920,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return metadataMaybe |> success
     }
 
-    override __.TextDocumentFormatting(format: Types.DocumentFormattingParams) : AsyncLspResult<Types.TextEdit [] option> =
-        async {
+    override __.TextDocumentFormatting(format: Types.DocumentFormattingParams) : AsyncLspResult<Types.TextEdit [] option> = withStateRead <| fun state -> async {
             let maybeDocument = getDocumentForUri state format.TextDocument.Uri
             let! formattingChanges =
                 match maybeDocument with
@@ -930,8 +929,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return formattingChanges |> Some |> success
         }
 
-    override __.TextDocumentRangeFormatting(format: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> =
-        async {
+    override __.TextDocumentRangeFormatting(format: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
              let maybeDocument = getDocumentForUri state format.TextDocument.Uri
              let! formattingChanges =
                  match maybeDocument with
@@ -940,8 +938,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
              return formattingChanges |> Some |> success
         }
 
-    override __.TextDocumentOnTypeFormatting(format: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit [] option> =
-        async {
+    override __.TextDocumentOnTypeFormatting(format: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
             let maybeDocument = getDocumentForUri state format.TextDocument.Uri
             let! formattingChanges =
                 match maybeDocument with
