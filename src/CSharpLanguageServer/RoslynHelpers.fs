@@ -759,7 +759,7 @@ let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) 
         let! text = doc.GetTextAsync() |> Async.AwaitTask
         let pos = text.Lines.GetPosition(new LinePosition(position.Line, position.Character))
         match ch with
-        | ';' | '}' ->
+        | ';' | '}' | ')' ->
             let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
             let maybeNode = findFormatTarget root pos
             match maybeNode with
