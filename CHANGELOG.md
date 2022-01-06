@@ -1,4 +1,5 @@
 # (unreleased)
+- Support for document formatting, courtesy of @kstatz12;
 - Fix `textDocument/didOpen` handler:
   - we will now refresh roslyn solution with file contents as reported by the editor, as our state could have been outdated since;
 - Actually fix sync issues by serializing writes to server state;
