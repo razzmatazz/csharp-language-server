@@ -660,7 +660,7 @@ let tryAddDocument logMessage
 
     | None -> None
 
-let processChange(oldText: SourceText, change: TextChange) : TextEdit =
+let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
     let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =
            { NewText = newText
              Range = {
@@ -702,7 +702,7 @@ let convert (oldText: SourceText) (changes: TextChange[]) : TextEdit[] =
         lhs.Span.CompareTo(rhs.Span)
     changes
     |> Seq.sortWith comparer
-    |> Seq.map(fun x -> processChange(oldText, x))
+    |> Seq.map(fun x -> processChange oldText x)
     |> Seq.toArray
 
 let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> =
@@ -764,7 +764,7 @@ let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) 
             let maybeNode = findFormatTarget root pos
             match maybeNode with
             | Some node ->
-                let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(root.FullSpan.Start, root.FullSpan.End), options) |> Async.AwaitTask
+                let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End), options) |> Async.AwaitTask
                 return! getChanges newDoc doc
             | None -> return Array.empty<TextEdit>
         | _ -> return Array.empty<TextEdit>
