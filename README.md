@@ -34,6 +34,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 # TODO list
  - asyncwrlock still does not provide us proper sequencing, operation scheduling needs proper impl:
    - to avoid problems where r-o operation is sequenced BEFORE r-w operation but r-w is execute first because thats how asyncrwlock works..;
+   - we also want to cancel some of low-level r-o operations that would pause r-w ones to increase interactivity;
  - don't publish diagnostics on every keypress, but every 1-2-3 seconds instead;
  - don't ignore notifications but queue and run them after initialization;
    - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
