@@ -37,6 +37,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
  - don't publish diagnostics on every keypress, but every 1-2-3 seconds instead;
  - don't ignore notifications but queue and run them after initialization;
    - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
+ - show "localized" types in diagnostics, i.e. consider using's and don't show full type;
+   - we already do that for find references and in other places;
  - progress support;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
