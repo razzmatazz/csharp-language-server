@@ -96,6 +96,7 @@ type ServerState = {
     LspClient: CSharpLspClient option
     RunningChangeRequest: AsyncReplyChannel<ServerState> option
     ChangeRequestQueue: AsyncReplyChannel<ServerState> list
+    PendingDiagnostics: (string * Document) list
 }
 
 let emptyServerState = { ClientCapabilities = None
@@ -105,7 +106,8 @@ let emptyServerState = { ClientCapabilities = None
                          Options = emptyOptions
                          LspClient = None
                          RunningChangeRequest = None
-                         ChangeRequestQueue = [] }
+                         ChangeRequestQueue = []
+                         PendingDiagnostics = [] }
 
 type ServerStateEffect =
     | StateReplace of ServerState
@@ -115,8 +117,11 @@ type ServerStateEffect =
     | OpenDocVersionAdd of string * int
     | OpenDocVersionRemove of string
     | PublishDiagnosticsOnDocument of string * Document
+    | TimerTick
 
 let applyServerStateChange state change = async {
+    let! ct = Async.CancellationToken
+
     match change with
     | StateReplace newState ->
         return newState
@@ -139,20 +144,23 @@ let applyServerStateChange state change = async {
         let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
         return { state with OpenDocVersions = newOpenDocVersions }
 
-    | PublishDiagnosticsOnDocument (docUri, doc) ->
-        let! ct = Async.CancellationToken
-        let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-        let diagnostics =
-            semanticModel.GetDiagnostics()
-            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-            |> Array.ofSeq
+    | PublishDiagnosticsOnDocument (uri, doc) ->
+        return { state with PendingDiagnostics = (uri, doc) :: state.PendingDiagnostics }
 
-        match state.LspClient with
-        | Some lspClient ->
-            do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-        | None -> ()
+    | TimerTick ->
+        for (docUri, doc) in state.PendingDiagnostics do
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let diagnostics =
+                semanticModel.GetDiagnostics()
+                |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                |> Array.ofSeq
 
-        return state
+            match state.LspClient with
+            | Some lspClient ->
+                do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
+            | None -> ()
+
+        return { state with PendingDiagnostics = [] }
 }
 
 let getDocumentForUri state u =
@@ -300,6 +308,7 @@ type ServerEvent =
     | GetStateToRead of AsyncReplyChannel<ServerState>
     | GetStateToChange of AsyncReplyChannel<ServerState>
     | SubmitStateChanges of ServerStateEffect list
+    | TimerTick
 
 let processServerEvent state msg: Async<ServerState> = async {
     match msg with
@@ -337,6 +346,9 @@ let processServerEvent state msg: Async<ServerState> = async {
                               RunningChangeRequest = Some nextPendingRequest }
 
         return newState
+
+    | TimerTick ->
+        return! applyServerStateChange state ServerStateEffect.TimerTick
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
@@ -355,6 +367,11 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                              Options = options
                              LspClient = Some lspClient }
     let state = MailboxProcessor.Start(serverEventLoop initialState)
+
+    let timer = new System.Threading.Timer(
+                        System.Threading.TimerCallback(
+                                  fun _ -> state.Post(ServerEvent.TimerTick)),
+                        null, 1000, 1000)
 
     let getCurrentState () = state.PostAndAsyncReply(GetStateToRead)
 
