@@ -49,6 +49,5 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.0.1" />
     <PackageReference Include="Microsoft.Build" Version="17.0.0" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Framework" Version="17.0.0" ExcludeAssets="runtime" />
-    <PackageReference Include="Nito.AsyncEx" Version="5.1.2" />
   </ItemGroup>
 </Project>

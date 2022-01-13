@@ -93,7 +93,19 @@ type ServerState = {
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadata>
     Options: Options
+    LspClient: CSharpLspClient option
+    RunningChangeRequest: AsyncReplyChannel<ServerState> option
+    ChangeRequestQueue: AsyncReplyChannel<ServerState> list
 }
+
+let emptyServerState = { ClientCapabilities = None
+                         Solution = None
+                         OpenDocVersions = Map.empty
+                         DecompiledMetadata = Map.empty
+                         Options = emptyOptions
+                         LspClient = None
+                         RunningChangeRequest = None
+                         ChangeRequestQueue = [] }
 
 type ServerStateEffect =
     | StateReplace of ServerState
@@ -104,11 +116,44 @@ type ServerStateEffect =
     | OpenDocVersionRemove of string
     | PublishDiagnosticsOnDocument of string * Document
 
-let emptyServerState = { ClientCapabilities = None
-                         Solution = None
-                         OpenDocVersions = Map.empty
-                         DecompiledMetadata = Map.empty
-                         Options = emptyOptions }
+let applyServerStateChange state change = async {
+    match change with
+    | StateReplace newState ->
+        return newState
+
+    | ClientCapabilityChange cc ->
+        return { state with ClientCapabilities = cc }
+
+    | SolutionChange s ->
+        return { state with Solution = Some s }
+
+    | DecompiledMetadataAdd (uri, md) ->
+        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
+        return { state with DecompiledMetadata = newDecompiledMd }
+
+    | OpenDocVersionAdd (doc, ver) ->
+        let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
+        return { state with OpenDocVersions = newOpenDocVersions }
+
+    | OpenDocVersionRemove uri ->
+        let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
+        return { state with OpenDocVersions = newOpenDocVersions }
+
+    | PublishDiagnosticsOnDocument (docUri, doc) ->
+        let! ct = Async.CancellationToken
+        let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+        let diagnostics =
+            semanticModel.GetDiagnostics()
+            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+            |> Array.ofSeq
+
+        match state.LspClient with
+        | Some lspClient ->
+            do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
+        | None -> ()
+
+        return state
+}
 
 let getDocumentForUri state u =
     let uri = Uri u
@@ -251,65 +296,83 @@ type CodeLensData = { DocumentUri: string; Position: Position  }
 
 let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
+type ServerEvent =
+    | GetStateToRead of AsyncReplyChannel<ServerState>
+    | GetStateToChange of AsyncReplyChannel<ServerState>
+    | SubmitStateChanges of ServerStateEffect list
+
+let processServerEvent state msg: Async<ServerState> = async {
+    match msg with
+    | GetStateToRead replyChannel ->
+        replyChannel.Reply(state)
+        return state
+
+    | GetStateToChange replyChannel ->
+        // only reply if we don't have other request that changes the state;
+        // otherwise enqueue the channel to the ChangeRequestQueue
+        match state.RunningChangeRequest with
+        | Some req ->
+            return { state with
+                         ChangeRequestQueue = state.ChangeRequestQueue @ [replyChannel] }
+        | None ->
+            replyChannel.Reply(state)
+            return { state with
+                         RunningChangeRequest = Some replyChannel }
+
+    | SubmitStateChanges effects ->
+        let mutable newState = state
+        for change in effects do
+            let! newState0 = applyServerStateChange newState change
+            newState <- newState0
+
+        newState <- { newState with RunningChangeRequest = None }
+
+        newState <- match state.ChangeRequestQueue with
+                    | [] -> newState
+                    | nextPendingRequest :: queueRemainder ->
+                        nextPendingRequest.Reply(newState)
+
+                        { state with
+                              ChangeRequestQueue = queueRemainder
+                              RunningChangeRequest = Some nextPendingRequest }
+
+        return newState
+}
+
+let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
+    let rec loop state = async {
+        let! msg = inbox.Receive()
+        let! newState = msg |> processServerEvent state
+        return! loop newState
+    }
+
+    loop initialState
+
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
-    let mutable _state: ServerState = { emptyServerState with Options = options }
-    let stateRWLock = new Nito.AsyncEx.AsyncReaderWriterLock()
+    let initialState = { emptyServerState with
+                             Options = options
+                             LspClient = Some lspClient }
+    let state = MailboxProcessor.Start(serverEventLoop initialState)
 
-    let withStateRead asyncOp = async {
-        let! ct = Async.CancellationToken
-        use! rwLock = stateRWLock.ReaderLockAsync(ct).AsTask() |> Async.AwaitTask
-        let! opResult = asyncOp _state
-        return opResult
+    let getCurrentState () = state.PostAndAsyncReply(GetStateToRead)
+
+    let withStateChangesAndResult f = async {
+        let! currentState = state.PostAndAsyncReply(GetStateToChange)
+        let mutable _effects = []
+        try
+            let! (effects, result) = f currentState
+            _effects <- effects
+            return result
+        finally
+            state.Post(SubmitStateChanges _effects)
     }
 
-    let withStateEffects asyncOp = async {
-        let! ct = Async.CancellationToken
-        use! rwLock = stateRWLock.WriterLockAsync(ct).AsTask() |> Async.AwaitTask
-        let! opResult, effects = asyncOp _state
-
-        let applyServerStateChange state change = async {
-            match change with
-            | StateReplace newState ->
-                return newState
-
-            | ClientCapabilityChange cc ->
-                return { state with ClientCapabilities = cc }
-
-            | SolutionChange s ->
-                return { state with Solution = Some s }
-
-            | DecompiledMetadataAdd (uri, md) ->
-                let newDecompiledMd = Map.add uri md state.DecompiledMetadata
-                return { state with DecompiledMetadata = newDecompiledMd }
-
-            | OpenDocVersionAdd (doc, ver) ->
-                let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
-                return { state with OpenDocVersions = newOpenDocVersions }
-
-            | OpenDocVersionRemove uri ->
-                let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
-                return { state with OpenDocVersions = newOpenDocVersions }
-
-            | PublishDiagnosticsOnDocument (docUri, doc) ->
-                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                let diagnostics =
-                    semanticModel.GetDiagnostics()
-                    |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                    |> Array.ofSeq
-
-                do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-
-                return state
-        }
-
-        for effect in effects do
-            let! newState = applyServerStateChange _state effect
-            _state <- newState
-
-        return opResult
-    }
+    let withStateChanges f =
+        let wrappedF state = async { let! effects = f state
+                                     return effects, () }
+        withStateChangesAndResult wrappedF
 
     let logMessageWithLevel l message =
         let messageParams = { Type = l ; Message = "csharp-ls: " + message }
@@ -322,31 +385,30 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
     override __.Dispose(): unit = ()
 
-    override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = withStateEffects <| fun state -> async {
-        let options = state.Options
-
-        infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+    override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
+        let initializeServer state = async {
+            infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
                             (JsonConvert.SerializeObject(options, StringEnumConverter())))
-        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+            infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
-        let! solution =
-            match options.SolutionPath with
-            | Some solutionPath -> async {
-                infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
-                return! tryLoadSolutionOnPath logMessage solutionPath
-                }
+            let! solution =
+                match options.SolutionPath with
+                | Some solutionPath -> async {
+                    infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
+                    return! tryLoadSolutionOnPath logMessage solutionPath
+                  }
 
-            | None -> async {
-                let cwd = Directory.GetCurrentDirectory()
-                infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
-                return! findAndLoadSolutionOnDir logMessage cwd
-                }
+                | None -> async {
+                    let cwd = Directory.GetCurrentDirectory()
+                    infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+                    return! findAndLoadSolutionOnDir logMessage cwd
+                  }
 
-        infoMessage "ok, solution loaded -- initialization finished"
+            infoMessage "ok, solution loaded -- initialization finished"
 
-        let result =
-            { InitializeResult.Default with
+            let result = {
+              InitializeResult.Default with
                 Capabilities =
                     { ServerCapabilities.Default with
                         HoverProvider = Some true
@@ -388,17 +450,20 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                     }
             }
 
-        let effects = [SolutionChange solution.Value
-                       ClientCapabilityChange p.Capabilities]
+            let effects = [SolutionChange solution.Value
+                           ClientCapabilityChange p.Capabilities]
 
-        return (result |> success, effects)
+            return effects, result
+        }
+
+        let! result = withStateChangesAndResult initializeServer
+        return result |> success
     }
 
-    override __.TextDocumentDidOpen (openParams: Types.DidOpenTextDocumentParams): Async<unit> = withStateEffects <| fun state -> async {
-        let! ct = Async.CancellationToken
+    override __.TextDocumentDidOpen (openParams: Types.DidOpenTextDocumentParams): Async<unit> = async {
         let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
 
-        let effects =
+        let openDocument state =
             match getDocumentForUri state openParams.TextDocument.Uri with
             | Some doc ->
                 // we want to load the document in case it has been changed since we have the solution loaded
@@ -422,69 +487,76 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
                 | None -> []
 
-        return (), effects
+        return! withStateChanges (openDocument >> async.Return)
     }
 
-    override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = withStateEffects <| fun state -> async {
+    override __.TextDocumentDidChange (changeParams: Types.DidChangeTextDocumentParams): Async<unit> = async {
         let! ct = Async.CancellationToken
 
-        let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
+        let changeDocument state = async {
+            let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
 
-        if not (isUriADecompiledDoc changeParams.TextDocument.Uri) then
-            match getDocumentForUri state changeParams.TextDocument.Uri with
-            | Some doc ->
-                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-                //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
-                //logMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
+            if not (isUriADecompiledDoc changeParams.TextDocument.Uri) then
+                match getDocumentForUri state changeParams.TextDocument.Uri with
+                | Some doc ->
+                    let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                    //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
+                    //logMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
 
-                let updatedSourceText = sourceText |> applyLspContentChangesOnRoslynSourceText changeParams.ContentChanges
-                let updatedDoc = doc.WithText(updatedSourceText)
+                    let updatedSourceText = sourceText |> applyLspContentChangesOnRoslynSourceText changeParams.ContentChanges
+                    let updatedDoc = doc.WithText(updatedSourceText)
 
-                //logMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
+                    //logMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
 
-                let updatedSolution = updatedDoc.Project.Solution
+                    let updatedSolution = updatedDoc.Project.Solution
 
-                let effects = [ SolutionChange updatedSolution
-                                OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version |> Option.defaultValue 0)
-                                PublishDiagnosticsOnDocument (changeParams.TextDocument.Uri, updatedDoc) ]
+                    let effects = [ SolutionChange updatedSolution
+                                    OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version |> Option.defaultValue 0)
+                                    PublishDiagnosticsOnDocument (changeParams.TextDocument.Uri, updatedDoc) ]
 
-                return (), effects
+                    return effects
 
-            | None -> return (), []
-        else
-            return (), []
+                | None -> return []
+            else
+                return []
+        }
+
+        return! withStateChanges changeDocument
     }
 
-    override __.TextDocumentDidSave (saveParams: Types.DidSaveTextDocumentParams): Async<unit> = withStateEffects <| fun state -> async {
-        // we need to add this file to solution if not already
-        match getDocumentForUri state saveParams.TextDocument.Uri with
-        | Some _ ->
-            return (), []
-
-        | None ->
-            let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
-            let newDocMaybe = tryAddDocument logMessage
-                                             docFilePath
-                                             saveParams.Text.Value
-                                             state.Solution.Value
-            match newDocMaybe with
-            | Some newDoc ->
-                let effects = [ SolutionChange newDoc.Project.Solution
-                                PublishDiagnosticsOnDocument (saveParams.TextDocument.Uri, newDoc) ]
-                return (), effects
+    override __.TextDocumentDidSave (saveParams: Types.DidSaveTextDocumentParams): Async<unit> = async {
+        let saveDocument state =
+            // we need to add this file to solution if not already
+            match getDocumentForUri state saveParams.TextDocument.Uri with
+            | Some _ -> []
 
             | None ->
-                return (), []
+                let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
+                let newDocMaybe = tryAddDocument logMessage
+                                                docFilePath
+                                                saveParams.Text.Value
+                                                state.Solution.Value
+                match newDocMaybe with
+                | Some newDoc ->
+                    [ SolutionChange newDoc.Project.Solution
+                      PublishDiagnosticsOnDocument (saveParams.TextDocument.Uri, newDoc) ]
+
+                | None -> []
+
+        return! withStateChanges (saveDocument >> async.Return)
     }
 
-    override __.TextDocumentDidClose (closeParams: Types.DidCloseTextDocumentParams): Async<unit> = withStateEffects <| fun state -> async {
-        let effects = [ OpenDocVersionRemove closeParams.TextDocument.Uri ]
-        return (), effects
+    override __.TextDocumentDidClose (closeParams: Types.DidCloseTextDocumentParams): Async<unit> = async {
+        let closeDocument _state =
+            [ OpenDocVersionRemove closeParams.TextDocument.Uri ]
+
+        return! withStateChanges (closeDocument >> async.Return)
     }
 
-    override __.TextDocumentCodeAction (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = withStateRead <| fun state -> async {
+    override __.TextDocumentCodeAction (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
         let! ct = Async.CancellationToken
 
+        let! state = getCurrentState ()
         match getDocumentForUri state actionParams.TextDocument.Uri with
         | None ->
             return None |> success
@@ -551,13 +623,14 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                |> success
     }
 
-    override __.CodeActionResolve (codeAction: CodeAction): AsyncLspResult<CodeAction option> = withStateRead <| fun state -> async {
+    override __.CodeActionResolve (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
         let resolutionData =
             codeAction.Data
             |> Option.map (fun x -> x :?> string)
             |> Option.map JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
 
         let! ct = Async.CancellationToken
+        let! state = getCurrentState ()
 
         match getDocumentForUri state resolutionData.Value.TextDocumentUri with
         | None ->
@@ -590,9 +663,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return maybeLspCodeAction |> success
     }
 
-    override __.TextDocumentCodeLens (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentCodeLens (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
         let! ct = Async.CancellationToken
 
+        let! state = getCurrentState ()
         match getDocumentForUri state lensParams.TextDocument.Uri with
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -622,12 +696,13 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.CodeLensResolve (codeLens: CodeLens) : AsyncLspResult<CodeLens> = withStateRead <| fun state -> async {
+    override __.CodeLensResolve (codeLens: CodeLens) : AsyncLspResult<CodeLens> = async {
         let lensData =
             codeLens.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
             |> Option.defaultValue emptyCodeLensData
 
+        let! state = getCurrentState ()
         let doc = lensData.DocumentUri |> getDocumentForUri state |> fun o -> o.Value
 
         let! ct = Async.CancellationToken
@@ -655,62 +730,71 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return { codeLens with Command=Some command } |> success
     }
 
-    override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = withStateEffects <| fun state -> async {
+    override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
         let! ct = Async.CancellationToken
 
-        match getDocumentForUri state def.TextDocument.Uri with
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+        let findDefinitions state = async {
+            match getDocumentForUri state def.TextDocument.Uri with
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
+                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-            let symbols =
-                match Option.ofObj symbolMaybe with
-                | Some sym -> [sym]
-                | None -> []
+                let symbols =
+                    match Option.ofObj symbolMaybe with
+                    | Some sym -> [sym]
+                    | None -> []
 
-            let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
+                let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
 
-            let lspResult = locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
+                let lspResult = locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
 
-            return lspResult, stateChanges
+                return stateChanges, lspResult
 
-        | None ->
-            return None |> success, []
+            | None ->
+                return [], None |> success
+        }
+
+        return! withStateChangesAndResult findDefinitions
     }
 
-    override __.TextDocumentImplementation (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = withStateEffects <| fun state -> async {
+    override __.TextDocumentImplementation (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
         let! ct = Async.CancellationToken
 
-        match getDocumentForUri state def.TextDocument.Uri with
-        | Some doc ->
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+        let findImplementations state = async {
+            match getDocumentForUri state def.TextDocument.Uri with
+            | Some doc ->
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
+                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-            let! symbols = async {
-                match Option.ofObj symbolMaybe with
-                | Some sym ->
-                    let! implSymbols =
-                        SymbolFinder.FindImplementationsAsync(sym, state.Solution.Value)
-                        |> Async.AwaitTask
+                let! symbols = async {
+                    match Option.ofObj symbolMaybe with
+                    | Some sym ->
+                        let! implSymbols =
+                            SymbolFinder.FindImplementationsAsync(sym, state.Solution.Value)
+                            |> Async.AwaitTask
 
-                    return implSymbols |> List.ofSeq
-                | None -> return []
-            }
+                        return implSymbols |> List.ofSeq
+                    | None -> return []
+                }
 
-            let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
+                let! (locations, stateChanges) = resolveSymbolLocations state doc.Project symbols
 
-            let lspResult = locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
-            return lspResult, stateChanges
+                let lspResult = locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
+                return stateChanges, lspResult
 
-        | None ->
-            return None |> success, []
+            | None ->
+                return [], None |> success
+        }
+
+        return! withStateChangesAndResult findImplementations
     }
 
-    override __.TextDocumentCompletion (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = withStateRead <| fun state -> async {
+    override __.TextDocumentCompletion (posParams: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
         let! ct = Async.CancellationToken
+        let! state = getCurrentState ()
 
         match getDocumentForUri state posParams.TextDocument.Uri with
         | Some doc ->
@@ -743,7 +827,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return success None
     }
 
-    override __.TextDocumentDocumentHighlight (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentDocumentHighlight (docParams: Types.TextDocumentPositionParams): AsyncLspResult<Types.DocumentHighlight [] option> = async {
         let! ct = Async.CancellationToken
 
         let getSymbolLocations symbol doc solution = async {
@@ -769,6 +853,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             | :? INamespaceSymbol -> false
             | _ -> true
 
+        let! state = getCurrentState ()
+
         match state.Solution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition state docParams.TextDocument.Uri docParams.Position
@@ -786,9 +872,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentDocumentSymbol (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentDocumentSymbol (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! ct = Async.CancellationToken
 
+        let! state = getCurrentState ()
         match getDocumentForUri state p.TextDocument.Uri with
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -804,7 +891,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return None |> success
     }
 
-    override __.TextDocumentHover (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = withStateRead <| fun state -> async {
+    override __.TextDocumentHover (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
         let! ct = Async.CancellationToken
 
         let csharpMarkdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
@@ -838,6 +925,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
 
             [MarkedString.WithLanguage { Language = "markdown"; Value = formattedDoc }]
 
+        let! state = getCurrentState ()
         let! maybeSymbol = getSymbolAtPosition state hoverPos.TextDocument.Uri hoverPos.Position
 
         let! contents =
@@ -852,9 +940,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                       Range = None } |> success
     }
 
-    override __.TextDocumentReferences (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentReferences (refParams: Types.ReferenceParams): AsyncLspResult<Types.Location [] option> = async {
         let! ct = Async.CancellationToken
 
+        let! state = getCurrentState ()
         match state.Solution with
         | Some solution ->
             let! maybeSymbol = getSymbolAtPosition state refParams.TextDocument.Uri refParams.Position
@@ -874,7 +963,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         | None -> return None |> success
     }
 
-    override __.TextDocumentRename (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = withStateRead <| fun state -> async {
+    override __.TextDocumentRename (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
+        let! state = getCurrentState ()
+
         let renameSymbolInDoc symbol (doc: Document) = async {
             let originalSolution = doc.Project.Solution
 
@@ -904,14 +995,16 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, state.ClientCapabilities.Value) |> Some |> success
     }
 
-    override __.WorkspaceSymbol (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = withStateRead <| fun state -> async {
+    override __.WorkspaceSymbol (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+        let! state = getCurrentState ()
         let! symbols = findSymbolsInSolution state.Solution.Value symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
     }
 
-    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = withStateRead <| fun state -> async {
+    member __.CSharpMetadata (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
         let uri = metadataParams.TextDocument.Uri
 
+        let! state = getCurrentState ()
         let metadataMaybe =
             state.DecompiledMetadata
             |> Map.tryFind uri
@@ -920,7 +1013,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
         return metadataMaybe |> success
     }
 
-    override __.TextDocumentFormatting(format: Types.DocumentFormattingParams) : AsyncLspResult<Types.TextEdit [] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentFormatting(format: Types.DocumentFormattingParams) : AsyncLspResult<Types.TextEdit [] option> = async {
+            let! state = getCurrentState ()
             let maybeDocument = getDocumentForUri state format.TextDocument.Uri
             let! formattingChanges =
                 match maybeDocument with
@@ -929,7 +1023,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             return formattingChanges |> Some |> success
         }
 
-    override __.TextDocumentRangeFormatting(format: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentRangeFormatting(format: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+             let! state = getCurrentState ()
              let maybeDocument = getDocumentForUri state format.TextDocument.Uri
              let! formattingChanges =
                  match maybeDocument with
@@ -938,7 +1033,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
              return formattingChanges |> Some |> success
         }
 
-    override __.TextDocumentOnTypeFormatting(format: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = withStateRead <| fun state -> async {
+    override __.TextDocumentOnTypeFormatting(format: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+            let! state = getCurrentState ()
             let maybeDocument = getDocumentForUri state format.TextDocument.Uri
             let! formattingChanges =
                 match maybeDocument with
