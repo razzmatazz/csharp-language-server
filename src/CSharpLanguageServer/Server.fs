@@ -96,7 +96,7 @@ type ServerState = {
     LspClient: CSharpLspClient option
     RunningChangeRequest: AsyncReplyChannel<ServerState> option
     ChangeRequestQueue: AsyncReplyChannel<ServerState> list
-    PendingDiagnostics: (string * Document) list
+    PendingDiagnostics: Map<string, Document>
 }
 
 let emptyServerState = { ClientCapabilities = None
@@ -107,7 +107,7 @@ let emptyServerState = { ClientCapabilities = None
                          LspClient = None
                          RunningChangeRequest = None
                          ChangeRequestQueue = []
-                         PendingDiagnostics = [] }
+                         PendingDiagnostics = Map.empty }
 
 type ServerStateEffect =
     | StateReplace of ServerState
@@ -119,7 +119,7 @@ type ServerStateEffect =
     | PublishDiagnosticsOnDocument of string * Document
     | TimerTick
 
-let applyServerStateChange state change = async {
+let applyServerStateChange logMessage state change = async {
     let! ct = Async.CancellationToken
 
     match change with
@@ -145,10 +145,12 @@ let applyServerStateChange state change = async {
         return { state with OpenDocVersions = newOpenDocVersions }
 
     | PublishDiagnosticsOnDocument (uri, doc) ->
-        return { state with PendingDiagnostics = (uri, doc) :: state.PendingDiagnostics }
+        return { state with PendingDiagnostics = state.PendingDiagnostics |> Map.add uri doc }
 
     | TimerTick ->
-        for (docUri, doc) in state.PendingDiagnostics do
+        for kv in state.PendingDiagnostics do
+            let docUri = kv.Key
+            let doc = kv.Value
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let diagnostics =
                 semanticModel.GetDiagnostics()
@@ -160,7 +162,7 @@ let applyServerStateChange state change = async {
                 do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
             | None -> ()
 
-        return { state with PendingDiagnostics = [] }
+        return { state with PendingDiagnostics = Map.empty }
 }
 
 let getDocumentForUri state u =
@@ -310,15 +312,15 @@ type ServerEvent =
     | SubmitStateChanges of ServerStateEffect list
     | TimerTick
 
-let processServerEvent state msg: Async<ServerState> = async {
+let processServerEvent logMessage state msg: Async<ServerState> = async {
     match msg with
     | GetStateToRead replyChannel ->
         replyChannel.Reply(state)
         return state
 
     | GetStateToChange replyChannel ->
-        // only reply if we don't have other request that changes the state;
-        // otherwise enqueue the channel to the ChangeRequestQueue
+        // only reply if we don't have another request that would change the state;
+        // otherwise enqueue the `replyChannel` to the ChangeRequestQueue
         match state.RunningChangeRequest with
         | Some req ->
             return { state with
@@ -331,7 +333,7 @@ let processServerEvent state msg: Async<ServerState> = async {
     | SubmitStateChanges effects ->
         let mutable newState = state
         for change in effects do
-            let! newState0 = applyServerStateChange newState change
+            let! newState0 = applyServerStateChange logMessage newState change
             newState <- newState0
 
         newState <- { newState with RunningChangeRequest = None }
@@ -348,13 +350,13 @@ let processServerEvent state msg: Async<ServerState> = async {
         return newState
 
     | TimerTick ->
-        return! applyServerStateChange state ServerStateEffect.TimerTick
+        return! applyServerStateChange logMessage state ServerStateEffect.TimerTick
 }
 
-let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
+let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
-        let! newState = msg |> processServerEvent state
+        let! newState = msg |> processServerEvent logMessage state
         return! loop newState
     }
 
@@ -363,15 +365,21 @@ let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
+    let mutable logMessageCurrent = Action<string>(fun m -> ())
+    let logMessageInvoke m = logMessageCurrent.Invoke(m)
+
     let initialState = { emptyServerState with
                              Options = options
                              LspClient = Some lspClient }
-    let state = MailboxProcessor.Start(serverEventLoop initialState)
+    let state = MailboxProcessor.Start(serverEventLoop logMessageInvoke initialState)
 
-    let timer = new System.Threading.Timer(
-                        System.Threading.TimerCallback(
-                                  fun _ -> state.Post(ServerEvent.TimerTick)),
-                        null, 1000, 1000)
+    let mutable timer: System.Threading.Timer option = None
+
+    let setupTimer () =
+        logMessageInvoke "starting timer"
+        timer <- Some (new System.Threading.Timer(
+            System.Threading.TimerCallback(fun _ -> state.Post(ServerEvent.TimerTick)),
+            null, dueTime=1000, period=250))
 
     let getCurrentState () = state.PostAndAsyncReply(GetStateToRead)
 
@@ -403,6 +411,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     override __.Dispose(): unit = ()
 
     override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
+        logMessageCurrent <- Action<string>(logMessage)
+
         let initializeServer state = async {
             infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
@@ -423,6 +433,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                   }
 
             infoMessage "ok, solution loaded -- initialization finished"
+
+            setupTimer ()
 
             let result = {
               InitializeResult.Default with

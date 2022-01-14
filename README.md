@@ -32,19 +32,17 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - asyncwrlock still does not provide us proper sequencing, operation scheduling needs proper impl:
-   - to avoid problems where r-o operation is sequenced BEFORE r-w operation but r-w is execute first because thats how asyncrwlock works..;
-   - we also want to cancel some of low-level r-o operations that would pause r-w ones to increase interactivity;
- - don't publish diagnostics on every keypress, but every 1-2-3 seconds instead;
  - don't ignore notifications but queue and run them after initialization;
    - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
  - show "localized" types in diagnostics, i.e. consider using's and don't show full type;
    - we already do that for find references and in other places;
+ - handle file rename & deletion notifications;
  - progress support;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
  - intellisense/autocomplete does not always trigger where it should be
  - `textDocument/signatureHelp` support for overload listing/selection
+ - properly escape docxml text, e.g. backquote is a special character in markdown;
  - selection range provider
  - semantic tokens
  - ability to run tests
