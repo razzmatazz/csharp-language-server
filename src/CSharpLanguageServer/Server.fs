@@ -109,7 +109,7 @@ let emptyServerState = { ClientCapabilities = None
                          ChangeRequestQueue = []
                          PendingDiagnostics = Map.empty }
 
-type ServerStateEffect =
+type ServerStateEvent =
     | StateReplace of ServerState
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
@@ -118,52 +118,9 @@ type ServerStateEffect =
     | OpenDocVersionRemove of string
     | PublishDiagnosticsOnDocument of string * Document
     | TimerTick
-
-let applyServerStateChange logMessage state change = async {
-    let! ct = Async.CancellationToken
-
-    match change with
-    | StateReplace newState ->
-        return newState
-
-    | ClientCapabilityChange cc ->
-        return { state with ClientCapabilities = cc }
-
-    | SolutionChange s ->
-        return { state with Solution = Some s }
-
-    | DecompiledMetadataAdd (uri, md) ->
-        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
-        return { state with DecompiledMetadata = newDecompiledMd }
-
-    | OpenDocVersionAdd (doc, ver) ->
-        let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
-        return { state with OpenDocVersions = newOpenDocVersions }
-
-    | OpenDocVersionRemove uri ->
-        let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
-        return { state with OpenDocVersions = newOpenDocVersions }
-
-    | PublishDiagnosticsOnDocument (uri, doc) ->
-        return { state with PendingDiagnostics = state.PendingDiagnostics |> Map.add uri doc }
-
-    | TimerTick ->
-        for kv in state.PendingDiagnostics do
-            let docUri = kv.Key
-            let doc = kv.Value
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let diagnostics =
-                semanticModel.GetDiagnostics()
-                |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                |> Array.ofSeq
-
-            match state.LspClient with
-            | Some lspClient ->
-                do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-            | None -> ()
-
-        return { state with PendingDiagnostics = Map.empty }
-}
+    | GetStateToRead of AsyncReplyChannel<ServerState>
+    | GetStateToChange of AsyncReplyChannel<ServerState>
+    | SubmitStateChanges of ServerStateEvent list
 
 let getDocumentForUri state u =
     let uri = Uri u
@@ -306,13 +263,8 @@ type CodeLensData = { DocumentUri: string; Position: Position  }
 
 let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
-type ServerEvent =
-    | GetStateToRead of AsyncReplyChannel<ServerState>
-    | GetStateToChange of AsyncReplyChannel<ServerState>
-    | SubmitStateChanges of ServerStateEffect list
-    | TimerTick
-
-let processServerEvent logMessage state msg: Async<ServerState> = async {
+let rec processServerEvent logMessage state msg: Async<ServerState> = async {
+    let! ct = Async.CancellationToken
     match msg with
     | GetStateToRead replyChannel ->
         replyChannel.Reply(state)
@@ -322,7 +274,7 @@ let processServerEvent logMessage state msg: Async<ServerState> = async {
         // only reply if we don't have another request that would change the state;
         // otherwise enqueue the `replyChannel` to the ChangeRequestQueue
         match state.RunningChangeRequest with
-        | Some req ->
+        | Some _req ->
             return { state with
                          ChangeRequestQueue = state.ChangeRequestQueue @ [replyChannel] }
         | None ->
@@ -333,7 +285,7 @@ let processServerEvent logMessage state msg: Async<ServerState> = async {
     | SubmitStateChanges effects ->
         let mutable newState = state
         for change in effects do
-            let! newState0 = applyServerStateChange logMessage newState change
+            let! newState0 = processServerEvent logMessage newState change
             newState <- newState0
 
         newState <- { newState with RunningChangeRequest = None }
@@ -349,11 +301,49 @@ let processServerEvent logMessage state msg: Async<ServerState> = async {
 
         return newState
 
+    | StateReplace newState ->
+        return newState
+
+    | ClientCapabilityChange cc ->
+        return { state with ClientCapabilities = cc }
+
+    | SolutionChange s ->
+        return { state with Solution = Some s }
+
+    | DecompiledMetadataAdd (uri, md) ->
+        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
+        return { state with DecompiledMetadata = newDecompiledMd }
+
+    | OpenDocVersionAdd (doc, ver) ->
+        let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
+        return { state with OpenDocVersions = newOpenDocVersions }
+
+    | OpenDocVersionRemove uri ->
+        let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
+        return { state with OpenDocVersions = newOpenDocVersions }
+
+    | PublishDiagnosticsOnDocument (uri, doc) ->
+        return { state with PendingDiagnostics = state.PendingDiagnostics |> Map.add uri doc }
+
     | TimerTick ->
-        return! applyServerStateChange logMessage state ServerStateEffect.TimerTick
+        for kv in state.PendingDiagnostics do
+            let docUri = kv.Key
+            let doc = kv.Value
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let diagnostics =
+                semanticModel.GetDiagnostics()
+                |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                |> Array.ofSeq
+
+            match state.LspClient with
+            | Some lspClient ->
+                do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
+            | None -> ()
+
+        return { state with PendingDiagnostics = Map.empty }
 }
 
-let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerEvent>) =
+let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerStateEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
         let! newState = msg |> processServerEvent logMessage state
@@ -365,7 +355,7 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerEvent
 type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     inherit LspServer()
 
-    let mutable logMessageCurrent = Action<string>(fun m -> ())
+    let mutable logMessageCurrent = Action<string>(fun _ -> ())
     let logMessageInvoke m = logMessageCurrent.Invoke(m)
 
     let initialState = { emptyServerState with
@@ -378,7 +368,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     let setupTimer () =
         logMessageInvoke "starting timer"
         timer <- Some (new System.Threading.Timer(
-            System.Threading.TimerCallback(fun _ -> state.Post(ServerEvent.TimerTick)),
+            System.Threading.TimerCallback(fun _ -> state.Post(ServerStateEvent.TimerTick)),
             null, dueTime=1000, period=250))
 
     let getCurrentState () = state.PostAndAsyncReply(GetStateToRead)
@@ -413,7 +403,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     override __.Initialize (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
         logMessageCurrent <- Action<string>(logMessage)
 
-        let initializeServer state = async {
+        let initializeServer _state = async {
             infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspServer>.Assembly.GetName().Version |> string)
                             (JsonConvert.SerializeObject(options, StringEnumConverter())))
@@ -766,8 +756,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
     }
 
     override __.TextDocumentDefinition (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
-        let! ct = Async.CancellationToken
-
         let findDefinitions state = async {
             match getDocumentForUri state def.TextDocument.Uri with
             | Some doc ->
