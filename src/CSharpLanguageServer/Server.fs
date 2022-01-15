@@ -505,16 +505,22 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
                   PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, updatedDoc) ]
 
             | None ->
-                // ok, this document is not on solution, register a new one
-                let newDocMaybe = tryAddDocument logMessage
-                                                 docFilePath
-                                                 openParams.TextDocument.Text
-                                                 state.Solution.Value
-                match newDocMaybe with
-                | Some newDoc -> [ SolutionChange newDoc.Project.Solution
-                                   PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, newDoc) ]
+                // ok, this document is not on solution, register a new one unless it is a decompiled thing
+                let isUriADecompiledDoc u = state.DecompiledMetadata |> Map.containsKey u
 
-                | None -> []
+                match isUriADecompiledDoc openParams.TextDocument.Uri with
+                | true ->
+                    []
+                | false ->
+                    let newDocMaybe = tryAddDocument logMessage
+                                                    docFilePath
+                                                    openParams.TextDocument.Text
+                                                    state.Solution.Value
+                    match newDocMaybe with
+                    | Some newDoc -> [ SolutionChange newDoc.Project.Solution
+                                       PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, newDoc) ]
+
+                    | None -> []
 
         return! withStateChanges (openDocument >> async.Return)
     }

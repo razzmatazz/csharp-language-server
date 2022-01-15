@@ -32,7 +32,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - bug: erroneously we started to import metadata-generated code into solution again;
  - don't ignore notifications/requests on startup but queue and run them after initialization is done;
    - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
