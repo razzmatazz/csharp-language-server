@@ -40,7 +40,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
    - we already do that for find references and in other places;
  - handle file rename & deletion notifications;
  - progress support;
- - intellisense/autocomplete does not always trigger where it should be
  - `textDocument/signatureHelp` support for overload listing/selection
  - properly escape docxml text, e.g. backquote is a special character in markdown;
  - selection range provider

@@ -118,9 +118,9 @@ type ServerStateEvent =
     | OpenDocVersionRemove of string
     | PublishDiagnosticsOnDocument of string * Document
     | TimerTick
-    | GetStateToRead of AsyncReplyChannel<ServerState>
-    | GetStateToChange of AsyncReplyChannel<ServerState>
-    | SubmitStateChanges of ServerStateEvent list
+    | GetState of AsyncReplyChannel<ServerState>
+    | StartSolutionChange of AsyncReplyChannel<ServerState>
+    | FinishSolutionChange of ServerStateEvent list
 
 let getDocumentForUri state u =
     let uri = Uri u
@@ -266,12 +266,12 @@ let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 let rec processServerEvent logMessage state msg: Async<ServerState> = async {
     let! ct = Async.CancellationToken
     match msg with
-    | GetStateToRead replyChannel ->
+    | GetState replyChannel ->
         replyChannel.Reply(state)
         return state
 
-    | GetStateToChange replyChannel ->
-        // only reply if we don't have another request that would change the state;
+    | StartSolutionChange replyChannel ->
+        // only reply if we don't have another request that would change solution;
         // otherwise enqueue the `replyChannel` to the ChangeRequestQueue
         match state.RunningChangeRequest with
         | Some _req ->
@@ -282,7 +282,7 @@ let rec processServerEvent logMessage state msg: Async<ServerState> = async {
             return { state with
                          RunningChangeRequest = Some replyChannel }
 
-    | SubmitStateChanges effects ->
+    | FinishSolutionChange effects ->
         let mutable newState = state
         for change in effects do
             let! newState0 = processServerEvent logMessage newState change
@@ -371,17 +371,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, options: Options) =
             System.Threading.TimerCallback(fun _ -> state.Post(ServerStateEvent.TimerTick)),
             null, dueTime=1000, period=250))
 
-    let getCurrentState () = state.PostAndAsyncReply(GetStateToRead)
+    let getCurrentState () = state.PostAndAsyncReply(GetState)
 
     let withStateChangesAndResult f = async {
-        let! currentState = state.PostAndAsyncReply(GetStateToChange)
+        let! currentState = state.PostAndAsyncReply(StartSolutionChange)
         let mutable _effects = []
         try
             let! (effects, result) = f currentState
             _effects <- effects
             return result
         finally
-            state.Post(SubmitStateChanges _effects)
+            state.Post(FinishSolutionChange _effects)
     }
 
     let withStateChanges f =
