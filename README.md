@@ -32,13 +32,12 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - don't ignore notifications/requests on startup but queue and run them after initialization is done;
-   - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
- - show "localized" types in diagnostics, i.e. consider using's and don't show full type;
-   - we already do that for find references and in other places;
  - handle file rename & deletion notifications;
+ - don't ignore notifications/requests on startup but queue and run them after initialization is done;
+   - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
+   - emacs/lsp-mode does not apparently require this but maybe some other servers do?
  - progress support;
  - `textDocument/signatureHelp` support for overload listing/selection
  - properly escape docxml text, e.g. backquote is a special character in markdown;
