@@ -47,3 +47,4 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
  - razorls integration (server-side)
  - analyzer support
  - code generator support
+ - vscode plugin
