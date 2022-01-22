@@ -1049,7 +1049,7 @@ let setupServerHandlers options lspClient =
     |> Map.ofList
 
 let startCore options =
-    use input = Console.OpenStandardInput()
+    use input = Console.OpenStandardInput(bufferSize=64 * 1024)
     use output = Console.OpenStandardOutput()
 
     Ionide.LanguageServerProtocol.Server.start
