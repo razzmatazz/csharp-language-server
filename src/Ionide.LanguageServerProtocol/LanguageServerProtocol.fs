@@ -2733,20 +2733,12 @@ module Server =
     let deserialize<'t> (token: JToken) = token.ToObject<'t>(jsonRpcFormatter.JsonSerializer)
     let serialize<'t> (o: 't) = JToken.FromObject(o, jsonRpcFormatter.JsonSerializer)
 
-    type RequestHandlingDecoration = (unit -> unit) option
+    let requestHandling<'param, 'result> (run: 'param -> AsyncLspResult<'result>): Delegate =
+        let runAsTask param ct =
+            let asyncLspResult = run param
 
-    type RequestHandling<'server when 'server :> LspServer> = {
-        Run: RequestHandlingDecoration -> 'server -> Delegate
-    }
-
-    let requestHandling<'param, 'result, 'server when 'server :> LspServer> (run: 'server -> 'param -> AsyncLspResult<'result>): RequestHandling<'server> =
-        let tokenRun (decoration: RequestHandlingDecoration) (lspServer: 'server) : Delegate =
-            let runAndUnwrap param = async {
-                match decoration with
-                | Some fn -> fn()
-                | None -> ()
-
-                let! lspResult = run lspServer param
+            let asyncContinuation = async {
+                let! lspResult = asyncLspResult
 
                 return
                     match lspResult with
@@ -2758,66 +2750,16 @@ module Server =
                         raise rpcException
             }
 
-            let runAsTask param ct =
-                Async.StartAsTask(runAndUnwrap param, cancellationToken=ct)
+            Async.StartAsTask(asyncContinuation, cancellationToken=ct)
 
-            Func<'param, CancellationToken, Task<'result>>(runAsTask) :> Delegate
-
-        { Run = tokenRun }
+        Func<'param, CancellationToken, Task<'result>>(runAsTask) :> Delegate
 
     /// Notifications don't generate a response or error, but to unify things we consider them as always successful.
     /// They will still not send any response because their ID is null.
-    let private notificationSuccess (response: Async<unit>) = async {
+    let notificationSuccess (response: Async<unit>) = async {
         do! response
         return Result.Ok ()
     }
-
-    let defaultRequestHandlings<'server when 'server :> LspServer> () : Map<string, RequestHandling<'server>> =
-        [
-            "initialize", requestHandling (fun s p -> s.Initialize(p))
-            "initialized", requestHandling (fun s p -> s.Initialized(p) |> notificationSuccess)
-            "textDocument/hover", requestHandling (fun s p -> s.TextDocumentHover(p))
-            "textDocument/didOpen", requestHandling (fun s p -> s.TextDocumentDidOpen(p) |> notificationSuccess)
-            "textDocument/didChange", requestHandling (fun s p -> s.TextDocumentDidChange(p) |> notificationSuccess)
-            "textDocument/completion", requestHandling (fun s p -> s.TextDocumentCompletion(p))
-            "completionItem/resolve", requestHandling (fun s p -> s.CompletionItemResolve(p))
-            "textDocument/rename", requestHandling (fun s p -> s.TextDocumentRename(p))
-            "textDocument/definition", requestHandling (fun s p -> s.TextDocumentDefinition(p))
-            "textDocument/typeDefinition", requestHandling (fun s p -> s.TextDocumentTypeDefinition(p))
-            "textDocument/implementation", requestHandling (fun s p -> s.TextDocumentImplementation(p))
-            "textDocument/codeAction", requestHandling (fun s p -> s.TextDocumentCodeAction(p))
-            "codeAction/resolve", requestHandling (fun s p -> s.CodeActionResolve(p))
-            "textDocument/codeLens", requestHandling (fun s p -> s.TextDocumentCodeLens(p))
-            "codeLens/resolve", requestHandling (fun s p -> s.CodeLensResolve(p))
-            "textDocument/references", requestHandling (fun s p -> s.TextDocumentReferences(p))
-            "textDocument/documentHighlight", requestHandling (fun s p -> s.TextDocumentDocumentHighlight(p))
-            "textDocument/documentLink", requestHandling (fun s p -> s.TextDocumentDocumentLink(p))
-            "textDocument/signatureHelp", requestHandling (fun s p -> s.TextDocumentSignatureHelp(p))
-            "documentLink/resolve", requestHandling (fun s p -> s.DocumentLinkResolve(p))
-            "textDocument/documentColor", requestHandling (fun s p -> s.TextDocumentDocumentColor(p))
-            "textDocument/colorPresentation", requestHandling (fun s p -> s.TextDocumentColorPresentation(p))
-            "textDocument/formatting", requestHandling (fun s p -> s.TextDocumentFormatting(p))
-            "textDocument/rangeFormatting", requestHandling (fun s p -> s.TextDocumentRangeFormatting(p))
-            "textDocument/onTypeFormatting", requestHandling (fun s p -> s.TextDocumentOnTypeFormatting(p))
-            "textDocument/willSave", requestHandling (fun s p -> s.TextDocumentWillSave(p) |> notificationSuccess)
-            "textDocument/willSaveWaitUntil", requestHandling (fun s p -> s.TextDocumentWillSaveWaitUntil(p))
-            "textDocument/didSave", requestHandling (fun s p -> s.TextDocumentDidSave(p) |> notificationSuccess)
-            "textDocument/didClose", requestHandling (fun s p -> s.TextDocumentDidClose(p) |> notificationSuccess)
-            "textDocument/documentSymbol", requestHandling (fun s p -> s.TextDocumentDocumentSymbol(p))
-            "textDocument/foldingRange", requestHandling (fun s p -> s.TextDocumentFoldingRange(p))
-            "textDocument/selectionRange", requestHandling (fun s p -> s.TextDocumentSelectionRange(p))
-            "textDocument/semanticTokens/full", requestHandling(fun s p -> s.TextDocumentSemanticTokensFull(p))
-            "textDocument/semanticTokens/full/delta", requestHandling(fun s p -> s.TextDocumentSemanticTokensFullDelta(p))
-            "textDocument/semanticTokens/range", requestHandling(fun s p -> s.TextDocumentSemanticTokensRange(p))
-            "workspace/didChangeWatchedFiles", requestHandling (fun s p -> s.WorkspaceDidChangeWatchedFiles(p) |> notificationSuccess)
-            "workspace/didChangeWorkspaceFolders", requestHandling (fun s p -> s.WorkspaceDidChangeWorkspaceFolders (p) |> notificationSuccess)
-            "workspace/didChangeConfiguration", requestHandling (fun s p -> s.WorkspaceDidChangeConfiguration (p) |> notificationSuccess)
-            "workspace/symbol", requestHandling (fun s p -> s.WorkspaceSymbol (p))
-            "workspace/executeCommand ", requestHandling (fun s p -> s.WorkspaceExecuteCommand (p))
-            "shutdown", requestHandling (fun s () -> s.Shutdown() |> notificationSuccess)
-            "exit", requestHandling (fun s () -> s.Exit() |> notificationSuccess)
-        ]
-        |> Map.ofList
 
     type ClientNotificationSender = string -> obj -> AsyncLspResult<unit>
 
@@ -2834,7 +2776,7 @@ module Server =
         | ErrorExitWithoutShutdown = 1
         | ErrorStreamClosed = 2
 
-    let start<'a, 'b when 'a :> LspClient and 'b :> LspServer> (requestHandlings : Map<string,RequestHandling<'b>>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) (serverCreator: 'a -> 'b) =
+    let start<'a when 'a :> LspClient> (setupRequestHandlings : 'a -> Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) =
 
         use jsonRpcHandler = new HeaderDelimitedMessageHandler(output, input, jsonRpcFormatter)
         use jsonRpc = new JsonRpc(jsonRpcHandler)
@@ -2857,47 +2799,30 @@ module Server =
         }
 
         let lspClient = clientCreator (sendServerNotification, { new ClientRequestSender with member __.Send x t  = sendServerRequest x t})
-        use lspServer = serverCreator lspClient
 
-        let mutable haveShutdownRegistered = false
-        let mutable haveExitRegistered = false
         let mutable shutdownReceived = false
         let mutable quitReceived = false
         use quitSemaphore = new SemaphoreSlim(0, 1)
 
-        let onShutdown () =
+        let onShutdown() =
             shutdownReceived <- true
+
+        jsonRpc.AddLocalRpcMethod("shutdown", Action(onShutdown))
 
         let onExit () =
             quitReceived <- true
             quitSemaphore.Release() |> ignore
 
-        let rpcMethodDecoration rpcMethodName: RequestHandlingDecoration =
-            match rpcMethodName with
-            | "shutdown" -> Some onShutdown
-            | "exit" -> Some onExit
-            | _ -> None
+        jsonRpc.AddLocalRpcMethod("exit", Action(onExit))
 
-        for handling in requestHandlings do
+        for handling in setupRequestHandlings lspClient do
             let rpcMethodName = handling.Key
-            let rpcDelegate = handling.Value.Run (rpcMethodDecoration rpcMethodName) lspServer
+            let rpcDelegate = handling.Value
 
             let rpcAttribute = JsonRpcMethodAttribute(rpcMethodName)
             rpcAttribute.UseSingleObjectParameterDeserialization <- true
 
             jsonRpc.AddLocalRpcMethod(rpcDelegate.GetMethodInfo(), rpcDelegate.Target, rpcAttribute)
-
-            // track whether "shutdown"/"exit" must be registered separately (if not already on requestHandlings)
-            match rpcMethodName with
-            | "shutdown" -> haveShutdownRegistered <- true
-            | "exit" -> haveExitRegistered <- true
-            | _ -> ()
-
-        if not haveShutdownRegistered then
-            jsonRpc.AddLocalRpcMethod("shutdown", Action(onShutdown))
-
-        if not haveExitRegistered then
-            jsonRpc.AddLocalRpcMethod("exit", Action(onExit))
 
         jsonRpc.StartListening()
 
