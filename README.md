@@ -37,9 +37,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
  - handle file rename & deletion notifications;
- - don't ignore notifications/requests on startup but queue and run them after initialization is done;
-   - we're using file modifications otherwise made during initialization as we're working with incremental file changes now;
-   - emacs/lsp-mode does not apparently require this but maybe some other servers do?
  - progress support;
  - `textDocument/signatureHelp` support for overload listing/selection
  - properly escape docxml text, e.g. backquote is a special character in markdown;

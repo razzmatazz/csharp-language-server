@@ -1,3 +1,8 @@
+# 0.2.1
+- Carefully observe incoming requests from StreamJsonRpc to actually serialize write-access to solution state; 
+  - Should fix sync issues (another attempt..)
+- Attempt to fix an issue with emacs-29 by setting `bufferSize` in `Console.OpenStandardInput` call.
+
 # 0.2.0
 - Support for document formatting, courtesy of @kstatz12;
 - Fix `textDocument/didOpen` handler:
