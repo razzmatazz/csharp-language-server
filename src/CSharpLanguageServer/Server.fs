@@ -1013,6 +1013,10 @@ let setupServerHandlers options lspClient =
     }
 
     let withReadWriteScope asyncFn param =
+        // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
+        //
+        // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
+        // handler until previous one returns a Task (in our case -- F# `async` object.)
         let stateSnapshot = stateActor.PostAndReply(StartSolutionChange)
 
         // we want to run asyncFn within scope as scope.Dispose() will send FinishSolutionChange and will actually
