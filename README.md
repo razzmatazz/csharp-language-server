@@ -32,8 +32,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - there is still an issue with how requests are scheduled to run, this is esp. an issue with incremental sync;
-   - needs to update ionide.lsp a bit, to run the request code immediately, until it returns a task, not just launch on task pool with async.start*;
  - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
    - or we could limit concurrency level;
  - handle file rename & deletion notifications;
