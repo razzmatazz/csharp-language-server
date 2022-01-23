@@ -1014,8 +1014,13 @@ let setupServerHandlers options lspClient =
 
     let withReadWriteScope asyncFn param =
         let stateSnapshot = stateActor.PostAndReply(StartSolutionChange)
-        use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, fun () -> stateActor.Post(FinishSolutionChange))
-        asyncFn scope param
+
+        // we want to run asyncFn within scope as scope.Dispose() will send FinishSolutionChange and will actually
+        // allow subsequent write request to run
+        async {
+            use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, fun () -> stateActor.Post(FinishSolutionChange))
+            return! asyncFn scope param
+        }
 
     let withNotificationSuccess asyncFn param = async {
         do! asyncFn param

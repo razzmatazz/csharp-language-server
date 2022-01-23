@@ -1,3 +1,7 @@
+# (unreleased)
+- Really fix write-request serialization;
+- Revert the emacs-29 fix, didn't do much.
+
 # 0.2.1
 - Carefully observe incoming requests from StreamJsonRpc to actually serialize write-access to solution state; 
   - Should fix sync issues (another attempt..)
