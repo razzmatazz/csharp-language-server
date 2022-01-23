@@ -1026,6 +1026,14 @@ let setupServerHandlers options lspClient =
             return! asyncFn scope param
         }
 
+    let withTimeoutOfMS (timeoutMS: int) asyncFn param = async {
+        let! baseCT = Async.CancellationToken
+        use timeoutCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(baseCT)
+        timeoutCts.CancelAfter(timeoutMS)
+        return! Async.StartAsTask(asyncFn param, cancellationToken=timeoutCts.Token)
+                |> Async.AwaitTask
+    }
+
     let withNotificationSuccess asyncFn param = async {
         do! asyncFn param
         return Result.Ok()
@@ -1040,7 +1048,7 @@ let setupServerHandlers options lspClient =
         "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
         "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
         "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScope |> requestHandling
-        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> requestHandling
+        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> withTimeoutOfMS 1000 |> requestHandling
         "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
         "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling
         "textDocument/documentHighlight" , handleTextDocumentDocumentHighlight |> withReadOnlyScope |> requestHandling

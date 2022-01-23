@@ -1,4 +1,5 @@
 # (unreleased)
+- Add timeout for codelens requests to avoid excessive CPU usage as that is prone to run for a long time; 
 - Really fix write-request serialization;
 - Revert the emacs-29 fix, didn't do much.
 

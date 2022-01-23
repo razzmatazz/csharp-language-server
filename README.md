@@ -32,8 +32,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - internally-forced timeout for codelens requests (sometimes those seem to take excessive time)?;
-   - or we could limit concurrency level;
  - handle file rename & deletion notifications;
  - progress support;
  - `textDocument/signatureHelp` support for overload listing/selection
