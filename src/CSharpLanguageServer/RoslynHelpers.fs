@@ -18,6 +18,7 @@ open Ionide.LanguageServerProtocol
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
+open Microsoft.CodeAnalysis.SignatureHelp
 open System.Collections.Immutable
 
 let roslynTagToLspCompletion tag =
@@ -458,6 +459,9 @@ let refactoringProviderInstances =
 let codeFixProviderInstances =
     instantiateRoslynProviders<CodeFixProvider>
         (fun _ -> true)
+
+let signatureHelpProviderInstances =
+    instantiateRoslynProviders<ISignatureHelpProvider> (fun _ -> true)
 
 let tryLoadSolutionOnPath logMessage solutionPath = async {
     try

@@ -439,7 +439,10 @@ let setupServerHandlers options lspClient =
                                Some
                                     { FirstTriggerCharacter = ';'
                                       MoreTriggerCharacter = Some([| '}'; ')' |]) }
-                        SignatureHelpProvider = None
+                        SignatureHelpProvider =
+                            Some { TriggerCharacters = Some [| '('; ',' |]
+                                   RetriggerCharacters = Some [| ','; ')' |]
+                                 }
                         CompletionProvider =
                             Some { ResolveProvider = None
                                    TriggerCharacters = Some ([| '.'; '''; |])
@@ -963,6 +966,12 @@ let setupServerHandlers options lspClient =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, scope.ClientCapabilities.Value) |> Some |> success
     }
 
+    let handleTextDocumentSignatureHelp (scope: ServerRequestScope) (helpParams: Types.SignatureHelpParams): AsyncLspResult<Types.SignatureHelp option> = async {
+        //let! maybeSymbol = scope.GetSymbolAtPositionOnUserDocument helpParams.TextDocument.Uri helpParams.Position
+
+        return None |> success
+    }
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1060,6 +1069,7 @@ let setupServerHandlers options lspClient =
         "textDocument/rangeFormatting"   , handleTextDocumentRangeFormatting   |> withReadOnlyScope |> requestHandling
         "textDocument/references"        , handleTextDocumentReferences        |> withReadOnlyScope |> requestHandling
         "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
+        "textDocument/signatureHelp"     , handleTextDocumentSignatureHelp     |> withReadOnlyScope |> requestHandling
         "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
         "csharp/metadata"                , handleCSharpMetadata                |> withReadOnlyScope |> requestHandling
     ]
