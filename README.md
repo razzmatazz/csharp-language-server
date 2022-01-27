@@ -32,6 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - we should publish diagnostics to all open files when a file is changes for a more seamless experience;
+   - reported by [@vytautassurvila](https://github.com/vytautassurvila)
  - handle file rename & deletion notifications;
  - progress support;
  - `textDocument/signatureHelp` support for overload listing/selection
