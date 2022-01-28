@@ -1062,10 +1062,17 @@ let setupServerHandlers options lspClient =
                 |> Async.AwaitTask
     }
 
-    let withNotificationSuccess asyncFn param = async {
-        do! asyncFn param
-        return Result.Ok()
-    }
+    let withNotificationSuccess asyncFn param =
+        // we want to run asyncFn immediately outside of async scope so we still
+        // handle request immediately as sent in by StreamJsonRpc and handler
+        // has a change to process this before next request is accepted
+        let asyncFnResult = asyncFn param
+
+        // allow subsequent write request to run
+        async {
+            do! asyncFnResult
+            return Result.Ok()
+        }
 
     [
         "initialize"                     , handleInitialize                    |> withReadWriteScope |> requestHandling
