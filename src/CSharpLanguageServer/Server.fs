@@ -110,6 +110,32 @@ let emptyServerState = { ClientCapabilities = None
                          RunningChangeRequest = None
                          ChangeRequestQueue = [] }
 
+let getDocumentOfTypeForUri state docType (u: string) =
+    let uri = Uri u
+
+    match state.Solution with
+    | Some solution ->
+        let matchingUserDocuments =
+            solution.Projects
+            |> Seq.collect (fun p -> p.Documents)
+            |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
+
+        let matchingUserDocumentMaybe =
+            match matchingUserDocuments with
+            | [d] -> Some (d, UserDocument)
+            | _ -> None
+
+        let matchingDecompiledDocumentMaybe =
+            Map.tryFind u state.DecompiledMetadata
+            |> Option.map (fun x -> (x.Document, DecompiledDocument))
+
+        match docType with
+        | UserDocument -> matchingUserDocumentMaybe
+        | DecompiledDocument -> matchingDecompiledDocumentMaybe
+        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+
+    | None -> None
+
 type ServerStateEvent =
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
@@ -337,52 +363,64 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
     member _.EmitMany es = for e in es do emitServerEvent e
 
 type DiagnosticsEvent =
-    | TimerTick
-    | PublishDiagnosticsOnDocument of string * Document
+    | DocumentChange of string * DateTime
+    | ProcessPendingDiagnostics
 
-type DiagnosticsActorState = {
-    PendingDiagnostics: Map<string, Document>
+type DiagnosticsState = {
+    PendingWorkItems: string list
+    WorkItemLog: Map<string, DateTime>
     LspClient: CSharpLspClient option
 }
 
-let emptyDiagnosticsActorState = { PendingDiagnostics = Map.empty; LspClient = None }
+let emptyDiagnosticsState = {
+    PendingWorkItems = []
+    WorkItemLog = Map.empty
+    LspClient = None }
 
-let diagnosticsEventHandling (initialState: DiagnosticsActorState) (inbox: MailboxProcessor<DiagnosticsEvent>) =
-    let rec loop state = async {
-        let! msg = inbox.Receive()
+let processDiagnosticsEvent logMessage
+                            (getDocumentForUri: string -> Async<(Document * ServerDocumentType) option>)
+                            (state: DiagnosticsState)
+                            event =
+    match event with
+    | DocumentChange (uri, timestamp) -> async {
+        let maxWorkitemsToKeep = 4
 
-        let! newState =
-            match msg with
-            | PublishDiagnosticsOnDocument (uri, doc) -> async {
-                return { state with PendingDiagnostics = state.PendingDiagnostics |> Map.add uri doc }
-              }
+        let newWorkItemLog =
+            state.WorkItemLog
+            |> Map.add uri timestamp
+            |> Seq.sortByDescending (fun kv -> kv.Value)
+            |> Seq.truncate maxWorkitemsToKeep
+            |> Seq.map (fun kv -> (kv.Key, kv.Value))
 
-            | TimerTick -> async {
-                let! ct = Async.CancellationToken
-                for kv in state.PendingDiagnostics do
-                    let docUri = kv.Key
-                    let doc = kv.Value
-                    let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                    match semanticModelMaybe |> Option.ofObj with
-                    | Some semanticModel ->
-                        let diagnostics =
-                            semanticModel.GetDiagnostics()
-                            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                            |> Array.ofSeq
+        return { state with
+                    WorkItemLog = newWorkItemLog |> Map.ofSeq
+                    PendingWorkItems = newWorkItemLog |> Seq.map fst |> List.ofSeq }
+      }
 
-                        match state.LspClient with
-                        | Some lspClient ->
-                            do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-                        | None -> ()
+    | ProcessPendingDiagnostics -> async {
+        let! ct = Async.CancellationToken
+
+        for docUri in state.PendingWorkItems do
+            let! docAndTypeMaybe = getDocumentForUri docUri
+            match docAndTypeMaybe with
+            | Some (doc, _) ->
+                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                match semanticModelMaybe |> Option.ofObj with
+                | Some semanticModel ->
+                    let diagnostics =
+                        semanticModel.GetDiagnostics()
+                        |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                        |> Array.ofSeq
+
+                    match state.LspClient with
+                    | Some lspClient ->
+                        do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
                     | None -> ()
+                | None -> ()
+            | None -> ()
 
-                return { state with PendingDiagnostics = Map.empty }
-              }
-
-        return! loop newState
-    }
-
-    loop initialState
+        return { state with PendingWorkItems = [] }
+      }
 
 let setupServerHandlers options lspClient =
     let mutable logMessageCurrent = Action<string>(fun _ -> ())
@@ -391,14 +429,36 @@ let setupServerHandlers options lspClient =
     let stateActor = MailboxProcessor.Start(
         serverEventLoop logMessageInvoke { emptyServerState with Options = options })
 
+    let getDocumentForUriFromCurrentState docType uri = async {
+        let! state = stateActor.PostAndAsyncReply(GetState)
+        return getDocumentOfTypeForUri state docType uri
+    }
+
     let diagnostics = MailboxProcessor.Start(
-        diagnosticsEventHandling { emptyDiagnosticsActorState with LspClient = Some lspClient })
+        fun inbox -> async {
+            let initialState = { emptyDiagnosticsState with LspClient = Some lspClient }
+
+            let rec loop state = async {
+                try
+                    let! msg = inbox.Receive()
+                    let! newState = processDiagnosticsEvent logMessageInvoke
+                                                            (getDocumentForUriFromCurrentState AnyDocument)
+                                                            state
+                                                            msg
+                    return! loop newState
+                with
+                | ex -> logMessageInvoke (sprintf "unhandled exception in `diagnostics`: %s" (ex|>string))
+                        raise ex
+            }
+
+            return! loop initialState
+        })
 
     let mutable timer: System.Threading.Timer option = None
 
     let setupTimer () =
         timer <- Some (new System.Threading.Timer(
-            System.Threading.TimerCallback(fun _ -> do diagnostics.Post(DiagnosticsEvent.TimerTick)),
+            System.Threading.TimerCallback(fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)),
             null, dueTime=1000, period=250))
 
     let logMessageWithLevel l message =
@@ -498,7 +558,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnostics.Post(
-                    PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, updatedDoc))
+                    DocumentChange (openParams.TextDocument.Uri, DateTime.Now))
             | _ -> ()
         | None ->
             match openParams.TextDocument.Uri.StartsWith("file://") with
@@ -514,7 +574,7 @@ let setupServerHandlers options lspClient =
                     scope.Emit(SolutionChange newDoc.Project.Solution)
 
                     diagnostics.Post(
-                        PublishDiagnosticsOnDocument (openParams.TextDocument.Uri, newDoc))
+                        DocumentChange (openParams.TextDocument.Uri, DateTime.Now))
 
                 | None -> ()
             | false -> ()
@@ -541,7 +601,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version |> Option.defaultValue 0))
 
                 diagnostics.Post(
-                    PublishDiagnosticsOnDocument (changeParams.TextDocument.Uri, updatedDoc))
+                    DocumentChange (changeParams.TextDocument.Uri, DateTime.Now))
 
         | None -> ()
     }
@@ -564,7 +624,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(SolutionChange newDoc.Project.Solution)
 
                 diagnostics.Post(
-                    PublishDiagnosticsOnDocument (saveParams.TextDocument.Uri, newDoc))
+                    DocumentChange (saveParams.TextDocument.Uri, DateTime.Now))
 
             | None -> ()
     }
