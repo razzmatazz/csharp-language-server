@@ -1,4 +1,4 @@
-# (unreleased)
+# 0.3.0
 - Run diagnostics resolution outside the main state actor so we don't lock up other processing;
 - Add timeout for codelens requests to avoid excessive CPU usage as that is prone to run for a long time; 
 - Really fix write-request serialization;
