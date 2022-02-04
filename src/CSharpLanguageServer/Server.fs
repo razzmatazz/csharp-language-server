@@ -248,7 +248,7 @@ let rec processServerEvent _logMessage state msg: Async<ServerState> = async {
                | [] -> newState
                | nextPendingRequest :: queueRemainder ->
                     nextPendingRequest.Reply(newState)
-                    { state with
+                    { newState with
                           ChangeRequestQueue = queueRemainder
                           RunningChangeRequest = Some nextPendingRequest }
 
