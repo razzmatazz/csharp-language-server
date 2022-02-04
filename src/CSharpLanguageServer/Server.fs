@@ -397,7 +397,6 @@ let setupServerHandlers options lspClient =
     let mutable timer: System.Threading.Timer option = None
 
     let setupTimer () =
-        logMessageInvoke "starting timer"
         timer <- Some (new System.Threading.Timer(
             System.Threading.TimerCallback(fun _ -> do diagnostics.Post(DiagnosticsEvent.TimerTick)),
             null, dueTime=1000, period=250))
