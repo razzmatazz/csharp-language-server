@@ -2756,7 +2756,7 @@ module Server =
 
     /// Notifications don't generate a response or error, but to unify things we consider them as always successful.
     /// They will still not send any response because their ID is null.
-    let notificationSuccess (response: Async<unit>) = async {
+    let private notificationSuccess (response: Async<unit>) = async {
         do! response
         return Result.Ok ()
     }
@@ -2776,11 +2776,11 @@ module Server =
         | ErrorExitWithoutShutdown = 1
         | ErrorStreamClosed = 2
 
-    let start<'a when 'a :> LspClient> (setupRequestHandlings : 'a -> Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) =
+    let startWithSetup<'a when 'a :> LspClient> (setupRequestHandlings : 'a -> Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) =
 
         use jsonRpcHandler = new HeaderDelimitedMessageHandler(output, input, jsonRpcFormatter)
         use jsonRpc = new JsonRpc(jsonRpcHandler)
-                            
+
         /// When the server wants to send a notification to the client
         let sendServerNotification (rpcMethod: string) (notificationObj: obj): AsyncLspResult<unit> = async {
             do! jsonRpc.NotifyWithParameterObjectAsync(rpcMethod, notificationObj)
@@ -2833,6 +2833,67 @@ module Server =
         | false, true -> LspCloseReason.ErrorExitWithoutShutdown
         | _ -> LspCloseReason.ErrorStreamClosed
 
+    type ServerRequestHandling<'server when 'server :> LspServer> = {
+        Run: 'server -> Delegate
+    }
+
+    let serverRequestHandling<'server, 'param, 'result when 'server :> LspServer>
+            (run: 'server -> 'param -> AsyncLspResult<'result>): ServerRequestHandling<'server> =
+        { Run = fun s -> requestHandling (run s) }
+
+    let defaultRequestHandlings () : Map<string, ServerRequestHandling<'server>> =
+        let requestHandling = serverRequestHandling
+
+        [
+            "initialize", requestHandling (fun s p -> s.Initialize(p))
+            "initialized", requestHandling (fun s p -> s.Initialized(p) |> notificationSuccess)
+            "textDocument/hover", requestHandling (fun s p -> s.TextDocumentHover(p))
+            "textDocument/didOpen", requestHandling (fun s p -> s.TextDocumentDidOpen(p) |> notificationSuccess)
+            "textDocument/didChange", requestHandling (fun s p -> s.TextDocumentDidChange(p) |> notificationSuccess)
+            "textDocument/completion", requestHandling (fun s p -> s.TextDocumentCompletion(p))
+            "completionItem/resolve", requestHandling (fun s p -> s.CompletionItemResolve(p))
+            "textDocument/rename", requestHandling (fun s p -> s.TextDocumentRename(p))
+            "textDocument/definition", requestHandling (fun s p -> s.TextDocumentDefinition(p))
+            "textDocument/typeDefinition", requestHandling (fun s p -> s.TextDocumentTypeDefinition(p))
+            "textDocument/implementation", requestHandling (fun s p -> s.TextDocumentImplementation(p))
+            "textDocument/codeAction", requestHandling (fun s p -> s.TextDocumentCodeAction(p))
+            "codeAction/resolve", requestHandling (fun s p -> s.CodeActionResolve(p))
+            "textDocument/codeLens", requestHandling (fun s p -> s.TextDocumentCodeLens(p))
+            "codeLens/resolve", requestHandling (fun s p -> s.CodeLensResolve(p))
+            "textDocument/references", requestHandling (fun s p -> s.TextDocumentReferences(p))
+            "textDocument/documentHighlight", requestHandling (fun s p -> s.TextDocumentDocumentHighlight(p))
+            "textDocument/documentLink", requestHandling (fun s p -> s.TextDocumentDocumentLink(p))
+            "textDocument/signatureHelp", requestHandling (fun s p -> s.TextDocumentSignatureHelp(p))
+            "documentLink/resolve", requestHandling (fun s p -> s.DocumentLinkResolve(p))
+            "textDocument/documentColor", requestHandling (fun s p -> s.TextDocumentDocumentColor(p))
+            "textDocument/colorPresentation", requestHandling (fun s p -> s.TextDocumentColorPresentation(p))
+            "textDocument/formatting", requestHandling (fun s p -> s.TextDocumentFormatting(p))
+            "textDocument/rangeFormatting", requestHandling (fun s p -> s.TextDocumentRangeFormatting(p))
+            "textDocument/onTypeFormatting", requestHandling (fun s p -> s.TextDocumentOnTypeFormatting(p))
+            "textDocument/willSave", requestHandling (fun s p -> s.TextDocumentWillSave(p) |> notificationSuccess)
+            "textDocument/willSaveWaitUntil", requestHandling (fun s p -> s.TextDocumentWillSaveWaitUntil(p))
+            "textDocument/didSave", requestHandling (fun s p -> s.TextDocumentDidSave(p) |> notificationSuccess)
+            "textDocument/didClose", requestHandling (fun s p -> s.TextDocumentDidClose(p) |> notificationSuccess)
+            "textDocument/documentSymbol", requestHandling (fun s p -> s.TextDocumentDocumentSymbol(p))
+            "textDocument/foldingRange", requestHandling (fun s p -> s.TextDocumentFoldingRange(p))
+            "textDocument/selectionRange", requestHandling (fun s p -> s.TextDocumentSelectionRange(p))
+            "textDocument/semanticTokens/full", requestHandling(fun s p -> s.TextDocumentSemanticTokensFull(p))
+            "textDocument/semanticTokens/full/delta", requestHandling(fun s p -> s.TextDocumentSemanticTokensFullDelta(p))
+            "textDocument/semanticTokens/range", requestHandling(fun s p -> s.TextDocumentSemanticTokensRange(p))
+            "workspace/didChangeWatchedFiles", requestHandling (fun s p -> s.WorkspaceDidChangeWatchedFiles(p) |> notificationSuccess)
+            "workspace/didChangeWorkspaceFolders", requestHandling (fun s p -> s.WorkspaceDidChangeWorkspaceFolders (p) |> notificationSuccess)
+            "workspace/didChangeConfiguration", requestHandling (fun s p -> s.WorkspaceDidChangeConfiguration (p) |> notificationSuccess)
+            "workspace/symbol", requestHandling (fun s p -> s.WorkspaceSymbol (p))
+            "workspace/executeCommand ", requestHandling (fun s p -> s.WorkspaceExecuteCommand (p))
+            "shutdown", requestHandling (fun s () -> s.Shutdown() |> notificationSuccess)
+            "exit", requestHandling (fun s () -> s.Exit() |> notificationSuccess)
+        ]
+        |> Map.ofList
+
+    let start<'a, 'b when 'a :> LspClient and 'b :> LspServer> (requestHandlings : Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) (serverCreator: 'a -> 'b) =
+        let requestHandlingSetup _ = requestHandlings
+        startWithSetup requestHandlingSetup
+
 module Client =
     open System
     open System.IO
@@ -2840,8 +2901,6 @@ module Client =
     open Newtonsoft.Json
     open Newtonsoft.Json.Serialization
 
-    open StreamJsonRpc
-    open Nerdbank.Streams
     open JsonRpc
 
     let logger = LogProvider.getLoggerByName "LSP Client"

@@ -1103,7 +1103,7 @@ let startCore options =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
-    Ionide.LanguageServerProtocol.Server.start
+    Ionide.LanguageServerProtocol.Server.startWithSetup
         (setupServerHandlers options)
         input
         output
