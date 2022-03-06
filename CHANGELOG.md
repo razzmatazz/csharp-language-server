@@ -1,3 +1,6 @@
+# (unreleased)
+- Change how diagnostics are calculated (again) so we sent it for all the documents that we know are open, once a random file has been modified, in the descending order that they were touched.
+
 # 0.3.0
 - Run diagnostics resolution outside the main state actor so we don't lock up other processing;
 - Add timeout for codelens requests to avoid excessive CPU usage as that is prone to run for a long time; 
