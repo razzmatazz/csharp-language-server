@@ -363,47 +363,68 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
     member _.EmitMany es = for e in es do emitServerEvent e
 
 type DiagnosticsEvent =
+    | DocumentOpen of string * DateTime
     | DocumentChange of string * DateTime
+    | DocumentClose of string
     | ProcessPendingDiagnostics
 
 type DiagnosticsState = {
-    PendingWorkItems: string list
-    WorkItemLog: Map<string, DateTime>
-    LspClient: CSharpLspClient option
+    DocumentBacklog: string list
+    DocumentChanges: Map<string, DateTime>
 }
 
-let emptyDiagnosticsState = {
-    PendingWorkItems = []
-    WorkItemLog = Map.empty
-    LspClient = None }
+let emptyDiagnosticsState = { DocumentBacklog = []; DocumentChanges = Map.empty }
 
 let processDiagnosticsEvent logMessage
+                            (lspClient: CSharpLspClient)
                             (getDocumentForUri: string -> Async<(Document * ServerDocumentType) option>)
                             (state: DiagnosticsState)
                             event =
     match event with
+    | DocumentOpen (uri, timestamp) ->
+        async { return state, [ DocumentChange (uri, timestamp) ] }
+
     | DocumentChange (uri, timestamp) -> async {
-        let maxWorkitemsToKeep = 4
+        // on document change we:
+        // - update DocumentChanges map so we can track doc change timestamps per doc
+        // - rebuild PendingWorkItems so we re-run pending diagnostics for the last modified docs first
+        let updatedDocumentChanges = state.DocumentChanges |> Map.add uri timestamp
 
-        let newWorkItemLog =
-            state.WorkItemLog
-            |> Map.add uri timestamp
+        let newBacklog =
+            state.DocumentChanges
             |> Seq.sortByDescending (fun kv -> kv.Value)
-            |> Seq.truncate maxWorkitemsToKeep
-            |> Seq.map (fun kv -> (kv.Key, kv.Value))
+            |> Seq.map (fun kv -> kv.Key)
+            |> List.ofSeq
 
-        return { state with
-                    WorkItemLog = newWorkItemLog |> Map.ofSeq
-                    PendingWorkItems = newWorkItemLog |> Seq.map fst |> List.ofSeq }
+        let newState = { state with DocumentChanges = updatedDocumentChanges
+                                    DocumentBacklog = newBacklog }
+        return newState, []
+      }
+
+    | DocumentClose uri -> async {
+        let prunedBacklog = state.DocumentBacklog
+                            |> Seq.filter (fun x -> x <> uri)
+                            |> List.ofSeq
+
+        let prunedDocumentChanges = state.DocumentChanges |> Map.remove uri
+
+        let newState = { state with DocumentBacklog = prunedBacklog
+                                    DocumentChanges = prunedDocumentChanges }
+        return newState, []
       }
 
     | ProcessPendingDiagnostics -> async {
-        let! ct = Async.CancellationToken
+        let docUriMaybe, newBacklog =
+            match state.DocumentBacklog with
+            | [] -> (None, [])
+            | uri :: remainder -> (Some uri, remainder)
 
-        for docUri in state.PendingWorkItems do
+        match docUriMaybe with
+        | Some docUri ->
             let! docAndTypeMaybe = getDocumentForUri docUri
             match docAndTypeMaybe with
             | Some (doc, _) ->
+                let! ct = Async.CancellationToken
                 let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
                 match semanticModelMaybe |> Option.ofObj with
                 | Some semanticModel ->
@@ -412,14 +433,16 @@ let processDiagnosticsEvent logMessage
                         |> Seq.map RoslynHelpers.roslynToLspDiagnostic
                         |> Array.ofSeq
 
-                    match state.LspClient with
-                    | Some lspClient ->
-                        do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-                    | None -> ()
+                    do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
                 | None -> ()
             | None -> ()
+        | None -> ()
 
-        return { state with PendingWorkItems = [] }
+        let eventsToPost = match newBacklog with
+                           | [] -> []
+                           | _ -> [ ProcessPendingDiagnostics ]
+
+        return { state with DocumentBacklog = newBacklog }, eventsToPost
       }
 
 let setupServerHandlers options lspClient =
@@ -436,22 +459,25 @@ let setupServerHandlers options lspClient =
 
     let diagnostics = MailboxProcessor.Start(
         fun inbox -> async {
-            let initialState = { emptyDiagnosticsState with LspClient = Some lspClient }
-
             let rec loop state = async {
                 try
                     let! msg = inbox.Receive()
-                    let! newState = processDiagnosticsEvent logMessageInvoke
-                                                            (getDocumentForUriFromCurrentState AnyDocument)
-                                                            state
-                                                            msg
+                    let! (newState, eventsToPost) =
+                        processDiagnosticsEvent logMessageInvoke
+                                                lspClient
+                                                (getDocumentForUriFromCurrentState AnyDocument)
+                                                state
+                                                msg
+
+                    for ev in eventsToPost do inbox.Post(ev)
+
                     return! loop newState
                 with
                 | ex -> logMessageInvoke (sprintf "unhandled exception in `diagnostics`: %s" (ex|>string))
                         raise ex
             }
 
-            return! loop initialState
+            return! loop emptyDiagnosticsState
         })
 
     let mutable timer: System.Threading.Timer option = None
@@ -558,7 +584,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnostics.Post(
-                    DocumentChange (openParams.TextDocument.Uri, DateTime.Now))
+                    DocumentOpen (openParams.TextDocument.Uri, DateTime.Now))
             | _ -> ()
         | None ->
             match openParams.TextDocument.Uri.StartsWith("file://") with
@@ -631,6 +657,7 @@ let setupServerHandlers options lspClient =
 
     let handleTextDocumentDidClose (scope: ServerRequestScope) (closeParams: Types.DidCloseTextDocumentParams): Async<unit> =
         scope.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
+        diagnostics.Post(DocumentClose closeParams.TextDocument.Uri)
         async.Return ()
 
     let handleTextDocumentCodeAction (scope: ServerRequestScope) (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
