@@ -85,7 +85,7 @@ type CSharpCodeActionResolutionData = {
     Range: Range
 }
 
-type DecompiledMetadata = { Metadata: CSharpMetadataResponse; Document: Document }
+type DecompiledMetadataDocument = { Metadata: CSharpMetadataResponse; Document: Document }
 
 type ServerDocumentType =
      | UserDocument // user Document from solution, on disk
@@ -96,7 +96,7 @@ type ServerState = {
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
-    DecompiledMetadata: Map<string, DecompiledMetadata>
+    DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     Options: Options
     RunningChangeRequest: AsyncReplyChannel<ServerState> option
     ChangeRequestQueue: AsyncReplyChannel<ServerState> list
@@ -139,7 +139,7 @@ let getDocumentOfTypeForUri state docType (u: string) =
 type ServerStateEvent =
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
-    | DecompiledMetadataAdd of string * DecompiledMetadata
+    | DecompiledMetadataAdd of string * DecompiledMetadataDocument
     | OpenDocVersionAdd of string * int
     | OpenDocVersionRemove of string
     | GetState of AsyncReplyChannel<ServerState>
@@ -307,18 +307,21 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
     loop initialState
 
 type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit -> unit) =
+    let mutable solutionMaybe = state.Solution
+
     interface IDisposable with
         member _.Dispose() = onDispose()
 
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities
-    member _.Solution = state.Solution.Value
+    member _.Solution = solutionMaybe.Value
     member _.OpenDocVersions = state.OpenDocVersions
+    member _.DecompiledMetadata = state.DecompiledMetadata
 
-    member _.GetDocumentForUriOfType docType (u: string) =
+    member this.GetDocumentForUriOfType docType (u: string) =
         let uri = Uri u
 
-        match state.Solution with
+        match solutionMaybe with
         | Some solution ->
             let matchingUserDocuments =
                 solution.Projects
@@ -331,14 +334,13 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
                 | _ -> None
 
             let matchingDecompiledDocumentMaybe =
-                Map.tryFind u state.DecompiledMetadata
+                Map.tryFind u this.DecompiledMetadata
                 |> Option.map (fun x -> (x.Document, DecompiledDocument))
 
             match docType with
             | UserDocument -> matchingUserDocumentMaybe
             | DecompiledDocument -> matchingDecompiledDocumentMaybe
             | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-
         | None -> None
 
     member x.GetUserDocumentForUri (u: string) = x.GetDocumentForUriOfType UserDocument u |> Option.map fst
@@ -359,14 +361,23 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
 
     member x.GetSymbolAtPositionOnAnyDocument uri pos = x.GetSymbolAtPositionOfType AnyDocument uri pos
     member x.GetSymbolAtPositionOnUserDocument uri pos = x.GetSymbolAtPositionOfType UserDocument uri pos
-    member _.Emit ev = emitServerEvent ev
-    member _.EmitMany es = for e in es do emitServerEvent e
+
+    member x.Emit ev =
+        match ev with
+        | SolutionChange newSolution ->
+            solutionMaybe <- Some newSolution
+        | _ -> ()
+
+        emitServerEvent ev
+
+    member x.EmitMany es = for e in es do x.Emit e
 
 type DiagnosticsEvent =
-    | DocumentOpen of string * DateTime
-    | DocumentChange of string * DateTime
+    | DocumentOpenOrChange of string * DateTime
     | DocumentClose of string
     | ProcessPendingDiagnostics
+    | DocumentBacklogUpdate
+    | DocumentRemoval of string
 
 type DiagnosticsState = {
     DocumentBacklog: string list
@@ -381,23 +392,26 @@ let processDiagnosticsEvent logMessage
                             (state: DiagnosticsState)
                             event =
     match event with
-    | DocumentOpen (uri, timestamp) ->
-        async { return state, [ DocumentChange (uri, timestamp) ] }
+    | DocumentRemoval uri -> async {
+        let updatedDocumentChanges = state.DocumentChanges |> Map.remove uri
+        let newState = { state with DocumentChanges = updatedDocumentChanges }
+        return newState, [ DocumentBacklogUpdate ]
+      }
 
-    | DocumentChange (uri, timestamp) -> async {
-        // on document change we:
-        // - update DocumentChanges map so we can track doc change timestamps per doc
-        // - rebuild PendingWorkItems so we re-run pending diagnostics for the last modified docs first
-        let updatedDocumentChanges = state.DocumentChanges |> Map.add uri timestamp
+    | DocumentOpenOrChange (uri, timestamp) -> async {
+        let newDocChanges = state.DocumentChanges |> Map.add uri timestamp
+        let newState = { state with DocumentChanges = newDocChanges }
+        return newState, [ DocumentBacklogUpdate ]
+      }
 
+    | DocumentBacklogUpdate -> async {
         let newBacklog =
             state.DocumentChanges
             |> Seq.sortByDescending (fun kv -> kv.Value)
             |> Seq.map (fun kv -> kv.Key)
             |> List.ofSeq
 
-        let newState = { state with DocumentChanges = updatedDocumentChanges
-                                    DocumentBacklog = newBacklog }
+        let newState = { state with DocumentBacklog = newBacklog }
         return newState, []
       }
 
@@ -523,6 +537,24 @@ let setupServerHandlers options lspClient =
         scope.Emit(SolutionChange solution.Value)
         infoMessage "ok, solution loaded -- initialization finished"
 
+        infoMessage "registering w/client for didChangeWatchedFiles notifications"
+
+        let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
+                                  Kind = None }
+
+        let didChangeWatchedFilesRegistration: Types.Registration =
+            { Id = "id:workspace/didChangeWatchedFiles"
+              Method = "workspace/didChangeWatchedFiles"
+              RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
+            }
+
+        let! regResult = lspClient.ClientRegisterCapability(
+            { Registrations = [| didChangeWatchedFilesRegistration |] })
+
+        match regResult with
+        | Ok _ -> ()
+        | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
+
         setupTimer ()
 
         return success {
@@ -584,7 +616,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnostics.Post(
-                    DocumentOpen (openParams.TextDocument.Uri, DateTime.Now))
+                    DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
             | _ -> ()
         | None ->
             match openParams.TextDocument.Uri.StartsWith("file://") with
@@ -600,7 +632,7 @@ let setupServerHandlers options lspClient =
                     scope.Emit(SolutionChange newDoc.Project.Solution)
 
                     diagnostics.Post(
-                        DocumentChange (openParams.TextDocument.Uri, DateTime.Now))
+                        DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
 
                 | None -> ()
             | false -> ()
@@ -627,7 +659,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version |> Option.defaultValue 0))
 
                 diagnostics.Post(
-                    DocumentChange (changeParams.TextDocument.Uri, DateTime.Now))
+                    DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
 
         | None -> ()
     }
@@ -650,7 +682,7 @@ let setupServerHandlers options lspClient =
                 scope.Emit(SolutionChange newDoc.Project.Solution)
 
                 diagnostics.Post(
-                    DocumentChange (saveParams.TextDocument.Uri, DateTime.Now))
+                    DocumentOpenOrChange (saveParams.TextDocument.Uri, DateTime.Now))
 
             | None -> ()
     }
@@ -1082,11 +1114,36 @@ let setupServerHandlers options lspClient =
         return symbols |> Array.ofSeq |> Some |> success
     }
 
+    let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<unit> = async {
+        for change in changeParams.Changes do
+            match change.Type with
+            | FileChangeType.Created ->
+                // TODO
+                ()
+
+            | FileChangeType.Changed ->
+                // TODO
+                ()
+
+            | FileChangeType.Deleted ->
+                match scope.GetDocumentForUriOfType UserDocument change.Uri with
+                | Some (existingDoc, docType) ->
+                    let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
+
+                    scope.Emit(SolutionChange updatedProject.Solution)
+                    scope.Emit(OpenDocVersionRemove change.Uri)
+
+                    diagnostics.Post(DocumentRemoval change.Uri)
+                | None -> ()
+
+            | _ -> ()
+    }
+
     let handleCSharpMetadata (scope: ServerRequestScope) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
         let uri = metadataParams.TextDocument.Uri
 
         let metadataMaybe =
-            scope.State.DecompiledMetadata
+            scope.DecompiledMetadata
             |> Map.tryFind uri
             |> Option.map (fun x -> x.Metadata)
 
@@ -1182,6 +1239,7 @@ let setupServerHandlers options lspClient =
         "textDocument/references"        , handleTextDocumentReferences        |> withReadOnlyScope |> requestHandling
         "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
         "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
+        "workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles |> withReadWriteScope |> withNotificationSuccess |> requestHandling
         "csharp/metadata"                , handleCSharpMetadata                |> withReadOnlyScope |> requestHandling
     ]
     |> Map.ofList
