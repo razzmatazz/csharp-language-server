@@ -1115,15 +1115,41 @@ let setupServerHandlers options lspClient =
     }
 
     let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<unit> = async {
+        // TODO: reload solution on csproj/sln changes
+
+        let tryReloadDocumentOnUri uri = async {
+            match scope.GetDocumentForUriOfType UserDocument uri with
+            | Some (doc, docType) ->
+                let fileText = uri.Substring("file://".Length) |> File.ReadAllText
+                let updatedDoc = SourceText.From(fileText) |> doc.WithText
+
+                scope.Emit(SolutionChange updatedDoc.Project.Solution)
+                diagnostics.Post(DocumentBacklogUpdate)
+            | None ->
+                match uri.StartsWith("file://") with
+                | true ->
+                    // ok, this document is not on solution, register a new one
+                    let docFilePath = uri.Substring("file://".Length)
+                    let fileText = docFilePath |> File.ReadAllText
+                    let newDocMaybe = tryAddDocument logMessage
+                                                     docFilePath
+                                                     fileText
+                                                     scope.Solution
+                    match newDocMaybe with
+                    | Some newDoc ->
+                        scope.Emit(SolutionChange newDoc.Project.Solution)
+                        diagnostics.Post(DocumentBacklogUpdate)
+                    | None -> ()
+                | false -> ()
+        }
+
         for change in changeParams.Changes do
             match change.Type with
             | FileChangeType.Created ->
-                // TODO
-                ()
+                do! tryReloadDocumentOnUri change.Uri
 
             | FileChangeType.Changed ->
-                // TODO
-                ()
+                do! tryReloadDocumentOnUri change.Uri
 
             | FileChangeType.Deleted ->
                 match scope.GetDocumentForUriOfType UserDocument change.Uri with
