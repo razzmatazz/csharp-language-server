@@ -557,14 +557,13 @@ let setupServerHandlers options lspClient =
 
         infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
-                            (JsonConvert.SerializeObject(options, StringEnumConverter())))
+                            (options |> serialize |> string))
+
         infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
         scope.Emit(ClientCapabilityChange p.Capabilities)
-        //infoMessage (sprintf "client caps: %s" (serialize p.Capabilities |> string))
 
-        infoMessage "registering w/client for didChangeWatchedFiles notifications"
-
+        // registering w/client for didChangeWatchedFiles notifications"
         let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
                                   Kind = None }
 
@@ -581,8 +580,10 @@ let setupServerHandlers options lspClient =
         | Ok _ -> ()
         | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
 
+        // setup timer so actors get period ticks
         setupTimer ()
 
+        // start solution loading (on stateActor)
         scope.Emit(SolutionReload)
 
         return success {
