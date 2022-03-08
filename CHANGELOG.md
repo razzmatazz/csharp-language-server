@@ -1,4 +1,4 @@
-# 0.4.0 (unreleased)
+# 0.4.0-Druskininkai
 - Update Roslyn and ICSharpCode libs;
 - Observe and update solution when unopen files are changed/added/removed;
   - this should reduce the need to restart lsp workspace often after adding/removing files or after git branch switches;
