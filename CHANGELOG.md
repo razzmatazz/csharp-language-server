@@ -1,4 +1,7 @@
-# (unreleased)
+# 0.4.0 (unreleased)
+- Observe and update solution when unopen files are changed/added/removed;
+  - this should reduce the need to restart lsp workspace often after adding/removing files or after git branch switches;
+- Reload solution on .sln or .csproj change;
 - Change how diagnostics are calculated (again) so we sent it for all the documents that we know are open, once a random file has been modified, in the descending order that they were touched.
 
 # 0.3.0
