@@ -100,6 +100,7 @@ type ServerState = {
     Options: Options
     RunningChangeRequest: AsyncReplyChannel<ServerState> option
     ChangeRequestQueue: AsyncReplyChannel<ServerState> list
+    SolutionReloadPending: DateTime option
 }
 
 let emptyServerState = { ClientCapabilities = None
@@ -108,7 +109,8 @@ let emptyServerState = { ClientCapabilities = None
                          DecompiledMetadata = Map.empty
                          Options = emptyOptions
                          RunningChangeRequest = None
-                         ChangeRequestQueue = [] }
+                         ChangeRequestQueue = []
+                         SolutionReloadPending = None }
 
 let getDocumentOfTypeForUri state docType (u: string) =
     let uri = Uri u
@@ -145,6 +147,9 @@ type ServerStateEvent =
     | GetState of AsyncReplyChannel<ServerState>
     | StartSolutionChange of AsyncReplyChannel<ServerState>
     | FinishSolutionChange
+    | SolutionReloadRequest
+    | SolutionReload
+    | PeriodicTimerTick
 
 let makeDocumentFromMetadata
         (compilation: Microsoft.CodeAnalysis.Compilation)
@@ -248,7 +253,7 @@ type CodeLensData = { DocumentUri: string; Position: Position  }
 
 let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
-let rec processServerEvent _logMessage state msg: Async<ServerState> = async {
+let rec processServerEvent logMessage state msg: Async<ServerState> = async {
     let! ct = Async.CancellationToken
     match msg with
     | GetState replyChannel ->
@@ -295,6 +300,40 @@ let rec processServerEvent _logMessage state msg: Async<ServerState> = async {
     | OpenDocVersionRemove uri ->
         let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
         return { state with OpenDocVersions = newOpenDocVersions }
+
+    | SolutionReloadRequest ->
+        // we need to wait a bit before starting this so we
+        // can buffer many incoming requests at once
+        return { state with SolutionReloadPending = DateTime.Now.AddSeconds(3) |> Some }
+
+    | SolutionReload ->
+        let! solution =
+            match state.Options.SolutionPath with
+            | Some solutionPath -> async {
+                logMessage (sprintf "loading specified solution file: %s.." solutionPath)
+                return! tryLoadSolutionOnPath logMessage solutionPath
+              }
+
+            | None -> async {
+                let cwd = Directory.GetCurrentDirectory()
+                logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+                return! findAndLoadSolutionOnDir logMessage cwd
+              }
+
+        return { state with Solution = solution }
+
+    | PeriodicTimerTick ->
+        let solutionReloadTime = state.SolutionReloadPending
+                                 |> Option.defaultValue (DateTime.Now.AddDays(1))
+
+        match solutionReloadTime < DateTime.Now with
+        | true ->
+            let! newState = processServerEvent logMessage state SolutionReload
+
+            return { newState with SolutionReloadPending = None }
+
+        | false ->
+            return state
 }
 
 let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerStateEvent>) =
@@ -498,7 +537,9 @@ let setupServerHandlers options lspClient =
 
     let setupTimer () =
         timer <- Some (new System.Threading.Timer(
-            System.Threading.TimerCallback(fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)),
+            System.Threading.TimerCallback(
+                fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)
+                         do stateActor.Post(PeriodicTimerTick)),
             null, dueTime=1000, period=250))
 
     let logMessageWithLevel l message =
@@ -520,22 +561,7 @@ let setupServerHandlers options lspClient =
         infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
         scope.Emit(ClientCapabilityChange p.Capabilities)
-
-        let! solution =
-                match options.SolutionPath with
-                | Some solutionPath -> async {
-                    infoMessage (sprintf "Initialize: loading specified solution file: %s.." solutionPath)
-                    return! tryLoadSolutionOnPath logMessage solutionPath
-                  }
-
-                | None -> async {
-                    let cwd = Directory.GetCurrentDirectory()
-                    infoMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
-                    return! findAndLoadSolutionOnDir logMessage cwd
-                  }
-
-        scope.Emit(SolutionChange solution.Value)
-        infoMessage "ok, solution loaded -- initialization finished"
+        //infoMessage (sprintf "client caps: %s" (serialize p.Capabilities |> string))
 
         infoMessage "registering w/client for didChangeWatchedFiles notifications"
 
@@ -556,6 +582,8 @@ let setupServerHandlers options lspClient =
         | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
 
         setupTimer ()
+
+        scope.Emit(SolutionReload)
 
         return success {
               InitializeResult.Default with
@@ -1115,8 +1143,6 @@ let setupServerHandlers options lspClient =
     }
 
     let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<unit> = async {
-        // TODO: reload solution on csproj/sln changes
-
         let tryReloadDocumentOnUri uri = async {
             match scope.GetDocumentForUriOfType UserDocument uri with
             | Some (doc, docType) ->
@@ -1144,23 +1170,35 @@ let setupServerHandlers options lspClient =
         }
 
         for change in changeParams.Changes do
-            match change.Type with
-            | FileChangeType.Created ->
-                do! tryReloadDocumentOnUri change.Uri
+            let documentIsCSharpFile = change.Uri.EndsWith(".cs")
+            match Path.GetExtension(change.Uri) with
+            | ".csproj" ->
+                logMessage "change to .csproj detected, will reload solution"
+                scope.Emit(SolutionReloadRequest)
 
-            | FileChangeType.Changed ->
-                do! tryReloadDocumentOnUri change.Uri
+            | ".sln" ->
+                logMessage "change to .sln detected, will reload solution"
+                scope.Emit(SolutionReloadRequest)
 
-            | FileChangeType.Deleted ->
-                match scope.GetDocumentForUriOfType UserDocument change.Uri with
-                | Some (existingDoc, docType) ->
-                    let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
+            | ".cs" ->
+                match change.Type with
+                | FileChangeType.Created ->
+                    do! tryReloadDocumentOnUri change.Uri
 
-                    scope.Emit(SolutionChange updatedProject.Solution)
-                    scope.Emit(OpenDocVersionRemove change.Uri)
+                | FileChangeType.Changed ->
+                    do! tryReloadDocumentOnUri change.Uri
 
-                    diagnostics.Post(DocumentRemoval change.Uri)
-                | None -> ()
+                | FileChangeType.Deleted ->
+                    match scope.GetDocumentForUriOfType UserDocument change.Uri with
+                    | Some (existingDoc, docType) ->
+                        let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
+
+                        scope.Emit(SolutionChange updatedProject.Solution)
+                        scope.Emit(OpenDocVersionRemove change.Uri)
+
+                        diagnostics.Post(DocumentRemoval change.Uri)
+                    | None -> ()
+                | _ -> ()
 
             | _ -> ()
     }
