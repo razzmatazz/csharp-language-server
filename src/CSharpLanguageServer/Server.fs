@@ -304,7 +304,7 @@ let rec processServerEvent logMessage state msg: Async<ServerState> = async {
     | SolutionReloadRequest ->
         // we need to wait a bit before starting this so we
         // can buffer many incoming requests at once
-        return { state with SolutionReloadPending = DateTime.Now.AddSeconds(3) |> Some }
+        return { state with SolutionReloadPending = DateTime.Now.AddSeconds(5) |> Some }
 
     | SolutionReload ->
         let! solution =
