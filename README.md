@@ -37,7 +37,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
  - properly escape docxml text, e.g. backquote is a special character in markdown;
  - selection range provider
  - semantic tokens
- - ability to run tests
+ - ability to run tests / test browser support like fsac has?
  - razorls integration (server-side)
  - analyzer support
  - code generator support

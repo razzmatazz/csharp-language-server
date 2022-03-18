@@ -1,3 +1,8 @@
+# (unreleased)
+- Revert Roslyn update, broke some of the stuff with now gain;
+- Fix an issue where some of the assemblies cannot be inspected with go-to-definition from metadata;
+  - https://github.com/razzmatazz/csharp-language-server/issues/22
+
 # 0.4.0-Druskininkai
 - Update Roslyn and ICSharpCode libs;
 - Observe and update solution when unopen files are changed/added/removed;
