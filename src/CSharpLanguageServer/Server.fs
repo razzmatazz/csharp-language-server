@@ -161,7 +161,10 @@ let makeDocumentFromMetadata
     let peReference = reference :?> PortableExecutableReference |> Option.ofObj
     let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
 
-    let decompiler = CSharpDecompiler(assemblyLocation, DecompilerSettings())
+    let decompilerSettings = DecompilerSettings()
+    decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
+
+    let decompiler = CSharpDecompiler(assemblyLocation, decompilerSettings)
 
     // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
     // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
