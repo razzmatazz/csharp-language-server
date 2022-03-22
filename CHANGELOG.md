@@ -2,6 +2,9 @@
 - Revert Roslyn update, broke some of the stuff with now gain;
 - Fix an issue where some of the assemblies cannot be inspected with go-to-definition from metadata;
   - https://github.com/razzmatazz/csharp-language-server/issues/22
+- Try harder to match method by arity when doing "go-to-definition" on metadata;
+  - e.g. `Console.WriteLine()` should now open the correct definition as it is single matching
+    method `WriteLine` on `Console` with arity of 0;
 
 # 0.4.0-Druskininkai
 - Update Roslyn and ICSharpCode libs;

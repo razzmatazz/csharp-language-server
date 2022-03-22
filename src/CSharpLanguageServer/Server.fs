@@ -185,7 +185,9 @@ let resolveSymbolLocation
         (compilation: Microsoft.CodeAnalysis.Compilation)
         (project: Microsoft.CodeAnalysis.Project)
         sym
-        (l: Microsoft.CodeAnalysis.Location) = async {
+        (l: Microsoft.CodeAnalysis.Location)
+        (logMessage: string -> unit)
+            = async {
 
     let! ct = Async.CancellationToken
 
@@ -209,7 +211,7 @@ let resolveSymbolLocation
 
         // figure out location on the document (approx implementation)
         let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym.Name)
+        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym, logMessage)
         collector.Visit(syntaxTree.GetRoot())
 
         let fallbackLocationInMetadata = {
@@ -234,7 +236,9 @@ let resolveSymbolLocation
 let resolveSymbolLocations
         (state: ServerState)
         (project: Microsoft.CodeAnalysis.Project)
-        (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
+        (symbols: Microsoft.CodeAnalysis.ISymbol list)
+        (logMessage: string -> unit)
+            = async {
     let! ct = Async.CancellationToken
     let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
@@ -244,7 +248,7 @@ let resolveSymbolLocations
     for sym in symbols do
         for l in sym.Locations do
             let! (symLspLocations, stateChanges) =
-                resolveSymbolLocation state compilation project sym l
+                resolveSymbolLocation state compilation project sym l logMessage
 
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
             aggregatedStateChanges <- aggregatedStateChanges @ stateChanges
@@ -913,7 +917,8 @@ let setupServerHandlers options lspClient =
                     | Some sym -> [sym]
                     | None -> []
 
-                let! (locations, stateChanges) = resolveSymbolLocations scope.State doc.Project symbols
+                let! (locations, stateChanges) =
+                    resolveSymbolLocations scope.State doc.Project symbols logMessage
 
                 do scope.EmitMany stateChanges
 
@@ -946,7 +951,8 @@ let setupServerHandlers options lspClient =
                     | None -> return []
                 }
 
-                let! (locations, stateChanges) = resolveSymbolLocations scope.State doc.Project symbols
+                let! (locations, stateChanges) =
+                    resolveSymbolLocations scope.State doc.Project symbols logMessage
 
                 do scope.EmitMany stateChanges
 

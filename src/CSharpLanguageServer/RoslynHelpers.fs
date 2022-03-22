@@ -346,39 +346,58 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
         base.VisitEventDeclaration(node)
 
 
-type DocumentSymbolCollectorForMatchingSymbolName (documentUri, symbolName: string) =
+type DocumentSymbolCollectorForMatchingSymbolName
+        (documentUri, sym: ISymbol, logMessage: string -> unit) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedLocations: Types.Location list = []
+    let mutable suggestedLocations: Types.Location list = []
 
-    let collectIdentifier (identifier: SyntaxToken) =
-        if identifier.ValueText = symbolName then
-            let location: Types.Location =
-                { Uri = documentUri
-                  Range = identifier.GetLocation().GetLineSpan().Span
-                          |> lspRangeForRoslynLinePosSpan }
+    let collectIdentifier (identifier: SyntaxToken) exactMatch =
+        let location: Types.Location =
+            { Uri = documentUri
+              Range = identifier.GetLocation().GetLineSpan().Span
+                      |> lspRangeForRoslynLinePosSpan }
 
+        if exactMatch then
             collectedLocations <- location :: collectedLocations
+        else
+            suggestedLocations <- location :: suggestedLocations
 
-    member __.GetLocations() = collectedLocations |> Seq.rev |> List.ofSeq
+    member __.GetLocations() =
+        if not (Seq.isEmpty collectedLocations) then
+            collectedLocations |> Seq.rev |> List.ofSeq
+        else
+            suggestedLocations |> Seq.rev |> List.ofSeq
 
     override __.Visit(node) =
-        // TODO: collect other type of syntax nodes too
-        if node :? MethodDeclarationSyntax then
-            let methodDecl = node :?> MethodDeclarationSyntax
-            collectIdentifier methodDecl.Identifier
+        if sym.Kind = SymbolKind.Method then
+            if node :? MethodDeclarationSyntax then
+                let nodeMethodDecl = node :?> MethodDeclarationSyntax
 
-        else if node :? TypeDeclarationSyntax then
-             let typeDecl = node :?> TypeDeclarationSyntax
-             collectIdentifier typeDecl.Identifier
+                if nodeMethodDecl.Identifier.ValueText = sym.Name then
+                    let methodArityMatches =
+                        let symMethod = sym :?> IMethodSymbol
+                        symMethod.Parameters.Length = nodeMethodDecl.ParameterList.Parameters.Count
 
-        else if node :? PropertyDeclarationSyntax then
-             let propertyDecl = node :?> PropertyDeclarationSyntax
-             collectIdentifier propertyDecl.Identifier
+                    collectIdentifier nodeMethodDecl.Identifier methodArityMatches
+        else
+            if node :? TypeDeclarationSyntax then
+                let typeDecl = node :?> TypeDeclarationSyntax
+                if typeDecl.Identifier.ValueText = sym.Name then
+                    collectIdentifier typeDecl.Identifier false
 
-        else if node :? EventDeclarationSyntax then
-             let eventDecl = node :?> EventDeclarationSyntax
-             collectIdentifier eventDecl.Identifier
+            else if node :? PropertyDeclarationSyntax then
+                let propertyDecl = node :?> PropertyDeclarationSyntax
+                if propertyDecl.Identifier.ValueText = sym.Name then
+                    collectIdentifier propertyDecl.Identifier false
+
+            else if node :? EventDeclarationSyntax then
+                let eventDecl = node :?> EventDeclarationSyntax
+                if eventDecl.Identifier.ValueText = sym.Name then
+                    collectIdentifier eventDecl.Identifier false
+
+            // TODO: collect other type of syntax nodes too
 
         base.Visit(node)
 
