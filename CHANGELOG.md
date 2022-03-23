@@ -1,4 +1,4 @@
-# (unreleased)
+# 0.4.1-Liškiava
 - Revert Roslyn update, broke some of the stuff with now gain;
 - Fix an issue where some of the assemblies cannot be inspected with go-to-definition from metadata;
   - https://github.com/razzmatazz/csharp-language-server/issues/22
