@@ -570,28 +570,8 @@ let setupServerHandlers options lspClient =
 
         scope.Emit(ClientCapabilityChange p.Capabilities)
 
-        // registering w/client for didChangeWatchedFiles notifications"
-        let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
-                                  Kind = None }
-
-        let didChangeWatchedFilesRegistration: Types.Registration =
-            { Id = "id:workspace/didChangeWatchedFiles"
-              Method = "workspace/didChangeWatchedFiles"
-              RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
-            }
-
-        let! regResult = lspClient.ClientRegisterCapability(
-            { Registrations = [| didChangeWatchedFilesRegistration |] })
-
-        match regResult with
-        | Ok _ -> ()
-        | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
-
         // setup timer so actors get period ticks
         setupTimer ()
-
-        // start solution loading (on stateActor)
-        scope.Emit(SolutionReload)
 
         return success {
               InitializeResult.Default with
@@ -636,6 +616,34 @@ let setupServerHandlers options lspClient =
                     }
             }
     }
+
+    let handleInitialized (scope: ServerRequestScope) (p: InitializedParams): Async<unit> =
+        logMessage "\"initialized\" notification received from client"
+        async {
+            //
+            // registering w/client for didChangeWatchedFiles notifications"
+            //
+            let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
+                                      Kind = None }
+
+            let didChangeWatchedFilesRegistration: Types.Registration =
+                { Id = "id:workspace/didChangeWatchedFiles"
+                  Method = "workspace/didChangeWatchedFiles"
+                  RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
+                }
+
+            let! regResult = lspClient.ClientRegisterCapability(
+                { Registrations = [| didChangeWatchedFilesRegistration |] })
+
+            match regResult with
+            | Ok _ -> ()
+            | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
+
+            //
+            // start solution loading (on stateActor)
+            //
+            scope.Emit(SolutionReload)
+        }
 
     let handleTextDocumentDidOpen (scope: ServerRequestScope) (openParams: Types.DidOpenTextDocumentParams): Async<unit> =
       async {
@@ -1293,6 +1301,7 @@ let setupServerHandlers options lspClient =
 
     [
         "initialize"                     , handleInitialize                    |> withReadWriteScope |> requestHandling
+        "initialized"                    , handleInitialized                   |> withReadWriteScope |> withNotificationSuccess |> requestHandling
         "textDocument/didChange"         , handleTextDocumentDidChange         |> withReadWriteScope |> withNotificationSuccess |> requestHandling
         "textDocument/didClose"          , handleTextDocumentDidClose          |> withReadWriteScope |> withNotificationSuccess |> requestHandling
         "textDocument/didOpen"           , handleTextDocumentDidOpen           |> withReadWriteScope |> withNotificationSuccess |> requestHandling
