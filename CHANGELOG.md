@@ -1,6 +1,7 @@
-# (unreleased)
+# 0.4.2-Randamonys
 - Don't register capabilities when initialized, but after "initialized" has been received from the client;
-  - https://github.com/razzmatazz/csharp-language-server/issues/26
+  - this makes us more LSP-spec compatible;
+  - noted by @vytautassurvila in https://github.com/razzmatazz/csharp-language-server/issues/26
 
 # 0.4.1-Liškiava
 - Revert Roslyn update, broke some of the stuff with now gain;
