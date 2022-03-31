@@ -164,7 +164,7 @@ let asyncMaybeOnException op = async {
 let lspCodeActionDetailsFromRoslynCA ca =
     let typeName = ca.GetType() |> string
     if typeName.Contains("CodeAnalysis.AddImport") then
-        Some Types.CodeActionKind.SourceOrganizeImports, Some true
+        Some Types.CodeActionKind.QuickFix, Some true
     else
         None, None
 

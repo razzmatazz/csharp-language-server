@@ -1,3 +1,7 @@
+# [Unreleased]
+- change `CodeAnalysis.AddImport` kind to `quickfix`
+  - this will show add missing imports in vscode's quick fix panel
+
 # 0.4.2-Randamonys
 - Don't register capabilities when initialized, but after "initialized" has been received from the client;
   - this makes us more LSP-spec compatible;
