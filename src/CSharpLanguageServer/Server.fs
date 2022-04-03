@@ -92,14 +92,16 @@ type ServerDocumentType =
      | DecompiledDocument // Document decompiled from metadata, readonly
      | AnyDocument
 
+type ServerRequestType = ReadOnly | ReadWrite
+
 type ServerState = {
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     Options: Options
-    RunningChangeRequest: AsyncReplyChannel<ServerState> option
-    ChangeRequestQueue: AsyncReplyChannel<ServerState> list
+    CurrentReadWriteRequest: AsyncReplyChannel<ServerState> option
+    RequestQueue: (ServerRequestType * AsyncReplyChannel<ServerState>) list
     SolutionReloadPending: DateTime option
 }
 
@@ -108,8 +110,8 @@ let emptyServerState = { ClientCapabilities = None
                          OpenDocVersions = Map.empty
                          DecompiledMetadata = Map.empty
                          Options = emptyOptions
-                         RunningChangeRequest = None
-                         ChangeRequestQueue = []
+                         CurrentReadWriteRequest = None
+                         RequestQueue = []
                          SolutionReloadPending = None }
 
 let getDocumentOfTypeForUri state docType (u: string) =
@@ -145,8 +147,10 @@ type ServerStateEvent =
     | OpenDocVersionAdd of string * int
     | OpenDocVersionRemove of string
     | GetState of AsyncReplyChannel<ServerState>
-    | StartSolutionChange of AsyncReplyChannel<ServerState>
-    | FinishSolutionChange
+    | StartReadOnlyScope of AsyncReplyChannel<ServerState>
+    | StartReadWriteScope of AsyncReplyChannel<ServerState>
+    | FinishReadWriteScope
+    | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
     | PeriodicTimerTick
@@ -260,35 +264,51 @@ type CodeLensData = { DocumentUri: string; Position: Position  }
 
 let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
-let rec processServerEvent logMessage state msg: Async<ServerState> = async {
+let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
     let! ct = Async.CancellationToken
+
+    let enqueueScope requestType replyChannel =
+        let newRequestQueue = state.RequestQueue @ [(requestType, replyChannel)]
+        let newState = { state with RequestQueue = newRequestQueue }
+        postMsg ProcessRequestQueue
+        newState
+
     match msg with
     | GetState replyChannel ->
         replyChannel.Reply(state)
         return state
 
-    | StartSolutionChange replyChannel ->
-        // only reply if we don't have another request that would change solution;
-        // otherwise enqueue the `replyChannel` to the ChangeRequestQueue
-        match state.RunningChangeRequest with
-        | Some _req ->
-            return { state with
-                         ChangeRequestQueue = state.ChangeRequestQueue @ [replyChannel] }
-        | None ->
-            replyChannel.Reply(state)
-            return { state with
-                         RunningChangeRequest = Some replyChannel }
+    | StartReadOnlyScope replyChannel ->
+        return enqueueScope ReadOnly replyChannel
 
-    | FinishSolutionChange ->
-        let newState = { state with RunningChangeRequest = None }
+    | StartReadWriteScope replyChannel ->
+        return enqueueScope ReadWrite replyChannel
 
-        return match state.ChangeRequestQueue with
-               | [] -> newState
-               | nextPendingRequest :: queueRemainder ->
-                    nextPendingRequest.Reply(newState)
-                    { newState with
-                          ChangeRequestQueue = queueRemainder
-                          RunningChangeRequest = Some nextPendingRequest }
+    | FinishReadWriteScope ->
+        let newState = { state with CurrentReadWriteRequest = None }
+        postMsg ProcessRequestQueue
+        return newState
+
+    | ProcessRequestQueue ->
+        return
+            match state.CurrentReadWriteRequest with
+            | Some _req ->
+                state // block until CurrentReadWriteRequest is finished
+            | None ->
+                match state.RequestQueue with
+                | [] -> state
+                | (nextRequestType, nextRequest) :: queueRemainder ->
+                    // try to process next msg from the remainder, if possible, later
+                    postMsg ProcessRequestQueue
+
+                    let newState = { state with RequestQueue = queueRemainder }
+
+                    // unblock this scope/request to run by sending it current state
+                    nextRequest.Reply(newState)
+
+                    match nextRequestType with
+                    | ReadWrite -> { newState with CurrentReadWriteRequest = Some nextRequest }
+                    | ReadOnly -> newState
 
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }
@@ -335,9 +355,8 @@ let rec processServerEvent logMessage state msg: Async<ServerState> = async {
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            let! newState = processServerEvent logMessage state SolutionReload
-
-            return { newState with SolutionReloadPending = None }
+            postMsg SolutionReload
+            return { state with SolutionReloadPending = None }
 
         | false ->
             return state
@@ -346,7 +365,7 @@ let rec processServerEvent logMessage state msg: Async<ServerState> = async {
 let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerStateEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
-        let! newState = msg |> processServerEvent logMessage state
+        let! newState = msg |> processServerEvent logMessage state inbox.Post
         return! loop newState
     }
 
@@ -1260,7 +1279,7 @@ let setupServerHandlers options lspClient =
         }
 
     let withReadOnlyScope asyncFn param = async {
-        let! stateSnapshot = stateActor.PostAndAsyncReply(GetState)
+        let! stateSnapshot = stateActor.PostAndAsyncReply(StartReadOnlyScope)
         use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, fun () -> ())
         return! asyncFn scope param
     }
@@ -1270,12 +1289,15 @@ let setupServerHandlers options lspClient =
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
-        let stateSnapshot = stateActor.PostAndReply(StartSolutionChange)
+        let stateSnapshot = stateActor.PostAndReply(StartReadWriteScope)
 
         // we want to run asyncFn within scope as scope.Dispose() will send FinishSolutionChange and will actually
         // allow subsequent write request to run
         async {
-            use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, fun () -> stateActor.Post(FinishSolutionChange))
+            use scope = new ServerRequestScope(
+                                stateSnapshot,
+                                stateActor.Post,
+                                fun () -> stateActor.Post(FinishReadWriteScope))
             return! asyncFn scope param
         }
 

@@ -1,6 +1,8 @@
 # [Unreleased]
 - change `CodeAnalysis.AddImport` kind to `quickfix`
-  - this will show add missing imports in vscode's quick fix panel
+  - this will show add missing imports in vscode's quick fix panel;
+- don't run pending read/only requests until previous r/w one is processed;
+  - this should fix https://github.com/razzmatazz/csharp-language-server/issues/28 reported by @vytautassurvila
 
 # 0.4.2-Randamonys
 - Don't register capabilities when initialized, but after "initialized" has been received from the client;
