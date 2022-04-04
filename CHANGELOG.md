@@ -1,4 +1,4 @@
-# [Unreleased]
+# 0.4.3-Meteliai
 - change `CodeAnalysis.AddImport` kind to `quickfix`
   - this will show add missing imports in vscode's quick fix panel;
 - don't run pending read/only requests until previous r/w one is processed;
