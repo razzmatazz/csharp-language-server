@@ -22,7 +22,6 @@ open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Newtonsoft.Json
-open Newtonsoft.Json.Converters
 open Newtonsoft.Json.Linq
 
 type Options = {
@@ -265,8 +264,6 @@ type CodeLensData = { DocumentUri: string; Position: Position  }
 let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
 let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
-    let! ct = Async.CancellationToken
-
     let enqueueScope requestType replyChannel =
         let newRequestQueue = state.RequestQueue @ [(requestType, replyChannel)]
         let newState = { state with RequestQueue = newRequestQueue }
@@ -427,7 +424,7 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
     member x.GetSymbolAtPositionOnAnyDocument uri pos = x.GetSymbolAtPositionOfType AnyDocument uri pos
     member x.GetSymbolAtPositionOnUserDocument uri pos = x.GetSymbolAtPositionOfType UserDocument uri pos
 
-    member x.Emit ev =
+    member _.Emit ev =
         match ev with
         | SolutionChange newSolution ->
             solutionMaybe <- Some newSolution
@@ -451,7 +448,7 @@ type DiagnosticsState = {
 
 let emptyDiagnosticsState = { DocumentBacklog = []; DocumentChanges = Map.empty }
 
-let processDiagnosticsEvent logMessage
+let processDiagnosticsEvent _logMessage
                             (lspClient: CSharpLspClient)
                             (getDocumentForUri: string -> Async<(Document * ServerDocumentType) option>)
                             (state: DiagnosticsState)
@@ -583,7 +580,7 @@ let setupServerHandlers options lspClient =
 
         infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
-                            (options |> serialize |> string))
+                            (JsonConvert.SerializeObject(options)))
 
         infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
@@ -636,7 +633,7 @@ let setupServerHandlers options lspClient =
             }
     }
 
-    let handleInitialized (scope: ServerRequestScope) (p: InitializedParams): Async<unit> =
+    let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<unit> =
         logMessage "\"initialized\" notification received from client"
         async {
             //
@@ -1182,7 +1179,7 @@ let setupServerHandlers options lspClient =
     let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<unit> = async {
         let tryReloadDocumentOnUri uri = async {
             match scope.GetDocumentForUriOfType UserDocument uri with
-            | Some (doc, docType) ->
+            | Some (doc, _) ->
                 let fileText = uri.Substring("file://".Length) |> File.ReadAllText
                 let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
@@ -1207,7 +1204,6 @@ let setupServerHandlers options lspClient =
         }
 
         for change in changeParams.Changes do
-            let documentIsCSharpFile = change.Uri.EndsWith(".cs")
             match Path.GetExtension(change.Uri) with
             | ".csproj" ->
                 logMessage "change to .csproj detected, will reload solution"
@@ -1227,7 +1223,7 @@ let setupServerHandlers options lspClient =
 
                 | FileChangeType.Deleted ->
                     match scope.GetDocumentForUriOfType UserDocument change.Uri with
-                    | Some (existingDoc, docType) ->
+                    | Some (existingDoc, _) ->
                         let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
                         scope.Emit(SolutionChange updatedProject.Solution)
