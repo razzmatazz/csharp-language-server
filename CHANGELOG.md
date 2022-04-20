@@ -1,3 +1,6 @@
+# (unreleased)
+- Implement textDocument/signatureHelp;
+
 # 0.4.3-Meteliai
 - change `CodeAnalysis.AddImport` kind to `quickfix`
   - this will show add missing imports in vscode's quick fix panel;

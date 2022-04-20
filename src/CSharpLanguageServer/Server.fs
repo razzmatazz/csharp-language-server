@@ -10,6 +10,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
+open Microsoft.CodeAnalysis.CSharp.Syntax
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol
@@ -521,6 +522,14 @@ let processDiagnosticsEvent _logMessage
         return { state with DocumentBacklog = newBacklog }, eventsToPost
       }
 
+type InvocationContext = {
+    SemanticModel: SemanticModel
+    Separators: SyntaxToken list
+    Position: int
+    Receiver: SyntaxNode
+    ArgumentTypes: TypeInfo[]
+}
+
 let setupServerHandlers options lspClient =
     let mutable logMessageCurrent = Action<string>(fun _ -> ())
     let logMessageInvoke m = logMessageCurrent.Invoke(m)
@@ -575,21 +584,20 @@ let setupServerHandlers options lspClient =
     let errorMessage = logMessageWithLevel MessageType.Error
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> =
-      async {
-        logMessageCurrent <- Action<string>(logMessage)
+      logMessageCurrent <- Action<string>(logMessage)
 
-        infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+      infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
                             (JsonConvert.SerializeObject(options)))
 
-        infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+      infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
-        scope.Emit(ClientCapabilityChange p.Capabilities)
+      scope.Emit(ClientCapabilityChange p.Capabilities)
 
-        // setup timer so actors get period ticks
-        setupTimer ()
+      // setup timer so actors get period ticks
+      setupTimer ()
 
-        return success {
+      let initializeResult = {
               InitializeResult.Default with
                 Capabilities =
                     { ServerCapabilities.Default with
@@ -608,7 +616,9 @@ let setupServerHandlers options lspClient =
                                Some
                                     { FirstTriggerCharacter = ';'
                                       MoreTriggerCharacter = Some([| '}'; ')' |]) }
-                        SignatureHelpProvider = None
+                        SignatureHelpProvider =
+                            Some { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
+                                   RetriggerCharacters = None }
                         CompletionProvider =
                             Some { ResolveProvider = None
                                    TriggerCharacters = Some ([| '.'; '''; |])
@@ -630,8 +640,9 @@ let setupServerHandlers options lspClient =
                         SelectionRangeProvider = None
                         SemanticTokensProvider = None
                     }
-            }
-    }
+              }
+
+      initializeResult |> success |> async.Return
 
     let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<unit> =
         logMessage "\"initialized\" notification received from client"
@@ -1171,6 +1182,128 @@ let setupServerHandlers options lspClient =
         return WorkspaceEdit.Create (docChanges |> Array.ofList, scope.ClientCapabilities.Value) |> Some |> success
     }
 
+    let handleTextDocumentSignatureHelp (scope: ServerRequestScope) (sigHelpParams: Types.SignatureHelpParams): AsyncLspResult<Types.SignatureHelp option> =
+        let docMaybe = scope.GetUserDocumentForUri sigHelpParams.TextDocument.Uri
+        match docMaybe with
+        | Some doc -> async {
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+
+            let sourceTextPosition =
+                LinePosition(sigHelpParams.Position.Line, sigHelpParams.Position.Character)
+                |> sourceText.Lines.GetPosition
+
+            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! root = syntaxTree.GetRootAsync() |> Async.AwaitTask
+
+            let rec findInvocationContext (node: SyntaxNode): InvocationContext option =
+                match node with
+                | :? InvocationExpressionSyntax as invocation ->
+                    match invocation.ArgumentList.Span.Contains(sourceTextPosition) with
+                    | true ->
+                        let argumentTypes =
+                                  invocation.ArgumentList.Arguments
+                                  |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                                  |> Array.ofSeq
+
+                        Some { SemanticModel = semanticModel
+                               Separators = invocation.ArgumentList.Arguments.GetSeparators()
+                                                                              |> List.ofSeq
+                               Position = sourceTextPosition
+                               Receiver = invocation.Expression
+                               ArgumentTypes = argumentTypes
+                             }
+                               // position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
+                    | false ->
+                        findInvocationContext node.Parent
+ (*
+
+                | :? BaseObjectCreationExpressionSyntax as objectCreation ->
+                    let argumentListContainsPosition =
+                        objectCreation.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun argList -> argList.Span.Contains(sourceTextPosition))
+
+                    match argumentListContainsPosition with
+                    | Some true -> Some { SemanticModel = semanticModel }
+                                // , position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
+                    | _ -> findInvocationContext node.Parent
+
+                | :? AttributeSyntax as attributeSyntax ->
+                    let argListContainsPosition =
+                        attributeSyntax.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun argList -> argList.Span.Contains(sourceTextPosition))
+
+
+                    match argListContainsPosition with
+                    | Some true -> Some { SemanticModel = semanticModel }
+                                //  position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
+                    | _ -> findInvocationContext node.Parent
+*)
+                | _ ->
+                    match node |> Option.ofObj with
+                    | Some nonNullNode -> findInvocationContext nonNullNode.Parent
+                    | None -> None
+
+            let invocationMaybe =
+                root.FindToken(sourceTextPosition).Parent
+                |> findInvocationContext
+
+            return
+                match invocationMaybe with
+                | Some invocation ->
+                    let methodGroup =
+                        (invocation.SemanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>())
+                        |> List.ofSeq
+
+                    let matchingMethodMaybe =
+                        methodGroup
+                        |> Seq.filter (fun m -> m.Parameters.Length = invocation.ArgumentTypes.Length)
+                        |> Seq.tryHead
+
+                    let signatureForMethod (m: IMethodSymbol) =
+                        let parameters =
+                            m.Parameters
+                            |> Seq.map (fun p -> { Label = (string p); Documentation = None })
+                            |> Array.ofSeq
+
+                        { Label = (string m)
+                          Documentation = None
+                          Parameters = Some parameters
+                        }
+
+                    let activeParameterMaybe =
+                        match matchingMethodMaybe with
+                        | Some m ->
+                            let mutable p = 0
+                            for comma in invocation.Separators do
+                                let commaBeforePos = comma.Span.Start < invocation.Position
+                                p <- p + (if commaBeforePos then 1 else 0)
+                            Some p
+
+                        | None -> None
+
+                    let signatureHelpResult =
+                        { Signatures = methodGroup
+                                       |> Seq.map signatureForMethod
+                                       |> Array.ofSeq
+
+                          ActiveSignature = matchingMethodMaybe
+                                            |> Option.map (fun m -> List.findIndex ((=) m) methodGroup)
+
+                          ActiveParameter = activeParameterMaybe }
+
+                    Some signatureHelpResult |> success
+
+                | None ->
+                    None |> success
+          }
+
+        | None ->
+            None |> success |> async.Return
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1339,6 +1472,7 @@ let setupServerHandlers options lspClient =
         "textDocument/rangeFormatting"   , handleTextDocumentRangeFormatting   |> withReadOnlyScope |> requestHandling
         "textDocument/references"        , handleTextDocumentReferences        |> withReadOnlyScope |> requestHandling
         "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
+        "textDocument/signatureHelp"     , handleTextDocumentSignatureHelp     |> withReadOnlyScope |> requestHandling
         "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
         "workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles |> withReadWriteScope |> withNotificationSuccess |> requestHandling
         "csharp/metadata"                , handleCSharpMetadata                |> withReadOnlyScope |> requestHandling
