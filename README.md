@@ -32,6 +32,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - go-to-def in metadata does not work for Attribute as those have Attribute suffix;
  - progress support;
  - properly escape docxml text, e.g. backquote is a special character in markdown;
  - selection range provider

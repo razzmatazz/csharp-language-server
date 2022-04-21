@@ -480,7 +480,7 @@ let codeFixProviderInstances =
 
 let tryLoadSolutionOnPath logMessage solutionPath = async {
     try
-        logMessage ("loading solution: " + solutionPath)
+        logMessage (sprintf "loading solution \"%s\".." solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -503,7 +503,7 @@ let tryLoadSolutionFromProjectFiles logMessage (projFiles: string list) = async 
     msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
     for file in projFiles do
-        logMessage ("loading proj file " + file + "..")
+        logMessage (sprintf "loading project \"%s\".." file)
         try
             do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
         with ex ->

@@ -523,11 +523,9 @@ let processDiagnosticsEvent _logMessage
       }
 
 type InvocationContext = {
-    SemanticModel: SemanticModel
-    Separators: SyntaxToken list
-    Position: int
     Receiver: SyntaxNode
-    ArgumentTypes: TypeInfo[]
+    ArgumentTypes: TypeInfo list
+    Separators: SyntaxToken list
 }
 
 let setupServerHandlers options lspClient =
@@ -1098,7 +1096,7 @@ let setupServerHandlers options lspClient =
                 let! ct = Async.CancellationToken
                 let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
-                return Documentation.markdownDocForSymbol sym semanticModel pos
+                return Documentation.markdownDocForSymbolWithSignature sym semanticModel pos
                        |> fun s -> MarkedString.WithLanguage { Language = "markdown"; Value = s }
                        |> fun s -> [s]
               }
@@ -1160,79 +1158,89 @@ let setupServerHandlers options lspClient =
         | Some doc -> async {
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
-            let sourceTextPosition =
+            let position =
                 LinePosition(sigHelpParams.Position.Line, sigHelpParams.Position.Character)
                 |> sourceText.Lines.GetPosition
 
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             let! root = syntaxTree.GetRootAsync() |> Async.AwaitTask
 
             let rec findInvocationContext (node: SyntaxNode): InvocationContext option =
                 match node with
                 | :? InvocationExpressionSyntax as invocation ->
-                    match invocation.ArgumentList.Span.Contains(sourceTextPosition) with
+                    match invocation.ArgumentList.Span.Contains(position) with
                     | true ->
-                        let argumentTypes =
-                                  invocation.ArgumentList.Arguments
-                                  |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                                  |> Array.ofSeq
-
-                        Some { SemanticModel = semanticModel
-                               Separators = invocation.ArgumentList.Arguments.GetSeparators()
-                                                                              |> List.ofSeq
-                               Position = sourceTextPosition
-                               Receiver = invocation.Expression
-                               ArgumentTypes = argumentTypes
-                             }
-                               // position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
-                    | false ->
-                        findInvocationContext node.Parent
- (*
+                        Some { Receiver      = invocation.Expression
+                               ArgumentTypes = (invocation.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))) |> List.ofSeq
+                               Separators    = (invocation.ArgumentList.Arguments.GetSeparators()) |> List.ofSeq }
+                    | false -> findInvocationContext node.Parent
 
                 | :? BaseObjectCreationExpressionSyntax as objectCreation ->
                     let argumentListContainsPosition =
                         objectCreation.ArgumentList
                         |> Option.ofObj
-                        |> Option.map (fun argList -> argList.Span.Contains(sourceTextPosition))
+                        |> Option.map (fun argList -> argList.Span.Contains(position))
 
                     match argumentListContainsPosition with
-                    | Some true -> Some { SemanticModel = semanticModel }
-                                // , position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
+                    | Some true ->
+                        Some { Receiver      = objectCreation
+                               ArgumentTypes = (objectCreation.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))) |> List.ofSeq
+                               Separators    = (objectCreation.ArgumentList.Arguments.GetSeparators()) |> List.ofSeq }
                     | _ -> findInvocationContext node.Parent
 
                 | :? AttributeSyntax as attributeSyntax ->
                     let argListContainsPosition =
                         attributeSyntax.ArgumentList
                         |> Option.ofObj
-                        |> Option.map (fun argList -> argList.Span.Contains(sourceTextPosition))
-
+                        |> Option.map (fun argList -> argList.Span.Contains(position))
 
                     match argListContainsPosition with
-                    | Some true -> Some { SemanticModel = semanticModel }
-                                //  position, invocation.Expression, invocation.ArgumentList, invocation.IsInStaticContext() }
+                    | Some true ->
+                        Some { Receiver      = attributeSyntax
+                               ArgumentTypes = (attributeSyntax.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))) |> List.ofSeq
+                               Separators    = (attributeSyntax.ArgumentList.Arguments.GetSeparators()) |> List.ofSeq }
+
                     | _ -> findInvocationContext node.Parent
-*)
+
                 | _ ->
                     match node |> Option.ofObj with
                     | Some nonNullNode -> findInvocationContext nonNullNode.Parent
                     | None -> None
 
-            let invocationMaybe =
-                root.FindToken(sourceTextPosition).Parent
-                |> findInvocationContext
-
+            let invocationMaybe = root.FindToken(position).Parent
+                                  |> findInvocationContext
             return
                 match invocationMaybe with
                 | Some invocation ->
                     let methodGroup =
-                        (invocation.SemanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>())
+                        (semanticModel.GetMemberGroup(invocation.Receiver)
+                                      .OfType<IMethodSymbol>())
                         |> List.ofSeq
+
+                    let methodScore (m: IMethodSymbol) =
+                        if m.Parameters.Length < invocation.ArgumentTypes.Length then
+                            -1
+                        else
+                            let maxParams = Math.Max(m.Parameters.Length, invocation.ArgumentTypes.Length)
+                            let paramCountScore = maxParams - Math.Abs(m.Parameters.Length - invocation.ArgumentTypes.Length)
+
+                            let minParams = Math.Min(m.Parameters.Length, invocation.ArgumentTypes.Length)
+                            let paramMatchingScore =
+                                [0..minParams-1]
+                                |> Seq.map (fun pi -> (m.Parameters[pi], invocation.ArgumentTypes[pi]))
+                                |> Seq.map (fun (pt, it) -> SymbolEqualityComparer.Default.Equals(pt.Type, it.ConvertedType))
+                                |> Seq.map (fun m -> if m then 1 else 0)
+                                |> Seq.sum
+
+                            paramCountScore + paramMatchingScore
 
                     let matchingMethodMaybe =
                         methodGroup
-                        |> Seq.filter (fun m -> m.Parameters.Length = invocation.ArgumentTypes.Length)
+                        |> Seq.map (fun m -> (m, methodScore m))
+                        |> Seq.sortByDescending snd
+                        |> Seq.map fst
                         |> Seq.tryHead
 
                     let signatureForMethod (m: IMethodSymbol) =
@@ -1244,15 +1252,12 @@ let setupServerHandlers options lspClient =
                         let documentation =
                             Types.Documentation.Markup {
                                 Kind = MarkupKind.Markdown
-                                Value = Documentation.markdownDocForSymbol
-                                            m
-                                            semanticModel
-                                            invocation.Position
+                                Value = Documentation.markdownDocForSymbol m
                             }
 
-                        { Label = m |> string
-                          Documentation = documentation |> Some
-                          Parameters = Some parameters
+                        { Label         = formatSymbol m true (Some semanticModel) (Some position)
+                          Documentation = Some documentation
+                          Parameters    = Some parameters
                         }
 
                     let activeParameterMaybe =
@@ -1260,7 +1265,7 @@ let setupServerHandlers options lspClient =
                         | Some m ->
                             let mutable p = 0
                             for comma in invocation.Separators do
-                                let commaBeforePos = comma.Span.Start < invocation.Position
+                                let commaBeforePos = comma.Span.Start < position
                                 p <- p + (if commaBeforePos then 1 else 0)
                             Some p
 

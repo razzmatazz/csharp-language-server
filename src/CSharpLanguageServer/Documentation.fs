@@ -170,7 +170,14 @@ let formatComment model : string list =
 let formatDocXml xmlDocumentation =
     String.Join("\n", xmlDocumentation |> parseComment |> formatComment)
 
-let markdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
+let markdownDocForSymbol (sym: ISymbol) =
+    let comment = parseComment (sym.GetDocumentationCommentXml())
+    let formattedDocLines = formatComment comment
+
+    formattedDocLines
+        |> (fun ss -> String.Join("\n", ss))
+
+let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) pos =
     let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
 
     let symAssemblyName =
