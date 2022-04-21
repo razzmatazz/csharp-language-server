@@ -1090,37 +1090,6 @@ let setupServerHandlers options lspClient =
     }
 
     let handleTextDocumentHover (scope: ServerRequestScope) (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
-        let csharpMarkdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
-            let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
-
-            let symAssemblyName =
-                sym.ContainingAssembly
-               |> Option.ofObj
-                |> Option.map (fun a -> a.Name)
-                |> Option.defaultValue ""
-
-            let symbolInfoLines =
-                match symbolInfo.Name, symAssemblyName with
-                | "", "" -> []
-                | typeName, "" -> [sprintf "`%s`" typeName]
-                | _, _ ->
-                    let docAssembly = semanticModel.Compilation.Assembly
-                    if symAssemblyName = docAssembly.Name then
-                        [sprintf "`%s`" symbolInfo.Name]
-                    else
-                        [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
-
-            let comment = Documentation.parseComment (sym.GetDocumentationCommentXml())
-            let formattedDocLines = Documentation.formatComment comment
-
-            let formattedDoc =
-                formattedDocLines
-                |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
-                |> Seq.append symbolInfoLines
-                |> (fun ss -> String.Join("\n", ss))
-
-            [MarkedString.WithLanguage { Language = "markdown"; Value = formattedDoc }]
-
         let! maybeSymbol = scope.GetSymbolAtPositionOnAnyDocument hoverPos.TextDocument.Uri hoverPos.Position
 
         let! contents =
@@ -1128,7 +1097,10 @@ let setupServerHandlers options lspClient =
             | Some (sym, doc, pos) -> async {
                 let! ct = Async.CancellationToken
                 let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                return csharpMarkdownDocForSymbol sym semanticModel pos
+
+                return Documentation.markdownDocForSymbol sym semanticModel pos
+                       |> fun s -> MarkedString.WithLanguage { Language = "markdown"; Value = s }
+                       |> fun s -> [s]
               }
             | _ -> async { return [] }
 
@@ -1269,8 +1241,17 @@ let setupServerHandlers options lspClient =
                             |> Seq.map (fun p -> { Label = (string p); Documentation = None })
                             |> Array.ofSeq
 
-                        { Label = (string m)
-                          Documentation = None
+                        let documentation =
+                            Types.Documentation.Markup {
+                                Kind = MarkupKind.Markdown
+                                Value = Documentation.markdownDocForSymbol
+                                            m
+                                            semanticModel
+                                            invocation.Position
+                            }
+
+                        { Label = m |> string
+                          Documentation = documentation |> Some
                           Parameters = Some parameters
                         }
 

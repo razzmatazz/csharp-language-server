@@ -3,6 +3,9 @@ module CSharpLanguageServer.Documentation
 open System
 open System.Xml.Linq
 open System.Collections.Generic
+open Microsoft.CodeAnalysis
+open RoslynHelpers
+open Ionide.LanguageServerProtocol.Types
 
 type TripleSlashComment = {
      Summary: XElement list;
@@ -167,3 +170,30 @@ let formatComment model : string list =
 let formatDocXml xmlDocumentation =
     String.Join("\n", xmlDocumentation |> parseComment |> formatComment)
 
+let markdownDocForSymbol (sym: ISymbol) (semanticModel: SemanticModel) pos =
+    let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
+
+    let symAssemblyName =
+        sym.ContainingAssembly
+        |> Option.ofObj
+        |> Option.map (fun a -> a.Name)
+        |> Option.defaultValue ""
+
+    let symbolInfoLines =
+        match symbolInfo.Name, symAssemblyName with
+        | "", "" -> []
+        | typeName, "" -> [sprintf "`%s`" typeName]
+        | _, _ ->
+            let docAssembly = semanticModel.Compilation.Assembly
+            if symAssemblyName = docAssembly.Name then
+                [sprintf "`%s`" symbolInfo.Name]
+            else
+                [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
+
+    let comment = parseComment (sym.GetDocumentationCommentXml())
+    let formattedDocLines = formatComment comment
+
+    formattedDocLines
+        |> Seq.append (if symbolInfoLines.Length > 0 && formattedDocLines.Length > 0 then [""] else [])
+        |> Seq.append symbolInfoLines
+        |> (fun ss -> String.Join("\n", ss))
