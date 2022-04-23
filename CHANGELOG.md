@@ -1,5 +1,6 @@
-# (unreleased)
+# 0.5.0-Lazdijai
 - Implement textDocument/signatureHelp;
+  - https://github.com/razzmatazz/csharp-language-server/issues/30
 
 # 0.4.3-Meteliai
 - change `CodeAnalysis.AddImport` kind to `quickfix`
