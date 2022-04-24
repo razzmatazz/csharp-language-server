@@ -1,3 +1,7 @@
+# (unreleased)
+- Improve textDocument/completion:
+  - provide `CompletionItem.FilterText` and `CompletionItem.SortText`;
+
 # 0.5.0-Lazdijai
 - Implement textDocument/signatureHelp;
   - https://github.com/razzmatazz/csharp-language-server/issues/30

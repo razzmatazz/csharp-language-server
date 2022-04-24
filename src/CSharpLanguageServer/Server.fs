@@ -1009,21 +1009,30 @@ let setupServerHandlers options lspClient =
             if isNull completionService then
                 return ()
 
-            let! maybeCompletionResults = completionService.GetCompletionsAsync(doc, posInText)
-                                            |> Async.AwaitTask
+            let! maybeCompletionResults =
+                completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
 
             match Option.ofObj maybeCompletionResults with
             | Some completionResults ->
                 let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
-                    { CompletionItem.Create(item.DisplayText) with
-                        Kind = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some ;
-                        InsertTextFormat = Some Types.InsertTextFormat.PlainText }
+                    let baseCompletionItem = CompletionItem.Create(item.DisplayText)
+
+                    { baseCompletionItem with
+                        Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
+                        SortText         = item.SortText |> Option.ofObj
+                        FilterText       = item.FilterText |> Option.ofObj
+                        InsertTextFormat = Some Types.InsertTextFormat.PlainText
+                    }
+
+                let completionItems =
+                    completionResults.Items
+                    |> Seq.map makeLspCompletionItem
+                    |> Array.ofSeq
 
                 let completionList = {
-                    IsIncomplete = false ;
-                    Items = completionResults.Items
-                                                |> Seq.map makeLspCompletionItem
-                                                |> Array.ofSeq }
+                    IsIncomplete = false
+                    Items        = completionItems
+                }
 
                 return success (Some completionList)
             | None -> return success None
@@ -1262,7 +1271,7 @@ let setupServerHandlers options lspClient =
 
                     let activeParameterMaybe =
                         match matchingMethodMaybe with
-                        | Some m ->
+                        | Some _ ->
                             let mutable p = 0
                             for comma in invocation.Separators do
                                 let commaBeforePos = comma.Span.Start < position
