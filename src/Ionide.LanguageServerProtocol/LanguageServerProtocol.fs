@@ -848,15 +848,36 @@ module Types =
         /// Experimental client capabilities.
         Experimental: JToken option
     }
+    
+    type WorkspaceFolder = {
+        /// The associated URI for this workspace folder.
+        Uri: DocumentUri;
+
+        /// The name of the workspace folder. Defaults to the
+        /// uri's basename.
+        Name: string;
+    }
+    
+    type ClientInfo = {
+        Name: string
+        Version: string option
+    }
 
     type InitializeParams = {
         ProcessId: int option
+        /// Information about the client.
+        /// @since 3.15.0
+        ClientInfo: ClientInfo option
         RootPath: string option
-        ClientInfo: JToken option
         RootUri: string option
         InitializationOptions: JToken option
         Capabilities: ClientCapabilities option
         trace: string option
+        /// The workspace folders configured in the client when the server starts.
+        /// This property is only available if the client supports workspace folders.
+        /// It can be `null` if the client supports workspace folders but none are configured.
+        /// @since 3.6.0
+        WorkspaceFolders: WorkspaceFolder[] option
     }
 
     type InitializedParams() =
@@ -943,7 +964,7 @@ module Types =
         OpenClose: bool option
 
         /// Change notifications are sent to the server. See TextDocumentSyncKind.None, TextDocumentSyncKind.Full
-        /// and TextDocumentSyncKindIncremental.
+        /// and TextDocumentSyncKind.Incremental.
         Change: TextDocumentSyncKind option
 
         /// Will save notifications are sent to the server.
@@ -987,6 +1008,88 @@ module Types =
       /// Server supports providing semantic tokens for a full document.
       Full: U2<bool, SemanticTokenFullOptions> option
     }
+    
+    type WorkspaceFoldersServerCapabilities = {
+        /// The server has support for workspace folders.
+        Supported: bool option
+        /// Whether the server wants to receive workspace folder change notifications.
+        /// NOTE: the spec allows a string value here too. Good opportunity for further modeling.
+        ChangeNotifications: bool option
+    }
+    with
+        static member Default =
+            {
+                Supported = None
+                ChangeNotifications = None
+            }
+    
+    module FileOperationPatternKind =
+        let File = "file"
+        let Folder = "folder"
+    
+    type FileOperationPatternOptions = {
+        /// The pattern should be matched ignoring casing.
+        IgnoreCase: bool option
+    }
+    with
+        static member Default =
+            { IgnoreCase = None }
+    
+    /// See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#fileOperationPattern.
+    type FileOperationPattern = {
+        Glob: string
+        /// Whether to match files or folders with this pattern. Matches both if undefined.
+        /// See FileOperationPatternKind for allowed values
+        Matches: string option
+        /// Additional options used during matching
+        Options: FileOperationPatternOptions option
+    }
+    
+    type FileOperationFilter = {
+        /// A Uri like `file` or `untitled`.
+        Scheme: string option
+        /// The actual file operation pattern.
+        Pattern: FileOperationPattern
+    }
+    
+    type FileOperationRegistrationOptions = {
+        Filters: FileOperationFilter[]
+    }
+    
+    /// The types of workspace-level file notifications the server is interested in.
+    type WorkspaceFileOperationsServerCapabilities = {
+        DidCreate: FileOperationRegistrationOptions option
+        WillCreate: FileOperationRegistrationOptions option
+        DidRename: FileOperationRegistrationOptions option
+        WillRename: FileOperationRegistrationOptions option
+        DidDelete: FileOperationRegistrationOptions option
+        WillDelete: FileOperationRegistrationOptions option
+    }
+    with
+        static member Default =
+            {
+                DidCreate = None
+                WillCreate = None
+                DidRename = None
+                WillRename = None
+                DidDelete = None
+                WillDelete = None
+            }
+    
+    type WorkspaceServerCapabilities = {
+        /// The server supports workspace folder.
+        /// @since 3.6.0
+        WorkspaceFolders: WorkspaceFoldersServerCapabilities option
+        /// The server is interested in file notifications/requests.
+        /// @since 3.16.0
+        FileOperations: WorkspaceFileOperationsServerCapabilities option
+    }
+    with
+        static member Default =
+            {
+                WorkspaceFolders = None
+                FileOperations = None
+            }
 
     type ServerCapabilities = {
         /// Defines how text documents are synced. Is either a detailed structure defining each notification or
@@ -1050,12 +1153,16 @@ module Types =
         /// Experimental server capabilities.
         Experimental: JToken option
 
-        ///
+        /// The server provides folding provider support.
+        /// @since 3.10.0
         FoldingRangeProvider: bool option
 
         SelectionRangeProvider: bool option
 
         SemanticTokensProvider: SemanticTokensOptions option
+        
+        /// Workspace specific server capabilities.
+        Workspace: WorkspaceServerCapabilities option
 
     }
     with
@@ -1084,6 +1191,7 @@ module Types =
                 FoldingRangeProvider = None
                 SelectionRangeProvider = None
                 SemanticTokensProvider = None
+                Workspace = None
             }
 
     type InitializeResult = {
@@ -1217,15 +1325,6 @@ module Types =
     type DidChangeWatchedFilesParams = {
         /// The actual file events.
         Changes: FileEvent[]
-    }
-
-    type WorkspaceFolder = {
-        /// The associated URI for this workspace folder.
-        Uri: string;
-
-        /// The name of the workspace folder. Defaults to the
-        /// uri's basename.
-        Name: string;
     }
 
     /// The workspace folder change event.
@@ -3082,3 +3181,4 @@ module Client =
 
                 return ()
             } |> Async.Start
+
