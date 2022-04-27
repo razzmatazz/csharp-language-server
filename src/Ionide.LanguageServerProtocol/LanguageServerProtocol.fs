@@ -2776,7 +2776,7 @@ module Server =
         | ErrorExitWithoutShutdown = 1
         | ErrorStreamClosed = 2
 
-    let startWithSetup<'a when 'a :> LspClient> (setupRequestHandlings : 'a -> Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) =
+    let startWithSetup<'client when 'client :> LspClient> (setupRequestHandlings : 'client -> Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'client) =
 
         use jsonRpcHandler = new HeaderDelimitedMessageHandler(output, input, jsonRpcFormatter)
         use jsonRpc = new JsonRpc(jsonRpcHandler)
@@ -2890,9 +2890,13 @@ module Server =
         ]
         |> Map.ofList
 
-    let start<'a, 'b when 'a :> LspClient and 'b :> LspServer> (requestHandlings : Map<string,Delegate>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'a) (serverCreator: 'a -> 'b) =
-        let requestHandlingSetup _ = requestHandlings
-        startWithSetup requestHandlingSetup
+    let start<'client, 'server when 'client :> LspClient and 'server :> LspServer> (requestHandlings : Map<string, ServerRequestHandling<'server>>) (input: Stream) (output: Stream) (clientCreator: (ClientNotificationSender * ClientRequestSender) -> 'client) (serverCreator: 'client -> 'server) =
+        let requestHandlingSetup client =
+            let server = serverCreator client
+            requestHandlings
+            |> Map.map (fun _ requestHandling -> requestHandling.Run server)
+
+        startWithSetup requestHandlingSetup input output clientCreator
 
 module Client =
     open System
