@@ -1,6 +1,6 @@
 // this is from https://github.com/TheAngryByrd/FsLibLog/blob/f81cba440bf0476bb4e2262b57a067a0d6ab78a7/src/FsLibLog/FsLibLog.fs
 
-namespace FsLibLog
+namespace LanguageServerProtocol.Logging
 
 
 [<AutoOpen>]
