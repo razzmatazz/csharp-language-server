@@ -14,8 +14,6 @@
     <PackageTags>csharp;lsp;roslyn</PackageTags>
     <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <Version>0.5.0</Version>
-    <PackageVersion>0.5.0</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,6 +31,7 @@
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.2.0.6844" />
+    <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.4.1" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.0.1">
