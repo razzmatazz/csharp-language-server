@@ -1,6 +1,9 @@
 # Changelog
 
-## (unreleased)
+## 0.5.1 - 2022-05-19 / Straigiškė 
+- Fix another long-standing bug with incremental document synchronisation;
+  - very visible on nvim but affects all editors/clients;
+  - reported by @Decodetalkers https://github.com/razzmatazz/csharp-language-server/issues/31;
 - Improve textDocument/completion:
   - provide `CompletionItem.FilterText` and `CompletionItem.SortText`;
 

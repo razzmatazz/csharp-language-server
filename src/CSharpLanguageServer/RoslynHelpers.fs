@@ -70,18 +70,22 @@ let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Lo
         { Uri = "";
           Range = { Start = { Line=0; Character=0; }; End = { Line=0; Character=0; } } }
 
-let lspContentChangeEventToRoslynTextChange (sourceText: SourceText) (change: Types.TextDocumentContentChangeEvent) =
-    let changeTextSpan =
-        change.Range.Value
-        |> roslynLinePositionSpanForLspRange
-        |> sourceText.Lines.GetTextSpan
+let applyLspContentChangesOnRoslynSourceText
+        (changes: Types.TextDocumentContentChangeEvent[])
+        (initialSourceText: SourceText) =
 
-    TextChange(changeTextSpan, change.Text)
+    let applyLspContentChangeOnRoslynSourceText (sourceText: SourceText) (change: Types.TextDocumentContentChangeEvent) =
+        match change.Range with
+        | Some changeRange ->
+            let changeTextSpan =
+                changeRange |> roslynLinePositionSpanForLspRange
+                            |> sourceText.Lines.GetTextSpan
 
-let applyLspContentChangesOnRoslynSourceText (changes: Types.TextDocumentContentChangeEvent[]) (sourceText: SourceText) =
-    changes
-    |> Seq.map (lspContentChangeEventToRoslynTextChange sourceText)
-    |> sourceText.WithChanges
+            TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
+
+        | None -> SourceText.From(change.Text)
+
+    changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
 let lspDocChangesFromSolutionDiff
         originalSolution

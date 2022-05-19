@@ -630,7 +630,7 @@ let setupServerHandlers options lspClient =
                                  }
                         TextDocumentSync =
                             Some { TextDocumentSyncOptions.Default with
-                                     OpenClose = None
+                                     OpenClose = Some true
                                      Save = Some { IncludeText = Some true }
                                      Change = Some TextDocumentSyncKind.Incremental
                                  }
