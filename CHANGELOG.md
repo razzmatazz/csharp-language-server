@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1.99 - (unreleased)
+
+- Fix how "unnecesary using directive" is exposed, hopefully:
+  - fixes https://github.com/razzmatazz/csharp-language-server/issues/35 by @Decodetalkers 
+- Expose actual csharp compiler diagnostics ids (e.g. CS0117) for nicer diagnostics messages;
+
 ## 0.5.1 - 2022-05-19 / Straigiškė 
 - Fix another long-standing bug with incremental document synchronisation;
   - very visible on nvim but affects all editors/clients;

@@ -410,14 +410,18 @@ let roslynToLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
     | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
     | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some Types.DiagnosticSeverity.Warning
     | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some Types.DiagnosticSeverity.Error
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> None
-    | _ -> None
+    | _ -> Some Types.DiagnosticSeverity.Warning
 
 let roslynToLspDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) : Types.Diagnostic =
+    let diagnosticsCodeUrl =
+          d.Id.ToLowerInvariant()
+          |> (sprintf "https://docs.microsoft.com/en-us/dotnet/csharp/misc/%s")
+          |> Uri
+
     { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
       Severity = d.Severity |> roslynToLspDiagnosticSeverity
-      Code = None
-      CodeDescription = None
+      Code = Some d.Id
+      CodeDescription = Some { Href = Some diagnosticsCodeUrl }
       Source = "lsp"
       Message = d.GetMessage()
       RelatedInformation = None
