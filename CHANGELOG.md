@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.1.99 - (unreleased)
+## 0.5.99 - (unreleased)
 
 - Fix how "unnecesary using directive" is exposed, hopefully:
   - fixes https://github.com/razzmatazz/csharp-language-server/issues/35 by @Decodetalkers 
