@@ -12,10 +12,9 @@ open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
 open Microsoft.CodeAnalysis.CSharp.Syntax
 
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.LspResult
 
 open RoslynHelpers
 open Microsoft.CodeAnalysis.CodeFixes
@@ -529,6 +528,7 @@ type InvocationContext = {
 }
 
 let setupServerHandlers options lspClient =
+    let success = LspResult.success
     let mutable logMessageCurrent = Action<string>(fun _ -> ())
     let logMessageInvoke m = logMessageCurrent.Invoke(m)
 
