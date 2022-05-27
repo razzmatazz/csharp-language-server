@@ -32,7 +32,8 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - support for inlay hints;
+ - adding new file does not register it into new solution anymore, for some reason;
+ - support for inlay hints (lsp 3.17);
  - go-to-def in metadata does not work for Attribute as those have Attribute suffix;
  - progress support;
  - properly escape docxml text, e.g. backquote is a special character in markdown;
