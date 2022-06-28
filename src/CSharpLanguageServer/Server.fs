@@ -794,10 +794,8 @@ let setupServerHandlers options lspClient =
                             { TextDocumentUri = actionParams.TextDocument.Uri
                               Range = actionParams.Range }
 
-                        let caData = JsonConvert.SerializeObject(resolutionData)
-
                         let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
-                        { lspCa with Data = Some (caData :> obj) }
+                        { lspCa with Data = resolutionData |> serialize |> Some }
 
                     return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
                   }
@@ -823,8 +821,8 @@ let setupServerHandlers options lspClient =
             return
                lspCodeActions
                |> Seq.sortByDescending (fun ca -> ca.IsPreferred)
+               |> Seq.map U2<Command, CodeAction>.Second
                |> Array.ofSeq
-               |> TextDocumentCodeActionResult.CodeActions
                |> Some
                |> success
     }
@@ -832,8 +830,7 @@ let setupServerHandlers options lspClient =
     let handleCodeActionResolve (scope: ServerRequestScope) (codeAction: CodeAction): AsyncLspResult<CodeAction option> = async {
         let resolutionData =
             codeAction.Data
-            |> Option.map (fun x -> x :?> string)
-            |> Option.map JsonConvert.DeserializeObject<CSharpCodeActionResolutionData>
+            |> Option.map deserialize<CSharpCodeActionResolutionData>
 
         let docMaybe = scope.GetUserDocumentForUri resolutionData.Value.TextDocumentUri
         match docMaybe with

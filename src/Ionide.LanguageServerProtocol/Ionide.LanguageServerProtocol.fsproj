@@ -22,6 +22,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="Client.fs" />
     <Compile Include="Server.fs" />
+    <Compile Include="JsonUtils.fs" />
     <Compile Include="LanguageServerProtocol.fs" />
     <None Include="../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
