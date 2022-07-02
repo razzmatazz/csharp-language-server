@@ -32,6 +32,9 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
+ - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
+ - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
+   - should we cancel existing ones? -- where cancellable? how to know?
  - support for pull diagnostics (lsp 3.17);
  - support for inlay hints (lsp 3.17);
  - go-to-def in metadata does not work for Attribute as those have Attribute suffix;

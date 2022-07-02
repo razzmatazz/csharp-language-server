@@ -1129,14 +1129,17 @@ let setupServerHandlers options lspClient =
     }
 
     let handleTextDocumentRename (scope: ServerRequestScope) (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
+        let! ct = Async.CancellationToken
+
         let renameSymbolInDoc symbol (doc: Document) = async {
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =
                 Renamer.RenameSymbolAsync(doc.Project.Solution,
                                       symbol,
+                                      SymbolRenameOptions(RenameOverloads=true, RenameFile=true),
                                       rename.NewName,
-                                      doc.Project.Solution.Workspace.Options)
+                                      ct)
                 |> Async.AwaitTask
 
             let! docTextEdit =

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-
+* Update Roslyn, MSBuild and ICSharpCode.Decompiler;
 * Fix how "unnecesary using directive" is exposed, hopefully:
   - fixes https://github.com/razzmatazz/csharp-language-server/issues/35 by @Decodetalkers;
 * Expose actual csharp compiler diagnostics ids (e.g. CS0117) for nicer diagnostics messages.
