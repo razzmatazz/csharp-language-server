@@ -93,14 +93,18 @@ type ServerDocumentType =
 
 type ServerRequestType = ReadOnly | ReadWrite
 
-type ServerState = {
+type ServerRequest = {
+    Type: ServerRequestType
+    ReplyChannel: AsyncReplyChannel<ServerState>
+}
+and ServerState = {
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     Options: Options
-    CurrentReadWriteRequest: AsyncReplyChannel<ServerState> option
-    RequestQueue: (ServerRequestType * AsyncReplyChannel<ServerState>) list
+    CurrentReadWriteRequest: ServerRequest option
+    RequestQueue: ServerRequest list
     SolutionReloadPending: DateTime option
 }
 
@@ -265,7 +269,7 @@ let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
 
 let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
     let enqueueScope requestType replyChannel =
-        let newRequestQueue = state.RequestQueue @ [(requestType, replyChannel)]
+        let newRequestQueue = state.RequestQueue @ [{ Type=requestType; ReplyChannel=replyChannel }]
         let newState = { state with RequestQueue = newRequestQueue }
         postMsg ProcessRequestQueue
         newState
@@ -294,16 +298,16 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
             | None ->
                 match state.RequestQueue with
                 | [] -> state
-                | (nextRequestType, nextRequest) :: queueRemainder ->
+                | nextRequest :: queueRemainder ->
                     // try to process next msg from the remainder, if possible, later
                     postMsg ProcessRequestQueue
 
                     let newState = { state with RequestQueue = queueRemainder }
 
                     // unblock this scope/request to run by sending it current state
-                    nextRequest.Reply(newState)
+                    nextRequest.ReplyChannel.Reply(newState)
 
-                    match nextRequestType with
+                    match nextRequest.Type with
                     | ReadWrite -> { newState with CurrentReadWriteRequest = Some nextRequest }
                     | ReadOnly -> newState
 
