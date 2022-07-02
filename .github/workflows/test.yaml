@@ -1,11 +1,14 @@
 name: Build
 
+on: [push, pull_request]
+
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [windows-2019, ubuntu-20.04]
         dotnet: [6.0.301]
+      fail-fast: false
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -27,11 +30,5 @@ jobs:
     - name: Run Build
       run: dotnet build
 
-    - name: Run publish
-      run: (cd CSharpLanguageServer && dotnet pack -c Release -o release)
-
-    - name: Upload NuGet packages as artifacts
-      uses: actions/upload-artifact@v2
-      with:
-        name: packages
-        path: src/CSharpLanguageServer/release/
+    - name: Run Tests
+      run: dotnet test --no-build
