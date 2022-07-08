@@ -208,7 +208,7 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
 
     loop initialState
 
-type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit -> unit) =
+type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit -> unit, logMessage: string -> unit) =
     let mutable solutionMaybe = state.Solution
 
     interface IDisposable with
@@ -245,8 +245,11 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
             | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
         | None -> None
 
-    member x.GetUserDocumentForUri (u: string) = x.GetDocumentForUriOfType UserDocument u |> Option.map fst
-    member x.GetAnyDocumentForUri (u: string) = x.GetDocumentForUriOfType AnyDocument u |> Option.map fst
+    member scope.GetUserDocumentForUri (u: string) =
+        scope.GetDocumentForUriOfType UserDocument u |> Option.map fst
+
+    member scope.GetAnyDocumentForUri (u: string) =
+        scope.GetDocumentForUriOfType AnyDocument u |> Option.map fst
 
     member x.GetSymbolAtPositionOfType docType uri pos = async {
         match x.GetDocumentForUriOfType docType uri with
@@ -261,8 +264,11 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
             return None
     }
 
-    member x.GetSymbolAtPositionOnAnyDocument uri pos = x.GetSymbolAtPositionOfType AnyDocument uri pos
-    member x.GetSymbolAtPositionOnUserDocument uri pos = x.GetSymbolAtPositionOfType UserDocument uri pos
+    member scope.GetSymbolAtPositionOnAnyDocument uri pos =
+        scope.GetSymbolAtPositionOfType AnyDocument uri pos
+
+    member scope.GetSymbolAtPositionOnUserDocument uri pos =
+        scope.GetSymbolAtPositionOfType UserDocument uri pos
 
     member _.Emit ev =
         match ev with
@@ -272,7 +278,72 @@ type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit ->
 
         emitServerEvent ev
 
-    member x.EmitMany es = for e in es do x.Emit e
+    member scope.EmitMany es =
+        for e in es do scope.Emit e
+
+    member scope.ResolveSymbolLocation
+            (compilation: Microsoft.CodeAnalysis.Compilation)
+            (project: Microsoft.CodeAnalysis.Project)
+            sym
+            (l: Microsoft.CodeAnalysis.Location) = async {
+        let! ct = Async.CancellationToken
+
+        if l.IsInMetadata then
+            let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
+            let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+
+            let mdDocument, stateChanges =
+                match Map.tryFind uri state.DecompiledMetadata with
+                | Some value ->
+                    (value.Document, [])
+                | None ->
+                    let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
+
+                    let csharpMetadata = { ProjectName = project.Name
+                                           AssemblyName = l.MetadataModule.ContainingAssembly.Name
+                                           SymbolName = fullName
+                                           Source = text }
+                    (documentFromMd, [
+                        DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = documentFromMd })])
+
+            scope.EmitMany stateChanges
+
+            // figure out location on the document (approx implementation)
+            let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym, logMessage)
+            collector.Visit(syntaxTree.GetRoot())
+
+            let fallbackLocationInMetadata = {
+                Uri = uri
+                Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
+
+            return
+                match collector.GetLocations() with
+                | [] -> [fallbackLocationInMetadata]
+                | ls -> ls
+
+        else if l.IsInSource then
+            return [lspLocationForRoslynLocation l]
+        else
+            return []
+    }
+
+    member scope.ResolveSymbolLocations
+            (project: Microsoft.CodeAnalysis.Project)
+            (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
+        let! ct = Async.CancellationToken
+        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+
+        let mutable aggregatedLspLocations = []
+
+        for sym in symbols do
+            for l in sym.Locations do
+                let! symLspLocations = scope.ResolveSymbolLocation compilation project sym l
+
+                aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
+
+        return aggregatedLspLocations
+    }
 
 type DiagnosticsEvent =
     | DocumentOpenOrChange of string * DateTime
@@ -360,79 +431,3 @@ let processDiagnosticsEvent _logMessage
 
         return { state with DocumentBacklog = newBacklog }, eventsToPost
       }
-
-let resolveSymbolLocation
-        (state: ServerState)
-        (compilation: Microsoft.CodeAnalysis.Compilation)
-        (project: Microsoft.CodeAnalysis.Project)
-        sym
-        (l: Microsoft.CodeAnalysis.Location)
-        (logMessage: string -> unit)
-            = async {
-
-    let! ct = Async.CancellationToken
-
-    if l.IsInMetadata then
-        let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
-        let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-
-        let mdDocument, stateChanges =
-            match Map.tryFind uri state.DecompiledMetadata with
-            | Some value ->
-                (value.Document, [])
-            | None ->
-                let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
-
-                let csharpMetadata = { ProjectName = project.Name
-                                       AssemblyName = l.MetadataModule.ContainingAssembly.Name
-                                       SymbolName = fullName
-                                       Source = text }
-                (documentFromMd, [
-                     DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = documentFromMd })])
-
-        // figure out location on the document (approx implementation)
-        let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym, logMessage)
-        collector.Visit(syntaxTree.GetRoot())
-
-        let fallbackLocationInMetadata = {
-            Uri = uri
-            Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
-
-        let resolved =
-            match collector.GetLocations() with
-            | [] -> [fallbackLocationInMetadata]
-            | ls -> ls
-
-        return resolved, stateChanges
-
-    else if l.IsInSource then
-        let resolved = [lspLocationForRoslynLocation l]
-
-        return resolved, []
-    else
-        return [], []
-}
-
-let resolveSymbolLocations
-        (state: ServerState)
-        (project: Microsoft.CodeAnalysis.Project)
-        (symbols: Microsoft.CodeAnalysis.ISymbol list)
-        (logMessage: string -> unit)
-            = async {
-    let! ct = Async.CancellationToken
-    let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
-
-    let mutable aggregatedLspLocations = []
-    let mutable aggregatedStateChanges = []
-
-    for sym in symbols do
-        for l in sym.Locations do
-            let! (symLspLocations, stateChanges) =
-                resolveSymbolLocation state compilation project sym l logMessage
-
-            aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
-            aggregatedStateChanges <- aggregatedStateChanges @ stateChanges
-
-    return (aggregatedLspLocations, aggregatedStateChanges)
-}

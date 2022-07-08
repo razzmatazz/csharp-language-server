@@ -494,10 +494,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                     | Some sym -> [sym]
                     | None -> []
 
-                let! (locations, stateChanges) =
-                    resolveSymbolLocations scope.State doc.Project symbols logMessage
-
-                do scope.EmitMany stateChanges
+                let! locations =
+                     scope.ResolveSymbolLocations doc.Project symbols
 
                 return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
               }
@@ -528,10 +526,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                     | None -> return []
                 }
 
-                let! (locations, stateChanges) =
-                    resolveSymbolLocations scope.State doc.Project symbols logMessage
-
-                do scope.EmitMany stateChanges
+                let! locations =
+                    scope.ResolveSymbolLocations doc.Project symbols
 
                 return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
               }
@@ -951,7 +947,7 @@ let setupServerHandlers options (lspClient: LspClient) =
 
     let withReadOnlyScope asyncFn param = async {
         let! stateSnapshot = stateActor.PostAndAsyncReply(StartReadOnlyScope)
-        use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, fun () -> ())
+        use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, (fun () -> ()), logMessage)
         return! asyncFn scope param
     }
 
@@ -968,7 +964,8 @@ let setupServerHandlers options (lspClient: LspClient) =
             use scope = new ServerRequestScope(
                                 stateSnapshot,
                                 stateActor.Post,
-                                fun () -> stateActor.Post(FinishReadWriteScope))
+                                (fun () -> stateActor.Post(FinishReadWriteScope)),
+                                logMessage)
             return! asyncFn scope param
         }
 
