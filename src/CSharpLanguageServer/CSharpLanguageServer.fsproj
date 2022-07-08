@@ -20,6 +20,7 @@
   <ItemGroup>
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Documentation.fs" />
+    <Compile Include="State.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />

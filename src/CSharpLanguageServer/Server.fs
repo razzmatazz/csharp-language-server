@@ -4,32 +4,41 @@ open System
 open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
-
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
 open Microsoft.CodeAnalysis.CSharp.Syntax
-
+open Microsoft.CodeAnalysis.CodeFixes
+open Newtonsoft.Json
+open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-
 open RoslynHelpers
-open Microsoft.CodeAnalysis.CodeFixes
-open ICSharpCode.Decompiler.CSharp
-open ICSharpCode.Decompiler
-open ICSharpCode.Decompiler.CSharp.Transforms
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open State
 
-type Options = {
-    SolutionPath: string option;
-    LogLevel: Types.MessageType;
+type CSharpMetadataParams = {
+    TextDocument: TextDocumentIdentifier
 }
 
-let emptyOptions = { SolutionPath = None; LogLevel = Types.MessageType.Log }
+type CSharpMetadataResponse = CSharpMetadata
+
+type CSharpCodeActionResolutionData = {
+    TextDocumentUri: string
+    Range: Range
+}
+
+type CodeLensData = { DocumentUri: string; Position: Position  }
+
+let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
+
+type InvocationContext = {
+    Receiver: SyntaxNode
+    ArgumentTypes: TypeInfo list
+    Separators: SyntaxToken list
+}
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient ()
@@ -67,471 +76,7 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
-
-type CSharpMetadataParams = {
-    TextDocument: TextDocumentIdentifier
-}
-
-type CSharpMetadataResponse = {
-    ProjectName: string;
-    AssemblyName: string;
-    SymbolName: string;
-    Source: string;
-}
-
-type CSharpCodeActionResolutionData = {
-    TextDocumentUri: string
-    Range: Range
-}
-
-type DecompiledMetadataDocument = { Metadata: CSharpMetadataResponse; Document: Document }
-
-type ServerDocumentType =
-     | UserDocument // user Document from solution, on disk
-     | DecompiledDocument // Document decompiled from metadata, readonly
-     | AnyDocument
-
-type ServerRequestType = ReadOnly | ReadWrite
-
-type ServerRequest = {
-    Type: ServerRequestType
-    ReplyChannel: AsyncReplyChannel<ServerState>
-}
-and ServerState = {
-    ClientCapabilities: ClientCapabilities option
-    Solution: Solution option
-    OpenDocVersions: Map<string, int>
-    DecompiledMetadata: Map<string, DecompiledMetadataDocument>
-    Options: Options
-    CurrentReadWriteRequest: ServerRequest option
-    RequestQueue: ServerRequest list
-    SolutionReloadPending: DateTime option
-}
-
-let emptyServerState = { ClientCapabilities = None
-                         Solution = None
-                         OpenDocVersions = Map.empty
-                         DecompiledMetadata = Map.empty
-                         Options = emptyOptions
-                         CurrentReadWriteRequest = None
-                         RequestQueue = []
-                         SolutionReloadPending = None }
-
-let getDocumentOfTypeForUri state docType (u: string) =
-    let uri = Uri u
-
-    match state.Solution with
-    | Some solution ->
-        let matchingUserDocuments =
-            solution.Projects
-            |> Seq.collect (fun p -> p.Documents)
-            |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
-
-        let matchingUserDocumentMaybe =
-            match matchingUserDocuments with
-            | [d] -> Some (d, UserDocument)
-            | _ -> None
-
-        let matchingDecompiledDocumentMaybe =
-            Map.tryFind u state.DecompiledMetadata
-            |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-        match docType with
-        | UserDocument -> matchingUserDocumentMaybe
-        | DecompiledDocument -> matchingDecompiledDocumentMaybe
-        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-
-    | None -> None
-
-type ServerStateEvent =
-    | ClientCapabilityChange of ClientCapabilities option
-    | SolutionChange of Solution
-    | DecompiledMetadataAdd of string * DecompiledMetadataDocument
-    | OpenDocVersionAdd of string * int
-    | OpenDocVersionRemove of string
-    | GetState of AsyncReplyChannel<ServerState>
-    | StartReadOnlyScope of AsyncReplyChannel<ServerState>
-    | StartReadWriteScope of AsyncReplyChannel<ServerState>
-    | FinishReadWriteScope
-    | ProcessRequestQueue
-    | SolutionReloadRequest
-    | SolutionReload
-    | PeriodicTimerTick
-
-let makeDocumentFromMetadata
-        (compilation: Microsoft.CodeAnalysis.Compilation)
-        (project: Microsoft.CodeAnalysis.Project)
-        (l: Microsoft.CodeAnalysis.Location)
-        (fullName: string) =
-    let mdLocation = l
-    let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
-    let peReference = reference :?> PortableExecutableReference |> Option.ofObj
-    let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
-
-    let decompilerSettings = DecompilerSettings()
-    decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
-
-    let decompiler = CSharpDecompiler(assemblyLocation, decompilerSettings)
-
-    // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
-    // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
-    decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
-
-    let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
-
-    let text = decompiler.DecompileTypeAsString(fullTypeName)
-
-    let mdDocumentFilename = $"$metadata$/projects/{project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-    let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
-
-    let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
-    (mdDocument, text)
-
-let resolveSymbolLocation
-        (state: ServerState)
-        (compilation: Microsoft.CodeAnalysis.Compilation)
-        (project: Microsoft.CodeAnalysis.Project)
-        sym
-        (l: Microsoft.CodeAnalysis.Location)
-        (logMessage: string -> unit)
-            = async {
-
-    let! ct = Async.CancellationToken
-
-    if l.IsInMetadata then
-        let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
-        let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
-
-        let mdDocument, stateChanges =
-            match Map.tryFind uri state.DecompiledMetadata with
-            | Some value ->
-                (value.Document, [])
-            | None ->
-                let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
-
-                let csharpMetadata = { ProjectName = project.Name
-                                       AssemblyName = l.MetadataModule.ContainingAssembly.Name
-                                       SymbolName = fullName
-                                       Source = text }
-                (documentFromMd, [
-                     DecompiledMetadataAdd (uri, { Metadata = csharpMetadata; Document = documentFromMd })])
-
-        // figure out location on the document (approx implementation)
-        let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym, logMessage)
-        collector.Visit(syntaxTree.GetRoot())
-
-        let fallbackLocationInMetadata = {
-            Uri = uri
-            Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
-
-        let resolved =
-            match collector.GetLocations() with
-            | [] -> [fallbackLocationInMetadata]
-            | ls -> ls
-
-        return resolved, stateChanges
-
-    else if l.IsInSource then
-        let resolved = [lspLocationForRoslynLocation l]
-
-        return resolved, []
-    else
-        return [], []
-}
-
-let resolveSymbolLocations
-        (state: ServerState)
-        (project: Microsoft.CodeAnalysis.Project)
-        (symbols: Microsoft.CodeAnalysis.ISymbol list)
-        (logMessage: string -> unit)
-            = async {
-    let! ct = Async.CancellationToken
-    let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
-
-    let mutable aggregatedLspLocations = []
-    let mutable aggregatedStateChanges = []
-
-    for sym in symbols do
-        for l in sym.Locations do
-            let! (symLspLocations, stateChanges) =
-                resolveSymbolLocation state compilation project sym l logMessage
-
-            aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
-            aggregatedStateChanges <- aggregatedStateChanges @ stateChanges
-
-    return (aggregatedLspLocations, aggregatedStateChanges)
-}
-
-type CodeLensData = { DocumentUri: string; Position: Position  }
-
-let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
-
-let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
-    let enqueueScope requestType replyChannel =
-        let newRequestQueue = state.RequestQueue @ [{ Type=requestType; ReplyChannel=replyChannel }]
-        let newState = { state with RequestQueue = newRequestQueue }
-        postMsg ProcessRequestQueue
-        newState
-
-    match msg with
-    | GetState replyChannel ->
-        replyChannel.Reply(state)
-        return state
-
-    | StartReadOnlyScope replyChannel ->
-        return enqueueScope ReadOnly replyChannel
-
-    | StartReadWriteScope replyChannel ->
-        return enqueueScope ReadWrite replyChannel
-
-    | FinishReadWriteScope ->
-        let newState = { state with CurrentReadWriteRequest = None }
-        postMsg ProcessRequestQueue
-        return newState
-
-    | ProcessRequestQueue ->
-        return
-            match state.CurrentReadWriteRequest with
-            | Some _req ->
-                state // block until CurrentReadWriteRequest is finished
-            | None ->
-                match state.RequestQueue with
-                | [] -> state
-                | nextRequest :: queueRemainder ->
-                    // try to process next msg from the remainder, if possible, later
-                    postMsg ProcessRequestQueue
-
-                    let newState = { state with RequestQueue = queueRemainder }
-
-                    // unblock this scope/request to run by sending it current state
-                    nextRequest.ReplyChannel.Reply(newState)
-
-                    match nextRequest.Type with
-                    | ReadWrite -> { newState with CurrentReadWriteRequest = Some nextRequest }
-                    | ReadOnly -> newState
-
-    | ClientCapabilityChange cc ->
-        return { state with ClientCapabilities = cc }
-
-    | SolutionChange s ->
-        return { state with Solution = Some s }
-
-    | DecompiledMetadataAdd (uri, md) ->
-        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
-        return { state with DecompiledMetadata = newDecompiledMd }
-
-    | OpenDocVersionAdd (doc, ver) ->
-        let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
-        return { state with OpenDocVersions = newOpenDocVersions }
-
-    | OpenDocVersionRemove uri ->
-        let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
-        return { state with OpenDocVersions = newOpenDocVersions }
-
-    | SolutionReloadRequest ->
-        // we need to wait a bit before starting this so we
-        // can buffer many incoming requests at once
-        return { state with SolutionReloadPending = DateTime.Now.AddSeconds(5) |> Some }
-
-    | SolutionReload ->
-        let! solution =
-            match state.Options.SolutionPath with
-            | Some solutionPath -> async {
-                logMessage (sprintf "loading specified solution file: %s.." solutionPath)
-                return! tryLoadSolutionOnPath logMessage solutionPath
-              }
-
-            | None -> async {
-                let cwd = Directory.GetCurrentDirectory()
-                logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
-                return! findAndLoadSolutionOnDir logMessage cwd
-              }
-
-        return { state with Solution = solution }
-
-    | PeriodicTimerTick ->
-        let solutionReloadTime = state.SolutionReloadPending
-                                 |> Option.defaultValue (DateTime.Now.AddDays(1))
-
-        match solutionReloadTime < DateTime.Now with
-        | true ->
-            postMsg SolutionReload
-            return { state with SolutionReloadPending = None }
-
-        | false ->
-            return state
-}
-
-let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerStateEvent>) =
-    let rec loop state = async {
-        let! msg = inbox.Receive()
-        let! newState = msg |> processServerEvent logMessage state inbox.Post
-        return! loop newState
-    }
-
-    loop initialState
-
-type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit -> unit) =
-    let mutable solutionMaybe = state.Solution
-
-    interface IDisposable with
-        member _.Dispose() = onDispose()
-
-    member _.State = state
-    member _.ClientCapabilities = state.ClientCapabilities
-    member _.Solution = solutionMaybe.Value
-    member _.OpenDocVersions = state.OpenDocVersions
-    member _.DecompiledMetadata = state.DecompiledMetadata
-
-    member this.GetDocumentForUriOfType docType (u: string) =
-        let uri = Uri u
-
-        match solutionMaybe with
-        | Some solution ->
-            let matchingUserDocuments =
-                solution.Projects
-                |> Seq.collect (fun p -> p.Documents)
-                |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
-
-            let matchingUserDocumentMaybe =
-                match matchingUserDocuments with
-                | [d] -> Some (d, UserDocument)
-                | _ -> None
-
-            let matchingDecompiledDocumentMaybe =
-                Map.tryFind u this.DecompiledMetadata
-                |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-            match docType with
-            | UserDocument -> matchingUserDocumentMaybe
-            | DecompiledDocument -> matchingDecompiledDocumentMaybe
-            | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-        | None -> None
-
-    member x.GetUserDocumentForUri (u: string) = x.GetDocumentForUriOfType UserDocument u |> Option.map fst
-    member x.GetAnyDocumentForUri (u: string) = x.GetDocumentForUriOfType AnyDocument u |> Option.map fst
-
-    member x.GetSymbolAtPositionOfType docType uri pos = async {
-        match x.GetDocumentForUriOfType docType uri with
-        | Some (doc, _docType) ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return if isNull symbolRef then None else Some (symbolRef, doc, position)
-
-        | None ->
-            return None
-    }
-
-    member x.GetSymbolAtPositionOnAnyDocument uri pos = x.GetSymbolAtPositionOfType AnyDocument uri pos
-    member x.GetSymbolAtPositionOnUserDocument uri pos = x.GetSymbolAtPositionOfType UserDocument uri pos
-
-    member _.Emit ev =
-        match ev with
-        | SolutionChange newSolution ->
-            solutionMaybe <- Some newSolution
-        | _ -> ()
-
-        emitServerEvent ev
-
-    member x.EmitMany es = for e in es do x.Emit e
-
-type DiagnosticsEvent =
-    | DocumentOpenOrChange of string * DateTime
-    | DocumentClose of string
-    | ProcessPendingDiagnostics
-    | DocumentBacklogUpdate
-    | DocumentRemoval of string
-
-type DiagnosticsState = {
-    DocumentBacklog: string list
-    DocumentChanges: Map<string, DateTime>
-}
-
-let emptyDiagnosticsState = { DocumentBacklog = []; DocumentChanges = Map.empty }
-
-let processDiagnosticsEvent _logMessage
-                            (lspClient: CSharpLspClient)
-                            (getDocumentForUri: string -> Async<(Document * ServerDocumentType) option>)
-                            (state: DiagnosticsState)
-                            event =
-    match event with
-    | DocumentRemoval uri -> async {
-        let updatedDocumentChanges = state.DocumentChanges |> Map.remove uri
-        let newState = { state with DocumentChanges = updatedDocumentChanges }
-        return newState, [ DocumentBacklogUpdate ]
-      }
-
-    | DocumentOpenOrChange (uri, timestamp) -> async {
-        let newDocChanges = state.DocumentChanges |> Map.add uri timestamp
-        let newState = { state with DocumentChanges = newDocChanges }
-        return newState, [ DocumentBacklogUpdate ]
-      }
-
-    | DocumentBacklogUpdate -> async {
-        let newBacklog =
-            state.DocumentChanges
-            |> Seq.sortByDescending (fun kv -> kv.Value)
-            |> Seq.map (fun kv -> kv.Key)
-            |> List.ofSeq
-
-        let newState = { state with DocumentBacklog = newBacklog }
-        return newState, []
-      }
-
-    | DocumentClose uri -> async {
-        let prunedBacklog = state.DocumentBacklog
-                            |> Seq.filter (fun x -> x <> uri)
-                            |> List.ofSeq
-
-        let prunedDocumentChanges = state.DocumentChanges |> Map.remove uri
-
-        let newState = { state with DocumentBacklog = prunedBacklog
-                                    DocumentChanges = prunedDocumentChanges }
-        return newState, []
-      }
-
-    | ProcessPendingDiagnostics -> async {
-        let docUriMaybe, newBacklog =
-            match state.DocumentBacklog with
-            | [] -> (None, [])
-            | uri :: remainder -> (Some uri, remainder)
-
-        match docUriMaybe with
-        | Some docUri ->
-            let! docAndTypeMaybe = getDocumentForUri docUri
-            match docAndTypeMaybe with
-            | Some (doc, _) ->
-                let! ct = Async.CancellationToken
-                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                match semanticModelMaybe |> Option.ofObj with
-                | Some semanticModel ->
-                    let diagnostics =
-                        semanticModel.GetDiagnostics()
-                        |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                        |> Array.ofSeq
-
-                    do! lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics }
-                | None -> ()
-            | None -> ()
-        | None -> ()
-
-        let eventsToPost = match newBacklog with
-                           | [] -> []
-                           | _ -> [ ProcessPendingDiagnostics ]
-
-        return { state with DocumentBacklog = newBacklog }, eventsToPost
-      }
-
-type InvocationContext = {
-    Receiver: SyntaxNode
-    ArgumentTypes: TypeInfo list
-    Separators: SyntaxToken list
-}
-
-let setupServerHandlers options lspClient =
+let setupServerHandlers options (lspClient: LspClient) =
     let success = LspResult.success
     let mutable logMessageCurrent = Action<string>(fun _ -> ())
     let logMessageInvoke m = logMessageCurrent.Invoke(m)
@@ -539,10 +84,8 @@ let setupServerHandlers options lspClient =
     let stateActor = MailboxProcessor.Start(
         serverEventLoop logMessageInvoke { emptyServerState with Options = options })
 
-    let getDocumentForUriFromCurrentState docType uri = async {
-        let! state = stateActor.PostAndAsyncReply(GetState)
-        return getDocumentOfTypeForUri state docType uri
-    }
+    let getDocumentForUriFromCurrentState docType uri =
+        stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
 
     let diagnostics = MailboxProcessor.Start(
         fun inbox -> async {
@@ -551,7 +94,7 @@ let setupServerHandlers options lspClient =
                     let! msg = inbox.Receive()
                     let! (newState, eventsToPost) =
                         processDiagnosticsEvent logMessageInvoke
-                                                lspClient
+                                                (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics })
                                                 (getDocumentForUriFromCurrentState AnyDocument)
                                                 state
                                                 msg

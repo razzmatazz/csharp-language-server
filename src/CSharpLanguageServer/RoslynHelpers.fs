@@ -19,6 +19,9 @@ open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open System.Collections.Immutable
+open ICSharpCode.Decompiler
+open ICSharpCode.Decompiler.CSharp
+open ICSharpCode.Decompiler.CSharp.Transforms
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -796,3 +799,32 @@ let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) 
             | None -> return Array.empty<TextEdit>
         | _ -> return Array.empty<TextEdit>
     }
+
+let makeDocumentFromMetadata
+        (compilation: Microsoft.CodeAnalysis.Compilation)
+        (project: Microsoft.CodeAnalysis.Project)
+        (l: Microsoft.CodeAnalysis.Location)
+        (fullName: string) =
+    let mdLocation = l
+    let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
+    let peReference = reference :?> PortableExecutableReference |> Option.ofObj
+    let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+
+    let decompilerSettings = DecompilerSettings()
+    decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
+
+    let decompiler = CSharpDecompiler(assemblyLocation, decompilerSettings)
+
+    // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
+    // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
+    decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
+
+    let fullTypeName = ICSharpCode.Decompiler.TypeSystem.FullTypeName(fullName)
+
+    let text = decompiler.DecompileTypeAsString(fullTypeName)
+
+    let mdDocumentFilename = $"$metadata$/projects/{project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+    let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
+
+    let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
+    (mdDocument, text)

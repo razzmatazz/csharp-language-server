@@ -26,7 +26,7 @@ let entry args =
             | _ -> Ionide.LanguageServerProtocol.Types.MessageType.Log
 
         // default the verbosity to warning
-        let serverOptions: Server.Options = {
+        let serverOptions: State.Options = {
             SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
             LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
                        |> Option.defaultValue "log"
