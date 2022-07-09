@@ -2,6 +2,7 @@ module CSharpLanguageServer.State
 
 open System
 open System.IO
+open System.Threading
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
@@ -30,8 +31,9 @@ type DecompiledMetadataDocument = {
 type ServerRequestType = ReadOnly | ReadWrite
 
 type ServerRequest = {
+    Id: int
     Type: ServerRequestType
-    ReplyChannel: AsyncReplyChannel<ServerState>
+    Semaphore: SemaphoreSlim
 }
 and ServerState = {
     ClientCapabilities: ClientCapabilities option
@@ -39,7 +41,8 @@ and ServerState = {
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     Options: Options
-    CurrentReadWriteRequest: ServerRequest option
+    LastRequestId: int
+    RunningRequests: Map<int, ServerRequest>
     RequestQueue: ServerRequest list
     SolutionReloadPending: DateTime option
 }
@@ -49,7 +52,8 @@ let emptyServerState = { ClientCapabilities = None
                          OpenDocVersions = Map.empty
                          DecompiledMetadata = Map.empty
                          Options = emptyOptions
-                         CurrentReadWriteRequest = None
+                         LastRequestId = 0
+                         RunningRequests = Map.empty
                          RequestQueue = []
                          SolutionReloadPending = None }
 
@@ -66,21 +70,14 @@ type ServerStateEvent =
     | OpenDocVersionRemove of string
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartReadOnlyScope of AsyncReplyChannel<ServerState>
-    | StartReadWriteScope of AsyncReplyChannel<ServerState>
-    | FinishReadWriteScope
+    | StartRequest of ServerRequestType * AsyncReplyChannel<int * SemaphoreSlim>
+    | FinishRequest of int
     | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
     | PeriodicTimerTick
 
 let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
-    let enqueueScope requestType replyChannel =
-        let newRequestQueue = state.RequestQueue @ [{ Type=requestType; ReplyChannel=replyChannel }]
-        let newState = { state with RequestQueue = newRequestQueue }
-        postMsg ProcessRequestQueue
-        newState
-
     match msg with
     | GetState replyChannel ->
         replyChannel.Reply(state)
@@ -115,37 +112,56 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
 
         return state
 
-    | StartReadOnlyScope replyChannel ->
-        return enqueueScope ReadOnly replyChannel
+    | StartRequest (requestType, replyChannel) ->
+        postMsg ProcessRequestQueue
 
-    | StartReadWriteScope replyChannel ->
-        return enqueueScope ReadWrite replyChannel
+        let newRequest = { Id=state.LastRequestId+1
+                           Type=requestType
+                           Semaphore=new SemaphoreSlim(0, 1) }
 
-    | FinishReadWriteScope ->
-        let newState = { state with CurrentReadWriteRequest = None }
+        replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
+
+        return { state with LastRequestId=newRequest.Id
+                            RequestQueue=state.RequestQueue @ [newRequest] }
+
+    | FinishRequest requestId ->
+        let request = state.RunningRequests |> Map.find requestId
+        request.Semaphore.Dispose()
+
+        let newRunningRequests = state.RunningRequests |> Map.remove requestId
+        let newState = { state with RunningRequests = newRunningRequests }
+
         postMsg ProcessRequestQueue
         return newState
 
     | ProcessRequestQueue ->
+        let runningRWRequestMaybe =
+            state.RunningRequests
+            |> Seq.map (fun kv -> kv.Value)
+            |> Seq.tryFind (fun r -> r.Type = ReadWrite)
+
+        let numRunningRequests = state.RunningRequests |> Map.count
+
+        let canRunNextRequest =
+            (Option.isNone runningRWRequestMaybe) && (numRunningRequests < 4)
+
         return
-            match state.CurrentReadWriteRequest with
-            | Some _req ->
-                state // block until CurrentReadWriteRequest is finished
-            | None ->
+            if not canRunNextRequest then
+                state // block until current ReadWrite request is finished
+            else
                 match state.RequestQueue with
                 | [] -> state
                 | nextRequest :: queueRemainder ->
                     // try to process next msg from the remainder, if possible, later
                     postMsg ProcessRequestQueue
 
-                    let newState = { state with RequestQueue = queueRemainder }
+                    let newState = { state with RequestQueue = queueRemainder
+                                                RunningRequests = state.RunningRequests |> Map.add nextRequest.Id nextRequest }
 
-                    // unblock this scope/request to run by sending it current state
-                    nextRequest.ReplyChannel.Reply(newState)
+                    // unblock this request to run by sending it current state
+                    nextRequest.Semaphore.Release() |> ignore
 
-                    match nextRequest.Type with
-                    | ReadWrite -> { newState with CurrentReadWriteRequest = Some nextRequest }
-                    | ReadOnly -> newState
+                    newState
 
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }
@@ -208,11 +224,12 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
 
     loop initialState
 
-type ServerRequestScope (state: ServerState, emitServerEvent, onDispose: unit -> unit, logMessage: string -> unit) =
+type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: string -> unit) =
     let mutable solutionMaybe = state.Solution
 
     interface IDisposable with
-        member _.Dispose() = onDispose()
+        member _.Dispose() =
+            emitServerEvent(FinishRequest requestId)
 
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities

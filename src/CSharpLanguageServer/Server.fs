@@ -945,29 +945,26 @@ let setupServerHandlers options (lspClient: LspClient) =
             return formattingChanges |> Some |> success
         }
 
-    let withReadOnlyScope asyncFn param = async {
-        let! stateSnapshot = stateActor.PostAndAsyncReply(StartReadOnlyScope)
-        use scope = new ServerRequestScope(stateSnapshot, stateActor.Post, (fun () -> ()), logMessage)
-        return! asyncFn scope param
-    }
-
-    let withReadWriteScope asyncFn param =
+    let withScope requestType asyncFn param =
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
-        let stateSnapshot = stateActor.PostAndReply(StartReadWriteScope)
 
-        // we want to run asyncFn within scope as scope.Dispose() will send FinishSolutionChange and will actually
-        // allow subsequent write request to run
+        let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, rc))
+
         async {
-            use scope = new ServerRequestScope(
-                                stateSnapshot,
-                                stateActor.Post,
-                                (fun () -> stateActor.Post(FinishReadWriteScope)),
-                                logMessage)
+            do! semaphore.WaitAsync() |> Async.AwaitTask
+
+            let! stateSnapshot = stateActor.PostAndAsyncReply(GetState)
+
+            use scope = new ServerRequestScope(requestId, stateSnapshot, stateActor.Post, logMessage)
             return! asyncFn scope param
         }
+
+    let withReadOnlyScope asyncFn param = withScope ReadOnly asyncFn param
+
+    let withReadWriteScope asyncFn param = withScope ReadWrite asyncFn param
 
     let withTimeoutOfMS (timeoutMS: int) asyncFn param = async {
         let! baseCT = Async.CancellationToken
