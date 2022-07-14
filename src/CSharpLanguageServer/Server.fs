@@ -999,7 +999,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
         "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
         "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScope |> requestHandling
-        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> withTimeoutOfMS 10000 |> requestHandling
+        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> withTimeoutOfMS 1000 |> requestHandling
         "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
         "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling
         "textDocument/documentHighlight" , handleTextDocumentDocumentHighlight |> withReadOnlyScope |> requestHandling
