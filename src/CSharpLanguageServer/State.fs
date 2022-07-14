@@ -143,7 +143,7 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
         let numRunningRequests = state.RunningRequests |> Map.count
 
         let canRunNextRequest =
-            (Option.isNone runningRWRequestMaybe) // && (numRunningRequests < 4)
+            (Option.isNone runningRWRequestMaybe) && (numRunningRequests < 4)
 
         return
             if not canRunNextRequest then
@@ -224,12 +224,8 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
 
     loop initialState
 
-type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: string -> unit) =
+type ServerRequestScope (state: ServerState, emitServerEvent, logMessage: string -> unit) =
     let mutable solutionMaybe = state.Solution
-
-    interface IDisposable with
-        member _.Dispose() =
-            emitServerEvent(FinishRequest requestId)
 
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities

@@ -956,10 +956,13 @@ let setupServerHandlers options (lspClient: LspClient) =
         async {
             do! semaphore.WaitAsync() |> Async.AwaitTask
 
-            let! stateSnapshot = stateActor.PostAndAsyncReply(GetState)
+            let state = stateActor.PostAndReply(GetState)
 
-            use scope = new ServerRequestScope(requestId, stateSnapshot, stateActor.Post, logMessage)
-            return! asyncFn scope param
+            try
+                let scope = ServerRequestScope(state, stateActor.Post, logMessage)
+                return! asyncFn scope param
+            finally
+                stateActor.Post(FinishRequest requestId)
         }
 
     let withReadOnlyScope asyncFn param = withScope ReadOnly asyncFn param
