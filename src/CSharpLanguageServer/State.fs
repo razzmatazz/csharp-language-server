@@ -143,7 +143,7 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
         let numRunningRequests = state.RunningRequests |> Map.count
 
         let canRunNextRequest =
-            (Option.isNone runningRWRequestMaybe) && (numRunningRequests < 4)
+            (Option.isNone runningRWRequestMaybe) // && (numRunningRequests < 4)
 
         return
             if not canRunNextRequest then
