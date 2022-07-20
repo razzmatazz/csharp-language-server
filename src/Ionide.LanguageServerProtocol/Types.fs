@@ -30,6 +30,8 @@ module LspResult =
 
   let notImplemented<'a> : LspResult<'a> = Result.Error(JsonRpc.Error.MethodNotFound)
 
+  let requestCancelled<'a> : LspResult<'a> = Result.Error(JsonRpc.Error.RequestCancelled)
+
 module AsyncLspResult =
   open Ionide.LanguageServerProtocol
 

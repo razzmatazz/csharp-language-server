@@ -18,6 +18,8 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open RoslynHelpers
 open State
+open System.Threading.Tasks
+open System.Threading
 
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
@@ -189,7 +191,7 @@ let setupServerHandlers options (lspClient: LspClient) =
 
       initializeResult |> success |> async.Return
 
-    let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<unit> =
+    let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
         logMessage "\"initialized\" notification received from client"
         async {
             //
@@ -215,9 +217,11 @@ let setupServerHandlers options (lspClient: LspClient) =
             // start solution loading (on stateActor)
             //
             scope.Emit(SolutionReload)
+
+            return LspResult.Ok()
         }
 
-    let handleTextDocumentDidOpen (scope: ServerRequestScope) (openParams: Types.DidOpenTextDocumentParams): Async<unit> =
+    let handleTextDocumentDidOpen (scope: ServerRequestScope) (openParams: Types.DidOpenTextDocumentParams): Async<LspResult<unit>> =
       async {
         match scope.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
         | Some (doc, docType) ->
@@ -252,9 +256,11 @@ let setupServerHandlers options (lspClient: LspClient) =
 
                 | None -> ()
             | false -> ()
+
+        return LspResult.Ok()
     }
 
-    let handleTextDocumentDidChange (scope: ServerRequestScope) (changeParams: Types.DidChangeTextDocumentParams): Async<unit> =
+    let handleTextDocumentDidChange (scope: ServerRequestScope) (changeParams: Types.DidChangeTextDocumentParams): Async<LspResult<unit>> =
       async {
         let docMaybe = scope.GetUserDocumentForUri changeParams.TextDocument.Uri
         match docMaybe with
@@ -278,9 +284,11 @@ let setupServerHandlers options (lspClient: LspClient) =
                     DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
 
         | None -> ()
+
+        return Result.Ok()
     }
 
-    let handleTextDocumentDidSave (scope: ServerRequestScope) (saveParams: Types.DidSaveTextDocumentParams): Async<unit> =
+    let handleTextDocumentDidSave (scope: ServerRequestScope) (saveParams: Types.DidSaveTextDocumentParams): Async<LspResult<unit>> =
       async {
         // we need to add this file to solution if not already
         let doc = scope.GetAnyDocumentForUri saveParams.TextDocument.Uri
@@ -301,12 +309,14 @@ let setupServerHandlers options (lspClient: LspClient) =
                     DocumentOpenOrChange (saveParams.TextDocument.Uri, DateTime.Now))
 
             | None -> ()
+
+        return LspResult.Ok()
     }
 
-    let handleTextDocumentDidClose (scope: ServerRequestScope) (closeParams: Types.DidCloseTextDocumentParams): Async<unit> =
+    let handleTextDocumentDidClose (scope: ServerRequestScope) (closeParams: Types.DidCloseTextDocumentParams): Async<LspResult<unit>> =
         scope.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
         diagnostics.Post(DocumentClose closeParams.TextDocument.Uri)
-        async.Return ()
+        LspResult.Ok() |> async.Return
 
     let handleTextDocumentCodeAction (scope: ServerRequestScope) (actionParams: Types.CodeActionParams): AsyncLspResult<Types.TextDocumentCodeActionResult option> = async {
         let docMaybe = scope.GetUserDocumentForUri actionParams.TextDocument.Uri
@@ -444,7 +454,18 @@ let setupServerHandlers options (lspClient: LspClient) =
             return None |> success
     }
 
-    let handleCodeLensResolve (scope: ServerRequestScope) (codeLens: CodeLens) : AsyncLspResult<CodeLens> = async {
+    let handleCodeLensResolveWithTimeoutMS
+            (timeoutMS: int)
+            (scope: ServerRequestScope)
+            (codeLens: CodeLens)
+            : AsyncLspResult<CodeLens> = async {
+
+        //let! ct = Async.CancellationToken
+        let! baseCT = Async.CancellationToken
+        use timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(baseCT)
+        timeoutCts.CancelAfter(timeoutMS)
+        let ct = timeoutCts.Token
+
         let lensData =
             codeLens.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
@@ -453,7 +474,6 @@ let setupServerHandlers options (lspClient: LspClient) =
         let docMaybe = scope.GetAnyDocumentForUri lensData.DocumentUri
         let doc = docMaybe.Value
 
-        let! ct = Async.CancellationToken
         let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
         let position =
@@ -847,7 +867,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         return symbols |> Array.ofSeq |> Some |> success
     }
 
-    let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<unit> = async {
+    let handleWorkspaceDidChangeWatchedFiles (scope: ServerRequestScope) (changeParams: Types.DidChangeWatchedFilesParams): Async<LspResult<unit>> = async {
         let tryReloadDocumentOnUri uri = async {
             match scope.GetDocumentForUriOfType UserDocument uri with
             | Some (doc, _) ->
@@ -905,6 +925,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                 | _ -> ()
 
             | _ -> ()
+
+        return LspResult.Ok()
     }
 
     let handleCSharpMetadata (scope: ServerRequestScope) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
@@ -953,6 +975,14 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, rc))
 
+        let rec unpackException (exn : Exception) =
+            match exn with
+            | :? AggregateException as agg ->
+                match Seq.tryExactlyOne agg.InnerExceptions with
+                | Some x -> unpackException x
+                | None -> exn
+            | _ -> exn
+
         async {
             do! semaphore.WaitAsync() |> Async.AwaitTask
 
@@ -960,7 +990,15 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             try
                 let scope = ServerRequestScope(state, stateActor.Post, logMessage)
-                return! asyncFn scope param
+                try
+                    return! asyncFn scope param
+                with
+                | ex ->
+                    let unpackedEx = ex |> unpackException
+                    if unpackedEx :? TaskCanceledException then
+                        return LspResult.requestCancelled
+                    else
+                        return raise ex
             finally
                 stateActor.Post(FinishRequest requestId)
         }
@@ -969,37 +1007,17 @@ let setupServerHandlers options (lspClient: LspClient) =
 
     let withReadWriteScope asyncFn param = withScope ReadWrite asyncFn param
 
-    let withTimeoutOfMS (timeoutMS: int) asyncFn param = async {
-        let! baseCT = Async.CancellationToken
-        use timeoutCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(baseCT)
-        timeoutCts.CancelAfter(timeoutMS)
-        return! Async.StartAsTask(asyncFn param, cancellationToken=timeoutCts.Token)
-                |> Async.AwaitTask
-    }
-
-    let withNotificationSuccess asyncFn param =
-        // we want to run asyncFn immediately outside of async scope so we still
-        // handle request immediately as sent in by StreamJsonRpc and handler
-        // has a change to process this before next request is accepted
-        let asyncFnResult = asyncFn param
-
-        // allow subsequent write request to run
-        async {
-            do! asyncFnResult
-            return Result.Ok()
-        }
-
     [
         "initialize"                     , handleInitialize                    |> withReadWriteScope |> requestHandling
-        "initialized"                    , handleInitialized                   |> withReadWriteScope |> withNotificationSuccess |> requestHandling
-        "textDocument/didChange"         , handleTextDocumentDidChange         |> withReadWriteScope |> withNotificationSuccess |> requestHandling
-        "textDocument/didClose"          , handleTextDocumentDidClose          |> withReadWriteScope |> withNotificationSuccess |> requestHandling
-        "textDocument/didOpen"           , handleTextDocumentDidOpen           |> withReadWriteScope |> withNotificationSuccess |> requestHandling
-        "textDocument/didSave"           , handleTextDocumentDidSave           |> withReadWriteScope |> withNotificationSuccess |> requestHandling
+        "initialized"                    , handleInitialized                   |> withReadWriteScope |> requestHandling
+        "textDocument/didChange"         , handleTextDocumentDidChange         |> withReadWriteScope |> requestHandling
+        "textDocument/didClose"          , handleTextDocumentDidClose          |> withReadWriteScope |> requestHandling
+        "textDocument/didOpen"           , handleTextDocumentDidOpen           |> withReadWriteScope |> requestHandling
+        "textDocument/didSave"           , handleTextDocumentDidSave           |> withReadWriteScope |> requestHandling
         "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
         "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
         "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScope |> requestHandling
-        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> withTimeoutOfMS 1000 |> requestHandling
+        "codeLens/resolve"               , handleCodeLensResolveWithTimeoutMS 3000 |> withReadOnlyScope |> requestHandling
         "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
         "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling
         "textDocument/documentHighlight" , handleTextDocumentDocumentHighlight |> withReadOnlyScope |> requestHandling
@@ -1013,7 +1031,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
         "textDocument/signatureHelp"     , handleTextDocumentSignatureHelp     |> withReadOnlyScope |> requestHandling
         "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
-        "workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles |> withReadWriteScope |> withNotificationSuccess |> requestHandling
+        "workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles |> withReadWriteScope |> requestHandling
         "csharp/metadata"                , handleCSharpMetadata                |> withReadOnlyScope |> requestHandling
     ]
     |> Map.ofList
