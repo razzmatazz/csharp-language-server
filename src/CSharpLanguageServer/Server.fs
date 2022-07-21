@@ -994,13 +994,13 @@ let setupServerHandlers options (lspClient: LspClient) =
             return formattingChanges |> Some |> success
         }
 
-    let withScope requestType asyncFn param =
+    let withScope requestType requestPriority asyncFn param =
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, rc))
+        let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, requestPriority, rc))
 
         async {
             do! semaphore.WaitAsync() |> Async.AwaitTask
@@ -1022,9 +1022,9 @@ let setupServerHandlers options (lspClient: LspClient) =
                 stateActor.Post(FinishRequest requestId)
         }
 
-    let withReadOnlyScope asyncFn param = withScope ReadOnly asyncFn param
-
-    let withReadWriteScope asyncFn param = withScope ReadWrite asyncFn param
+    let withReadOnlyScope asyncFn param = withScope ReadOnly 0 asyncFn param
+    let withReadOnlyScopeWithPriority priority asyncFn param = withScope ReadOnly priority asyncFn param
+    let withReadWriteScope asyncFn param = withScope ReadWrite 0 asyncFn param
 
     [
         "initialize"                     , handleInitialize                    |> withReadWriteScope |> requestHandling
@@ -1035,7 +1035,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         "textDocument/didSave"           , handleTextDocumentDidSave           |> withReadWriteScope |> requestHandling
         "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
         "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
-        "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScope |> requestHandling
+        "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScopeWithPriority 99 |> requestHandling
         "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> requestHandling
         "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
         "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling

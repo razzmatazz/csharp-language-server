@@ -34,6 +34,8 @@ type ServerRequest = {
     Id: int
     Type: ServerRequestType
     Semaphore: SemaphoreSlim
+    Priority: int // 0 is the highest priority, 1 is lower prio, etc.
+                  // priority is used to order pending R/O requests and is ignored wrt R/W requests
 }
 and ServerState = {
     ClientCapabilities: ClientCapabilities option
@@ -46,6 +48,36 @@ and ServerState = {
     RequestQueue: ServerRequest list
     SolutionReloadPending: DateTime option
 }
+
+let pullFirstRequestMaybe requestQueue =
+    match requestQueue with
+    | [] -> (None, [])
+    | (firstRequest :: queueRemainder) -> (Some firstRequest, queueRemainder)
+
+let pullNextRequestMaybe requestQueue =
+    match requestQueue with
+    | [] -> (None, requestQueue)
+
+    | nonEmptyRequestQueue ->
+        let requestIsReadOnly r = r.Type = ServerRequestType.ReadOnly
+
+        // here we will try to take non-interrupted r/o request sequence at the front,
+        // order it by priority and run the most prioritized one first
+        let nextRoRequestByPriorityMaybe =
+            nonEmptyRequestQueue
+            |> Seq.takeWhile requestIsReadOnly
+            |> Seq.sortBy (fun r -> r.Priority)
+            |> Seq.tryHead
+
+        // otherwise, if no r/o request by priority was found then we should just take the first request
+        let nextRequest =
+            nextRoRequestByPriorityMaybe
+            |> Option.defaultValue (nonEmptyRequestQueue |> Seq.head)
+
+        let queueRemainder =
+            nonEmptyRequestQueue |> List.except [nextRequest]
+
+        (Some nextRequest, queueRemainder)
 
 let emptyServerState = { ClientCapabilities = None
                          Solution = None
@@ -70,7 +102,7 @@ type ServerStateEvent =
     | OpenDocVersionRemove of string
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of ServerRequestType * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
     | SolutionReloadRequest
@@ -112,12 +144,13 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
 
         return state
 
-    | StartRequest (requestType, replyChannel) ->
+    | StartRequest (requestType, requestPriority, replyChannel) ->
         postMsg ProcessRequestQueue
 
         let newRequest = { Id=state.LastRequestId+1
                            Type=requestType
-                           Semaphore=new SemaphoreSlim(0, 1) }
+                           Semaphore=new SemaphoreSlim(0, 1)
+                           Priority=requestPriority }
 
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
 
@@ -149,9 +182,11 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
             if not canRunNextRequest then
                 state // block until current ReadWrite request is finished
             else
-                match state.RequestQueue with
-                | [] -> state
-                | nextRequest :: queueRemainder ->
+                let (nextRequestMaybe, queueRemainder) = pullNextRequestMaybe state.RequestQueue
+
+                match nextRequestMaybe with
+                | None -> state
+                | Some nextRequest ->
                     // try to process next msg from the remainder, if possible, later
                     postMsg ProcessRequestQueue
 
