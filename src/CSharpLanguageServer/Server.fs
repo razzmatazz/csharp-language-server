@@ -21,6 +21,31 @@ open State
 open System.Threading.Tasks
 open System.Threading
 
+// TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
+let rec unpackException (exn : Exception) =
+    match exn with
+    | :? AggregateException as agg ->
+        match Seq.tryExactlyOne agg.InnerExceptions with
+        | Some x -> unpackException x
+        | None -> exn
+    | _ -> exn
+
+let runTaskWithNoneOnTimeout (timeoutMS:int) (baseCT:CancellationToken) taskFn = task {
+    use timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(baseCT)
+    timeoutCts.CancelAfter(timeoutMS)
+
+    try
+        let! taskFnResult = taskFn timeoutCts.Token
+        return Some taskFnResult
+    with
+    | ex ->
+        let unpackedEx = ex |> unpackException
+        if (unpackedEx :? TaskCanceledException) || (unpackedEx :? OperationCanceledException) then
+            return None
+        else
+            return raise ex
+}
+
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
 }
@@ -454,18 +479,12 @@ let setupServerHandlers options (lspClient: LspClient) =
             return None |> success
     }
 
-    let handleCodeLensResolveWithTimeoutMS
-            (timeoutMS: int)
+    let handleCodeLensResolve
             (scope: ServerRequestScope)
             (codeLens: CodeLens)
             : AsyncLspResult<CodeLens> = async {
 
-        //let! ct = Async.CancellationToken
-        let! baseCT = Async.CancellationToken
-        use timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(baseCT)
-        timeoutCts.CancelAfter(timeoutMS)
-        let ct = timeoutCts.Token
-
+        let! ct = Async.CancellationToken
         let lensData =
             codeLens.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
@@ -482,15 +501,23 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
+        let resolveLocations (ct: CancellationToken) =
+            task {
+                let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct)
+                return refs |> Seq.collect (fun r -> r.Locations)
+            }
 
-        let locations = refs |> Seq.collect (fun r -> r.Locations)
+        let! locationsMaybe =
+            runTaskWithNoneOnTimeout 3000 ct resolveLocations
+            |> Async.AwaitTask
 
-        let formattedRefCount =
-            locations |> Seq.length |> sprintf "%d Reference(s)"
+        let title =
+            match locationsMaybe with
+            | Some locations -> locations |> Seq.length |> sprintf "%d Reference(s)"
+            | None -> "" // timeout
 
         let command =
-            { Title = formattedRefCount
+            { Title = title
               Command = "csharp.showReferences"
               Arguments = None // TODO: we really want to pass some more info to the client
             }
@@ -975,14 +1002,6 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, rc))
 
-        let rec unpackException (exn : Exception) =
-            match exn with
-            | :? AggregateException as agg ->
-                match Seq.tryExactlyOne agg.InnerExceptions with
-                | Some x -> unpackException x
-                | None -> exn
-            | _ -> exn
-
         async {
             do! semaphore.WaitAsync() |> Async.AwaitTask
 
@@ -995,7 +1014,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 with
                 | ex ->
                     let unpackedEx = ex |> unpackException
-                    if unpackedEx :? TaskCanceledException then
+                    if (unpackedEx :? TaskCanceledException) || (unpackedEx :? OperationCanceledException) then
                         return LspResult.requestCancelled
                     else
                         return raise ex
@@ -1017,7 +1036,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
         "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
         "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScope |> requestHandling
-        "codeLens/resolve"               , handleCodeLensResolveWithTimeoutMS 3000 |> withReadOnlyScope |> requestHandling
+        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> requestHandling
         "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
         "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling
         "textDocument/documentHighlight" , handleTextDocumentDocumentHighlight |> withReadOnlyScope |> requestHandling
