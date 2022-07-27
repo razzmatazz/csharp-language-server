@@ -110,14 +110,14 @@ type ServerStateEvent =
     | PeriodicTimerTick
 
 let getDocumentForUriOfType state docType (u: string) =
-    let uri = Uri u
+    let uri = Uri(u.Replace("%3A", ":", true, null))
 
     match state.Solution with
     | Some solution ->
         let matchingUserDocuments =
             solution.Projects
             |> Seq.collect (fun p -> p.Documents)
-            |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
+            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri) |> List.ofSeq
 
         let matchingUserDocumentMaybe =
             match matchingUserDocuments with
