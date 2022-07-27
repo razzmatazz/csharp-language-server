@@ -109,6 +109,31 @@ type ServerStateEvent =
     | SolutionReload
     | PeriodicTimerTick
 
+let getDocumentForUriOfType state docType (u: string) =
+    let uri = Uri u
+
+    match state.Solution with
+    | Some solution ->
+        let matchingUserDocuments =
+            solution.Projects
+            |> Seq.collect (fun p -> p.Documents)
+            |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
+
+        let matchingUserDocumentMaybe =
+            match matchingUserDocuments with
+            | [d] -> Some (d, UserDocument)
+            | _ -> None
+
+        let matchingDecompiledDocumentMaybe =
+            Map.tryFind u state.DecompiledMetadata
+            |> Option.map (fun x -> (x.Document, DecompiledDocument))
+
+        match docType with
+        | UserDocument -> matchingUserDocumentMaybe
+        | DecompiledDocument -> matchingDecompiledDocumentMaybe
+        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+    | None -> None
+
 let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
     match msg with
     | GetState replyChannel ->
@@ -116,30 +141,7 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
         return state
 
     | GetDocumentOfTypeForUri (docType, uri, replyChannel) ->
-        let documentAndTypeMaybe =
-            match state.Solution with
-            | Some solution ->
-                let matchingUserDocuments =
-                    solution.Projects
-                    |> Seq.collect (fun p -> p.Documents)
-                    |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = Uri uri) |> List.ofSeq
-
-                let matchingUserDocumentMaybe =
-                    match matchingUserDocuments with
-                    | [d] -> Some (d, UserDocument)
-                    | _ -> None
-
-                let matchingDecompiledDocumentMaybe =
-                    Map.tryFind uri state.DecompiledMetadata
-                    |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-                match docType with
-                | UserDocument -> matchingUserDocumentMaybe
-                | DecompiledDocument -> matchingDecompiledDocumentMaybe
-                | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-
-            | None -> None
-
+        let documentAndTypeMaybe = getDocumentForUriOfType state docType uri
         replyChannel.Reply(documentAndTypeMaybe |> Option.map fst)
 
         return state
@@ -268,30 +270,7 @@ type ServerRequestScope (state: ServerState, emitServerEvent, logMessage: string
     member _.OpenDocVersions = state.OpenDocVersions
     member _.DecompiledMetadata = state.DecompiledMetadata
 
-    member this.GetDocumentForUriOfType docType (u: string) =
-        let uri = Uri u
-
-        match solutionMaybe with
-        | Some solution ->
-            let matchingUserDocuments =
-                solution.Projects
-                |> Seq.collect (fun p -> p.Documents)
-                |> Seq.filter (fun d -> Uri("file://" + d.FilePath) = uri) |> List.ofSeq
-
-            let matchingUserDocumentMaybe =
-                match matchingUserDocuments with
-                | [d] -> Some (d, UserDocument)
-                | _ -> None
-
-            let matchingDecompiledDocumentMaybe =
-                Map.tryFind u this.DecompiledMetadata
-                |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-            match docType with
-            | UserDocument -> matchingUserDocumentMaybe
-            | DecompiledDocument -> matchingDecompiledDocumentMaybe
-            | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-        | None -> None
+    member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
 
     member scope.GetUserDocumentForUri (u: string) =
         scope.GetDocumentForUriOfType UserDocument u |> Option.map fst
