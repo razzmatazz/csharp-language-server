@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fix (hopefully) how timeout on "textDocument/codeLens" works -- an empty result is returned now, and not as a request cancellation;
+* Fix how request cancellation is signalled to down the pipes to StreamJsonRpc/Ionide.LSP -- we will unwrap AggregateException to expose TaskCanceledException:
+  - see https://github.com/razzmatazz/csharp-language-server/issues/32 reported by @vytautassurvila;
+* Add a fix for some editor where special urls on file path, like '#' were not handled properly:
+  - PR https://github.com/razzmatazz/csharp-language-server/pull/38 by @tcx4c70
+
 ## [0.5.2] - 2022-07-02 / Luksnėnai
 * Update Roslyn, MSBuild and ICSharpCode.Decompiler;
 * Fix how "unnecesary using directive" is exposed, hopefully:
