@@ -48,7 +48,7 @@ module ErrorCodes =
   let internalError = -32603
   let serverErrorStart = -32000
   let serverErrorEnd = -32099
-  let requestCancelled = 32800
+  let requestCancelled = -32800
 
 type Error =
   { Code: int
