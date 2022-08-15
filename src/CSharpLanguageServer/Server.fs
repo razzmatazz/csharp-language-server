@@ -174,7 +174,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 Capabilities =
                     { ServerCapabilities.Default with
                         HoverProvider = Some true
-                        RenameProvider = Some true
+                        RenameProvider = First true |> Some
                         DefinitionProvider = Some true
                         TypeDefinitionProvider = None
                         ImplementationProvider = Some true

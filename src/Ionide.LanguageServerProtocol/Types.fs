@@ -711,6 +711,19 @@ type InlayHintClientCapabilities =
     /// hint.
     ResolveSupport: InlayHintClientCapabilitiesResolveSupport option }
 
+type RenameClientCapabilities =
+  { /// Whether rename supports dynamic registration.
+    DynamicRegistration: bool option
+    /// Client supports testing for validity of rename operations before execution.
+    /// @since version 3.12.0
+    PrepareSupport: bool option
+    /// Whether the client honors the change annotations in text edits and resource operations
+    /// returned via the rename request's workspace edit by for example presenting the workspace
+    /// edit in the user interface and asking for confirmation.
+    ///
+    /// @since 3.16.0
+    HonorsChangeAnnotations: bool option }
+
 /// Text document specific client capabilities.
 type TextDocumentClientCapabilities =
   { Synchronization: SynchronizationCapabilities option
@@ -758,7 +771,7 @@ type TextDocumentClientCapabilities =
     DocumentLink: DynamicCapabilities option
 
     /// Capabilities specific to the `textDocument/rename`
-    Rename: DynamicCapabilities option
+    Rename: RenameClientCapabilities option
 
     /// Capabilities for the `textDocument/foldingRange`
     FoldingRange: FoldingRangeCapabilities option
@@ -991,6 +1004,13 @@ type WorkspaceServerCapabilities =
     FileOperations: WorkspaceFileOperationsServerCapabilities option }
   static member Default = { WorkspaceFolders = None; FileOperations = None }
 
+
+/// RenameOptions may only be specified if the client states that it supports prepareSupport in its
+/// initial initialize request.
+type RenameOptions =
+  { /// Renames should be checked and tested before being executed.
+    PrepareProvider: bool option }
+
 type ServerCapabilities =
   { /// Defines how text documents are synced. Is either a detailed structure defining each notification or
     /// for backwards compatibility the TextDocumentSyncKind number.
@@ -1042,7 +1062,7 @@ type ServerCapabilities =
     DocumentOnTypeFormattingProvider: DocumentOnTypeFormattingOptions option
 
     /// The server provides rename support.
-    RenameProvider: bool option
+    RenameProvider: U2<bool, RenameOptions> option
 
     /// The server provides document link support.
     DocumentLinkProvider: DocumentLinkOptions option
@@ -1787,6 +1807,30 @@ type RenameParams =
   interface ITextDocumentPositionParams with
     member this.TextDocument = this.TextDocument
     member this.Position = this.Position
+
+type PrepareRenameParams =
+  { /// The document to rename.
+    TextDocument: TextDocumentIdentifier
+
+    /// The position at which this request was sent.
+    Position: Position }
+  interface ITextDocumentPositionParams with
+    member this.TextDocument = this.TextDocument
+    member this.Position = this.Position
+
+type DefaultBehavior = { DefaultBehavior: bool }
+
+type RangeWithPlaceholder = { Range: Range; Placeholder: string }
+
+[<ErasedUnion>]
+[<RequireQualifiedAccess>]
+type PrepareRenameResult =
+  /// A range of the string to rename.
+  | Range of Range
+  /// A range of the string to rename and a placeholder text of the string content to be renamed.
+  | RangeWithPlaceholder of RangeWithPlaceholder
+  /// The rename position is valid and the client should use its default behavior to compute the rename range.
+  | Default of DefaultBehavior
 
 [<ErasedUnion>]
 [<RequireQualifiedAccess>]

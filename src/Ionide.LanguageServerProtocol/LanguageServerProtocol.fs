@@ -32,17 +32,9 @@ module Server =
 
   let requestHandling<'param, 'result> (run: 'param -> AsyncLspResult<'result>) : Delegate =
     let runAsTask param ct =
-      let asyncLspResult =
-        try
-          // Although `run` returns an async result, its body may not be fully in an async context.
-          // Here we make sure that we catch and properly handle any exception before the first async.
-          run param
-        with
-        | ex ->
-          let rpcException = LocalRpcException(ex.Message)
-          rpcException.ErrorCode <- JsonRpc.ErrorCodes.internalError
-          rpcException.ErrorData <- ex.Data
-          raise rpcException
+      // Execute non-async portion of `run` before forking the async portion into a task.
+      // This is needed to avoid reordering of messages from a client.
+      let asyncLspResult = run param
 
       let asyncContinuation =
         async {
@@ -93,7 +85,12 @@ module Server =
     =
 
     use jsonRpcHandler = new HeaderDelimitedMessageHandler(output, input, jsonRpcFormatter)
-    use jsonRpc = new JsonRpc(jsonRpcHandler)
+    // Without overriding isFatalException, JsonRpc serializes exceptions and sends them to the client.
+    // This is particularly bad for notifications such as textDocument/didChange which don't require a response,
+    // and thus any exception that happens during e.g. text sync gets swallowed.
+    use jsonRpc =
+      { new JsonRpc(jsonRpcHandler) with
+          member this.IsFatalException(ex: Exception) = true }
 
     /// When the server wants to send a notification to the client
     let sendServerNotification (rpcMethod: string) (notificationObj: obj) : AsyncLspResult<unit> =
@@ -122,6 +119,17 @@ module Server =
             member __.Send x t = sendServerRequest x t }
       )
 
+    // Note on server shutdown.
+    // According the the LSP spec the shutdown sequence consists fo a client sending onShutdown request followed by
+    // onExit notification. The server can terminate after receiving onExit. However, real language clients implements
+    // the shutdown in their own way:
+    // 1. VSCode Language Client has a bug that causes it to NOT send an `exit` notification when stopping a server:
+    //    https://github.com/microsoft/vscode-languageserver-node/pull/776
+    //    VSCode sends onShutdown and then closes the connection.
+    // 2. Neovim LSP sends onShutdown followed by onExit but does NOT close the connection on its own.
+    // 3. Emacs LSP mode sends onShutdown followed by onExit and then closes the connection.
+    // This is the reason for the complicated logic below.
+
     let mutable shutdownReceived = false
     let mutable quitReceived = false
     use quitSemaphore = new SemaphoreSlim(0, 1)
@@ -129,17 +137,6 @@ module Server =
     let onShutdown () =
       logger.trace (Log.setMessage "Shutdown received")
       shutdownReceived <- true
-      // VSCode Language Client has a bug that causes it to NOT send an `exit` notification when stopping a server:
-      // https://github.com/microsoft/vscode-languageserver-node/pull/776 This may result in a bunch of zombie language
-      // servers just hanging around after a few reloads/restarts.  Although the fix was merged a while ago, the new
-      // client is yet to be released.  As a workaround let's forcefully exit after 10s after receiving a `shutdown`
-      // request.
-      task {
-        do! Task.Delay(10_000)
-        logger.trace (Log.setMessage "No `exit` notification within 10s after `shutdown` request. Exiting now.")
-        quitSemaphore.Release() |> ignore
-      }
-      |> ignore
 
     jsonRpc.AddLocalRpcMethod("shutdown", Action(onShutdown))
 
@@ -161,7 +158,16 @@ module Server =
 
     jsonRpc.StartListening()
 
-    quitSemaphore.Wait()
+    // 1. jsonRpc.Completion finishes when either a connection is closed or a fatal exception is thrown.
+    // 2. quitSemaphore is released when the server receives both onShutdown and onExit.
+    // Completion of either of those causes the server to stop.
+    let completed_task_idx = Task.WaitAny(jsonRpc.Completion, quitSemaphore.WaitAsync())
+    // jsonRpc.Completion throws on fatal exception. However, Task.WaitAny doesn't even when jsonRpc.Completion would.
+    // Here we check and re-raise if needed.
+    if completed_task_idx = 0 then
+      match jsonRpc.Completion.Exception with
+      | null -> ()
+      | exn -> raise exn
 
     match shutdownReceived, quitReceived with
     | true, true -> LspCloseReason.RequestedByClient
@@ -187,6 +193,7 @@ module Server =
       "textDocument/completion", requestHandling (fun s p -> s.TextDocumentCompletion(p))
       "completionItem/resolve", requestHandling (fun s p -> s.CompletionItemResolve(p))
       "textDocument/rename", requestHandling (fun s p -> s.TextDocumentRename(p))
+      "textDocument/prepareRename", requestHandling (fun s p -> s.TextDocumentPrepareRename(p))
       "textDocument/definition", requestHandling (fun s p -> s.TextDocumentDefinition(p))
       "textDocument/typeDefinition", requestHandling (fun s p -> s.TextDocumentTypeDefinition(p))
       "textDocument/implementation", requestHandling (fun s p -> s.TextDocumentImplementation(p))
