@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Load solution-in-sync when initializing. This will help "server initializing" notification work better for clients that depend on `initialize` request not to complete until the server/solution is properly loaded initialized.
+  - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/40
+
 ## [0.5.3] - 2022-07-29 / Daugai
   https://www.google.com/search?tbm=isch&q=daugai+lithuania
 * Fix (hopefully) how timeout on "textDocument/codeLens" works -- an empty result is returned now, and not as a request cancellation;
