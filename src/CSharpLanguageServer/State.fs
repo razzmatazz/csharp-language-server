@@ -107,6 +107,7 @@ type ServerStateEvent =
     | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
+    | SolutionReloadInSync of AsyncReplyChannel<unit>
     | PeriodicTimerTick
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -224,20 +225,13 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
         return { state with SolutionReloadPending = DateTime.Now.AddSeconds(5) |> Some }
 
     | SolutionReload ->
-        let! solution =
-            match state.Options.SolutionPath with
-            | Some solutionPath -> async {
-                logMessage (sprintf "loading specified solution file: %s.." solutionPath)
-                return! tryLoadSolutionOnPath logMessage solutionPath
-              }
+        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
+        return { state with Solution = newSolution }
 
-            | None -> async {
-                let cwd = Directory.GetCurrentDirectory()
-                logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
-                return! findAndLoadSolutionOnDir logMessage cwd
-              }
-
-        return { state with Solution = solution }
+    | SolutionReloadInSync replyChannel ->
+        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
+        replyChannel.Reply(())
+        return { state with Solution = newSolution }
 
     | PeriodicTimerTick ->
         let solutionReloadTime = state.SolutionReloadPending

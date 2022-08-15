@@ -214,7 +214,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                     }
               }
 
-      initializeResult |> success |> async.Return
+      async {
+          // load solution (on stateActor)
+          do! stateActor.PostAndAsyncReply(SolutionReloadInSync)
+
+          return initializeResult |> success
+      }
 
     let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
         logMessage "\"initialized\" notification received from client"
@@ -237,11 +242,6 @@ let setupServerHandlers options (lspClient: LspClient) =
             match regResult with
             | Ok _ -> ()
             | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
-
-            //
-            // start solution loading (on stateActor)
-            //
-            scope.Emit(SolutionReload)
 
             return LspResult.Ok()
         }

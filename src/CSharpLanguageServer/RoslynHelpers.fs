@@ -1,11 +1,9 @@
 module CSharpLanguageServer.RoslynHelpers
 
 open System
-open System.Linq
 open System.Collections.Generic
 open System.IO
 open System.Reflection
-open System.Threading
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CodeActions
@@ -573,6 +571,17 @@ let findAndLoadSolutionOnDir logMessage dir = async {
         let! solution = tryLoadSolutionOnPath logMessage solutionPath
         return solution
 }
+
+let loadSolutionOnSolutionPathOrCwd logMessage solutionPathMaybe =
+    match solutionPathMaybe with
+    | Some solutionPath ->
+        logMessage (sprintf "loading specified solution file: %s.." solutionPath)
+        tryLoadSolutionOnPath logMessage solutionPath
+
+    | None ->
+        let cwd = Directory.GetCurrentDirectory()
+        logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+        findAndLoadSolutionOnDir logMessage cwd
 
 let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction list> = async {
     let! ct = Async.CancellationToken
