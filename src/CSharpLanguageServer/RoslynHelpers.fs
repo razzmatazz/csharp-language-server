@@ -92,7 +92,7 @@ let lspDocChangesFromSolutionDiff
         originalSolution
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
-        logMessage
+        _logMessage
         (originatingDoc: Document)
         : Async<Types.TextDocumentEdit list> = async {
 
@@ -261,6 +261,17 @@ let symbolToLspSymbolInformation
              match ms.MethodKind with
                 | MethodKind.Constructor -> Types.SymbolKind.Constructor
                 | _ -> Types.SymbolKind.Method)
+
+        | :? ITypeSymbol as ts ->
+            (formatSymbol ts showAttributes semanticModel pos,
+             match ts.TypeKind with
+                | TypeKind.Class -> Types.SymbolKind.Class
+                | TypeKind.Enum -> Types.SymbolKind.Enum
+                | TypeKind.Struct -> Types.SymbolKind.Struct
+                | TypeKind.Interface -> Types.SymbolKind.Interface
+                | TypeKind.Delegate -> Types.SymbolKind.Function
+                | TypeKind.Array -> Types.SymbolKind.Array
+                | _ -> Types.SymbolKind.Class)
 
         | _ ->
             (symbol.ToString(), Types.SymbolKind.File)
@@ -672,7 +683,7 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
-let tryAddDocument logMessage
+let tryAddDocument _logMessage
                    (docFilePath: string)
                    (text: string)
                    (solution: Solution)

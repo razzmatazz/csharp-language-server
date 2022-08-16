@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Properly format ITypeSymbol (structs/enums/classes) when displaying type info on `workspace/symbol` and other LSP requests;
+  - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/41 
 * Load solution-in-sync when initializing. This will help "server initializing" notification work better for clients that depend on `initialize` request not to complete until the server/solution is properly loaded initialized.
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/40
 
