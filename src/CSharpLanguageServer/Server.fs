@@ -221,7 +221,7 @@ let setupServerHandlers options (lspClient: LspClient) =
           return initializeResult |> success
       }
 
-    let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
+    let handleInitialized (_scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
         logMessage "\"initialized\" notification received from client"
         async {
             //
@@ -612,7 +612,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                     }
 
                 let completionItems =
-                    completionResults.Items
+                    completionResults.ItemsList
                     |> Seq.map makeLspCompletionItem
                     |> Array.ofSeq
 
