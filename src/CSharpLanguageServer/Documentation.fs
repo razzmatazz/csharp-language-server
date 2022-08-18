@@ -178,7 +178,7 @@ let markdownDocForSymbol (sym: ISymbol) =
         |> (fun ss -> String.Join("\n", ss))
 
 let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) pos =
-    let symbolInfo = symbolToLspSymbolInformation true sym (Some semanticModel) (Some pos)
+    let symbolInfo = symbolToLspSymbolInformation sym (Some semanticModel) (Some pos)
 
     let symAssemblyName =
         sym.ContainingAssembly

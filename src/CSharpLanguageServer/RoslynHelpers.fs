@@ -237,11 +237,12 @@ let formatSymbol (sym: ISymbol)
     | false, _, _ -> sym.Name
 
 let symbolToLspSymbolInformation
-        showAttributes
         (symbol: ISymbol)
         (semanticModel: SemanticModel option)
         (pos: int option)
         : Types.SymbolInformation =
+    let showAttributes = true
+
     let (symbolName, symbolKind) =
         match symbol with
         | :? ILocalSymbol as ls ->
@@ -282,7 +283,7 @@ let symbolToLspSymbolInformation
       ContainerName = None }
 
 
-type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel, showAttributes) =
+type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedSymbols: Types.SymbolInformation list = []
@@ -293,7 +294,13 @@ type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel, showAtt
               Range = identifier.GetLocation().GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
             }
 
-        let rawSymbol = symbolToLspSymbolInformation showAttributes symbol None None
+        let identifierStartPos = identifier.GetLocation().SourceSpan.Start
+
+        let rawSymbol = symbolToLspSymbolInformation
+                            symbol
+                            (Some semanticModel)
+                            (Some identifierStartPos)
+
         let symbol = { rawSymbol with Location = identifierLocation }
 
         collectedSymbols <- symbol :: collectedSymbols
@@ -453,8 +460,10 @@ let findSymbolsInSolution (solution: Solution)
 
         symbolsFound <- (List.ofSeq symbols) @ symbolsFound
 
-    return Seq.map (fun s -> symbolToLspSymbolInformation true s None None) symbolsFound
-           |> List.ofSeq
+    let getSymbolInformation s =
+        symbolToLspSymbolInformation s None None
+
+    return symbolsFound |> Seq.map getSymbolInformation |> List.ofSeq
 }
 
 let instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =

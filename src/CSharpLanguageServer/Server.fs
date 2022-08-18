@@ -671,8 +671,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let showAttributes = false
-            let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel, showAttributes)
+            let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel)
 
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             collector.Visit(syntaxTree.GetRoot())
