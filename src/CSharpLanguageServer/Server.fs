@@ -1016,7 +1016,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                     if (unpackedEx :? TaskCanceledException) || (unpackedEx :? OperationCanceledException) then
                         return LspResult.requestCancelled
                     else
-                        return raise ex
+                        return LspResult.internalError (string ex)
             finally
                 stateActor.Post(FinishRequest requestId)
         }
