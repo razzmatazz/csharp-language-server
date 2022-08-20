@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.5.4] - 2022-08-20 / Šilavotas
 * Upgrade roslyn libs to 4.4.0-1.final;
 * Properly format + "localize" symbol names in `textDocument/documentSymbol` response;
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/42
