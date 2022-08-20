@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.5.4] - 2022-08-20 / Šilavotas
+  https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142
 * Upgrade roslyn libs to 4.4.0-1.final;
 * Properly format + "localize" symbol names in `textDocument/documentSymbol` response;
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/42
