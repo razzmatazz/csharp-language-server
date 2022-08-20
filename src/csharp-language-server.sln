@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30114.105
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Ionide.LanguageServerProtocol", "Ionide.LanguageServerProtocol\Ionide.LanguageServerProtocol.fsproj", "{38080226-E52C-456A-925F-95AE1F7911CD}"
-EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer", "CSharpLanguageServer\CSharpLanguageServer.fsproj", "{B035F792-CCF0-422F-B94A-A1BBF8CE222D}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer.Tests", "CSharpLanguageServer.Tests\CSharpLanguageServer.Tests.fsproj", "{B2B6AD65-DAC1-4E6E-9986-D32CFB3E7AFB}"
@@ -18,10 +16,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{38080226-E52C-456A-925F-95AE1F7911CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{38080226-E52C-456A-925F-95AE1F7911CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{38080226-E52C-456A-925F-95AE1F7911CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{38080226-E52C-456A-925F-95AE1F7911CD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{B035F792-CCF0-422F-B94A-A1BBF8CE222D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B035F792-CCF0-422F-B94A-A1BBF8CE222D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B035F792-CCF0-422F-B94A-A1BBF8CE222D}.Release|Any CPU.ActiveCfg = Release|Any CPU
