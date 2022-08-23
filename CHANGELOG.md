@@ -3,9 +3,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.5.5] - 2022-08-23 / Prienai
+  https://www.google.com/search?tbm=isch&q=prienai+lithuania
+  https://en.wikipedia.org/wiki/Prienai
 
-* Fix an issue intermittent server crashing after upgrading to latest Ionide.LanguageServerProtocol;
+* Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
+  - https://github.com/razzmatazz/csharp-language-server/issues/44
 
 ## [0.5.4] - 2022-08-20 / Šilavotas
   https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142
