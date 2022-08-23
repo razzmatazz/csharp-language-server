@@ -1008,15 +1008,17 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             try
                 let scope = ServerRequestScope(state, stateActor.Post, logMessage)
-                try
-                    return! asyncFn scope param
-                with
-                | ex ->
-                    let unpackedEx = ex |> unpackException
-                    if (unpackedEx :? TaskCanceledException) || (unpackedEx :? OperationCanceledException) then
-                        return LspResult.requestCancelled
-                    else
-                        return LspResult.internalError (string ex)
+
+                let! resultOrExn = (asyncFn scope param) |> Async.Catch
+
+                return
+                    match resultOrExn with
+                    | Choice1Of2 result -> result
+                    | Choice2Of2 exn ->
+                        match exn with
+                        | :? TaskCanceledException -> LspResult.requestCancelled
+                        | :? OperationCanceledException -> LspResult.requestCancelled
+                        | _ -> LspResult.internalError (string exn)
             finally
                 stateActor.Post(FinishRequest requestId)
         }
