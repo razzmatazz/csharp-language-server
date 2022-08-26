@@ -12,10 +12,9 @@ with the next provider to be more resilent;
 * Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
   - https://github.com/razzmatazz/csharp-language-server/issues/44
   
----
-
-  https://www.google.com/search?tbm=isch&q=prienai+lithuania
-  https://en.wikipedia.org/wiki/Prienai
+### More about Prienai, Lithuania
+- [Google Images on Prienai](https://www.google.com/search?tbm=isch&q=prienai+lithuania)
+- [Prienai on WP](https://en.wikipedia.org/wiki/Prienai)
 
 ## [0.5.4] - 2022-08-20 / Šilavotas
 * Upgrade roslyn libs to 4.4.0-1.final;
@@ -25,9 +24,9 @@ with the next provider to be more resilent;
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/41 
 * Load solution-in-sync when initializing. This will help "server initializing" notification work better for clients that depend on `initialize` request not to complete until the server/solution is properly loaded initialized.
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/40
-  
----
-  https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142
+
+### More about Šilavotas, Lithuania
+- [Kitoks kaimas Prienų rajone](https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142)
 
 ## [0.5.3] - 2022-07-29 / Daugai
   https://www.google.com/search?tbm=isch&q=daugai+lithuania
@@ -36,6 +35,9 @@ with the next provider to be more resilent;
   - see https://github.com/razzmatazz/csharp-language-server/issues/32 reported by @vytautassurvila;
 * Add a fix for some editor where special urls on file path, like '#' were not handled properly:
   - PR https://github.com/razzmatazz/csharp-language-server/pull/38 by @tcx4c70
+
+### More about Daugai, Lithuania
+- [Google Images on Daugai](https://www.google.com/search?tbm=isch&q=daugai+lithuania)
 
 ## [0.5.2] - 2022-07-02 / Luksnėnai
 * Update Roslyn, MSBuild and ICSharpCode.Decompiler;
