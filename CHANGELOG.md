@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-* Fix an issue we would fail to generate code action list if one of code action
+* Fix an issue where we would fail to generate code action list if one of code action
 providers would raise an exception; -- log the message to the log instead and continue
 with the next provider to be more resilent;
 

@@ -7,7 +7,14 @@ to work with projects using older versions of dotnet SDK, including .NET Core 3,
 .NET Framework 4.8 and possibly older ones too as it uses the standard
 Roslyn/MSBuild libs that Visual Studio & omnisharp does.
 
-## Features
+See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
+
+# Installation
+`dotnet tool install --global csharp-ls`
+
+See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
+
+# Features
 - symbol rename;
 - go-to-definition;
 - find references;
@@ -17,13 +24,6 @@ Roslyn/MSBuild libs that Visual Studio & omnisharp does.
 - `codeAction/resolve` support for better performance when invoking code actions;
 - go-to-definition in metadata support:
   - (needs integration from your LSP client -- `emacs-lsp/lsp-mode` has it.).
-
-See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
-
-# Installation
-`dotnet tool install --global csharp-ls`
-
-See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 # Acknowledgements
 - csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
