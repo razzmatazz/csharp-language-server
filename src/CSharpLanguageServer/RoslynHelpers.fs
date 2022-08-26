@@ -603,7 +603,9 @@ let loadSolutionOnSolutionPathOrCwd logMessage solutionPathMaybe =
         logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
         findAndLoadSolutionOnDir logMessage cwd
 
-let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction list> = async {
+let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
+        : Async<CodeAction list> = async {
+
     let! ct = Async.CancellationToken
 
     let roslynCodeActions = List<CodeActions.CodeAction>()
@@ -611,7 +613,10 @@ let getRoslynCodeActions (doc: Document) (textSpan: TextSpan): Async<CodeAction 
     let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, ct)
 
     for refactoringProvider in refactoringProviderInstances do
-        do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
+        try
+            do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
+        with ex ->
+            logMessage (sprintf "cannot compute refactorings for %s: %s" (string refactoringProvider) (string ex))
 
     // register code fixes
     let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask

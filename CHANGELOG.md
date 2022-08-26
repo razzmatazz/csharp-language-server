@@ -3,15 +3,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fix an issue we would fail to generate code action list if one of code action
+providers would raise an exception; -- log the message to the log instead and continue
+with the next provider to be more resilent;
+
 ## [0.5.5] - 2022-08-23 / Prienai
+* Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
+  - https://github.com/razzmatazz/csharp-language-server/issues/44
+  
+---
+
   https://www.google.com/search?tbm=isch&q=prienai+lithuania
   https://en.wikipedia.org/wiki/Prienai
 
-* Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
-  - https://github.com/razzmatazz/csharp-language-server/issues/44
-
 ## [0.5.4] - 2022-08-20 / Šilavotas
-  https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142
 * Upgrade roslyn libs to 4.4.0-1.final;
 * Properly format + "localize" symbol names in `textDocument/documentSymbol` response;
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/42
@@ -19,6 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/41 
 * Load solution-in-sync when initializing. This will help "server initializing" notification work better for clients that depend on `initialize` request not to complete until the server/solution is properly loaded initialized.
   - Reported by @joefbsjr in https://github.com/razzmatazz/csharp-language-server/issues/40
+  
+---
+  https://www.lrytas.lt/kultura/istorija/2021/08/07/news/kitoks-kaimas-prienu-rajone-kurio-neisdraske-net-sovietu-valdzia-bendruomenes-nariais-tampa-ir-kaunieciai-20347142
 
 ## [0.5.3] - 2022-07-29 / Daugai
   https://www.google.com/search?tbm=isch&q=daugai+lithuania

@@ -357,7 +357,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                                           |> roslynLinePositionSpanForLspRange
                                           |> docText.Lines.GetTextSpan
 
-            let! roslynCodeActions = getRoslynCodeActions doc textSpan
+            let! roslynCodeActions =
+                getRoslynCodeActions logMessage doc textSpan
 
             let clientCapabilities = scope.ClientCapabilities
             let clientSupportsCodeActionEditResolveWithEditAndData =
@@ -415,6 +416,7 @@ let setupServerHandlers options (lspClient: LspClient) =
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
         let docMaybe = scope.GetUserDocumentForUri resolutionData.Value.TextDocumentUri
+
         match docMaybe with
         | None ->
             return None |> success
@@ -428,7 +430,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                        |> roslynLinePositionSpanForLspRange
                        |> docText.Lines.GetTextSpan
 
-            let! roslynCodeActions = getRoslynCodeActions doc textSpan
+            let! roslynCodeActions =
+                getRoslynCodeActions logMessage doc textSpan
 
             let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
 
