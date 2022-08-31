@@ -11,6 +11,7 @@ open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.CodeFixes
+open Microsoft.Build.Locator
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol
@@ -163,6 +164,13 @@ let setupServerHandlers options (lspClient: LspClient) =
                             (JsonConvert.SerializeObject(options)))
 
       infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+
+      let vsInstance = MSBuildLocator.RegisterDefaults()
+      infoMessage (sprintf "MSBuildLocator.RegisterDefaults(): VisualStudioInstance(Version=%s, Name=\"%s\", MSBuildPath=\"%s\", DiscoveryType=%s)"
+                           (string vsInstance.Version)
+                           vsInstance.Name
+                           vsInstance.MSBuildPath
+                           (string vsInstance.DiscoveryType))
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 

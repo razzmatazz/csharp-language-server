@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix an issue where we would fail to generate code action list if one of code action
 providers would raise an exception; -- log the message to the log instead and continue
 with the next provider to be more resilent;
+* Upgrade Microsoft.Build libs;
 
 ## [0.5.5] - 2022-08-23 / Prienai
 * Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:

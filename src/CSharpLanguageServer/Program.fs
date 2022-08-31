@@ -1,6 +1,5 @@
 module CSharpLanguageServer.Program
 
-open Microsoft.Build.Locator
 open Argu
 open System.Reflection
 
@@ -14,8 +13,6 @@ let entry args =
             |> Option.iter (fun _ -> printfn "csharp-ls, %s"
                                              (Assembly.GetExecutingAssembly().GetName().Version |> string)
                                      exit 0)
-
-        MSBuildLocator.RegisterDefaults() |> ignore
 
         let parseLogLevel (s: string) =
             match s.ToLowerInvariant() with
