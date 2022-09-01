@@ -1,9 +1,11 @@
 module CSharpLanguageServer.Server
 
 open System
+open System.Text
 open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
+open System.Diagnostics
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
@@ -104,6 +106,25 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
+let getDotnetCliVersion () : string =
+    use proc = new Process()
+    proc.StartInfo <- ProcessStartInfo()
+    proc.StartInfo.FileName <- "dotnet"
+    proc.StartInfo.Arguments <- "--version"
+    proc.StartInfo.UseShellExecute <- false
+    proc.StartInfo.RedirectStandardOutput <- true
+    proc.StartInfo.CreateNoWindow <- true
+
+    let startOK = proc.Start()
+    if startOK then
+        let sbuilder = StringBuilder()
+        while (not (proc.StandardOutput.EndOfStream)) do
+            sbuilder.Append(proc.StandardOutput.ReadLine()) |> ignore
+
+        sbuilder.ToString()
+    else
+        "(could not launch `dotnet --version`)"
+
 let setupServerHandlers options (lspClient: LspClient) =
     let success = LspResult.success
     let mutable logMessageCurrent = Action<string>(fun _ -> ())
@@ -171,6 +192,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                            vsInstance.Name
                            vsInstance.MSBuildPath
                            (string vsInstance.DiscoveryType))
+
+      infoMessage (sprintf "`dotnet --version`: %s" (getDotnetCliVersion ()))
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 
