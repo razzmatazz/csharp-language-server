@@ -186,14 +186,15 @@ let setupServerHandlers options (lspClient: LspClient) =
 
       infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
+      infoMessage (sprintf "`dotnet --version`: %s"
+                           (getDotnetCliVersion ()))
+
       let vsInstance = MSBuildLocator.RegisterDefaults()
-      infoMessage (sprintf "MSBuildLocator.RegisterDefaults(): VisualStudioInstance(Version=%s, Name=\"%s\", MSBuildPath=\"%s\", DiscoveryType=%s)"
-                           (string vsInstance.Version)
+      infoMessage (sprintf "MSBuildLocator: SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
                            vsInstance.Name
+                           (string vsInstance.Version)
                            vsInstance.MSBuildPath
                            (string vsInstance.DiscoveryType))
-
-      infoMessage (sprintf "`dotnet --version`: %s" (getDotnetCliVersion ()))
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 

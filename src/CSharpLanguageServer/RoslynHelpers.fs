@@ -600,7 +600,7 @@ let loadSolutionOnSolutionPathOrCwd logMessage solutionPathMaybe =
 
     | None ->
         let cwd = Directory.GetCurrentDirectory()
-        logMessage (sprintf "attempting to find and load solution based on cwd: \"%s\".." cwd)
+        logMessage (sprintf "attempting to find and load solution based on cwd (\"%s\").." cwd)
         findAndLoadSolutionOnDir logMessage cwd
 
 let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
