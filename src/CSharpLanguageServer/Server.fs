@@ -190,6 +190,11 @@ let setupServerHandlers options (lspClient: LspClient) =
                            (getDotnetCliVersion ()))
 
       let vsInstance = MSBuildLocator.RegisterDefaults()
+
+      // Workaround for https://github.com/microsoft/MSBuildLocator/issues/176
+      Environment.SetEnvironmentVariable("MSBuildSDKsPath", null);
+      Environment.SetEnvironmentVariable("MSBUILD_EXE_PATH", null);
+
       infoMessage (sprintf "MSBuildLocator: SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
                            vsInstance.Name
                            (string vsInstance.Version)
