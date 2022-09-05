@@ -16,14 +16,14 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 # Features
 - symbol rename;
+- code refactorings from roslyn;
 - go-to-definition;
 - find references;
 - document/workspace symbol search;
 - `textDocument/documentHighlight` support:
   - highlighting other symbol references in the document on hover;
 - `codeAction/resolve` support for better performance when invoking code actions;
-- go-to-definition in metadata support:
-  - (needs integration from your LSP client -- `emacs-lsp/lsp-mode` has it.).
+- go-to-definition in metadata support (needs integration from your LSP client).
 
 # Acknowledgements
 - csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
