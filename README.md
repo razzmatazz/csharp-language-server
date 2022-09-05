@@ -32,7 +32,6 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 - csharp-ls is not affiliated with Microsoft Corp.
 
 # TODO list
- - adding a file to a project does not always add it to the correct one?
  - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
  - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
    - should we cancel existing ones? -- where cancellable? how to know?
