@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.5.6] - 2022-09-05 / Birštonas
 * Fix an issue where we would fail to generate code action list if one of code action
 providers would raise an exception; -- log the message to the log instead and continue
 with the next provider to be more resilent;
@@ -14,6 +14,10 @@ with the next provider to be more resilent;
   - generate overrides;
   - others;
 * Fix an issue where a new file was added to wrong project.
+
+### More about Birštonas, Lithuania
+- [Google Images on Birštonas](https://www.google.com/search?tbm=isch&q=birstonas+lithuania)
+- [Birštonas on WP](https://en.wikipedia.org/wiki/Bir%C5%A1tonas)
 
 ## [0.5.5] - 2022-08-23 / Prienai
 * Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
