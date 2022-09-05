@@ -908,7 +908,7 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
-let tryAddDocument _logMessage
+let tryAddDocument logMessage
                    (docFilePath: string)
                    (text: string)
                    (solution: Solution)
@@ -917,23 +917,30 @@ let tryAddDocument _logMessage
     let docDir = Path.GetDirectoryName(docFilePath)
     //logMessage (sprintf "TextDocumentDidOpen: docFilename=%s docDir=%s" docFilename docDir)
 
-    let matchesPath (p: Project) =
+    let fileOnProjectDir (p: Project) =
         let projectDir = Path.GetDirectoryName(p.FilePath)
-        (docDir |> string).StartsWith(projectDir |> string)
+        let projectDirWithDirSepChar = projectDir + (string Path.DirectorySeparatorChar)
 
-    let projectOnPath = solution.Projects |> Seq.filter matchesPath |> Seq.tryHead
+        (docDir = projectDir) || docDir.StartsWith(projectDirWithDirSepChar)
+
+    let projectOnPath =
+        solution.Projects
+        |> Seq.filter fileOnProjectDir
+        |> Seq.tryHead
 
     match projectOnPath with
     | Some proj ->
         let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
         let docName = docFilePath.Substring(projectBaseDir.Length+1)
 
-        //logMessage (sprintf "Adding file %s (\"%s\") to project %s" docName docFilePath proj.FilePath)
+        logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
 
         let newDoc = proj.AddDocument(name=docName, text=SourceText.From(text), folders=null, filePath=docFilePath)
         Some newDoc
 
-    | None -> None
+    | None ->
+        logMessage (sprintf "No parent project could be resolved to add file \"%s\" to workspace" docFilePath)
+        None
 
 let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
     let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =

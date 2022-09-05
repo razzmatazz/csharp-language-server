@@ -306,9 +306,9 @@ let setupServerHandlers options (lspClient: LspClient) =
                 // ok, this document is not on solution, register a new one
                 let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
                 let newDocMaybe = tryAddDocument logMessage
-                                                docFilePath
-                                                openParams.TextDocument.Text
-                                                scope.Solution
+                                                 docFilePath
+                                                 openParams.TextDocument.Text
+                                                 scope.Solution
                 match newDocMaybe with
                 | Some newDoc ->
                     scope.Emit(SolutionChange newDoc.Project.Solution)

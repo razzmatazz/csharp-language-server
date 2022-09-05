@@ -13,6 +13,7 @@ with the next provider to be more resilent;
   - move static members to another class;
   - generate overrides;
   - others;
+* Fix an issue where a new file was added to wrong project.
 
 ## [0.5.5] - 2022-08-23 / Prienai
 * Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
