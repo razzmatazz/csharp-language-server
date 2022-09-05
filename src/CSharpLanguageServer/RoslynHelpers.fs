@@ -4,8 +4,10 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Reflection
+open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.CodeActions
 open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CSharp
@@ -20,6 +22,7 @@ open System.Collections.Immutable
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
+open Castle.DynamicProxy
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -158,11 +161,12 @@ let lspDocChangesFromSolutionDiff
 
 type CodeActionData = { Url: string }
 
-let asyncMaybeOnException op = async {
+let asyncMaybeOnException logMessage op = async {
     try
         let! value = op ()
         return Some value
-    with _ex ->
+    with ex ->
+        logMessage (string ex)
         return None
 }
 
@@ -195,7 +199,7 @@ let roslynCodeActionToResolvedLspCodeAction
 
     let! ct = Async.CancellationToken
 
-    let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(ct) |> Async.AwaitTask)
+    let! maybeOps = asyncMaybeOnException logMessage (fun () -> ca.GetOperationsAsync(ct) |> Async.AwaitTask)
 
     match maybeOps with
     | None -> return None
@@ -507,19 +511,225 @@ let codeFixProviderInstances =
     instantiateRoslynProviders<CodeFixProvider>
         (fun _ -> true)
 
+type CleanCodeGenerationOptionsProviderInterceptor (logMessage) =
+    interface IInterceptor with
+        member __.Intercept(invocation: IInvocation) =
+            match invocation.Method.Name with
+            "GetCleanCodeGenerationOptionsAsync" ->
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
+                let cleanCodeGenOptionsType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions")
+
+                let methodGetDefault = cleanCodeGenOptionsType.GetMethod("GetDefault")
+
+                let argLanguageServices = invocation.Arguments[0]
+                let defaultCleanCodeGenOptions = methodGetDefault.Invoke(null, [| argLanguageServices |])
+
+                let valueTaskType = typedefof<ValueTask<_>>
+                let valueTaskTypeForCleanCodeGenOptions = valueTaskType.MakeGenericType([| cleanCodeGenOptionsType |])
+
+                invocation.ReturnValue <-
+                    Activator.CreateInstance(valueTaskTypeForCleanCodeGenOptions, defaultCleanCodeGenOptions)
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
+type LegacyWorkspaceOptionServiceInterceptor (logMessage) =
+    interface IInterceptor with
+        member __.Intercept(invocation: IInvocation) =
+            //logMessage (sprintf "LegacyWorkspaceOptionServiceInterceptor: %s" (string invocation.Method))
+
+            match invocation.Method.Name with
+            | "RegisterWorkspace" ->
+                ()
+            | "GetGenerateEqualsAndGetHashCodeFromMembersGenerateOperators" ->
+                invocation.ReturnValue <- box true
+            | "GetGenerateEqualsAndGetHashCodeFromMembersImplementIEquatable" ->
+                invocation.ReturnValue <- box true
+            | "GetGenerateConstructorFromMembersOptionsAddNullChecks" ->
+                invocation.ReturnValue <- box true
+            | "get_GenerateOverrides" ->
+                invocation.ReturnValue <- box true
+            | "get_CleanCodeGenerationOptionsProvider" ->
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
+                let cleanCodeGenOptionsProvType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider")
+
+                let generator = ProxyGenerator()
+                let interceptor = CleanCodeGenerationOptionsProviderInterceptor(logMessage)
+                let proxy = generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)
+                invocation.ReturnValue <- proxy
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
+type PickMembersServiceInterceptor (logMessage) =
+    interface IInterceptor with
+         member __.Intercept(invocation: IInvocation) =
+
+            match invocation.Method.Name with
+            | "PickMembers" ->
+                let argMembers = invocation.Arguments[1]
+                let argOptions = invocation.Arguments[2]
+
+                let pickMembersResultType = invocation.Method.ReturnType
+
+                invocation.ReturnValue <-
+                    Activator.CreateInstance(pickMembersResultType, argMembers, argOptions, box true)
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
+type ExtractClassOptionsServiceInterceptor (logMessage) =
+    interface IInterceptor with
+        member __.Intercept(invocation: IInvocation) =
+
+            match invocation.Method.Name with
+            | "GetExtractClassOptionsAsync" ->
+                let _argDocument = invocation.Arguments[0] :?> Document
+                let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
+                let _argSelectedMembers = invocation.Arguments[2] :?> ImmutableArray<ISymbol>
+
+                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
+                let extractClassOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions")
+
+                let typeName = "Base" + argOriginalType.Name
+                let fileName = typeName + ".cs"
+                let sameFile = box true
+
+                let immArrayType = typeof<ImmutableArray>
+                let extractClassMemberAnalysisResultType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
+
+                let resultListType = typedefof<List<_>>.MakeGenericType(extractClassMemberAnalysisResultType)
+                let resultList = Activator.CreateInstance(resultListType)
+
+                let memberFilter (m: ISymbol) =
+                    match m with
+                    | :? IMethodSymbol as ms -> ms.MethodKind = MethodKind.Ordinary
+                    | :? IFieldSymbol as fs -> not fs.IsImplicitlyDeclared
+                    | _ -> m.Kind = SymbolKind.Property || m.Kind = SymbolKind.Event
+
+                let selectedMembersToAdd =
+                    argOriginalType.GetMembers()
+                    |> Seq.filter memberFilter
+
+                for memberToAdd in selectedMembersToAdd do
+                    let memberAnalysisResult =
+                        Activator.CreateInstance(extractClassMemberAnalysisResultType, memberToAdd, false)
+
+                    resultListType.GetMethod("Add").Invoke(resultList, [| memberAnalysisResult |])
+                    |> ignore
+
+                let resultListAsArray =
+                    resultListType.GetMethod("ToArray").Invoke(resultList, null)
+
+                let immArrayCreateFromArray =
+                    immArrayType.GetMethods()
+                    |> Seq.filter (fun m -> m.GetParameters().Length = 1 && (m.GetParameters()[0]).ParameterType.IsArray)
+                    |> Seq.head
+
+                let emptyMemberAnalysisResults =
+                    immArrayCreateFromArray.MakeGenericMethod([| extractClassMemberAnalysisResultType |]).Invoke(null, [| resultListAsArray |])
+
+                let extractClassOptionsValue =
+                    Activator.CreateInstance(
+                        extractClassOptionsType, fileName, typeName, sameFile, emptyMemberAnalysisResults)
+
+                let fromResultMethod = typeof<Task>.GetMethod("FromResult")
+                let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractClassOptionsType |])
+
+                invocation.ReturnValue <-
+                    typedFromResultMethod.Invoke(null, [| extractClassOptionsValue |])
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
+type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
+    interface IInterceptor with
+       member __.Intercept(invocation: IInvocation) =
+
+            match invocation.Method.Name with
+            | "GetMoveMembersToTypeOptions" ->
+                let _argDocument = invocation.Arguments[0] :?> Document
+                let _argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
+                let argSelectedMembers = invocation.Arguments[2] :?> ImmutableArray<ISymbol>
+
+                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
+                let msmOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.MoveStaticMembers.MoveStaticMembersOptions")
+
+                let newStaticClassName = "NewStaticClass"
+
+                let msmOptions =
+                    Activator.CreateInstance(
+                        msmOptionsType,
+                        newStaticClassName + ".cs",
+                        newStaticClassName,
+                        argSelectedMembers,
+                        false |> box)
+
+                invocation.ReturnValue <- msmOptions
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
+type WorkspaceServicesInterceptor (logMessage) =
+    interface IInterceptor with
+        member __.Intercept(invocation: IInvocation) =
+            invocation.Proceed()
+
+            if invocation.Method.Name = "GetService" && invocation.ReturnValue = null then
+                let updatedReturnValue =
+                    let serviceType = invocation.GenericArguments[0]
+                    let generator = ProxyGenerator()
+
+                    match serviceType.FullName with
+                    | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
+                        let interceptor = LegacyWorkspaceOptionServiceInterceptor(logMessage)
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | "Microsoft.CodeAnalysis.PickMembers.IPickMembersService" ->
+                        let interceptor = PickMembersServiceInterceptor(logMessage)
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | "Microsoft.CodeAnalysis.ExtractClass.IExtractClassOptionsService" ->
+                        let interceptor = ExtractClassOptionsServiceInterceptor(logMessage)
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
+                        let interceptor = MoveStaticMembersOptionsServiceInterceptor(logMessage)
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | _ ->
+                        //logMessage (sprintf "WorkspaceServicesInterceptor: GetService(%s) resulted in null!" serviceType.FullName)
+                        null
+
+                invocation.ReturnValue <- updatedReturnValue
+
+let interceptWorkspaceServices logMessage msbuildWorkspace =
+    let workspaceType = typeof<Workspace>
+    let workspaceServicesField = workspaceType.GetField("_services", BindingFlags.Instance ||| BindingFlags.NonPublic)
+
+    let generator = ProxyGenerator()
+    let interceptor = WorkspaceServicesInterceptor(logMessage)
+
+    let interceptedWorkspaceServices =
+        workspaceServicesField.GetValue(msbuildWorkspace)
+        |> Unchecked.unbox<HostWorkspaceServices>
+        |> (fun ws -> generator.CreateClassProxyWithTarget<HostWorkspaceServices>(ws, interceptor))
+
+    workspaceServicesField.SetValue(msbuildWorkspace, interceptedWorkspaceServices)
+
 let tryLoadSolutionOnPath logMessage solutionPath = async {
     try
         logMessage (sprintf "loading solution \"%s\".." solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+        do msbuildWorkspace |> interceptWorkspaceServices logMessage
 
         let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         for diag in msbuildWorkspace.Diagnostics do
             logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
-        //workspace <- Some(msbuildWorkspace :> Workspace)
         return Some msbuildWorkspace.CurrentSolution
     with
     | ex ->
@@ -530,6 +740,7 @@ let tryLoadSolutionOnPath logMessage solutionPath = async {
 let tryLoadSolutionFromProjectFiles logMessage (projFiles: string list) = async {
     let msbuildWorkspace = MSBuildWorkspace.Create()
     msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+    do msbuildWorkspace |> interceptWorkspaceServices logMessage
 
     for file in projFiles do
         logMessage (sprintf "loading project \"%s\".." file)
@@ -657,8 +868,8 @@ let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
 
                 try
                     do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
-                with _ex ->
-                    //sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()) |> logMessage
+                with ex ->
+                    logMessage (sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()))
                     ()
 
     let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =

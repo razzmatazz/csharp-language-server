@@ -481,7 +481,12 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             let! maybeLspCodeAction =
                 match selectedCodeAction with
-                | Some ca -> async { return! toResolvedLspCodeAction ca }
+                | Some ca -> async {
+                    let! resolvedCA = toResolvedLspCodeAction ca
+                    if resolvedCA.IsNone then
+                       logMessage (sprintf "handleCodeActionResolve: could not resolve %s - null" (string ca))
+                    return resolvedCA
+                  }
                 | None -> async { return None }
 
             return maybeLspCodeAction |> success

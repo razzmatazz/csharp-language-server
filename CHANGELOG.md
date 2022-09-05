@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 providers would raise an exception; -- log the message to the log instead and continue
 with the next provider to be more resilent;
 * Upgrade Microsoft.Build libs;
+* Inject required roslyn WorkspaceServices so more refactorings work now:
+  - pull member;
+  - move static members to another class;
+  - generate overrides;
+  - others;
 
 ## [0.5.5] - 2022-08-23 / Prienai
 * Fix intermittent server crashes after upgrading to latest Ionide.LanguageServerProtocol:
