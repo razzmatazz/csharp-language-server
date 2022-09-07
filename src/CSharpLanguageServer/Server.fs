@@ -642,23 +642,78 @@ let setupServerHandlers options (lspClient: LspClient) =
                 return ()
 
             let! maybeCompletionResults =
-                completionService.GetCompletionsAsync(doc, posInText) |> Async.AwaitTask
+                completionService.GetCompletionsAsync(doc, posInText, cancellationToken=ct) |> Async.AwaitTask
 
             match Option.ofObj maybeCompletionResults with
             | Some completionResults ->
-                let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
-                    let baseCompletionItem = CompletionItem.Create(item.DisplayText)
+                let makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) = async {
 
-                    { baseCompletionItem with
-                        Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
-                        SortText         = item.SortText |> Option.ofObj
-                        FilterText       = item.FilterText |> Option.ofObj
-                        InsertTextFormat = Some Types.InsertTextFormat.PlainText
-                    }
+                    logMessage "item.InlineDescription"
+                    logMessage (item.InlineDescription |> serialize |> string)
+
+                    logMessage "item.Properties"
+                    logMessage (item.Properties |> serialize |> string)
+
+                    let! description = completionService.GetDescriptionAsync(doc, item, ct) |> Async.AwaitTask
+                    logMessage "description.Text"
+                    logMessage (description.Text |> serialize |> string)
+                    logMessage "description.TaggedParts"
+                    logMessage (description.TaggedParts |> serialize |> string)
+
+                    let descriptionParts =
+                        description.Text.Split("\n")
+                        |> Seq.map (fun s -> s.Trim())
+                        |> List.ofSeq
+
+                    let contextPosition =
+                        item.Properties["ContextPosition"]
+                        |> int
+
+                    logMessage (sprintf "contextPosition=%d" contextPosition)
+
+                    let contextBefore =
+                        docText.GetSubText(TextSpan.FromBounds(contextPosition-10, contextPosition))
+                        |> string
+                    logMessage (sprintf "contextBefore=%s" contextBefore)
+
+                    let contextAfter =
+                        docText.GetSubText(TextSpan.FromBounds(contextPosition, contextPosition+10))
+                        |> string
+                    logMessage (sprintf "contextAfter=%s" contextAfter)
+
+                    let _descriptionMethodName, descriptionMethodDocString =
+                        match descriptionParts with
+                        | [] -> ("", "")
+                        | [name] -> (name, "")
+                        | name :: docRemainder -> (name, docRemainder |> String.concat "\n")
+
+                    let displayText =
+                        item.DisplayTextPrefix + item.DisplayText + item.DisplayTextSuffix
+
+                    let documentation =
+                        match descriptionMethodDocString with
+                        | "" -> None
+                        | docString -> Types.Documentation.Markup {
+                                           Kind = MarkupKind.PlainText
+                                           Value = docString
+                                       } |> Some
+
+                    let baseCompletionItem = CompletionItem.Create(displayText)
+
+                    return
+                        { baseCompletionItem with
+                            Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
+                            SortText         = item.SortText |> Option.ofObj
+                            FilterText       = item.FilterText |> Option.ofObj
+                            InsertTextFormat = Some Types.InsertTextFormat.PlainText
+                            Documentation    = documentation
+                        }
+                }
 
                 let completionItems =
                     completionResults.ItemsList
                     |> Seq.map makeLspCompletionItem
+                    |> Seq.map Async.RunSynchronously
                     |> Array.ofSeq
 
                 let completionList = {
