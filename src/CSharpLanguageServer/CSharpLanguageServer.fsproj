@@ -27,11 +27,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Ionide.LanguageServerProtocol\Ionide.LanguageServerProtocol.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
     <PackageReference Include="Castle.Core" Version="5.1.0" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.2.1.6856" />
     <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.6" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.5.3" />
     <PackageReference Include="Microsoft.Build" Version="17.3.1" ExcludeAssets="runtime" />
