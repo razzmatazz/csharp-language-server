@@ -390,14 +390,16 @@ let setupServerHandlers options (lspClient: LspClient) =
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let textSpan = actionParams.Range
-                                          |> roslynLinePositionSpanForLspRange
-                                          |> docText.Lines.GetTextSpan
+            let textSpan =
+                actionParams.Range
+                |> roslynLinePositionSpanForLspRange
+                |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
                 getRoslynCodeActions logMessage doc textSpan
 
             let clientCapabilities = scope.ClientCapabilities
+
             let clientSupportsCodeActionEditResolveWithEditAndData =
                 clientCapabilities.IsSome
                 && (clientCapabilities.Value.TextDocument.IsSome)
@@ -710,18 +712,19 @@ let setupServerHandlers options (lspClient: LspClient) =
         | None -> return None |> success
     }
 
-    let handleTextDocumentDocumentSymbol (scope: ServerRequestScope) (p: Types.DocumentSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
+    let handleTextDocumentDocumentSymbol (scope: ServerRequestScope) (p: Types.DocumentSymbolParams): AsyncLspResult<Types.DocumentSymbol [] option> = async {
         let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
         match docMaybe with
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let collector = DocumentSymbolCollector(p.TextDocument.Uri, semanticModel)
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
+            let collector = DocumentSymbolCollector(docText, semanticModel)
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             collector.Visit(syntaxTree.GetRoot())
 
-            return collector.GetSymbols() |> Some |> success
+            return collector.GetDocumentSymbols() |> Some |> success
 
         | None ->
             return None |> success

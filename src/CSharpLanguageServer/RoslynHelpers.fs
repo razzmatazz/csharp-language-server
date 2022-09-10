@@ -61,7 +61,8 @@ let lspRangeForRoslynLinePosSpan (pos: LinePositionSpan): Types.Range =
       End = lspPositionForRoslynLinePosition pos.End }
 
 let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.TextEdit =
-    { Range = docText.Lines.GetLinePositionSpan(c.Span) |> lspRangeForRoslynLinePosSpan
+    { Range = docText.Lines.GetLinePositionSpan(c.Span)
+              |> lspRangeForRoslynLinePosSpan
       NewText = c.NewText }
 
 let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Location =
@@ -240,100 +241,99 @@ let formatSymbol (sym: ISymbol)
     | true, _, _ -> sym.ToDisplayString()
     | false, _, _ -> sym.Name
 
-let symbolToLspSymbolInformation
-        (symbol: ISymbol)
+let getSymbolNameAndKind
         (semanticModel: SemanticModel option)
         (pos: int option)
-        : Types.SymbolInformation =
+        (symbol: ISymbol) =
     let showAttributes = true
 
-    let (symbolName, symbolKind) =
-        match symbol with
-        | :? ILocalSymbol as ls ->
-            (formatSymbol ls showAttributes semanticModel pos,
-             Types.SymbolKind.Variable)
+    match symbol with
+    | :? ILocalSymbol as ls ->
+        (formatSymbol ls showAttributes semanticModel pos,
+            Types.SymbolKind.Variable)
 
-        | :? IFieldSymbol as fs ->
-            (formatSymbol fs showAttributes semanticModel pos,
-             Types.SymbolKind.Field)
+    | :? IFieldSymbol as fs ->
+        (formatSymbol fs showAttributes semanticModel pos,
+            Types.SymbolKind.Field)
 
-        | :? IPropertySymbol as ps ->
-            (formatSymbol ps showAttributes semanticModel pos,
-             Types.SymbolKind.Property)
+    | :? IPropertySymbol as ps ->
+        (formatSymbol ps showAttributes semanticModel pos,
+            Types.SymbolKind.Property)
 
-        | :? IMethodSymbol as ms ->
-            (formatSymbol ms showAttributes semanticModel pos,
-             match ms.MethodKind with
-                | MethodKind.Constructor -> Types.SymbolKind.Constructor
-                | _ -> Types.SymbolKind.Method)
+    | :? IMethodSymbol as ms ->
+        (formatSymbol ms showAttributes semanticModel pos,
+            match ms.MethodKind with
+            | MethodKind.Constructor -> Types.SymbolKind.Constructor
+            | _ -> Types.SymbolKind.Method)
 
-        | :? ITypeSymbol as ts ->
-            (formatSymbol ts showAttributes semanticModel pos,
-             match ts.TypeKind with
-                | TypeKind.Class -> Types.SymbolKind.Class
-                | TypeKind.Enum -> Types.SymbolKind.Enum
-                | TypeKind.Struct -> Types.SymbolKind.Struct
-                | TypeKind.Interface -> Types.SymbolKind.Interface
-                | TypeKind.Delegate -> Types.SymbolKind.Function
-                | TypeKind.Array -> Types.SymbolKind.Array
-                | _ -> Types.SymbolKind.Class)
+    | :? ITypeSymbol as ts ->
+        (formatSymbol ts showAttributes semanticModel pos,
+            match ts.TypeKind with
+            | TypeKind.Class -> Types.SymbolKind.Class
+            | TypeKind.Enum -> Types.SymbolKind.Enum
+            | TypeKind.Struct -> Types.SymbolKind.Struct
+            | TypeKind.Interface -> Types.SymbolKind.Interface
+            | TypeKind.Delegate -> Types.SymbolKind.Function
+            | TypeKind.Array -> Types.SymbolKind.Array
+            | _ -> Types.SymbolKind.Class)
 
-        | _ ->
-            (symbol.ToString(), Types.SymbolKind.File)
+    | _ ->
+        (symbol.ToString(), Types.SymbolKind.File)
 
-    { Name = symbolName
-      Kind = symbolKind
-      Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
-      ContainerName = None }
-
-
-type DocumentSymbolCollector (documentUri, semanticModel: SemanticModel) =
+type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let mutable collectedSymbols: Types.SymbolInformation list = []
+    let mutable collectedSymbols = []
 
-    let collect (symbol: ISymbol) (identifier: SyntaxToken) =
-        let identifierLocation: Types.Location =
-            { Uri = documentUri
-              Range = identifier.GetLocation().GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
-            }
+    let collect (node: SyntaxNode) (identifier: SyntaxToken) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
 
-        let identifierStartPos = identifier.GetLocation().SourceSpan.Start
+        let (fullSymbolName, symbolKind) =
+            getSymbolNameAndKind (Some semanticModel)
+                                 (Some identifier.Span.Start)
+                                 symbol
 
-        let rawSymbol = symbolToLspSymbolInformation
-                            symbol
-                            (Some semanticModel)
-                            (Some identifierStartPos)
+        let lspRange =
+            node.FullSpan
+            |> docText.Lines.GetLinePositionSpan
+            |> lspRangeForRoslynLinePosSpan
 
-        let symbol = { rawSymbol with Location = identifierLocation }
+        let selectionLspRange =
+            identifier.GetLocation().GetLineSpan().Span
+            |> lspRangeForRoslynLinePosSpan
 
-        collectedSymbols <- symbol :: collectedSymbols
+        let docSymbol = {
+            Name           = symbol.Name
+            Detail         = Some fullSymbolName
+            Kind           = symbolKind
+            Range          = lspRange
+            SelectionRange = selectionLspRange
+            Children       = None
+        }
 
-    member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
+        collectedSymbols <- docSymbol :: collectedSymbols
+
+    member __.GetDocumentSymbols() =
+        collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitClassDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitClassDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitConstructorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitPropertyDeclaration(node)
 
     override __.VisitEventDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitEventDeclaration(node)
 
 
@@ -342,34 +342,30 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
     let mutable collectedSymbols: (ISymbol * Location) list = []
 
-    let collect (symbol: ISymbol) (identifier: SyntaxToken) =
+    let collect (node: SyntaxNode) (identifier: SyntaxToken) =
+        let symbol = semanticModel.GetDeclaredSymbol(node)
         collectedSymbols <- (symbol, identifier.GetLocation()) :: collectedSymbols
 
     member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitClassDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitClassDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitConstructorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitPropertyDeclaration(node)
 
     override __.VisitEventDeclaration(node) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collect symbol node.Identifier
+        collect node node.Identifier
         base.VisitEventDeclaration(node)
 
 
@@ -464,10 +460,17 @@ let findSymbolsInSolution (solution: Solution)
 
         symbolsFound <- (List.ofSeq symbols) @ symbolsFound
 
-    let getSymbolInformation s =
-        symbolToLspSymbolInformation s None None
+    let symbolToLspSymbolInformation (symbol: ISymbol) : Types.SymbolInformation =
+        let (symbolName, symbolKind) = getSymbolNameAndKind None None symbol
 
-    return symbolsFound |> Seq.map getSymbolInformation |> List.ofSeq
+        { Name = symbolName
+          Kind = symbolKind
+          Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
+          ContainerName = None }
+
+    return symbolsFound
+           |> Seq.map symbolToLspSymbolInformation
+           |> List.ofSeq
 }
 
 let instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =

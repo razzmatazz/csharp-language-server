@@ -178,7 +178,8 @@ let markdownDocForSymbol (sym: ISymbol) =
         |> (fun ss -> String.Join("\n", ss))
 
 let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) pos =
-    let symbolInfo = symbolToLspSymbolInformation sym (Some semanticModel) (Some pos)
+    let (symbolName, _) =
+        getSymbolNameAndKind (Some semanticModel) (Some pos) sym
 
     let symAssemblyName =
         sym.ContainingAssembly
@@ -187,15 +188,15 @@ let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticMod
         |> Option.defaultValue ""
 
     let symbolInfoLines =
-        match symbolInfo.Name, symAssemblyName with
+        match symbolName, symAssemblyName with
         | "", "" -> []
         | typeName, "" -> [sprintf "`%s`" typeName]
         | _, _ ->
             let docAssembly = semanticModel.Compilation.Assembly
             if symAssemblyName = docAssembly.Name then
-                [sprintf "`%s`" symbolInfo.Name]
+                [sprintf "`%s`" symbolName]
             else
-                [sprintf "`%s` from assembly `%s`" symbolInfo.Name symAssemblyName]
+                [sprintf "`%s` from assembly `%s`" symbolName symAssemblyName]
 
     let comment = parseComment (sym.GetDocumentationCommentXml())
     let formattedDocLines = formatComment comment
