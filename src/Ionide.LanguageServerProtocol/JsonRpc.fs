@@ -62,6 +62,7 @@ type Error =
   static member InternalError = Error.Create(ErrorCodes.internalError, "Internal error")
   static member InternalErrorMessage message = Error.Create(ErrorCodes.internalError, message)
   static member RequestCancelled = Error.Create(ErrorCodes.requestCancelled, "Request cancelled")
+  static member RequestCancelledMessage message = Error.Create(ErrorCodes.requestCancelled, message)
 
 type Response =
   { [<JsonProperty("jsonrpc")>]

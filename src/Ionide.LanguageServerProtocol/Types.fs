@@ -333,6 +333,17 @@ type InlayHintWorkspaceClientCapabilities =
     /// change that requires such a calculation.
     RefreshSupport: bool option }
 
+type CodeLensWorkspaceClientCapabilities = {
+  /// Whether the client implementation supports a refresh request sent from the
+  /// server to the client.
+  ///
+  /// Note that this event is global and will force the client to refresh all
+  /// code lenses currently shown. It should be used with absolute care and is
+  /// useful for situation where a server for example detect a project wide
+  /// change that requires such a calculation.
+   RefreshSupport: bool option
+}
+
 /// Workspace specific client capabilities.
 type WorkspaceClientCapabilities =
   { /// The client supports applying batch edits to the workspace by supporting
@@ -360,7 +371,12 @@ type WorkspaceClientCapabilities =
     /// Client workspace capabilities specific to inlay hints.
     ///
     /// @since 3.17.0
-    InlayHint: InlayHintWorkspaceClientCapabilities option }
+    InlayHint: InlayHintWorkspaceClientCapabilities option
+
+    /// Client workspace capabilities specific to code lenses.
+    ///
+    /// @since 3.16.0
+    CodeLens: CodeLensWorkspaceClientCapabilities option }
 
 type SynchronizationCapabilities =
   { /// Whether text document synchronization supports dynamic registration.
