@@ -936,7 +936,7 @@ let tryAddDocument logMessage
         let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
         let docName = docFilePath.Substring(projectBaseDir.Length+1)
 
-        logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
+        //logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
 
         let newDoc = proj.AddDocument(name=docName, text=SourceText.From(text), folders=null, filePath=docFilePath)
         Some newDoc
