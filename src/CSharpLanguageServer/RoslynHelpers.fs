@@ -280,12 +280,24 @@ let getSymbolNameAndKind
     | _ ->
         (symbol.ToString(), Types.SymbolKind.File)
 
+let rec flattenDocumentSymbol (node: Types.DocumentSymbol) =
+    let nodeWithNoChildren =
+        { node with Children = None }
+
+    let flattenedChildren =
+        match node.Children with
+        | None -> []
+        | Some xs -> xs |> Seq.map flattenDocumentSymbol |> Seq.concat |> List.ofSeq
+
+    nodeWithNoChildren :: flattenedChildren
+
 type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let mutable collectedSymbols = []
+    let mutable symbolStack = []
+    let mutable root: Types.DocumentSymbol option = None
 
-    let collect (node: SyntaxNode) (identifier: SyntaxToken) =
+    let push (node: SyntaxNode) (identifier: SyntaxToken) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
 
         let (fullSymbolName, symbolKind) =
@@ -302,45 +314,83 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             identifier.GetLocation().GetLineSpan().Span
             |> lspRangeForRoslynLinePosSpan
 
+        let symbolDetail =
+            match symbolKind with
+            | Types.SymbolKind.Class -> None
+            | Types.SymbolKind.Struct -> None
+            | _ -> Some fullSymbolName
+
         let docSymbol = {
             Name           = symbol.Name
-            Detail         = Some fullSymbolName
+            Detail         = symbolDetail
             Kind           = symbolKind
             Range          = lspRange
             SelectionRange = selectionLspRange
             Children       = None
         }
 
-        collectedSymbols <- docSymbol :: collectedSymbols
+        symbolStack <- docSymbol :: symbolStack
+
+    let pop (_node: SyntaxNode) =
+        let (_symbolStack, _root) =
+            match symbolStack with
+            | [] -> Exception("symbolStack is empty") |> raise
+            | [root] -> ([], Some root)
+            | top :: restPastTop ->
+                match restPastTop with
+                | [] -> Exception("restPastTop is empty") |> raise
+                | parent :: restPastParent ->
+                    let parentWithTopAsChild =
+                        let newChildren =
+                            parent.Children
+                            |> Option.defaultValue Array.empty
+                            |> List.ofSeq
+                            |> fun xs -> xs @ [top]
+                            |> Array.ofSeq
+
+                        { parent with Children = Some newChildren }
+
+                    let poppedSymbolStack = parentWithTopAsChild :: restPastParent
+
+                    (poppedSymbolStack, None)
+
+        symbolStack <- _symbolStack
+        root <- _root
 
     member __.GetDocumentSymbols() =
-        collectedSymbols |> List.rev |> Array.ofList
+        //root.Value |> flattenDocumentSymbol |> Array.ofSeq
+        [| root.Value |]
 
     override __.VisitClassDeclaration(node) =
-        collect node node.Identifier
+        push node node.Identifier
         base.VisitClassDeclaration(node)
+        pop node
 
     override __.VisitConstructorDeclaration(node) =
-        collect node node.Identifier
+        push node node.Identifier
         base.VisitConstructorDeclaration(node)
+        pop node
 
     override __.VisitMethodDeclaration(node) =
-        collect node node.Identifier
+        push node node.Identifier
         base.VisitMethodDeclaration(node)
+        pop node
 
     override __.VisitPropertyDeclaration(node) =
-        collect node node.Identifier
+        push node node.Identifier
         base.VisitPropertyDeclaration(node)
+        pop node
 
     override __.VisitEventDeclaration(node) =
-        collect node node.Identifier
+        push node node.Identifier
         base.VisitEventDeclaration(node)
+        pop node
 
 
 type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let mutable collectedSymbols: (ISymbol * Location) list = []
+    let mutable collectedSymbols = []
 
     let collect (node: SyntaxNode) (identifier: SyntaxToken) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
@@ -373,8 +423,8 @@ type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol, logMessage: string -> unit) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let mutable collectedLocations: Types.Location list = []
-    let mutable suggestedLocations: Types.Location list = []
+    let mutable collectedLocations = []
+    let mutable suggestedLocations = []
 
     let collectIdentifier (identifier: SyntaxToken) exactMatch =
         let location: Types.Location =
