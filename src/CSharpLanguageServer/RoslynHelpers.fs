@@ -357,9 +357,11 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         symbolStack <- _symbolStack
         root <- _root
 
-    member __.GetDocumentSymbols() =
-        //root.Value |> flattenDocumentSymbol |> Array.ofSeq
-        [| root.Value |]
+    member __.GetDocumentSymbols (clientSupportsDocSymbolHierarchy: bool) =
+        if clientSupportsDocSymbolHierarchy then
+            [| root.Value |]
+        else
+            root.Value |> flattenDocumentSymbol |> Array.ofSeq
 
     override __.VisitClassDeclaration(node) =
         push node node.Identifier

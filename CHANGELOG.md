@@ -3,10 +3,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* update textDocument/documentSymbol handler:
+  - emit hierarchical symbol tree, where client supports it;
+  - emit DocumentSymbol[] instead of SymbolInformation[], the former of which has more info;
+
 ## [0.5.6] - 2022-09-05 / Birštonas
-* Fix an issue where we would fail to generate code action list if one of code action
-providers would raise an exception; -- log the message to the log instead and continue
-with the next provider to be more resilent;
+* Fix an issue where we would fail to generate code action list if one of code action providers would raise an exception; -- log the message to the log instead and continue with the next provider to be more resilent;
 * Upgrade Microsoft.Build libs;
 * Inject required roslyn WorkspaceServices so more refactorings work now:
   - pull member;

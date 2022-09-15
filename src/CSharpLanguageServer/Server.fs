@@ -398,15 +398,13 @@ let setupServerHandlers options (lspClient: LspClient) =
             let! roslynCodeActions =
                 getRoslynCodeActions logMessage doc textSpan
 
-            let clientCapabilities = scope.ClientCapabilities
-
             let clientSupportsCodeActionEditResolveWithEditAndData =
-                clientCapabilities.IsSome
-                && (clientCapabilities.Value.TextDocument.IsSome)
-                && (clientCapabilities.Value.TextDocument.Value.CodeAction.IsSome)
-                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.DataSupport = Some true)
-                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.IsSome)
-                && (clientCapabilities.Value.TextDocument.Value.CodeAction.Value.ResolveSupport.Value.Properties |> Array.contains "edit")
+                scope.ClientCapabilities
+                |> Option.bind (fun x -> x.TextDocument)
+                |> Option.bind (fun x -> x.CodeAction)
+                |> Option.bind (fun x -> x.ResolveSupport)
+                |> Option.map (fun resolveSupport -> resolveSupport.Properties |> Array.contains "edit")
+                |> Option.defaultValue false
 
             let! lspCodeActions =
                 match clientSupportsCodeActionEditResolveWithEditAndData with
@@ -724,7 +722,14 @@ let setupServerHandlers options (lspClient: LspClient) =
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             collector.Visit(syntaxTree.GetRoot())
 
-            return collector.GetDocumentSymbols() |> Some |> success
+            let canEmitDocSymbolHierarchy =
+                scope.ClientCapabilities
+                |> Option.bind (fun cc -> cc.TextDocument)
+                |> Option.bind (fun cc -> cc.DocumentSymbol)
+                |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
+                |> Option.defaultValue false
+
+            return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy) |> Some |> success
 
         | None ->
             return None |> success
