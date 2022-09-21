@@ -1118,6 +1118,7 @@ let startCore options =
         input
         output
         CSharpLspClient
+        defaultRpc
 
 let start options =
     try
