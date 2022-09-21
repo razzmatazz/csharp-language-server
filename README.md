@@ -14,6 +14,14 @@ See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
 See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
+# Building
+
+## On Linux/macOS
+
+```
+$ (cd src && dotnet build)
+```
+
 # Features
 - symbol rename;
 - code refactorings from roslyn;
