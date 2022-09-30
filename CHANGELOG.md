@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Upgrade Microsoft.Build + Roslyn libs;
 * update textDocument/documentSymbol handler:
   - emit hierarchical symbol tree, where client supports it;
   - emit DocumentSymbol[] instead of SymbolInformation[], the former of which has more info;

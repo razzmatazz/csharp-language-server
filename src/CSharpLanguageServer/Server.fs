@@ -174,8 +174,8 @@ let setupServerHandlers options (lspClient: LspClient) =
 
     let logMessage = logMessageWithLevel MessageType.Log
     let infoMessage = logMessageWithLevel MessageType.Info
-    let warningMessage = logMessageWithLevel MessageType.Warning
-    let errorMessage = logMessageWithLevel MessageType.Error
+    //let warningMessage = logMessageWithLevel MessageType.Warning
+    //let errorMessage = logMessageWithLevel MessageType.Error
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> =
       logMessageCurrent <- Action<string>(logMessage)
@@ -190,10 +190,6 @@ let setupServerHandlers options (lspClient: LspClient) =
                            (getDotnetCliVersion ()))
 
       let vsInstance = MSBuildLocator.RegisterDefaults()
-
-      // Workaround for https://github.com/microsoft/MSBuildLocator/issues/176
-      Environment.SetEnvironmentVariable("MSBuildSDKsPath", null);
-      Environment.SetEnvironmentVariable("MSBUILD_EXE_PATH", null);
 
       infoMessage (sprintf "MSBuildLocator: SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
                            vsInstance.Name
