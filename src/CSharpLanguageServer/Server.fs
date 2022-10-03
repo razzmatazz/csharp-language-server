@@ -202,12 +202,23 @@ let setupServerHandlers options (lspClient: LspClient) =
       // setup timer so actors get period ticks
       setupTimer ()
 
+      let clientSupportsRenameOptions =
+          p.Capabilities
+          |> Option.bind (fun x -> x.TextDocument)
+          |> Option.bind (fun x -> x.Rename)
+          |> Option.bind (fun x -> x.PrepareSupport)
+          |> Option.defaultValue false
+
       let initializeResult = {
               InitializeResult.Default with
                 Capabilities =
                     { ServerCapabilities.Default with
                         HoverProvider = Some true
-                        RenameProvider = First true |> Some
+                        RenameProvider =
+                               if clientSupportsRenameOptions then
+                                   Second { PrepareProvider = Some true } |> Some
+                               else
+                                   true |> First |> Some
                         DefinitionProvider = Some true
                         TypeDefinitionProvider = None
                         ImplementationProvider = Some true
@@ -766,6 +777,62 @@ let setupServerHandlers options (lspClient: LspClient) =
         | None -> return None |> success
     }
 
+    let handleTextDocumentPrepareRename (scope: ServerRequestScope)
+                                        (prepareRename: PrepareRenameParams)
+                                        : AsyncLspResult<PrepareRenameResult option> =
+        async {
+            let! ct = Async.CancellationToken
+            let! docMaybe = getDocumentForUriFromCurrentState UserDocument
+                                                              prepareRename.TextDocument.Uri
+            let! prepareResult =
+                match docMaybe with
+                | Some doc -> async {
+                    let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+                    let! docText = doc.GetTextAsync() |> Async.AwaitTask
+
+                    let linePositionSpan = LinePositionSpan(
+                        roslynLinePositionForLspPosition prepareRename.Position,
+                        roslynLinePositionForLspPosition prepareRename.Position)
+
+                    let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
+
+                    let! rootNode = docSyntaxTree.GetRootAsync() |> Async.AwaitTask
+                    let nodeOnPos = rootNode.FindNode(textSpan, findInsideTrivia=false, getInnermostNodeForTie=true)
+
+                    let spanMaybe =
+                        match nodeOnPos with
+                        | :? PropertyDeclarationSyntax as propDec -> propDec.Identifier.Span |> Some
+                        | :? MethodDeclarationSyntax as methodDec -> methodDec.Identifier.Span |> Some
+                        | :? BaseTypeDeclarationSyntax as typeDec -> typeDec.Identifier.Span |> Some
+                        | :? VariableDeclaratorSyntax as varDec -> varDec.Identifier.Span |> Some
+                        | :? EnumMemberDeclarationSyntax as enumMemDec -> enumMemDec.Identifier.Span |> Some
+                        | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
+                        | node ->
+                            //logMessage (sprintf "unhandled Type=%s" (string (node.GetType().Name)))
+                            None
+
+                    let rangeWithPlaceholderMaybe: PrepareRenameResult option =
+                        match spanMaybe with
+                        | Some span ->
+                            let range =
+                                docText.Lines.GetLinePositionSpan(span)
+                                |> lspRangeForRoslynLinePosSpan
+
+                            let text = docText.GetSubText(span) |> string
+                                                
+                            { Range = range; Placeholder = text }
+                            |> Types.PrepareRenameResult.RangeWithPlaceholder
+                            |> Some
+                        | None ->
+                            None
+
+                    return rangeWithPlaceholderMaybe
+                  }
+                | None -> None |> async.Return
+
+            return prepareResult |> success
+        }
+
     let handleTextDocumentRename (scope: ServerRequestScope) (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
         let! ct = Async.CancellationToken
 
@@ -1097,6 +1164,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         "textDocument/onTypeFormatting"  , handleTextDocumentOnTypeFormatting  |> withReadOnlyScope |> requestHandling
         "textDocument/rangeFormatting"   , handleTextDocumentRangeFormatting   |> withReadOnlyScope |> requestHandling
         "textDocument/references"        , handleTextDocumentReferences        |> withReadOnlyScope |> requestHandling
+        "textDocument/prepareRename"     , handleTextDocumentPrepareRename     |> withReadOnlyScope |> requestHandling
         "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
         "textDocument/signatureHelp"     , handleTextDocumentSignatureHelp     |> withReadOnlyScope |> requestHandling
         "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
