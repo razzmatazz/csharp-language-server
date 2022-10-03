@@ -493,7 +493,7 @@ let roslynToLspDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) : Types.Diagnos
       Severity = d.Severity |> roslynToLspDiagnosticSeverity
       Code = Some d.Id
       CodeDescription = Some { Href = Some diagnosticsCodeUrl }
-      Source = "lsp"
+      Source = Some "lsp"
       Message = d.GetMessage()
       RelatedInformation = None
       Tags = None
