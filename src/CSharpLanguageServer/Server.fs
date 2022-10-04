@@ -806,9 +806,10 @@ let setupServerHandlers options (lspClient: LspClient) =
                         | :? BaseTypeDeclarationSyntax as typeDec -> typeDec.Identifier.Span |> Some
                         | :? VariableDeclaratorSyntax as varDec -> varDec.Identifier.Span |> Some
                         | :? EnumMemberDeclarationSyntax as enumMemDec -> enumMemDec.Identifier.Span |> Some
+                        | :? ParameterSyntax as paramSyn -> paramSyn.Identifier.Span |> Some
                         | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
                         | node ->
-                            //logMessage (sprintf "unhandled Type=%s" (string (node.GetType().Name)))
+                            logMessage (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
                             None
 
                     let rangeWithPlaceholderMaybe: PrepareRenameResult option =
