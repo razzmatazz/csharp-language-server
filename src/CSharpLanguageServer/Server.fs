@@ -777,7 +777,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         | None -> return None |> success
     }
 
-    let handleTextDocumentPrepareRename (scope: ServerRequestScope)
+    let handleTextDocumentPrepareRename (_scope: ServerRequestScope)
                                         (prepareRename: PrepareRenameParams)
                                         : AsyncLspResult<PrepareRenameResult option> =
         async {
@@ -789,6 +789,14 @@ let setupServerHandlers options (lspClient: LspClient) =
                 | Some doc -> async {
                     let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
                     let! docText = doc.GetTextAsync() |> Async.AwaitTask
+
+                    let position = docText.Lines.GetPosition(LinePosition(prepareRename.Position.Line, prepareRename.Position.Character))
+                    let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+                    let symbolIsFromMetadata =
+                        symbolMaybe
+                        |> Option.ofObj
+                        |> Option.map (fun s -> s.MetadataToken <> 0)
+                        |> Option.defaultValue false
 
                     let linePositionSpan = LinePositionSpan(
                         roslynLinePositionForLspPosition prepareRename.Position,
@@ -814,8 +822,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                             None
 
                     let rangeWithPlaceholderMaybe: PrepareRenameResult option =
-                        match spanMaybe with
-                        | Some span ->
+                        match spanMaybe, symbolIsFromMetadata with
+                        | Some span, false ->
                             let range =
                                 docText.Lines.GetLinePositionSpan(span)
                                 |> lspRangeForRoslynLinePosSpan
@@ -825,7 +833,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                             { Range = range; Placeholder = text }
                             |> Types.PrepareRenameResult.RangeWithPlaceholder
                             |> Some
-                        | None ->
+                        | _, _ ->
                             None
 
                     return rangeWithPlaceholderMaybe
