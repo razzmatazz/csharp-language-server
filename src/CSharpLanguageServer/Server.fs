@@ -718,25 +718,28 @@ let setupServerHandlers options (lspClient: LspClient) =
     }
 
     let handleTextDocumentDocumentSymbol (scope: ServerRequestScope) (p: Types.DocumentSymbolParams): AsyncLspResult<Types.DocumentSymbol [] option> = async {
+        let canEmitDocSymbolHierarchy =
+            scope.ClientCapabilities
+            |> Option.bind (fun cc -> cc.TextDocument)
+            |> Option.bind (fun cc -> cc.DocumentSymbol)
+            |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
+            |> Option.defaultValue false
+
         let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
         match docMaybe with
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollector(docText, semanticModel)
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            collector.Init(doc.Name)
             collector.Visit(syntaxTree.GetRoot())
 
-            let canEmitDocSymbolHierarchy =
-                scope.ClientCapabilities
-                |> Option.bind (fun cc -> cc.TextDocument)
-                |> Option.bind (fun cc -> cc.DocumentSymbol)
-                |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
-                |> Option.defaultValue false
-
-            return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy) |> Some |> success
+            return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
+                   |> Some
+                   |> success
 
         | None ->
             return None |> success

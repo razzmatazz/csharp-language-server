@@ -295,7 +295,6 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable symbolStack = []
-    let mutable root: Types.DocumentSymbol option = None
 
     let push (node: SyntaxNode) (identifier: SyntaxToken) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
@@ -332,10 +331,10 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         symbolStack <- docSymbol :: symbolStack
 
     let pop (_node: SyntaxNode) =
-        let (_symbolStack, _root) =
+        let symbolStack' =
             match symbolStack with
             | [] -> Exception("symbolStack is empty") |> raise
-            | [root] -> ([], Some root)
+            | [_] -> []
             | top :: restPastTop ->
                 match restPastTop with
                 | [] -> Exception("restPastTop is empty") |> raise
@@ -352,20 +351,54 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
 
                     let poppedSymbolStack = parentWithTopAsChild :: restPastParent
 
-                    (poppedSymbolStack, None)
+                    poppedSymbolStack
 
-        symbolStack <- _symbolStack
-        root <- _root
+        symbolStack <- symbolStack'
+
+    member __.Init(moduleName: string) =
+        let emptyRange = { Start={ Line=0; Character=0 }
+                           End={ Line=0; Character=0 } }
+
+        let root: DocumentSymbol = {
+            Name           = moduleName
+            Detail         = None
+            Kind           = SymbolKind.File
+            Range          = emptyRange
+            SelectionRange = emptyRange
+            Children       = None
+        }
+
+        symbolStack <- [root]
 
     member __.GetDocumentSymbols (clientSupportsDocSymbolHierarchy: bool) =
+        let root =
+            match symbolStack with
+            | [root] -> root
+            | _ -> Exception("symbolStack is not a single node") |> raise
+
         if clientSupportsDocSymbolHierarchy then
-            [| root.Value |]
+            [| root |]
         else
-            root.Value |> flattenDocumentSymbol |> Array.ofSeq
+            root |> flattenDocumentSymbol |> Array.ofSeq
+
+    override __.VisitEnumDeclaration(node) =
+        push node node.Identifier
+        base.VisitEnumDeclaration(node)
+        pop node
+
+    override __.VisitEnumMemberDeclaration(node) =
+        push node node.Identifier
+        base.VisitEnumMemberDeclaration(node)
+        pop node
 
     override __.VisitClassDeclaration(node) =
         push node node.Identifier
         base.VisitClassDeclaration(node)
+        pop node
+
+    override __.VisitRecordDeclaration(node) =
+        push node node.Identifier
+        base.VisitRecordDeclaration(node)
         pop node
 
     override __.VisitConstructorDeclaration(node) =
@@ -400,9 +433,21 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
     member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
 
+    override __.VisitEnumDeclaration(node) =
+        collect node node.Identifier
+        base.VisitEnumDeclaration(node)
+
+    override __.VisitEnumMemberDeclaration(node) =
+        collect node node.Identifier
+        base.VisitEnumMemberDeclaration(node)
+
     override __.VisitClassDeclaration(node) =
         collect node node.Identifier
         base.VisitClassDeclaration(node)
+
+    override __.VisitRecordDeclaration(node) =
+        collect node node.Identifier
+        base.VisitRecordDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
         collect node node.Identifier
@@ -422,7 +467,7 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
 
 type DocumentSymbolCollectorForMatchingSymbolName
-        (documentUri, sym: ISymbol, logMessage: string -> unit) =
+        (documentUri, sym: ISymbol, _logMessage: string -> unit) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedLocations = []
@@ -566,7 +611,7 @@ let codeFixProviderInstances =
     instantiateRoslynProviders<CodeFixProvider>
         (fun _ -> true)
 
-type CleanCodeGenerationOptionsProviderInterceptor (logMessage) =
+type CleanCodeGenerationOptionsProviderInterceptor (_logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             match invocation.Method.Name with
@@ -616,7 +661,7 @@ type LegacyWorkspaceOptionServiceInterceptor (logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
-type PickMembersServiceInterceptor (logMessage) =
+type PickMembersServiceInterceptor (_logMessage) =
     interface IInterceptor with
          member __.Intercept(invocation: IInvocation) =
 
@@ -633,7 +678,7 @@ type PickMembersServiceInterceptor (logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
-type ExtractClassOptionsServiceInterceptor (logMessage) =
+type ExtractClassOptionsServiceInterceptor (_logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
 
