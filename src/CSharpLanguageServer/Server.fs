@@ -821,6 +821,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                         | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
                         | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some
                         | :? ForEachStatementSyntax as forEachSyn -> forEachSyn.Identifier.Span |> Some
+                        | :? LocalFunctionStatementSyntax as localFunStSyn -> localFunStSyn.Identifier.Span |> Some
                         | node ->
                             logMessage (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
                             None
