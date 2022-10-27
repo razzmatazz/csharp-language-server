@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 * Fixes for `textDocument/prepareRename` request;
+* Upgrade Microsoft.BUild + Roslyn libs;
 
 ## [0.5.7] - 2022-10-09 / Marijampolė
 * Add support for `textDocument/prepareRename` request;
