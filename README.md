@@ -40,6 +40,7 @@ $ (cd src && dotnet build)
 - csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
 
 # TODO list
+ - it seems push diagnostics logic we have is not very responsive when we have a lot of documents open;
  - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
  - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
    - should we cancel existing ones? -- where cancellable? how to know?
