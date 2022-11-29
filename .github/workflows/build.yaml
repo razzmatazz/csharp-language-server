@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        dotnet: [6.0.301]
+        dotnet: [7.0.100]
 
     runs-on: ${{ matrix.os }}
     defaults:
