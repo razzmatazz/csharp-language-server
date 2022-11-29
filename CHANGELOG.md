@@ -4,8 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-* Fixes for `textDocument/prepareRename` request;
-* Upgrade Microsoft.BUild + Roslyn libs;
+* csharp-ls will now run on and will require .NET 7 SDK -- actual client projects don't need to be updated though;
+* Fixes for the `textDocument/prepareRename` request;
+* Upgrade Microsoft.Build + Roslyn libs.
 
 ## [0.5.7] - 2022-10-09 / Marijampolė
 * Add support for `textDocument/prepareRename` request;
