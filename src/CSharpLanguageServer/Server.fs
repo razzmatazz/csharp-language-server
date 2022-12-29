@@ -189,13 +189,24 @@ let setupServerHandlers options (lspClient: LspClient) =
       infoMessage (sprintf "`dotnet --version`: %s"
                            (getDotnetCliVersion ()))
 
-      let vsInstance = MSBuildLocator.RegisterDefaults()
+      let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
+      let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
+      if Seq.isEmpty vsInstanceList then
+         raise (InvalidOperationException("No instances of MSBuild could be detected." + Environment.NewLine + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."))
 
-      infoMessage (sprintf "MSBuildLocator: SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-                           vsInstance.Name
-                           (string vsInstance.Version)
-                           vsInstance.MSBuildPath
-                           (string vsInstance.DiscoveryType))
+      infoMessage "MSBuildLocator instances found:"
+
+      for vsInstance in vsInstanceList do
+          infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+                               vsInstance.Name
+                               (string vsInstance.Version)
+                               vsInstance.MSBuildPath
+                               (string vsInstance.DiscoveryType))
+
+      let vsInstance = vsInstanceList |> Seq.head
+
+      infoMessage (sprintf "MSBuildLocator: will register \"%s\", Version=%s as default instance" vsInstance.Name (string vsInstance.Version))
+      MSBuildLocator.RegisterInstance(vsInstance)
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 
