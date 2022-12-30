@@ -3,14 +3,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.6.0] - 2022-12-30 / Alytus
 * Improve scheduling of background diagnostics processing;
-* Updates to support .NET SDK 7.0;
+* Support for the .NET SDK 7.0;
   - Note that there was an issue with .NET SDK 7 previews breaking SDK, you may need to do some cleanup, see:
     - https://github.com/dotnet/sdk/issues/28947
-* csharp-ls will now require .NET 7 SDK -- actual client projects don't need to be updated though;
+* csharp-ls will now require .NET 7 SDK
+  - Thanks to @Decodetalkers in https://github.com/razzmatazz/csharp-language-server/pull/56
 * Fixes for the `textDocument/prepareRename` request;
 * Upgrade Microsoft.Build + Roslyn libs.
+
+### More about Alytus, Lithuania
+- [Google Images on Alytus](https://www.google.com/search?tbm=isch&q=alytus+lithuania)
+- [Alytus on WP](https://en.wikipedia.org/wiki/Alytus)
 
 ## [0.5.7] - 2022-10-09 / Marijampolė
 * Add support for `textDocument/prepareRename` request;
