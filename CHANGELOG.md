@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Improve scheduling of background diagnostics processing;
 * Updates to support .NET SDK 7.0;
   - Note that there was an issue with .NET SDK 7 previews breaking SDK, you may need to do some cleanup, see:
     - https://github.com/dotnet/sdk/issues/28947

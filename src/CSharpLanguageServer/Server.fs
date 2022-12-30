@@ -146,6 +146,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                                                 (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics })
                                                 (getDocumentForUriFromCurrentState AnyDocument)
                                                 state
+                                                inbox.CurrentQueueLength
                                                 msg
 
                     for ev in eventsToPost do inbox.Post(ev)

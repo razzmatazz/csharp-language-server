@@ -1,7 +1,6 @@
 module CSharpLanguageServer.State
 
 open System
-open System.IO
 open System.Threading
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
@@ -376,16 +375,23 @@ type DiagnosticsEvent =
 type DiagnosticsState = {
     DocumentBacklog: string list
     DocumentChanges: Map<string, DateTime>
+    LastPendingDiagnosticsProcessing: DateTime
 }
 
-let emptyDiagnosticsState = { DocumentBacklog = []; DocumentChanges = Map.empty }
+let emptyDiagnosticsState = {
+    DocumentBacklog = []
+    DocumentChanges = Map.empty
+    LastPendingDiagnosticsProcessing = DateTime.MinValue
+}
 
-let processDiagnosticsEvent _logMessage
-                            (publishDiagnostics: string -> Diagnostic[] -> Async<unit>)
-                            (getDocumentForUri: string -> Async<Document option>)
-                            (state: DiagnosticsState)
-                            event =
-    match event with
+let processDiagnosticsEvent
+        _logMessage
+        (publishDiagnostics: string -> Diagnostic[] -> Async<unit>)
+        (getDocumentForUri: string -> Async<Document option>)
+        (state: DiagnosticsState)
+        (currentEventQueueLength: int)
+        msg =
+    match msg with
     | DocumentRemoval uri -> async {
         let updatedDocumentChanges = state.DocumentChanges |> Map.remove uri
         let newState = { state with DocumentChanges = updatedDocumentChanges }
@@ -399,6 +405,9 @@ let processDiagnosticsEvent _logMessage
       }
 
     | DocumentBacklogUpdate -> async {
+        // here we build new backlog for background diagnostics processing
+        // which will consider documents by their last modification date
+        // for processing first
         let newBacklog =
             state.DocumentChanges
             |> Seq.sortByDescending (fun kv -> kv.Value)
@@ -421,34 +430,47 @@ let processDiagnosticsEvent _logMessage
         return newState, []
       }
 
-    | ProcessPendingDiagnostics -> async {
-        let docUriMaybe, newBacklog =
-            match state.DocumentBacklog with
-            | [] -> (None, [])
-            | uri :: remainder -> (Some uri, remainder)
+    | ProcessPendingDiagnostics ->
+        let doProcessPendingDiagnostics = async {
+            let docUriMaybe, newBacklog =
+                match state.DocumentBacklog with
+                | [] -> (None, [])
+                | uri :: remainder -> (Some uri, remainder)
 
-        match docUriMaybe with
-        | Some docUri ->
-            let! docAndTypeMaybe = getDocumentForUri docUri
-            match docAndTypeMaybe with
-            | Some doc ->
-                let! ct = Async.CancellationToken
-                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                match semanticModelMaybe |> Option.ofObj with
-                | Some semanticModel ->
-                    let diagnostics =
-                        semanticModel.GetDiagnostics()
-                        |> Seq.map RoslynHelpers.roslynToLspDiagnostic
-                        |> Array.ofSeq
+            match docUriMaybe with
+            | Some docUri ->
+                let! docAndTypeMaybe = getDocumentForUri docUri
 
-                    do! publishDiagnostics docUri diagnostics
+                match docAndTypeMaybe with
+                | Some doc ->
+                    let! ct = Async.CancellationToken
+                    let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                    match semanticModelMaybe |> Option.ofObj with
+                    | Some semanticModel ->
+                        let diagnostics =
+                            semanticModel.GetDiagnostics()
+                            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                            |> Array.ofSeq
+
+                        do! publishDiagnostics docUri diagnostics
+                    | None -> ()
                 | None -> ()
             | None -> ()
-        | None -> ()
 
-        let eventsToPost = match newBacklog with
-                           | [] -> []
-                           | _ -> [ ProcessPendingDiagnostics ]
+            let newState = { state with DocumentBacklog = newBacklog
+                                        LastPendingDiagnosticsProcessing = DateTime.Now }
 
-        return { state with DocumentBacklog = newBacklog }, eventsToPost
-      }
+            let eventsToPost = match newBacklog with
+                               | [] -> []
+                               | _ -> [ ProcessPendingDiagnostics ]
+
+            return newState, eventsToPost
+        }
+
+        let timeSinceLastProcessing =
+            (DateTime.Now - state.LastPendingDiagnosticsProcessing)
+
+        if timeSinceLastProcessing > TimeSpan.FromMilliseconds(250) || currentEventQueueLength = 0 then
+            doProcessPendingDiagnostics
+        else
+            async { return state, [] }
