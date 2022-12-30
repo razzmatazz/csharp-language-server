@@ -2,7 +2,7 @@
 This is a hacky Roslyn-based LSP server as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
-`csharp-ls` requires .NET 6 SDK to be installed. However it has been reported 
+`csharp-ls` requires .NET 7 SDK to be installed. However it has been reported 
 to work with projects using older versions of dotnet SDK, including .NET Core 3, 
 .NET Framework 4.8 and possibly older ones too as it uses the standard
 Roslyn/MSBuild libs that Visual Studio & omnisharp does.
@@ -40,7 +40,6 @@ $ (cd src && dotnet build)
 - csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
 
 # TODO list
- - it seems push diagnostics logic we have is not very responsive when we have a lot of documents open;
  - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
  - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
    - should we cancel existing ones? -- where cancellable? how to know?
