@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;
+  - Reported by @blasco and @gorsheninmv in https://github.com/razzmatazz/csharp-language-server/issues/57
+
 ## [0.6.0] - 2022-12-30 / Alytus
 * Improve scheduling of background diagnostics processing;
 * Support for the .NET SDK 7.0;
