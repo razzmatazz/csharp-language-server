@@ -320,10 +320,10 @@ let setupServerHandlers options (lspClient: LspClient) =
                     DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
             | _ -> ()
         | None ->
-            match openParams.TextDocument.Uri.StartsWith("file://") with
-            | true ->
+            let docFilePathMaybe = Util.tryParseFileUri openParams.TextDocument.Uri
+            match docFilePathMaybe with
+            | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
-                let docFilePath = openParams.TextDocument.Uri.Substring("file://".Length)
                 let newDocMaybe = tryAddDocument logMessage
                                                  docFilePath
                                                  openParams.TextDocument.Text
@@ -336,7 +336,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                         DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
 
                 | None -> ()
-            | false -> ()
+            | None -> ()
 
         return LspResult.Ok()
     }
@@ -377,7 +377,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         | Some _ -> ()
 
         | None ->
-            let docFilePath = saveParams.TextDocument.Uri.Substring("file://".Length)
+            let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
             let newDocMaybe = tryAddDocument logMessage
                                             docFilePath
                                             saveParams.Text.Value
@@ -1040,16 +1040,16 @@ let setupServerHandlers options (lspClient: LspClient) =
         let tryReloadDocumentOnUri uri = async {
             match scope.GetDocumentForUriOfType UserDocument uri with
             | Some (doc, _) ->
-                let fileText = uri.Substring("file://".Length) |> File.ReadAllText
+                let fileText = uri |> Util.parseFileUri |> File.ReadAllText
                 let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
                 scope.Emit(SolutionChange updatedDoc.Project.Solution)
                 diagnostics.Post(DocumentBacklogUpdate)
             | None ->
-                match uri.StartsWith("file://") with
-                | true ->
+                let docFilePathMaybe = uri |> Util.tryParseFileUri
+                match docFilePathMaybe with
+                | Some docFilePath ->
                     // ok, this document is not on solution, register a new one
-                    let docFilePath = uri.Substring("file://".Length)
                     let fileText = docFilePath |> File.ReadAllText
                     let newDocMaybe = tryAddDocument logMessage
                                                      docFilePath
@@ -1060,7 +1060,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                         scope.Emit(SolutionChange newDoc.Project.Solution)
                         diagnostics.Post(DocumentBacklogUpdate)
                     | None -> ()
-                | false -> ()
+                | None -> ()
         }
 
         for change in changeParams.Changes do

@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Util.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Documentation.fs" />
     <Compile Include="State.fs" />

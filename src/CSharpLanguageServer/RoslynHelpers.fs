@@ -67,9 +67,7 @@ let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.
 
 let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Location =
     if loc.IsInSource then
-        let getPathUri path = Uri("file://" + path)
-
-        { Uri = loc.SourceTree.FilePath |> getPathUri |> string
+        { Uri = loc.SourceTree.FilePath |> Util.makeFileUri |> string
           Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
     else
         { Uri = "";
@@ -102,8 +100,6 @@ let lspDocChangesFromSolutionDiff
 
     let! ct = Async.CancellationToken
 
-    let getPathUri path = Uri("file://" + path)
-
     // make a list of changes
     let solutionProjectChanges = updatedSolution.GetChanges(originalSolution).GetProjectChanges()
 
@@ -132,10 +128,10 @@ let lspDocChangesFromSolutionDiff
 
         match newDocFilePathMaybe with
         | Some newDocFilePath ->
-            docTextEdits.Add(
-                { TextDocument = { Uri = newDocFilePath |> getPathUri |> string
-                                   Version = newDocFilePath |> getPathUri |> string |> tryGetDocVersionByUri }
-                  Edits = [| edit |] })
+            let textEditDocument = { Uri = newDocFilePath |> Util.makeFileUri |> string
+                                     Version = newDocFilePath |> Util.makeFileUri |> string |> tryGetDocVersionByUri }
+
+            docTextEdits.Add({ TextDocument = textEditDocument; Edits = [| edit |] })
         | None -> ()
 
     let changedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetChangedDocuments())
@@ -152,10 +148,10 @@ let lspDocChangesFromSolutionDiff
             |> Seq.map (lspTextEditForRoslynTextChange originalDocText)
             |> Array.ofSeq
 
-        docTextEdits.Add(
-            { TextDocument =  { Uri = originalDoc.FilePath |> getPathUri |> string
-                                Version = originalDoc.FilePath |> getPathUri |> string |> tryGetDocVersionByUri }
-              Edits = diffEdits })
+        let textEditDocument = { Uri = originalDoc.FilePath |> Util.makeFileUri |> string
+                                 Version = originalDoc.FilePath |> Util.makeFileUri |> string |> tryGetDocVersionByUri }
+
+        docTextEdits.Add({ TextDocument = textEditDocument; Edits = diffEdits })
 
     return docTextEdits |> List.ofSeq
 }
