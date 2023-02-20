@@ -388,7 +388,7 @@ let emptyDiagnosticsState = {
 }
 
 let processDiagnosticsEvent
-        _logMessage
+        (_logMessage: string -> Async<unit>)
         (publishDiagnostics: string -> Diagnostic[] -> Async<unit>)
         (getDocumentForUri: string -> Async<Document option>)
         (state: DiagnosticsState)

@@ -127,11 +127,13 @@ let getDotnetCliVersion () : string =
 
 let setupServerHandlers options (lspClient: LspClient) =
     let success = LspResult.success
-    let mutable logMessageCurrent: string -> unit = fun _ -> ()
+    let mutable logMessageCurrent: string -> Async<unit> = fun _ -> async { return() }
     let logMessageInvoke m = logMessageCurrent(m)
 
     let stateActor = MailboxProcessor.Start(
-        serverEventLoop logMessageInvoke { emptyServerState with Options = options })
+        serverEventLoop
+            (fun m -> logMessageInvoke m |> Async.StartAsTask |> ignore)
+            { emptyServerState with Options = options })
 
     let getDocumentForUriFromCurrentState docType uri =
         stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
@@ -142,19 +144,21 @@ let setupServerHandlers options (lspClient: LspClient) =
                 try
                     let! msg = inbox.Receive()
                     let! (newState, eventsToPost) =
-                        processDiagnosticsEvent logMessageInvoke
-                                                (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics })
-                                                (getDocumentForUriFromCurrentState AnyDocument)
-                                                state
-                                                inbox.CurrentQueueLength
-                                                msg
+                        processDiagnosticsEvent
+                            logMessageInvoke
+                            (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics })
+                            (getDocumentForUriFromCurrentState AnyDocument)
+                            state
+                            inbox.CurrentQueueLength
+                            msg
 
                     for ev in eventsToPost do inbox.Post(ev)
 
                     return! loop newState
                 with
-                | ex -> logMessageInvoke (sprintf "unhandled exception in `diagnostics`: %s" (ex|>string))
-                        raise ex
+                | ex ->
+                    do! logMessageInvoke (sprintf "unhandled exception in `diagnostics`: %s" (ex|>string))
+                    raise ex
             }
 
             return! loop emptyDiagnosticsState
@@ -169,44 +173,52 @@ let setupServerHandlers options (lspClient: LspClient) =
                          do stateActor.Post(PeriodicTimerTick)),
             null, dueTime=1000, period=250))
 
-    let logMessageWithLevel l message =
+    let logMessageWithLevel l message = async {
         let messageParams = { Type = l ; Message = "csharp-ls: " + message }
-        do lspClient.WindowShowMessage messageParams |> Async.StartAsTask |> ignore
+        do! lspClient.WindowShowMessage messageParams
+    }
 
     let logMessage = logMessageWithLevel MessageType.Log
     let infoMessage = logMessageWithLevel MessageType.Info
-    //let warningMessage = logMessageWithLevel MessageType.Warning
-    //let errorMessage = logMessageWithLevel MessageType.Error
 
-    let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> =
+    let logMessageWithLevelSync l message =
+        let messageParams = { Type = l ; Message = "csharp-ls: " + message }
+        do lspClient.WindowShowMessage messageParams |> Async.StartAsTask |> ignore
+
+    let logMessageSync = logMessageWithLevelSync MessageType.Log
+
+    let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
       logMessageCurrent <- logMessage
 
-      infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
-                            (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
-                            (JsonConvert.SerializeObject(options)))
+      do! infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+                               (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
+                               (JsonConvert.SerializeObject(options)))
 
-      infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+      do! infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
-      infoMessage (sprintf "`dotnet --version`: %s"
-                           (getDotnetCliVersion ()))
+      do! infoMessage (sprintf "`dotnet --version`: %s"
+                               (getDotnetCliVersion ()))
 
       let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
       let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
       if Seq.isEmpty vsInstanceList then
          raise (InvalidOperationException("No instances of MSBuild could be detected." + Environment.NewLine + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."))
 
-      infoMessage "MSBuildLocator instances found:"
+      do! infoMessage "MSBuildLocator instances found:"
 
       for vsInstance in vsInstanceList do
-          infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-                               vsInstance.Name
-                               (string vsInstance.Version)
-                               vsInstance.MSBuildPath
-                               (string vsInstance.DiscoveryType))
+          do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+                                   vsInstance.Name
+                                   (string vsInstance.Version)
+                                   vsInstance.MSBuildPath
+                                   (string vsInstance.DiscoveryType))
 
       let vsInstance = vsInstanceList |> Seq.head
 
-      infoMessage (sprintf "MSBuildLocator: will register \"%s\", Version=%s as default instance" vsInstance.Name (string vsInstance.Version))
+      do! infoMessage (sprintf "MSBuildLocator: will register \"%s\", Version=%s as default instance"
+                               vsInstance.Name
+                               (string vsInstance.Version))
+
       MSBuildLocator.RegisterInstance(vsInstance)
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
@@ -270,16 +282,16 @@ let setupServerHandlers options (lspClient: LspClient) =
                     }
               }
 
-      async {
-          // load solution (on stateActor)
-          do! stateActor.PostAndAsyncReply(SolutionReloadInSync)
+      // load solution (on stateActor)
+      do! stateActor.PostAndAsyncReply(SolutionReloadInSync)
 
-          return initializeResult |> success
-      }
+      return initializeResult |> success
+    }
 
     let handleInitialized (_scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
-        logMessage "\"initialized\" notification received from client"
         async {
+            do! logMessage "\"initialized\" notification received from client"
+
             //
             // registering w/client for didChangeWatchedFiles notifications"
             //
@@ -297,7 +309,8 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             match regResult with
             | Ok _ -> ()
-            | Error error -> infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
+            | Error error ->
+                do! infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
 
             return LspResult.Ok()
         }
@@ -324,7 +337,7 @@ let setupServerHandlers options (lspClient: LspClient) =
             match docFilePathMaybe with
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
-                let newDocMaybe = tryAddDocument logMessage
+                let newDocMaybe = tryAddDocument logMessageSync
                                                  docFilePath
                                                  openParams.TextDocument.Text
                                                  scope.Solution
@@ -378,7 +391,7 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         | None ->
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
-            let newDocMaybe = tryAddDocument logMessage
+            let newDocMaybe = tryAddDocument logMessageSync
                                             docFilePath
                                             saveParams.Text.Value
                                             scope.Solution
@@ -415,7 +428,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
-                getRoslynCodeActions logMessage doc textSpan
+                getRoslynCodeActions logMessageSync doc textSpan
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
                 scope.ClientCapabilities
@@ -447,7 +460,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                             roslynCodeActionToResolvedLspCodeAction
                                 scope.Solution
                                 scope.OpenDocVersions.TryFind
-                                logMessage
+                                logMessageSync
                                 doc
                                 ca
 
@@ -487,7 +500,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                        |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
-                getRoslynCodeActions logMessage doc textSpan
+                getRoslynCodeActions logMessageSync doc textSpan
 
             let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
 
@@ -495,15 +508,17 @@ let setupServerHandlers options (lspClient: LspClient) =
                 roslynCodeActionToResolvedLspCodeAction
                                                     scope.Solution
                                                     scope.OpenDocVersions.TryFind
-                                                    logMessage
+                                                    logMessageSync
                                                     doc
 
             let! maybeLspCodeAction =
                 match selectedCodeAction with
                 | Some ca -> async {
                     let! resolvedCA = toResolvedLspCodeAction ca
+
                     if resolvedCA.IsNone then
-                       logMessage (sprintf "handleCodeActionResolve: could not resolve %s - null" (string ca))
+                       do! logMessage (sprintf "handleCodeActionResolve: could not resolve %s - null" (string ca))
+
                     return resolvedCA
                   }
                 | None -> async { return None }
@@ -835,7 +850,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                         | :? ForEachStatementSyntax as forEachSyn -> forEachSyn.Identifier.Span |> Some
                         | :? LocalFunctionStatementSyntax as localFunStSyn -> localFunStSyn.Identifier.Span |> Some
                         | node ->
-                            logMessage (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
+                            logMessageSync (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
                             None
 
                     let rangeWithPlaceholderMaybe: PrepareRenameResult option =
@@ -1051,7 +1066,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 | Some docFilePath ->
                     // ok, this document is not on solution, register a new one
                     let fileText = docFilePath |> File.ReadAllText
-                    let newDocMaybe = tryAddDocument logMessage
+                    let newDocMaybe = tryAddDocument logMessageSync
                                                      docFilePath
                                                      fileText
                                                      scope.Solution
@@ -1066,11 +1081,11 @@ let setupServerHandlers options (lspClient: LspClient) =
         for change in changeParams.Changes do
             match Path.GetExtension(change.Uri) with
             | ".csproj" ->
-                logMessage "change to .csproj detected, will reload solution"
+                do! logMessage "change to .csproj detected, will reload solution"
                 scope.Emit(SolutionReloadRequest)
 
             | ".sln" ->
-                logMessage "change to .sln detected, will reload solution"
+                do! logMessage "change to .sln detected, will reload solution"
                 scope.Emit(SolutionReloadRequest)
 
             | ".cs" ->
@@ -1154,7 +1169,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 let state = stateActor.PostAndReply(GetState)
 
                 try
-                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
+                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessageSync)
 
                     let! resultOrExn = (asyncFn scope param) |> Async.Catch
 
