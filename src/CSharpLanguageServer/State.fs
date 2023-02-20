@@ -31,6 +31,7 @@ type ServerRequestType = ReadOnly | ReadWrite
 
 type ServerRequest = {
     Id: int
+    Name: string
     Type: ServerRequestType
     Semaphore: SemaphoreSlim
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
@@ -101,7 +102,7 @@ type ServerStateEvent =
     | OpenDocVersionRemove of string
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
     | SolutionReloadRequest
@@ -146,10 +147,11 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
 
         return state
 
-    | StartRequest (requestType, requestPriority, replyChannel) ->
+    | StartRequest (name, requestType, requestPriority, replyChannel) ->
         postMsg ProcessRequestQueue
 
         let newRequest = { Id=state.LastRequestId+1
+                           Name=name
                            Type=requestType
                            Semaphore=new SemaphoreSlim(0, 1)
                            Priority=requestPriority }
@@ -254,9 +256,10 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
 
     loop initialState
 
-type ServerRequestScope (state: ServerState, emitServerEvent, logMessage: string -> unit) =
+type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: string -> unit) =
     let mutable solutionMaybe = state.Solution
 
+    member _.RequestId = requestId
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities
     member _.Solution = solutionMaybe.Value

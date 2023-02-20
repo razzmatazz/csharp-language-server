@@ -1136,67 +1136,78 @@ let setupServerHandlers options (lspClient: LspClient) =
             return formattingChanges |> Some |> success
         }
 
-    let withScope requestType requestPriority asyncFn param =
-        // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
-        //
-        // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
-        // handler until previous one returns a Task (in our case -- F# `async` object.)
+    let requestHandlingWithScope requestType requestPriority nameAndAsyncFn =
+        let requestName = nameAndAsyncFn |> fst
+        let asyncFn = nameAndAsyncFn |> snd
 
-        let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestType, requestPriority, rc))
+        let requestHandler param =
+            // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
+            //
+            // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
+            // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        async {
-            do! semaphore.WaitAsync() |> Async.AwaitTask
+            let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestName, requestType, requestPriority, rc))
 
-            let state = stateActor.PostAndReply(GetState)
+            async {
+                do! semaphore.WaitAsync() |> Async.AwaitTask
 
-            try
-                let scope = ServerRequestScope(state, stateActor.Post, logMessage)
+                let state = stateActor.PostAndReply(GetState)
 
-                let! resultOrExn = (asyncFn scope param) |> Async.Catch
+                try
+                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
 
-                return
-                    match resultOrExn with
-                    | Choice1Of2 result -> result
-                    | Choice2Of2 exn ->
-                        match exn with
-                        | :? TaskCanceledException -> LspResult.requestCancelled
-                        | :? OperationCanceledException -> LspResult.requestCancelled
-                        | _ -> LspResult.internalError (string exn)
-            finally
-                stateActor.Post(FinishRequest requestId)
-        }
+                    let! resultOrExn = (asyncFn scope param) |> Async.Catch
 
-    let withReadOnlyScope asyncFn param = withScope ReadOnly 0 asyncFn param
-    let withReadOnlyScopeWithPriority priority asyncFn param = withScope ReadOnly priority asyncFn param
-    let withReadWriteScope asyncFn param = withScope ReadWrite 0 asyncFn param
+                    return
+                        match resultOrExn with
+                        | Choice1Of2 result -> result
+                        | Choice2Of2 exn ->
+                            match exn with
+                            | :? TaskCanceledException -> LspResult.requestCancelled
+                            | :? OperationCanceledException -> LspResult.requestCancelled
+                            | _ -> LspResult.internalError (string exn)
+                finally
+                    stateActor.Post(FinishRequest requestId)
+            }
+
+        (requestName, requestHandler |> requestHandling)
+
+    let requestHandlingWithReadOnlyScope nameAndAsyncFn =
+        requestHandlingWithScope ReadOnly 0 nameAndAsyncFn
+
+    let requestHandlingWithReadOnlyScopeWithPriority priority nameAndAsyncFn =
+        requestHandlingWithScope ReadOnly priority nameAndAsyncFn
+
+    let requestHandlingWithReadWriteScope nameAndAsyncFn =
+        requestHandlingWithScope ReadWrite 0 nameAndAsyncFn
 
     [
-        "initialize"                     , handleInitialize                    |> withReadWriteScope |> requestHandling
-        "initialized"                    , handleInitialized                   |> withReadWriteScope |> requestHandling
-        "textDocument/didChange"         , handleTextDocumentDidChange         |> withReadWriteScope |> requestHandling
-        "textDocument/didClose"          , handleTextDocumentDidClose          |> withReadWriteScope |> requestHandling
-        "textDocument/didOpen"           , handleTextDocumentDidOpen           |> withReadWriteScope |> requestHandling
-        "textDocument/didSave"           , handleTextDocumentDidSave           |> withReadWriteScope |> requestHandling
-        "textDocument/codeAction"        , handleTextDocumentCodeAction        |> withReadOnlyScope |> requestHandling
-        "codeAction/resolve"             , handleCodeActionResolve             |> withReadOnlyScope |> requestHandling
-        "textDocument/codeLens"          , handleTextDocumentCodeLens          |> withReadOnlyScopeWithPriority 99 |> requestHandling
-        "codeLens/resolve"               , handleCodeLensResolve               |> withReadOnlyScope |> requestHandling
-        "textDocument/completion"        , handleTextDocumentCompletion        |> withReadOnlyScope |> requestHandling
-        "textDocument/definition"        , handleTextDocumentDefinition        |> withReadOnlyScope |> requestHandling
-        "textDocument/documentHighlight" , handleTextDocumentDocumentHighlight |> withReadOnlyScope |> requestHandling
-        "textDocument/documentSymbol"    , handleTextDocumentDocumentSymbol    |> withReadOnlyScope |> requestHandling
-        "textDocument/hover"             , handleTextDocumentHover             |> withReadOnlyScope |> requestHandling
-        "textDocument/implementation"    , handleTextDocumentImplementation    |> withReadOnlyScope |> requestHandling
-        "textDocument/formatting"        , handleTextDocumentFormatting        |> withReadOnlyScope |> requestHandling
-        "textDocument/onTypeFormatting"  , handleTextDocumentOnTypeFormatting  |> withReadOnlyScope |> requestHandling
-        "textDocument/rangeFormatting"   , handleTextDocumentRangeFormatting   |> withReadOnlyScope |> requestHandling
-        "textDocument/references"        , handleTextDocumentReferences        |> withReadOnlyScope |> requestHandling
-        "textDocument/prepareRename"     , handleTextDocumentPrepareRename     |> withReadOnlyScope |> requestHandling
-        "textDocument/rename"            , handleTextDocumentRename            |> withReadOnlyScope |> requestHandling
-        "textDocument/signatureHelp"     , handleTextDocumentSignatureHelp     |> withReadOnlyScope |> requestHandling
-        "workspace/symbol"               , handleWorkspaceSymbol               |> withReadOnlyScope |> requestHandling
-        "workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles |> withReadWriteScope |> requestHandling
-        "csharp/metadata"                , handleCSharpMetadata                |> withReadOnlyScope |> requestHandling
+        ("initialize"                     , handleInitialize)                    |> requestHandlingWithReadWriteScope
+        ("initialized"                    , handleInitialized)                   |> requestHandlingWithReadWriteScope
+        ("textDocument/didChange"         , handleTextDocumentDidChange)         |> requestHandlingWithReadWriteScope
+        ("textDocument/didClose"          , handleTextDocumentDidClose)          |> requestHandlingWithReadWriteScope
+        ("textDocument/didOpen"           , handleTextDocumentDidOpen)           |> requestHandlingWithReadWriteScope
+        ("textDocument/didSave"           , handleTextDocumentDidSave)           |> requestHandlingWithReadWriteScope
+        ("textDocument/codeAction"        , handleTextDocumentCodeAction)        |> requestHandlingWithReadOnlyScope
+        ("codeAction/resolve"             , handleCodeActionResolve)             |> requestHandlingWithReadOnlyScope
+        ("textDocument/codeLens"          , handleTextDocumentCodeLens)          |> requestHandlingWithReadOnlyScopeWithPriority 99
+        ("codeLens/resolve"               , handleCodeLensResolve)               |> requestHandlingWithReadOnlyScope
+        ("textDocument/completion"        , handleTextDocumentCompletion)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/definition"        , handleTextDocumentDefinition)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/documentHighlight" , handleTextDocumentDocumentHighlight) |> requestHandlingWithReadOnlyScope
+        ("textDocument/documentSymbol"    , handleTextDocumentDocumentSymbol)    |> requestHandlingWithReadOnlyScope
+        ("textDocument/hover"             , handleTextDocumentHover)             |> requestHandlingWithReadOnlyScope
+        ("textDocument/implementation"    , handleTextDocumentImplementation)    |> requestHandlingWithReadOnlyScope
+        ("textDocument/formatting"        , handleTextDocumentFormatting)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/onTypeFormatting"  , handleTextDocumentOnTypeFormatting)  |> requestHandlingWithReadOnlyScope
+        ("textDocument/rangeFormatting"   , handleTextDocumentRangeFormatting)   |> requestHandlingWithReadOnlyScope
+        ("textDocument/references"        , handleTextDocumentReferences)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/prepareRename"     , handleTextDocumentPrepareRename)     |> requestHandlingWithReadOnlyScope
+        ("textDocument/rename"            , handleTextDocumentRename)            |> requestHandlingWithReadOnlyScope
+        ("textDocument/signatureHelp"     , handleTextDocumentSignatureHelp)     |> requestHandlingWithReadOnlyScope
+        ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
+        ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
+        ("csharp/metadata"                , handleCSharpMetadata)                |> requestHandlingWithReadOnlyScope
     ]
     |> Map.ofList
 
