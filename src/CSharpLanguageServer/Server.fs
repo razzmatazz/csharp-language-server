@@ -127,8 +127,8 @@ let getDotnetCliVersion () : string =
 
 let setupServerHandlers options (lspClient: LspClient) =
     let success = LspResult.success
-    let mutable logMessageCurrent = Action<string>(fun _ -> ())
-    let logMessageInvoke m = logMessageCurrent.Invoke(m)
+    let mutable logMessageCurrent: string -> unit = fun _ -> ()
+    let logMessageInvoke m = logMessageCurrent(m)
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop logMessageInvoke { emptyServerState with Options = options })
@@ -179,7 +179,7 @@ let setupServerHandlers options (lspClient: LspClient) =
     //let errorMessage = logMessageWithLevel MessageType.Error
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> =
-      logMessageCurrent <- Action<string>(logMessage)
+      logMessageCurrent <- logMessage
 
       infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                             (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
