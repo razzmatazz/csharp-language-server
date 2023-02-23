@@ -7,6 +7,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 open RoslynHelpers
+open Util
 
 type Options = {
     SolutionPath: string option
@@ -135,7 +136,7 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
-let processServerEvent logMessage state postMsg msg: Async<ServerState> = async {
+let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
     match msg with
     | GetState replyChannel ->
         replyChannel.Reply(state)
@@ -177,7 +178,7 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
             |> Seq.map (fun kv -> kv.Value)
             |> Seq.tryFind (fun r -> r.Type = ReadWrite)
 
-        let numRunningRequests = state.RunningRequests |> Map.count
+        // let numRunningRequests = state.RunningRequests |> Map.count
 
         let canRunNextRequest =
             (Option.isNone runningRWRequestMaybe) // && (numRunningRequests < 4)
@@ -247,7 +248,7 @@ let processServerEvent logMessage state postMsg msg: Async<ServerState> = async 
             return state
 }
 
-let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerStateEvent>) =
+let serverEventLoop (logMessage: AsyncLogFn) initialState (inbox: MailboxProcessor<ServerStateEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
         let! newState = msg |> processServerEvent logMessage state inbox.Post
@@ -256,7 +257,7 @@ let serverEventLoop logMessage initialState (inbox: MailboxProcessor<ServerState
 
     loop initialState
 
-type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: string -> unit) =
+type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: AsyncLogFn) =
     let mutable solutionMaybe = state.Solution
 
     member _.RequestId = requestId
@@ -333,7 +334,8 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
 
             // figure out location on the document (approx implementation)
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym, logMessage)
+
+            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym)
             collector.Visit(syntaxTree.GetRoot())
 
             let fallbackLocationInMetadata = {
@@ -388,7 +390,7 @@ let emptyDiagnosticsState = {
 }
 
 let processDiagnosticsEvent
-        (_logMessage: string -> Async<unit>)
+        (_logMessage: AsyncLogFn)
         (publishDiagnostics: string -> Diagnostic[] -> Async<unit>)
         (getDocumentForUri: string -> Async<Document option>)
         (state: DiagnosticsState)

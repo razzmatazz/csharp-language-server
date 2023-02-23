@@ -23,6 +23,7 @@ open RoslynHelpers
 open State
 open System.Threading.Tasks
 open System.Threading
+open Util
 
 // TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
 let rec unpackException (exn : Exception) =
@@ -127,12 +128,12 @@ let getDotnetCliVersion () : string =
 
 let setupServerHandlers options (lspClient: LspClient) =
     let success = LspResult.success
-    let mutable logMessageCurrent: string -> Async<unit> = fun _ -> async { return() }
+    let mutable logMessageCurrent: AsyncLogFn = fun _ -> async { return() }
     let logMessageInvoke m = logMessageCurrent(m)
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
-            (fun m -> logMessageInvoke m |> Async.StartAsTask |> ignore)
+            (fun m -> logMessageInvoke m)
             { emptyServerState with Options = options })
 
     let getDocumentForUriFromCurrentState docType uri =
@@ -180,12 +181,6 @@ let setupServerHandlers options (lspClient: LspClient) =
 
     let logMessage = logMessageWithLevel MessageType.Log
     let infoMessage = logMessageWithLevel MessageType.Info
-
-    let logMessageWithLevelSync l message =
-        let messageParams = { Type = l ; Message = "csharp-ls: " + message }
-        do lspClient.WindowShowMessage messageParams |> Async.StartAsTask |> ignore
-
-    let logMessageSync = logMessageWithLevelSync MessageType.Log
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
       logMessageCurrent <- logMessage
@@ -316,7 +311,6 @@ let setupServerHandlers options (lspClient: LspClient) =
         }
 
     let handleTextDocumentDidOpen (scope: ServerRequestScope) (openParams: Types.DidOpenTextDocumentParams): Async<LspResult<unit>> =
-      async {
         match scope.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
         | Some (doc, docType) ->
             match docType with
@@ -331,16 +325,25 @@ let setupServerHandlers options (lspClient: LspClient) =
 
                 diagnostics.Post(
                     DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
-            | _ -> ()
+
+                LspResult.Ok() |> async.Return
+
+            | _ ->
+                LspResult.Ok() |> async.Return
+
         | None ->
             let docFilePathMaybe = Util.tryParseFileUri openParams.TextDocument.Uri
+
             match docFilePathMaybe with
-            | Some docFilePath ->
-                // ok, this document is not on solution, register a new one
-                let newDocMaybe = tryAddDocument logMessageSync
-                                                 docFilePath
-                                                 openParams.TextDocument.Text
-                                                 scope.Solution
+            | Some docFilePath -> async {
+                // ok, this document is not on solution, register a new document
+                let! newDocMaybe =
+                    tryAddDocument
+                        logMessage
+                        docFilePath
+                        openParams.TextDocument.Text
+                        scope.Solution
+
                 match newDocMaybe with
                 | Some newDoc ->
                     scope.Emit(SolutionChange newDoc.Project.Solution)
@@ -349,10 +352,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                         DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
 
                 | None -> ()
-            | None -> ()
 
-        return LspResult.Ok()
-    }
+                return LspResult.Ok()
+              }
+
+            | None ->
+                LspResult.Ok() |> async.Return
 
     let handleTextDocumentDidChange (scope: ServerRequestScope) (changeParams: Types.DidChangeTextDocumentParams): Async<LspResult<unit>> =
       async {
@@ -383,18 +388,22 @@ let setupServerHandlers options (lspClient: LspClient) =
     }
 
     let handleTextDocumentDidSave (scope: ServerRequestScope) (saveParams: Types.DidSaveTextDocumentParams): Async<LspResult<unit>> =
-      async {
         // we need to add this file to solution if not already
         let doc = scope.GetAnyDocumentForUri saveParams.TextDocument.Uri
-        match doc with
-        | Some _ -> ()
 
-        | None ->
+        match doc with
+        | Some _ ->
+            LspResult.Ok() |> async.Return
+
+        | None -> async {
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
-            let newDocMaybe = tryAddDocument logMessageSync
-                                            docFilePath
-                                            saveParams.Text.Value
-                                            scope.Solution
+            let! newDocMaybe =
+                tryAddDocument
+                    logMessage
+                    docFilePath
+                    saveParams.Text.Value
+                    scope.Solution
+
             match newDocMaybe with
             | Some newDoc ->
                 scope.Emit(SolutionChange newDoc.Project.Solution)
@@ -404,8 +413,8 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             | None -> ()
 
-        return LspResult.Ok()
-    }
+            return LspResult.Ok()
+          }
 
     let handleTextDocumentDidClose (scope: ServerRequestScope) (closeParams: Types.DidCloseTextDocumentParams): Async<LspResult<unit>> =
         scope.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
@@ -428,7 +437,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
-                getRoslynCodeActions logMessageSync doc textSpan
+                getRoslynCodeActions logMessage doc textSpan
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
                 scope.ClientCapabilities
@@ -460,7 +469,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                             roslynCodeActionToResolvedLspCodeAction
                                 scope.Solution
                                 scope.OpenDocVersions.TryFind
-                                logMessageSync
+                                logMessage
                                 doc
                                 ca
 
@@ -500,7 +509,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                        |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
-                getRoslynCodeActions logMessageSync doc textSpan
+                getRoslynCodeActions logMessage doc textSpan
 
             let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = codeAction.Title)
 
@@ -508,7 +517,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 roslynCodeActionToResolvedLspCodeAction
                                                     scope.Solution
                                                     scope.OpenDocVersions.TryFind
-                                                    logMessageSync
+                                                    logMessage
                                                     doc
 
             let! maybeLspCodeAction =
@@ -837,21 +846,22 @@ let setupServerHandlers options (lspClient: LspClient) =
                     let! rootNode = docSyntaxTree.GetRootAsync() |> Async.AwaitTask
                     let nodeOnPos = rootNode.FindNode(textSpan, findInsideTrivia=false, getInnermostNodeForTie=true)
 
-                    let spanMaybe =
+                    let! spanMaybe =
                         match nodeOnPos with
-                        | :? PropertyDeclarationSyntax as propDec -> propDec.Identifier.Span |> Some
-                        | :? MethodDeclarationSyntax as methodDec -> methodDec.Identifier.Span |> Some
-                        | :? BaseTypeDeclarationSyntax as typeDec -> typeDec.Identifier.Span |> Some
-                        | :? VariableDeclaratorSyntax as varDec -> varDec.Identifier.Span |> Some
-                        | :? EnumMemberDeclarationSyntax as enumMemDec -> enumMemDec.Identifier.Span |> Some
-                        | :? ParameterSyntax as paramSyn -> paramSyn.Identifier.Span |> Some
-                        | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
-                        | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some
-                        | :? ForEachStatementSyntax as forEachSyn -> forEachSyn.Identifier.Span |> Some
-                        | :? LocalFunctionStatementSyntax as localFunStSyn -> localFunStSyn.Identifier.Span |> Some
-                        | node ->
-                            logMessageSync (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
-                            None
+                        | :? PropertyDeclarationSyntax as propDec              -> propDec.Identifier.Span        |> Some |> async.Return
+                        | :? MethodDeclarationSyntax as methodDec              -> methodDec.Identifier.Span      |> Some |> async.Return
+                        | :? BaseTypeDeclarationSyntax as typeDec              -> typeDec.Identifier.Span        |> Some |> async.Return
+                        | :? VariableDeclaratorSyntax as varDec                -> varDec.Identifier.Span         |> Some |> async.Return
+                        | :? EnumMemberDeclarationSyntax as enumMemDec         -> enumMemDec.Identifier.Span     |> Some |> async.Return
+                        | :? ParameterSyntax as paramSyn                       -> paramSyn.Identifier.Span       |> Some |> async.Return
+                        | :? NameSyntax as nameSyn                             -> nameSyn.Span                   |> Some |> async.Return
+                        | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some |> async.Return
+                        | :? ForEachStatementSyntax as forEachSyn              -> forEachSyn.Identifier.Span     |> Some |> async.Return
+                        | :? LocalFunctionStatementSyntax as localFunStSyn     -> localFunStSyn.Identifier.Span  |> Some |> async.Return
+                        | node -> async {
+                            do! logMessage (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
+                            return None
+                          }
 
                     let rangeWithPlaceholderMaybe: PrepareRenameResult option =
                         match spanMaybe, symbolIsFromMetadata with
@@ -1060,13 +1070,14 @@ let setupServerHandlers options (lspClient: LspClient) =
 
                 scope.Emit(SolutionChange updatedDoc.Project.Solution)
                 diagnostics.Post(DocumentBacklogUpdate)
+
             | None ->
                 let docFilePathMaybe = uri |> Util.tryParseFileUri
                 match docFilePathMaybe with
                 | Some docFilePath ->
                     // ok, this document is not on solution, register a new one
                     let fileText = docFilePath |> File.ReadAllText
-                    let newDocMaybe = tryAddDocument logMessageSync
+                    let! newDocMaybe = tryAddDocument logMessage
                                                      docFilePath
                                                      fileText
                                                      scope.Solution
@@ -1169,7 +1180,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                 let state = stateActor.PostAndReply(GetState)
 
                 try
-                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessageSync)
+                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
 
                     let! resultOrExn = (asyncFn scope param) |> Async.Catch
 

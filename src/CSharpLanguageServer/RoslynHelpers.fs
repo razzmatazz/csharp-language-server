@@ -23,6 +23,7 @@ open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Castle.DynamicProxy
+open Util
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -158,12 +159,12 @@ let lspDocChangesFromSolutionDiff
 
 type CodeActionData = { Url: string }
 
-let asyncMaybeOnException logMessage op = async {
+let asyncMaybeOnException (logMessage: AsyncLogFn) op = async {
     try
         let! value = op ()
         return Some value
     with ex ->
-        logMessage (string ex)
+        do! logMessage (string ex)
         return None
 }
 
@@ -189,7 +190,7 @@ let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Type
 let roslynCodeActionToResolvedLspCodeAction
         originalSolution
         tryGetDocVersionByUri
-        logMessage
+        (logMessage: AsyncLogFn)
         (originatingDoc: Document)
         (ca: CodeActions.CodeAction)
     : Async<Types.CodeAction option> = async {
@@ -463,7 +464,7 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
 
 type DocumentSymbolCollectorForMatchingSymbolName
-        (documentUri, sym: ISymbol, _logMessage: string -> unit) =
+        (documentUri, sym: ISymbol) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedLocations = []
@@ -813,9 +814,9 @@ let interceptWorkspaceServices logMessage msbuildWorkspace =
 
     workspaceServicesField.SetValue(msbuildWorkspace, interceptedWorkspaceServices)
 
-let tryLoadSolutionOnPath logMessage solutionPath = async {
+let tryLoadSolutionOnPath (logMessage: AsyncLogFn) solutionPath = async {
     try
-        logMessage (sprintf "loading solution \"%s\".." solutionPath)
+        do! logMessage (sprintf "loading solution \"%s\".." solutionPath)
 
         let msbuildWorkspace = MSBuildWorkspace.Create()
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -824,38 +825,39 @@ let tryLoadSolutionOnPath logMessage solutionPath = async {
         let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         for diag in msbuildWorkspace.Diagnostics do
-            logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+            do! logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
         return Some msbuildWorkspace.CurrentSolution
     with
     | ex ->
-        logMessage ("solution loading has failed with error: " + ex.ToString())
+        do! logMessage ("solution loading has failed with error: " + ex.ToString())
         return None
 }
 
-let tryLoadSolutionFromProjectFiles logMessage (projFiles: string list) = async {
+let tryLoadSolutionFromProjectFiles (logMessage: AsyncLogFn) (projFiles: string list) = async {
     let msbuildWorkspace = MSBuildWorkspace.Create()
     msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
     do msbuildWorkspace |> interceptWorkspaceServices logMessage
 
     for file in projFiles do
-        logMessage (sprintf "loading project \"%s\".." file)
+        do! logMessage (sprintf "loading project \"%s\".." file)
         try
             do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
         with ex ->
-            logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
+            do! logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
         ()
 
-    logMessage (sprintf "OK, %d project files loaded" projFiles.Length)
+    do! logMessage (sprintf "OK, %d project files loaded" projFiles.Length)
 
     for diag in msbuildWorkspace.Diagnostics do
-        logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+        do! logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
     //workspace <- Some(msbuildWorkspace :> Workspace)
     return Some msbuildWorkspace.CurrentSolution
 }
 
-let findAndLoadSolutionOnDir logMessage dir = async {
+let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
     let fileNotOnNodeModules (filename: string) =
         filename.Split(Path.DirectorySeparatorChar)
         |> Seq.contains "node_modules"
@@ -866,7 +868,7 @@ let findAndLoadSolutionOnDir logMessage dir = async {
         |> Seq.filter fileNotOnNodeModules
         |> Seq.toList
 
-    logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+    do! logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
     let singleSolutionFound =
         match solutionFiles with
@@ -875,8 +877,8 @@ let findAndLoadSolutionOnDir logMessage dir = async {
 
     match singleSolutionFound with
     | None ->
-        logMessage ("no or multiple .sln files found on " + dir)
-        logMessage ("looking for .csproj/fsproj files on " + dir + "..")
+        do! logMessage ("no or multiple .sln files found on " + dir)
+        do! logMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
         let projFiles =
             let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
@@ -888,7 +890,7 @@ let findAndLoadSolutionOnDir logMessage dir = async {
 
         if projFiles.Length = 0 then
             let message = "no or .csproj/.fsproj or sln files found on " + dir
-            logMessage message
+            do! logMessage message
             Exception message |> raise
 
         let! solution = tryLoadSolutionFromProjectFiles logMessage projFiles
@@ -899,18 +901,21 @@ let findAndLoadSolutionOnDir logMessage dir = async {
         return solution
 }
 
-let loadSolutionOnSolutionPathOrCwd logMessage solutionPathMaybe =
+let loadSolutionOnSolutionPathOrCwd (logMessage: AsyncLogFn) solutionPathMaybe =
     match solutionPathMaybe with
-    | Some solutionPath ->
-        logMessage (sprintf "loading specified solution file: %s.." solutionPath)
-        tryLoadSolutionOnPath logMessage solutionPath
+    | Some solutionPath -> async {
+        do! logMessage (sprintf "loading specified solution file: %s.." solutionPath)
 
-    | None ->
+        return! tryLoadSolutionOnPath logMessage solutionPath
+      }
+
+    | None -> async {
         let cwd = Directory.GetCurrentDirectory()
-        logMessage (sprintf "attempting to find and load solution based on cwd (\"%s\").." cwd)
-        findAndLoadSolutionOnDir logMessage cwd
+        do! logMessage (sprintf "attempting to find and load solution based on cwd (\"%s\").." cwd)
+        return! findAndLoadSolutionOnDir logMessage cwd
+      }
 
-let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
+let getRoslynCodeActions (logMessage: AsyncLogFn) (doc: Document) (textSpan: TextSpan)
         : Async<CodeAction list> = async {
 
     let! ct = Async.CancellationToken
@@ -923,7 +928,7 @@ let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
         try
             do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
         with ex ->
-            logMessage (sprintf "cannot compute refactorings for %s: %s" (string refactoringProvider) (string ex))
+            do! logMessage (sprintf "cannot compute refactorings for %s: %s" (string refactoringProvider) (string ex))
 
     // register code fixes
     let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -965,7 +970,7 @@ let getRoslynCodeActions logMessage (doc: Document) (textSpan: TextSpan)
                 try
                     do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
                 with ex ->
-                    logMessage (sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()))
+                    do! logMessage (sprintf "error in RegisterCodeFixesAsync(): %s" (ex.ToString()))
                     ()
 
     let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
@@ -1004,12 +1009,12 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
-let tryAddDocument logMessage
+let tryAddDocument (logMessage: AsyncLogFn)
                    (docFilePath: string)
                    (text: string)
                    (solution: Solution)
-                   : Document option =
-
+                   : Async<Document option> =
+  async {
     let docDir = Path.GetDirectoryName(docFilePath)
     //logMessage (sprintf "TextDocumentDidOpen: docFilename=%s docDir=%s" docFilename docDir)
 
@@ -1024,19 +1029,24 @@ let tryAddDocument logMessage
         |> Seq.filter fileOnProjectDir
         |> Seq.tryHead
 
-    match projectOnPath with
-    | Some proj ->
-        let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
-        let docName = docFilePath.Substring(projectBaseDir.Length+1)
+    let! newDocumentMaybe =
+        match projectOnPath with
+        | Some proj ->
+            let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
+            let docName = docFilePath.Substring(projectBaseDir.Length+1)
 
-        //logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
+            //logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
 
-        let newDoc = proj.AddDocument(name=docName, text=SourceText.From(text), folders=null, filePath=docFilePath)
-        Some newDoc
+            let newDoc = proj.AddDocument(name=docName, text=SourceText.From(text), folders=null, filePath=docFilePath)
+            Some newDoc |> async.Return
 
-    | None ->
-        logMessage (sprintf "No parent project could be resolved to add file \"%s\" to workspace" docFilePath)
-        None
+        | None -> async {
+            do! logMessage (sprintf "No parent project could be resolved to add file \"%s\" to workspace" docFilePath)
+            return None
+          }
+
+    return newDocumentMaybe
+  }
 
 let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
     let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =

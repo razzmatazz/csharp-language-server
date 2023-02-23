@@ -20,3 +20,5 @@ let makeFileUri (path: string): string =
     match RuntimeInformation.IsOSPlatform(OSPlatform.Windows) with
     | true -> "file:///" + fullPath
     | false -> "file://" + fullPath
+
+type AsyncLogFn = string -> Async<unit>
