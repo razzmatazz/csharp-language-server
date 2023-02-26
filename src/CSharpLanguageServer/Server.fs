@@ -1238,17 +1238,22 @@ let setupServerHandlers options (lspClient: LspClient) =
             // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
             // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-            let requestId, semaphore = stateActor.PostAndReply(fun rc -> StartRequest (requestName, requestType, requestPriority, rc))
+            let startRequest rc = StartRequest (requestName, requestType, requestPriority, rc)
+            let requestId, semaphore = stateActor.PostAndReply(startRequest)
 
-            async {
+            let stateAcquisitionAndHandlerInvocation = async {
                 do! semaphore.WaitAsync() |> Async.AwaitTask
 
-                let state = stateActor.PostAndReply(GetState)
+                let! state = stateActor.PostAndAsyncReply(GetState)
 
-                try
-                    let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
+                let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
 
-                    let! resultOrExn = (asyncFn scope param) |> Async.Catch
+                return! asyncFn scope param
+            }
+
+            let wrapExceptionAsLspResult op =
+                async {
+                    let! resultOrExn = op |> Async.Catch
 
                     return
                         match resultOrExn with
@@ -1258,9 +1263,11 @@ let setupServerHandlers options (lspClient: LspClient) =
                             | :? TaskCanceledException -> LspResult.requestCancelled
                             | :? OperationCanceledException -> LspResult.requestCancelled
                             | _ -> LspResult.internalError (string exn)
-                finally
-                    stateActor.Post(FinishRequest requestId)
-            }
+                }
+
+            stateAcquisitionAndHandlerInvocation
+            |> wrapExceptionAsLspResult
+            |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
 
         (requestName, requestHandler |> requestHandling)
 

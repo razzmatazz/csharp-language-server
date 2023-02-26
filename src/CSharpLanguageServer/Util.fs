@@ -24,6 +24,13 @@ let makeFileUri (path: string): string =
 
 type AsyncLogFn = string -> Async<unit>
 
+let unwindProtect cleanupFn op =
+    async {
+        try
+            return! op
+        finally
+            cleanupFn ()
+    }
 
 let ClassificationTypeMap = Map [
     (ClassificationTypeNames.ClassName,           "class");
