@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Upgrade Roslyn to 4.5.0-2.final (from 4.4.0);
 * Semantic token support
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/68
+* Fix an issue where some of initial LSP requests deadlock.
 
 ## [0.6.0] - 2022-12-30 / Alytus
 * Improve scheduling of background diagnostics processing;
