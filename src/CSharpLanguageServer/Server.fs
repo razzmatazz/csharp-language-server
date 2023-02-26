@@ -13,6 +13,7 @@ open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.CodeFixes
+open Microsoft.CodeAnalysis.Classification
 open Microsoft.Build.Locator
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
@@ -1056,6 +1057,66 @@ let setupServerHandlers options (lspClient: LspClient) =
         | None ->
             None |> success |> async.Return
 
+    let toSemanticToken (lines: TextLineCollection) (textSpan: TextSpan, spans: IEnumerable<ClassifiedSpan>) =
+        let (typeId, modifiers) =
+            spans
+            |> Seq.fold (fun (t, m) s ->
+                if ClassificationTypeNames.AdditiveTypeNames.Contains(s.ClassificationType) then
+                    (t, m ||| (GetSemanticTokenModifierFlagFromClassification s.ClassificationType))
+                else
+                    (GetSemanticTokenIdFromClassification s.ClassificationType, m)
+            ) (None, 0u)
+        let pos = lines.GetLinePositionSpan(textSpan)
+        (uint32 pos.Start.Line, uint32 pos.Start.Character, uint32 (pos.End.Character - pos.Start.Character), typeId, modifiers)
+
+    let computePosition (((pLine, pChar, _, _, _), (cLine, cChar, cLen, cToken, cModifiers)): ((uint32 * uint32 * uint32 * uint32 * uint32) * (uint32 * uint32 * uint32 * uint32 * uint32))) =
+        let deltaLine = cLine - pLine
+        let deltaChar =
+            if deltaLine = 0u then
+                cChar - pChar
+            else
+                cChar
+        (deltaLine, deltaChar, cLen, cToken, cModifiers)
+
+    let getSemanticTokensRange (scope: ServerRequestScope) (uri: string) (range: Range option): AsyncLspResult<Types.SemanticTokens option> = async {
+        let docMaybe = scope.GetUserDocumentForUri uri
+        match docMaybe with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let textSpan =
+                match range with
+                | Some r ->
+                    r
+                    |> roslynLinePositionSpanForLspRange
+                    |> sourceText.Lines.GetTextSpan
+                | None ->
+                    TextSpan(0, sourceText.Length)
+            let! spans = Classifier.GetClassifiedSpansAsync(doc, textSpan) |> Async.AwaitTask
+            let tokens =
+                spans
+                |> Seq.groupBy (fun span -> span.TextSpan)
+                |> Seq.map (toSemanticToken sourceText.Lines)
+                |> Seq.filter (fun (_, _, _, oi, _) -> Option.isSome oi)
+                |> Seq.map (fun (line, startChar, len, tokenId, modifiers) -> (line, startChar, len, Option.get tokenId, modifiers))
+
+            let response =
+                { Data =
+                    Seq.zip (seq {yield (0u,0u,0u,0u,0u); yield! tokens}) tokens
+                    |> Seq.map computePosition
+                    |> Seq.map (fun (a,b,c,d,e) -> [a;b;c;d;e])
+                    |> Seq.concat
+                    |> Seq.toArray
+                  ResultId = None } // TODO: add a result id after we support delta semantic tokens
+            return Some response |> success
+    }
+
+    let handleSemanticTokensFull (scope: ServerRequestScope) (semParams: Types.SemanticTokensParams): AsyncLspResult<Types.SemanticTokens option> =
+        getSemanticTokensRange scope semParams.TextDocument.Uri None
+
+    let handleSemanticTokensRange (scope: ServerRequestScope) (semParams: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
+        getSemanticTokensRange scope semParams.TextDocument.Uri (Some semParams.Range)
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1231,6 +1292,8 @@ let setupServerHandlers options (lspClient: LspClient) =
         ("textDocument/prepareRename"     , handleTextDocumentPrepareRename)     |> requestHandlingWithReadOnlyScope
         ("textDocument/rename"            , handleTextDocumentRename)            |> requestHandlingWithReadOnlyScope
         ("textDocument/signatureHelp"     , handleTextDocumentSignatureHelp)     |> requestHandlingWithReadOnlyScope
+        ("textDocument/semanticTokens/full", handleSemanticTokensFull)           |> requestHandlingWithReadOnlyScope
+        ("textDocument/semanticTokens/range", handleSemanticTokensRange)         |> requestHandlingWithReadOnlyScope
         ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
         ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
         ("csharp/metadata"                , handleCSharpMetadata)                |> requestHandlingWithReadOnlyScope
