@@ -3,13 +3,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.6.1] - 2023-02-26 / Marcinkonys
 * Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;
   - Reported by @blasco and @gorsheninmv in https://github.com/razzmatazz/csharp-language-server/issues/57
 * Upgrade Roslyn to 4.5.0-2.final (from 4.4.0);
 * Semantic token support
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/68
 * Fix an issue where some of initial LSP requests deadlock.
+
+### More about Marcinkonys, Lithuania
+- [Google Images on Alytus](https://www.google.com/search?tbm=isch&q=marcinkonys)
+- [Čepkeliai Marsh](https://en.wikipedia.org/wiki/%C4%8Cepkeliai_Marsh)
 
 ## [0.6.0] - 2022-12-30 / Alytus
 * Improve scheduling of background diagnostics processing;
