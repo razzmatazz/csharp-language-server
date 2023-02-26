@@ -37,6 +37,7 @@ type ServerRequest = {
     Semaphore: SemaphoreSlim
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
                   // priority is used to order pending R/O requests and is ignored wrt R/W requests
+    Enqueued: DateTime
 }
 and ServerState = {
     ClientCapabilities: ClientCapabilities option
@@ -155,7 +156,8 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
                            Name=name
                            Type=requestType
                            Semaphore=new SemaphoreSlim(0, 1)
-                           Priority=requestPriority }
+                           Priority=requestPriority
+                           Enqueued=DateTime.Now }
 
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
 
