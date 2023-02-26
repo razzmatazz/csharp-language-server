@@ -274,7 +274,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                                  }
                         FoldingRangeProvider = None
                         SelectionRangeProvider = None
-                        SemanticTokensProvider = None
+                        SemanticTokensProvider =
+                            Some { Legend = { TokenTypes = SemanticTokenTypes |> Seq.toArray
+                                              TokenModifiers = SemanticTokenModifiers |> Seq.toArray }
+                                   Range = Some true
+                                   Full = true |> First |> Some
+                                 }
                     }
               }
 
