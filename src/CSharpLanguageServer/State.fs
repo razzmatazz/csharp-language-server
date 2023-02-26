@@ -251,8 +251,13 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 let serverEventLoop (logMessage: AsyncLogFn) initialState (inbox: MailboxProcessor<ServerStateEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
-        let! newState = msg |> processServerEvent logMessage state inbox.Post
-        return! loop newState
+
+        try
+            let! newState = msg |> processServerEvent logMessage state inbox.Post
+            return! loop newState
+        with ex ->
+            do! logMessage (sprintf "serverEventLoop: crashed with %s" (string ex))
+            raise ex
     }
 
     loop initialState
