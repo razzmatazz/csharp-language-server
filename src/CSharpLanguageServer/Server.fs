@@ -184,8 +184,6 @@ let setupServerHandlers options (lspClient: LspClient) =
     let infoMessage = logMessageWithLevel MessageType.Info
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
-      logMessageCurrent <- logMessage
-
       do! infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
                                (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
                                (JsonConvert.SerializeObject(options)))
@@ -1233,6 +1231,8 @@ let setupServerHandlers options (lspClient: LspClient) =
         let asyncFn = nameAndAsyncFn |> snd
 
         let requestHandler param =
+            logMessageCurrent <- logMessage
+
             // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
             //
             // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
