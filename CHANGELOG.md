@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix an issue where some of initial LSP requests deadlock.
 
 ### More about Marcinkonys, Lithuania
-- [Google Images on Alytus](https://www.google.com/search?tbm=isch&q=marcinkonys)
+- [Google Images on Marcinkonys](https://www.google.com/search?tbm=isch&q=marcinkonys)
 - [Čepkeliai Marsh](https://en.wikipedia.org/wiki/%C4%8Cepkeliai_Marsh)
 
 ## [0.6.0] - 2022-12-30 / Alytus
