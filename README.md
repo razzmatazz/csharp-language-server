@@ -31,6 +31,7 @@ $ (cd src && dotnet build)
 - `textDocument/documentHighlight` support:
   - highlighting other symbol references in the document on hover;
 - `codeAction/resolve` support for better performance when invoking code actions;
+- semantic token support;
 - go-to-definition in metadata support (needs integration from your LSP client).
 
 # Acknowledgements
@@ -49,7 +50,6 @@ $ (cd src && dotnet build)
  - progress support;
  - properly escape docxml text, e.g. backquote is a special character in markdown;
  - selection range provider
- - semantic tokens
  - ability to run tests / test browser support like fsac has?
  - razorls integration (server-side)
  - analyzer support
