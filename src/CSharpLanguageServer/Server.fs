@@ -279,6 +279,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                                    Range = Some true
                                    Full = true |> First |> Some
                                  }
+                        InlayHintProvider = Some { ResolveProvider = Some false }
                     }
               }
 
