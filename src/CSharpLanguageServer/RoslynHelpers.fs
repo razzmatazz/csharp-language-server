@@ -1186,3 +1186,67 @@ let makeDocumentFromMetadata
 
     let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
     (mdDocument, text)
+
+let getBestOrAllSymbols (info: SymbolInfo) =
+    let best = if isNull info.Symbol then None else Some ([| info.Symbol |])
+    let all = if info.CandidateSymbols.IsEmpty then None else Some (info.CandidateSymbols |> Array.ofSeq)
+    best |> Option.orElse all |> Option.defaultValue Array.empty
+
+// rewrite of https://github.com/dotnet/roslyn/blob/main/src/Workspaces/SharedUtilitiesAndExtensions/Compiler/CSharp/Extensions/ArgumentSyntaxExtensions.cs
+let getParameterForArgumentSyntax (semanticModel: SemanticModel) (argument: ArgumentSyntax) : IParameterSymbol option =
+    match argument.Parent with
+    | :? BaseArgumentListSyntax as argumentList when not (isNull argumentList.Parent) ->
+        let symbols = semanticModel.GetSymbolInfo(argumentList.Parent) |> getBestOrAllSymbols
+        match symbols with
+        | [| symbol |] ->
+            let parameters =
+                match symbol with
+                | :? IMethodSymbol as m -> m.Parameters
+                | :? IPropertySymbol as nt -> nt.Parameters
+                | _ -> ImmutableArray<IParameterSymbol>.Empty
+            let namedParameter =
+                if isNull argument.NameColon || argument.NameColon.IsMissing then
+                    None
+                else
+                    parameters |> Seq.tryFind (fun p -> p.Name = argument.NameColon.Name.Identifier.ValueText)
+            let positionalParameter =
+                match argumentList.Arguments.IndexOf(argument) with
+                | index when 0 <= index && index < parameters.Length ->
+                    let parameter = parameters[index]
+                    if argument.RefOrOutKeyword.Kind() = SyntaxKind.OutKeyword && parameter.RefKind <> RefKind.Out ||
+                        argument.RefOrOutKeyword.Kind() = SyntaxKind.RefKeyword && parameter.RefKind <> RefKind.Ref then
+                        None
+                    else
+                        Some parameter
+                | _ -> None
+            namedParameter |> Option.orElse positionalParameter
+        | _ -> None
+    | _ -> None
+
+// rewrite of https://github.com/dotnet/roslyn/blob/main/src/Workspaces/SharedUtilitiesAndExtensions/Compiler/CSharp/Extensions/AttributeArgumentSyntaxExtensions.cs
+let getParameterForAttributeArgumentSyntax (semanticModel: SemanticModel) (argument: AttributeArgumentSyntax) : IParameterSymbol option =
+    match argument.Parent with
+    | :? AttributeArgumentListSyntax as argumentList when not (isNull argument.NameEquals) ->
+        match argumentList.Parent with
+        | :? AttributeSyntax as invocable ->
+            let symbols = semanticModel.GetSymbolInfo(invocable) |> getBestOrAllSymbols
+            match symbols with
+            | [| symbol |] ->
+                let parameters =
+                    match symbol with
+                    | :? IMethodSymbol as m -> m.Parameters
+                    | :? IPropertySymbol as nt -> nt.Parameters
+                    | _ -> ImmutableArray<IParameterSymbol>.Empty
+                let namedParameter =
+                    if isNull argument.NameColon || argument.NameColon.IsMissing then
+                        None
+                    else
+                        parameters |> Seq.tryFind (fun p -> p.Name = argument.NameColon.Name.Identifier.ValueText)
+                let positionalParameter =
+                    match argumentList.Arguments.IndexOf(argument) with
+                    | index when 0 <= index && index < parameters.Length -> Some parameters[index]
+                    | _ -> None
+                namedParameter |> Option.orElse positionalParameter
+            | _ -> None
+        | _ -> None
+    | _ -> None
