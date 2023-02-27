@@ -64,18 +64,22 @@ let ClassificationModifierMap = Map [
     (ClassificationTypeNames.StaticSymbol, "static")
 ]
 
+// flip f takes its (first) two arguments in the reverse order of f, just like
+// the function with the same name in Haskell.
+let flip f x y = f y x
+
 let SemanticTokenTypeMap =
     ClassificationTypeMap
     |> Map.values
     |> Seq.distinct
-    |> fun types -> Seq.zip types (Seq.initInfinite uint32) // There is no `flip` in F#, sadly
+    |> flip Seq.zip (Seq.initInfinite uint32)
     |> Map.ofSeq
 
 let SemanticTokenModifierMap =
     ClassificationModifierMap
     |> Map.values
     |> Seq.distinct
-    |> fun modifiers -> Seq.zip modifiers (Seq.initInfinite uint32)
+    |> flip Seq.zip (Seq.initInfinite uint32)
     |> Map.ofSeq
 
 let SemanticTokenTypes =
@@ -91,12 +95,12 @@ let SemanticTokenModifiers =
 let GetSemanticTokenIdFromClassification (classification: string) =
     ClassificationTypeMap
     |> Map.tryFind classification
-    |> Option.bind (fun t -> Map.tryFind t SemanticTokenTypeMap)
+    |> Option.bind (flip Map.tryFind SemanticTokenTypeMap)
 
 let GetSemanticTokenModifierFlagFromClassification (classification: string) =
     ClassificationModifierMap
     |> Map.tryFind classification
-    |> Option.bind (fun m -> Map.tryFind m SemanticTokenModifierMap)
+    |> Option.bind (flip Map.tryFind SemanticTokenModifierMap)
     |> Option.defaultValue 0u
     |> int32
     |> (<<<) 1u
