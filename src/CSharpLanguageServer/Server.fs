@@ -1138,7 +1138,19 @@ let setupServerHandlers options (lspClient: LspClient) =
               Data = None
             }
 
-        // It's a rewrite of https://github.com/dotnet/roslyn/blob/main/src/Features/CSharp/Portable/InlineHints/CSharpInlineTypeHintsService.cs.
+        let toParameterInlayHint (pos: int) (par: IParameterSymbol): InlayHint =
+            { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
+              Label = InlayHintLabel.String (par.Name + ":")
+              Kind = Some InlayHintKind.Parameter
+              TextEdits = None
+              Tooltip = None
+              PaddingLeft = Some false
+              PaddingRight = Some true
+              Data = None
+            }
+
+        // It's a rewrite of https://github.com/dotnet/roslyn/blob/main/src/Features/CSharp/Portable/InlineHints/CSharpInlineTypeHintsService.cs &
+        // https://github.com/dotnet/roslyn/blob/main/src/Features/CSharp/Portable/InlineHints/CSharpInlineParameterNameHintsService.cs.
         // If Roslyn exposes the classes, then we can just do a type convert.
         match node with
         | :? VariableDeclarationSyntax as var when
@@ -1186,6 +1198,20 @@ let setupServerHandlers options (lspClient: LspClient) =
             semanticModel.GetTypeInfo(implicitNew).Type
             |> validateType
             |> Option.map (toTypeInlayHint implicitNew.NewKeyword.Span.End)
+
+        | :? ArgumentSyntax as argument when
+            isNull argument.NameColon
+            ->
+            argument
+            |> getParameterForArgumentSyntax semanticModel
+            |> Option.map (toParameterInlayHint argument.Span.Start) // TODO: filter out indexer parameters
+        | :? AttributeArgumentSyntax as argument when
+            isNull argument.NameEquals && isNull argument.NameColon
+            ->
+            argument
+            |> getParameterForAttributeArgumentSyntax semanticModel
+            |> Option.map (toParameterInlayHint argument.Span.Start)
+
         | _ -> None
 
     let handleTextDocumentInlayHint (scope: ServerRequestScope) (inlayHintParams: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
