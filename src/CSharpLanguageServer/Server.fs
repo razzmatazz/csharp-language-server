@@ -1120,6 +1120,29 @@ let setupServerHandlers options (lspClient: LspClient) =
     let handleSemanticTokensRange (scope: ServerRequestScope) (semParams: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
         getSemanticTokensRange scope semParams.TextDocument.Uri (Some semParams.Range)
 
+    let toInlayHint (semanticModel: SemanticModel) (lines: TextLineCollection) (node: SyntaxNode): InlayHint option =
+        None
+
+    let handleTextDocumentInlayHint (scope: ServerRequestScope) (inlayHintParams: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
+        match scope.GetUserDocumentForUri inlayHintParams.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let textSpan =
+                inlayHintParams.Range
+                |> roslynLinePositionSpanForLspRange
+                |> sourceText.Lines.GetTextSpan
+
+            let inlayHints =
+                root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))
+                |> Seq.map (toInlayHint semanticModel sourceText.Lines)
+                |> Seq.filter Option.isSome
+                |> Seq.map Option.get
+            return inlayHints |> Seq.toArray |> Some |> success
+    }
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1306,6 +1329,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         ("textDocument/signatureHelp"     , handleTextDocumentSignatureHelp)     |> requestHandlingWithReadOnlyScope
         ("textDocument/semanticTokens/full", handleSemanticTokensFull)           |> requestHandlingWithReadOnlyScope
         ("textDocument/semanticTokens/range", handleSemanticTokensRange)         |> requestHandlingWithReadOnlyScope
+        ("textDocument/inlayHint"         , handleTextDocumentInlayHint)         |> requestHandlingWithReadOnlyScope
         ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
         ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
         ("csharp/metadata"                , handleCSharpMetadata)                |> requestHandlingWithReadOnlyScope
