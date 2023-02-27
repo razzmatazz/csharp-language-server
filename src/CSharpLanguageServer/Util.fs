@@ -68,14 +68,14 @@ let SemanticTokenTypeMap =
     ClassificationTypeMap
     |> Map.values
     |> Seq.distinct
-    |> fun types -> Seq.zip types (Seq.initInfinite (id >> uint32)) // There is no `flip` in F#, sadly
+    |> fun types -> Seq.zip types (Seq.initInfinite uint32) // There is no `flip` in F#, sadly
     |> Map.ofSeq
 
 let SemanticTokenModifierMap =
     ClassificationModifierMap
     |> Map.values
     |> Seq.distinct
-    |> fun modifiers -> Seq.zip modifiers (Seq.initInfinite (id >> uint32))
+    |> fun modifiers -> Seq.zip modifiers (Seq.initInfinite uint32)
     |> Map.ofSeq
 
 let SemanticTokenTypes =
