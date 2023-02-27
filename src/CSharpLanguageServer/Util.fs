@@ -35,7 +35,9 @@ let unwindProtect cleanupFn op =
 let ClassificationTypeMap = Map [
     (ClassificationTypeNames.ClassName,           "class");
     (ClassificationTypeNames.Comment,             "comment");
+    (ClassificationTypeNames.ConstantName,        "property");
     (ClassificationTypeNames.ControlKeyword,      "keyword");
+    (ClassificationTypeNames.DelegateName,        "class");
     (ClassificationTypeNames.EnumMemberName,      "enumMember");
     (ClassificationTypeNames.EnumName,            "enum");
     (ClassificationTypeNames.EventName,           "event");
