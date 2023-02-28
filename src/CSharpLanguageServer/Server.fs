@@ -1139,6 +1139,13 @@ let setupServerHandlers options (lspClient: LspClient) =
               Data = None
             }
 
+        let validateParameter (arg: SyntaxNode) (par: IParameterSymbol) =
+            match arg.Parent with
+            // Don't show hint for indexer
+            | :? BracketedArgumentListSyntax -> None
+            // Don't show hint if argument matches parameter name
+            | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) -> None
+            | _ -> Some par
         let toParameterInlayHint (pos: int) (par: IParameterSymbol): InlayHint =
             { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
               Label = InlayHintLabel.String (par.Name + ":")
@@ -1205,12 +1212,14 @@ let setupServerHandlers options (lspClient: LspClient) =
             ->
             argument
             |> getParameterForArgumentSyntax semanticModel
-            |> Option.map (toParameterInlayHint argument.Span.Start) // TODO: filter out indexer parameters
+            |> Option.bind (validateParameter node)
+            |> Option.map (toParameterInlayHint argument.Span.Start)
         | :? AttributeArgumentSyntax as argument when
             isNull argument.NameEquals && isNull argument.NameColon
             ->
             argument
             |> getParameterForAttributeArgumentSyntax semanticModel
+            |> Option.bind (validateParameter node)
             |> Option.map (toParameterInlayHint argument.Span.Start)
 
         | _ -> None
