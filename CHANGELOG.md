@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Semantic token improvements
+  - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/70
+
 ## [0.6.1] - 2023-02-26 / Marcinkonys
 * Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;
   - Reported by @blasco and @gorsheninmv in https://github.com/razzmatazz/csharp-language-server/issues/57
