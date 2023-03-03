@@ -1128,9 +1128,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                 None
             else
                 Some ty
+        let typeDisplayStyle = SymbolDisplayFormat(
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            miscellaneousOptions = (SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral ||| SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier ||| SymbolDisplayMiscellaneousOptions.UseSpecialTypes))
         let toTypeInlayHint (pos: int) (ty: ITypeSymbol): InlayHint =
             { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
-              Label = InlayHintLabel.String (": " + ty.Name)
+              Label = InlayHintLabel.String (": " + ty.ToDisplayString(typeDisplayStyle))
               Kind = Some InlayHintKind.Type
               TextEdits = None
               Tooltip = None
