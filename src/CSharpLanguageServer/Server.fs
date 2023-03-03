@@ -1146,6 +1146,8 @@ let setupServerHandlers options (lspClient: LspClient) =
             match arg.Parent with
             // Don't show hint for indexer
             | :? BracketedArgumentListSyntax -> None
+            // Don't show hint if parameter name is empty
+            | _ when String.IsNullOrEmpty(par.Name) -> None
             // Don't show hint if argument matches parameter name
             | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) -> None
             | _ -> Some par
