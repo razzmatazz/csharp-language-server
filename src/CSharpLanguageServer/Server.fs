@@ -1170,13 +1170,17 @@ let setupServerHandlers options (lspClient: LspClient) =
             semanticModel.GetTypeInfo(var.Type).Type
             |> validateType
             |> Option.map (toTypeInlayHint var.Variables[0].Identifier.Span.End)
+        // We handle individual variables of ParenthesizedVariableDesignationSyntax separately.
+        // For example, in `var (x, y) = (0, "")`, we should `int` for `x` and `string` for `y`.
+        // It's redundant to show `(int, string)` for `var`
         | :? DeclarationExpressionSyntax as dec when
-            dec.Type.IsVar
+            dec.Type.IsVar && not (dec.Designation :? ParenthesizedVariableDesignationSyntax)
             ->
             semanticModel.GetTypeInfo(dec.Type).Type
             |> validateType
             |> Option.map (toTypeInlayHint dec.Designation.Span.End)
-        | :? SingleVariableDesignationSyntax as var
+        | :? SingleVariableDesignationSyntax as var when
+            not (var.Parent :? DeclarationPatternSyntax) && not (var.Parent :? DeclarationExpressionSyntax)
             ->
             semanticModel.GetDeclaredSymbol(var)
             |> fun sym ->
