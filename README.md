@@ -45,7 +45,6 @@ $ (cd src && dotnet build)
  - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
    - should we cancel existing ones? -- where cancellable? how to know?
  - support for pull diagnostics (lsp 3.17);
- - support for inlay hints (lsp 3.17);
  - go-to-def in metadata does not work for Attribute as those have Attribute suffix;
  - progress support;
  - properly escape docxml text, e.g. backquote is a special character in markdown;
