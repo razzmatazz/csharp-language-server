@@ -11,6 +11,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Rename
+open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.Classification
@@ -278,6 +279,7 @@ let setupServerHandlers options (lspClient: LspClient) =
                                    Range = Some true
                                    Full = true |> First |> Some
                                  }
+                        InlayHintProvider = Some { ResolveProvider = Some false }
                     }
               }
 
@@ -1120,6 +1122,128 @@ let setupServerHandlers options (lspClient: LspClient) =
     let handleSemanticTokensRange (scope: ServerRequestScope) (semParams: Types.SemanticTokensRangeParams): AsyncLspResult<Types.SemanticTokens option> =
         getSemanticTokensRange scope semParams.TextDocument.Uri (Some semParams.Range)
 
+    let toInlayHint (semanticModel: SemanticModel) (lines: TextLineCollection) (node: SyntaxNode): InlayHint option =
+        let validateType (ty: ITypeSymbol) =
+            if isNull ty || ty :? IErrorTypeSymbol || ty.Name = "var" then
+                None
+            else
+                Some ty
+        let toTypeInlayHint (pos: int) (ty: ITypeSymbol): InlayHint =
+            { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
+              Label = InlayHintLabel.String (": " + ty.Name)
+              Kind = Some InlayHintKind.Type
+              TextEdits = None
+              Tooltip = None
+              PaddingLeft = Some false
+              PaddingRight = Some false
+              Data = None
+            }
+
+        let validateParameter (arg: SyntaxNode) (par: IParameterSymbol) =
+            match arg.Parent with
+            // Don't show hint for indexer
+            | :? BracketedArgumentListSyntax -> None
+            // Don't show hint if argument matches parameter name
+            | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) -> None
+            | _ -> Some par
+        let toParameterInlayHint (pos: int) (par: IParameterSymbol): InlayHint =
+            { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
+              Label = InlayHintLabel.String (par.Name + ":")
+              Kind = Some InlayHintKind.Parameter
+              TextEdits = None
+              Tooltip = None
+              PaddingLeft = Some false
+              PaddingRight = Some true
+              Data = None
+            }
+
+        // It's a rewrite of https://github.com/dotnet/roslyn/blob/main/src/Features/CSharp/Portable/InlineHints/CSharpInlineTypeHintsService.cs &
+        // https://github.com/dotnet/roslyn/blob/main/src/Features/CSharp/Portable/InlineHints/CSharpInlineParameterNameHintsService.cs.
+        // If Roslyn exposes the classes, then we can just do a type convert.
+        match node with
+        | :? VariableDeclarationSyntax as var when
+            var.Type.IsVar && var.Variables.Count = 1 && not var.Variables[0].Identifier.IsMissing
+            ->
+            semanticModel.GetTypeInfo(var.Type).Type
+            |> validateType
+            |> Option.map (toTypeInlayHint var.Variables[0].Identifier.Span.End)
+        | :? DeclarationExpressionSyntax as dec when
+            dec.Type.IsVar
+            ->
+            semanticModel.GetTypeInfo(dec.Type).Type
+            |> validateType
+            |> Option.map (toTypeInlayHint dec.Designation.Span.End)
+        | :? SingleVariableDesignationSyntax as var
+            ->
+            semanticModel.GetDeclaredSymbol(var)
+            |> fun sym ->
+                match sym with
+                | :? ILocalSymbol as local -> Some local
+                | _ -> None
+            |> Option.map (fun local -> local.Type)
+            |> Option.bind validateType
+            |> Option.map (toTypeInlayHint var.Identifier.Span.End)
+        | :? ForEachStatementSyntax as forEach when
+            forEach.Type.IsVar
+            ->
+            semanticModel.GetForEachStatementInfo(forEach).ElementType
+            |> validateType
+            |> Option.map (toTypeInlayHint forEach.Identifier.Span.End)
+        | :? ParameterSyntax as parameterNode when
+            isNull parameterNode.Type
+            ->
+            let parameter = semanticModel.GetDeclaredSymbol(parameterNode)
+            parameter
+            |> fun parameter ->
+                match parameter.ContainingSymbol with
+                | :? IMethodSymbol as methSym when methSym.MethodKind = MethodKind.AnonymousFunction -> Some parameter
+                | _ -> None
+            |> Option.map (fun parameter -> parameter.Type)
+            |> Option.bind validateType
+            |> Option.map (toTypeInlayHint parameterNode.Identifier.Span.End)
+        | :? ImplicitObjectCreationExpressionSyntax as implicitNew
+            ->
+            semanticModel.GetTypeInfo(implicitNew).Type
+            |> validateType
+            |> Option.map (toTypeInlayHint implicitNew.NewKeyword.Span.End)
+
+        | :? ArgumentSyntax as argument when
+            isNull argument.NameColon
+            ->
+            argument
+            |> getParameterForArgumentSyntax semanticModel
+            |> Option.bind (validateParameter node)
+            |> Option.map (toParameterInlayHint argument.Span.Start)
+        | :? AttributeArgumentSyntax as argument when
+            isNull argument.NameEquals && isNull argument.NameColon
+            ->
+            argument
+            |> getParameterForAttributeArgumentSyntax semanticModel
+            |> Option.bind (validateParameter node)
+            |> Option.map (toParameterInlayHint argument.Span.Start)
+
+        | _ -> None
+
+    let handleTextDocumentInlayHint (scope: ServerRequestScope) (inlayHintParams: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
+        match scope.GetUserDocumentForUri inlayHintParams.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let textSpan =
+                inlayHintParams.Range
+                |> roslynLinePositionSpanForLspRange
+                |> sourceText.Lines.GetTextSpan
+
+            let inlayHints =
+                root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))
+                |> Seq.map (toInlayHint semanticModel sourceText.Lines)
+                |> Seq.filter Option.isSome
+                |> Seq.map Option.get
+            return inlayHints |> Seq.toArray |> Some |> success
+    }
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1306,6 +1430,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         ("textDocument/signatureHelp"     , handleTextDocumentSignatureHelp)     |> requestHandlingWithReadOnlyScope
         ("textDocument/semanticTokens/full", handleSemanticTokensFull)           |> requestHandlingWithReadOnlyScope
         ("textDocument/semanticTokens/range", handleSemanticTokensRange)         |> requestHandlingWithReadOnlyScope
+        ("textDocument/inlayHint"         , handleTextDocumentInlayHint)         |> requestHandlingWithReadOnlyScope
         ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
         ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
         ("csharp/metadata"                , handleCSharpMetadata)                |> requestHandlingWithReadOnlyScope
