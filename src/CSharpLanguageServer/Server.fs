@@ -1128,9 +1128,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                 None
             else
                 Some ty
+        let typeDisplayStyle = SymbolDisplayFormat(
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            miscellaneousOptions = (SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral ||| SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier ||| SymbolDisplayMiscellaneousOptions.UseSpecialTypes))
         let toTypeInlayHint (pos: int) (ty: ITypeSymbol): InlayHint =
             { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
-              Label = InlayHintLabel.String (": " + ty.Name)
+              Label = InlayHintLabel.String (": " + ty.ToDisplayString(typeDisplayStyle))
               Kind = Some InlayHintKind.Type
               TextEdits = None
               Tooltip = None
@@ -1143,6 +1146,8 @@ let setupServerHandlers options (lspClient: LspClient) =
             match arg.Parent with
             // Don't show hint for indexer
             | :? BracketedArgumentListSyntax -> None
+            // Don't show hint if parameter name is empty
+            | _ when String.IsNullOrEmpty(par.Name) -> None
             // Don't show hint if argument matches parameter name
             | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) -> None
             | _ -> Some par
@@ -1167,13 +1172,17 @@ let setupServerHandlers options (lspClient: LspClient) =
             semanticModel.GetTypeInfo(var.Type).Type
             |> validateType
             |> Option.map (toTypeInlayHint var.Variables[0].Identifier.Span.End)
+        // We handle individual variables of ParenthesizedVariableDesignationSyntax separately.
+        // For example, in `var (x, y) = (0, "")`, we should `int` for `x` and `string` for `y`.
+        // It's redundant to show `(int, string)` for `var`
         | :? DeclarationExpressionSyntax as dec when
-            dec.Type.IsVar
+            dec.Type.IsVar && not (dec.Designation :? ParenthesizedVariableDesignationSyntax)
             ->
             semanticModel.GetTypeInfo(dec.Type).Type
             |> validateType
             |> Option.map (toTypeInlayHint dec.Designation.Span.End)
-        | :? SingleVariableDesignationSyntax as var
+        | :? SingleVariableDesignationSyntax as var when
+            not (var.Parent :? DeclarationPatternSyntax) && not (var.Parent :? DeclarationExpressionSyntax)
             ->
             semanticModel.GetDeclaredSymbol(var)
             |> fun sym ->
