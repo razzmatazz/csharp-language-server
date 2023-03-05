@@ -1370,18 +1370,46 @@ let setupServerHandlers options (lspClient: LspClient) =
             //
             // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
             // handler until previous one returns a Task (in our case -- F# `async` object.)
+            //
+            logMessage (sprintf "requestHandler (?:%s)" requestName) |> Async.StartAsTask |> ignore
 
             let startRequest rc = StartRequest (requestName, requestType, requestPriority, rc)
-            let requestId, semaphore = stateActor.PostAndReply(startRequest)
+            let requestId = stateActor.PostAndReply(startRequest)
 
             let stateAcquisitionAndHandlerInvocation = async {
-                do! semaphore.WaitAsync() |> Async.AwaitTask
+                stateActor.Post(UpdateRequestState (requestId, "Running/acquiring state"))
 
-                let! state = stateActor.PostAndAsyncReply(GetState)
+                do! logMessage (sprintf "requestHandler (%d:%s): Running/GetState" requestId requestName)
+
+                let sw2 = Stopwatch()
+                sw2.Start()
+                let! state = stateActor.PostAndAsyncReply(fun rc -> AcquireRequestState(requestId, rc))
+                sw2.Stop()
+
+                do! logMessage (sprintf "requestHandler (%d:%s): state acquired!" requestId requestName)
+
+                if sw2.ElapsedMilliseconds > 500 then
+                    do! logMessage (sprintf "PERF %d:%s: AcquireRequestState took %s ms"
+                                            requestId
+                                            requestName
+                                            (string sw2.ElapsedMilliseconds))
 
                 let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
 
-                return! asyncFn scope param
+                stateActor.Post(UpdateRequestState (requestId, "Running/implementation"))
+
+                let sw3 = Stopwatch()
+                sw3.Start()
+                let! result = asyncFn scope param
+                sw3.Stop()
+
+                if sw3.ElapsedMilliseconds > 500 then
+                    do! logMessage (sprintf "PERF %d:%s: implementation took %s ms"
+                                            requestId
+                                            requestName
+                                            (string sw3.ElapsedMilliseconds))
+
+                return result;
             }
 
             let wrapExceptionAsLspResult op =
@@ -1393,8 +1421,12 @@ let setupServerHandlers options (lspClient: LspClient) =
                         | Choice1Of2 result -> result
                         | Choice2Of2 exn ->
                             match exn with
-                            | :? TaskCanceledException -> LspResult.requestCancelled
-                            | :? OperationCanceledException -> LspResult.requestCancelled
+                            | :? TaskCanceledException ->
+                                logMessage (sprintf "TaskCanceledException: (%d:%s)" requestId requestName) |> Async.StartAsTask |> ignore
+                                LspResult.requestCancelled
+                            | :? OperationCanceledException ->
+                                logMessage (sprintf "TaskCanceledException: (%d:%s)" requestId requestName) |> Async.StartAsTask |> ignore
+                                LspResult.requestCancelled
                             | _ -> LspResult.internalError (string exn)
                 }
 

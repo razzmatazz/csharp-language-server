@@ -34,10 +34,11 @@ type ServerRequest = {
     Id: int
     Name: string
     Type: ServerRequestType
-    Semaphore: SemaphoreSlim
+    AcquireRequestStateRC: AsyncReplyChannel<ServerState> option
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
                   // priority is used to order pending R/O requests and is ignored wrt R/W requests
-    Enqueued: DateTime
+    Enqueued: DateTime // time when enqueued to ServerState
+    State: string
 }
 and ServerState = {
     ClientCapabilities: ClientCapabilities option
@@ -51,13 +52,26 @@ and ServerState = {
     SolutionReloadPending: DateTime option
 }
 
+let serverRequestRepr r =
+    sprintf "ServerRequest(%d:%s, State=\"%s\", Duration=\"%s ms\", has AcquireRequestStateRC=%s)"
+        r.Id
+        r.Name
+        r.State
+        ((DateTime.Now - r.Enqueued).TotalMilliseconds |> string)
+        (if r.AcquireRequestStateRC.IsSome then "yes" else "no")
+
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
     | [] -> (None, [])
     | (firstRequest :: queueRemainder) -> (Some firstRequest, queueRemainder)
 
 let pullNextRequestMaybe requestQueue =
-    match requestQueue with
+    let requestCanRun r = r.AcquireRequestStateRC.IsSome
+
+    let runnableRequestQueue =
+        requestQueue |> Seq.filter requestCanRun |> List.ofSeq
+
+    match runnableRequestQueue with
     | [] -> (None, requestQueue)
 
     | nonEmptyRequestQueue ->
@@ -102,10 +116,11 @@ type ServerStateEvent =
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
     | OpenDocVersionAdd of string * int
     | OpenDocVersionRemove of string
-    | GetState of AsyncReplyChannel<ServerState>
+    | AcquireRequestState of int * AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int>
     | FinishRequest of int
+    | UpdateRequestState of int * string
     | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
@@ -139,10 +154,6 @@ let getDocumentForUriOfType state docType (u: string) =
 
 let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
     match msg with
-    | GetState replyChannel ->
-        replyChannel.Reply(state)
-        return state
-
     | GetDocumentOfTypeForUri (docType, uri, replyChannel) ->
         let documentAndTypeMaybe = getDocumentForUriOfType state docType uri
         replyChannel.Reply(documentAndTypeMaybe |> Option.map fst)
@@ -150,29 +161,99 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
         return state
 
     | StartRequest (name, requestType, requestPriority, replyChannel) ->
-        postMsg ProcessRequestQueue
+        do! logMessage "StartRequest: enter"
+        do postMsg ProcessRequestQueue
 
         let newRequest = { Id=state.LastRequestId+1
                            Name=name
                            Type=requestType
-                           Semaphore=new SemaphoreSlim(0, 1)
+                           AcquireRequestStateRC=None
                            Priority=requestPriority
-                           Enqueued=DateTime.Now }
+                           Enqueued=DateTime.Now
+                           State="Pending" }
 
-        replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
+        replyChannel.Reply(newRequest.Id)
 
         return { state with LastRequestId=newRequest.Id
                             RequestQueue=state.RequestQueue @ [newRequest] }
 
+    | AcquireRequestState (requestId, replyChannel) ->
+        do! logMessage "AcquireRequestState: enter"
+
+        let requestMaybe = state.RequestQueue |> Seq.tryFind (fun r -> r.Id = requestId)
+
+        let newState =
+            match requestMaybe with
+            | Some request ->
+                logMessage (sprintf "AcquireRequestState (%d:%s) -> registering replyChannel.." request.Id request.Name)
+                    |> Async.StartAsTask |> ignore
+
+                let updatedRequest =
+                    { request with AcquireRequestStateRC=Some replyChannel }
+
+                let updatedRequestQueue =
+                    state.RequestQueue
+                    |> Seq.map (fun rs -> if rs.Id = requestId then updatedRequest else rs)
+                    |> List.ofSeq
+
+                { state with RequestQueue = updatedRequestQueue }
+            | None -> state
+
+        do postMsg ProcessRequestQueue
+
+        return newState
+
     | FinishRequest requestId ->
         let request = state.RunningRequests |> Map.find requestId
-        request.Semaphore.Dispose()
+
+        do! logMessage (sprintf "FinishRequest (%d:%s)" request.Id request.Name)
 
         let newRunningRequests = state.RunningRequests |> Map.remove requestId
         let newState = { state with RunningRequests = newRunningRequests }
 
-        postMsg ProcessRequestQueue
+        do postMsg ProcessRequestQueue
         return newState
+
+    | UpdateRequestState (requestId, newRequestState) ->
+        logMessage "UpdateRequestState: enter" |> Async.StartAsTask |> ignore
+
+        let requestMaybe = state.RunningRequests |> Map.tryFind requestId
+
+        let mutable messageToLog: string option = None
+
+        let newState =
+            match requestMaybe with
+            | Some rs ->
+               messageToLog <-
+                   (sprintf "UpdateRequestState: (%d:%s), newRequestState=\"%s\"" rs.Id rs.Name newRequestState)
+                   |> Some
+
+               let updatedReq = { rs with State = newRequestState }
+               { state with RunningRequests = state.RunningRequests |> Map.add requestId updatedReq }
+            | None -> state
+
+        let newState2 =
+            let updateMatchingRequestState rs =
+                if rs.Id = requestId then
+                    messageToLog <-
+                        (sprintf "UpdateRequestState: (%d:%s), newRequestState=\"%s\"" rs.Id rs.Name newRequestState)
+                        |> Some
+
+                    { rs with State = newRequestState }
+                else
+                    rs
+
+            let updatedRequestQueue =
+                state.RequestQueue |> Seq.map updateMatchingRequestState |> Seq.toList
+
+            { newState with RequestQueue = updatedRequestQueue }
+
+        match messageToLog with
+        | Some message ->
+            do! logMessage message
+        | None -> ()
+
+        return newState2
 
     | ProcessRequestQueue ->
         let runningRWRequestMaybe =
@@ -180,10 +261,10 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
             |> Seq.map (fun kv -> kv.Value)
             |> Seq.tryFind (fun r -> r.Type = ReadWrite)
 
-        // let numRunningRequests = state.RunningRequests |> Map.count
+        let numRunningRequests = state.RunningRequests |> Map.count
 
         let canRunNextRequest =
-            (Option.isNone runningRWRequestMaybe) // && (numRunningRequests < 4)
+            (Option.isNone runningRWRequestMaybe) && (numRunningRequests < 4)
 
         return
             if not canRunNextRequest then
@@ -195,15 +276,29 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
                 | None -> state
                 | Some nextRequest ->
                     // try to process next msg from the remainder, if possible, later
-                    postMsg ProcessRequestQueue
+                    do postMsg ProcessRequestQueue
 
-                    let newState = { state with RequestQueue = queueRemainder
-                                                RunningRequests = state.RunningRequests |> Map.add nextRequest.Id nextRequest }
+                    let newRunningRequests =
+                        state.RunningRequests |> Map.add nextRequest.Id nextRequest
 
-                    // unblock this request to run by sending it current state
-                    nextRequest.Semaphore.Release() |> ignore
+                    let newState =
+                        { state with RequestQueue = queueRemainder
+                                     RunningRequests = newRunningRequests }
+
+                    do logMessage (sprintf "ProcessRequestQueue: (%d:%s), replying with newState!" nextRequest.Id nextRequest.Name)
+                       |> Async.StartAsTask
+                       |> ignore
+
+                    nextRequest.AcquireRequestStateRC.Value.Reply(newState)
+
+                    postMsg (UpdateRequestState (nextRequest.Id, "Running/state sent"))
+
+                    do logMessage (sprintf "ProcessRequestQueue: (%d:%s), replying with newState! DONE!" nextRequest.Id nextRequest.Name)
+                       |> Async.StartAsTask
+                       |> ignore
 
                     newState
+
 
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }
@@ -238,12 +333,24 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
         return { state with Solution = newSolution }
 
     | PeriodicTimerTick ->
+        do postMsg ProcessRequestQueue
+
+        let longRunningReqs =
+            state.RunningRequests.Values
+            |> Seq.append state.RequestQueue
+            |> Seq.filter (fun r -> (DateTime.Now - r.Enqueued) > TimeSpan.FromSeconds(1))
+
+        if (Seq.length longRunningReqs) > 0 then
+            do! logMessage "PERF: long running requests (more than 1 sec)"
+            for r in longRunningReqs do
+                do! logMessage (sprintf "    - %s" (serverRequestRepr r))
+
         let solutionReloadTime = state.SolutionReloadPending
                                  |> Option.defaultValue (DateTime.Now.AddDays(1))
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            postMsg SolutionReload
+            do postMsg SolutionReload
             return { state with SolutionReloadPending = None }
 
         | false ->
