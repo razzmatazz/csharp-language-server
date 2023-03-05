@@ -567,9 +567,12 @@ let setupServerHandlers options (lspClient: LspClient) =
 
             let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
 
+            do! logMessage (sprintf "handleTextDocumentCodeLens: Some codeLens.Len=%d" (Seq.length codeLens))
+
             return codeLens |> Array.ofSeq |> Some |> success
 
         | None ->
+            do! logMessage (sprintf "handleTextDocumentCodeLens: None, docMaybe=None")
             return None |> success
     }
 
@@ -595,26 +598,18 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-        let resolveLocations (ct: CancellationToken) =
-            task {
-                let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct)
-                return refs |> Seq.collect (fun r -> r.Locations)
-            }
+        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
+        let locations = refs |> Seq.collect (fun r -> r.Locations)
 
-        let! locationsMaybe =
-            runTaskWithNoneOnTimeout 3000 ct resolveLocations
-            |> Async.AwaitTask
-
-        let title =
-            match locationsMaybe with
-            | Some locations -> locations |> Seq.length |> sprintf "%d Reference(s)"
-            | None -> "" // timeout
+        let title = locations |> Seq.length |> sprintf "%d Reference(s)"
 
         let command =
             { Title = title
               Command = "csharp.showReferences"
               Arguments = None // TODO: we really want to pass some more info to the client
             }
+
+        do! logMessage (sprintf "handleCodeLensResolve: codeLens=%s" (string codeLens))
 
         return { codeLens with Command=Some command } |> success
     }
