@@ -24,33 +24,7 @@ open Ionide.LanguageServerProtocol.Types
 open RoslynHelpers
 open State
 open System.Threading.Tasks
-open System.Threading
 open Util
-
-// TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
-let rec unpackException (exn : Exception) =
-    match exn with
-    | :? AggregateException as agg ->
-        match Seq.tryExactlyOne agg.InnerExceptions with
-        | Some x -> unpackException x
-        | None -> exn
-    | _ -> exn
-
-let runTaskWithNoneOnTimeout (timeoutMS:int) (baseCT:CancellationToken) taskFn = task {
-    use timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(baseCT)
-    timeoutCts.CancelAfter(timeoutMS)
-
-    try
-        let! taskFnResult = taskFn timeoutCts.Token
-        return Some taskFnResult
-    with
-    | ex ->
-        let unpackedEx = ex |> unpackException
-        if (unpackedEx :? TaskCanceledException) || (unpackedEx :? OperationCanceledException) then
-            return None
-        else
-            return raise ex
-}
 
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
@@ -595,20 +569,10 @@ let setupServerHandlers options (lspClient: LspClient) =
 
         let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-        let resolveLocations (ct: CancellationToken) =
-            task {
-                let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct)
-                return refs |> Seq.collect (fun r -> r.Locations)
-            }
+        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
+        let locations = refs |> Seq.collect (fun r -> r.Locations)
 
-        let! locationsMaybe =
-            runTaskWithNoneOnTimeout 3000 ct resolveLocations
-            |> Async.AwaitTask
-
-        let title =
-            match locationsMaybe with
-            | Some locations -> locations |> Seq.length |> sprintf "%d Reference(s)"
-            | None -> "" // timeout
+        let title = locations |> Seq.length |> sprintf "%d Reference(s)"
 
         let command =
             { Title = title

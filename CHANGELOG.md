@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Inlay hint support
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/71 
   and https://github.com/razzmatazz/csharp-language-server/pull/73
+* Remove timeout on 'codelens/resolve' handler -- that wasn't a good idea to begin with
 
 ## [0.6.1] - 2023-02-26 / Marcinkonys
 * Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;

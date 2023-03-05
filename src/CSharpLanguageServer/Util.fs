@@ -32,6 +32,15 @@ let unwindProtect cleanupFn op =
             cleanupFn ()
     }
 
+// TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
+let rec unpackException (exn : Exception) =
+    match exn with
+    | :? AggregateException as agg ->
+        match Seq.tryExactlyOne agg.InnerExceptions with
+        | Some x -> unpackException x
+        | None -> exn
+    | _ -> exn
+
 let ClassificationTypeMap = Map [
     (ClassificationTypeNames.ClassName,           "class");
     (ClassificationTypeNames.Comment,             "comment");
