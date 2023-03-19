@@ -14,6 +14,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
 See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
+# Settings
+
+- `csharp.solution` - solution to load, optional
+
 # Clients/Editor plugins
 
 `csharp-ls` implements the standard LSP protocol to interact with your editor.

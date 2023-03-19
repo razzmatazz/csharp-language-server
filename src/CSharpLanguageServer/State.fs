@@ -97,6 +97,7 @@ type ServerDocumentType =
      | AnyDocument
 
 type ServerStateEvent =
+    | OptionsChange of Options
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
@@ -139,6 +140,16 @@ let getDocumentForUriOfType state docType (u: string) =
 
 let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
     match msg with
+    | OptionsChange newOptions ->
+        let newState: ServerState = { state with Options = newOptions }
+
+        let solutionChanged = not (state.Options.SolutionPath = newState.Options.SolutionPath)
+
+        if solutionChanged then
+            postMsg SolutionReload
+
+        return newState
+
     | GetState replyChannel ->
         replyChannel.Reply(state)
         return state

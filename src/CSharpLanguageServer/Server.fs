@@ -26,6 +26,14 @@ open State
 open System.Threading.Tasks
 open Util
 
+type CSharpSettings =
+  { solution: string option }
+  static member Default = { solution = None }
+
+type CSharpSettingsDto = {
+     csharp: CSharpSettings option
+}
+
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
 }
@@ -1285,6 +1293,22 @@ let setupServerHandlers options (lspClient: LspClient) =
         return LspResult.Ok()
     }
 
+    let handleWorkspaceDidChangeConfiguration (scope: ServerRequestScope) (configParams: DidChangeConfigurationParams): Async<LspResult<unit>> =
+        async {
+            let csharpSettings =
+                configParams.Settings
+                |> deserialize<CSharpSettingsDto>
+                |> (fun x -> x.csharp)
+                |> Option.defaultValue CSharpSettings.Default
+
+            do! logMessage (sprintf "reconfiguring with %s" (csharpSettings |> string))
+
+            let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
+            scope.Emit(OptionsChange newOptions)
+
+            return LspResult.Ok ()
+        }
+
     let handleCSharpMetadata (scope: ServerRequestScope) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
         let uri = metadataParams.TextDocument.Uri
 
@@ -1406,6 +1430,7 @@ let setupServerHandlers options (lspClient: LspClient) =
         ("textDocument/inlayHint"         , handleTextDocumentInlayHint)         |> requestHandlingWithReadOnlyScope
         ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
         ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
+        ("workspace/didChangeConfiguration", handleWorkspaceDidChangeConfiguration) |> requestHandlingWithReadWriteScope
         ("csharp/metadata"                , handleCSharpMetadata)                |> requestHandlingWithReadOnlyScope
     ]
     |> Map.ofList
