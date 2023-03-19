@@ -8,8 +8,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        dotnet: [7.0.100]
+        os: [ubuntu-22.04]
+        dotnet: [7.0.201]
 
     runs-on: ${{ matrix.os }}
     defaults:

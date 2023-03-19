@@ -6,8 +6,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-2019, ubuntu-20.04]
-        dotnet: [7.0.100]
+        os: [windows-latest, ubuntu-22.04]
+        dotnet: [7.0.201]
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
