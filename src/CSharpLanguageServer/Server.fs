@@ -165,22 +165,22 @@ let setupServerHandlers options (lspClient: LspClient) =
 
       do! infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
-      do! infoMessage (sprintf "`dotnet --version`: %s"
-                               (getDotnetCliVersion ()))
+      // do! infoMessage (sprintf "`dotnet --version`: %s"
+      //                          (getDotnetCliVersion ()))
 
       let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
       let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
       if Seq.isEmpty vsInstanceList then
          raise (InvalidOperationException("No instances of MSBuild could be detected." + Environment.NewLine + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."))
 
-      do! infoMessage "MSBuildLocator instances found:"
-
-      for vsInstance in vsInstanceList do
-          do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-                                   vsInstance.Name
-                                   (string vsInstance.Version)
-                                   vsInstance.MSBuildPath
-                                   (string vsInstance.DiscoveryType))
+      // do! infoMessage "MSBuildLocator instances found:"
+      //
+      // for vsInstance in vsInstanceList do
+      //     do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+      //                              vsInstance.Name
+      //                              (string vsInstance.Version)
+      //                              vsInstance.MSBuildPath
+      //                              (string vsInstance.DiscoveryType))
 
       let vsInstance = vsInstanceList |> Seq.head
 
@@ -265,7 +265,7 @@ let setupServerHandlers options (lspClient: LspClient) =
 
     let handleInitialized (_scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
         async {
-            do! logMessage "\"initialized\" notification received from client"
+            // do! logMessage "\"initialized\" notification received from client"
 
             //
             // registering w/client for didChangeWatchedFiles notifications"

@@ -904,8 +904,6 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
 let loadSolutionOnSolutionPathOrCwd (logMessage: AsyncLogFn) solutionPathMaybe =
     match solutionPathMaybe with
     | Some solutionPath -> async {
-        do! logMessage (sprintf "loading specified solution file: %s.." solutionPath)
-
         return! tryLoadSolutionOnPath logMessage solutionPath
       }
 
