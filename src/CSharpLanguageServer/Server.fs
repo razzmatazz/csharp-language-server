@@ -265,6 +265,22 @@ let setupServerHandlers options (lspClient: LspClient) =
                     }
               }
 
+      let! workspaceCSharpConfig =
+        lspClient.WorkspaceConfiguration(
+          { items=[| { Section=Some "csharp"; ScopeUri=None } |] })
+
+      let csharpConfigTokensMaybe =
+        match workspaceCSharpConfig with
+        | Ok ts -> Some ts
+        | _ -> None
+
+      match csharpConfigTokensMaybe with
+      | Some [| t |] ->
+        let csharpSettings = t |> deserialize<CSharpSettings>
+        let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
+        scope.Emit(OptionsChange newOptions)
+      | _ -> ()
+
       // load solution (on stateActor)
       do! stateActor.PostAndAsyncReply(SolutionReloadInSync)
 
