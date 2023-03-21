@@ -110,6 +110,7 @@ type ServerStateEvent =
     | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
+    | SolutionLoad
     | PeriodicTimerTick
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -241,6 +242,12 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
     | SolutionReload ->
         let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
         return { state with Solution = newSolution }
+
+    | SolutionLoad ->
+        match state.Solution with
+        | Some sln -> ()
+        | None -> postMsg (SolutionReload)
+        return state
 
     | PeriodicTimerTick ->
         let solutionReloadTime = state.SolutionReloadPending

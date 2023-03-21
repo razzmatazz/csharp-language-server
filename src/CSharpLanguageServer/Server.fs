@@ -166,9 +166,9 @@ let setupServerHandlers options (lspClient: LspClient) =
     let infoMessage = logMessageWithLevel MessageType.Info
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
-      do! infoMessage (sprintf "initializing, csharp-ls version %s; options are: %s"
+      do! infoMessage (sprintf "initializing, csharp-ls version %s; cwd: \"%s\""
                                (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
-                               (JsonConvert.SerializeObject(options)))
+                               (Directory.GetCurrentDirectory()))
 
       do! infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
 
@@ -283,8 +283,8 @@ let setupServerHandlers options (lspClient: LspClient) =
         | _ -> ()
       | _ -> ()
 
-      // start loading the solution
-      stateActor.Post(SolutionReload)
+      // start loading the solution, if not already
+      stateActor.Post(SolutionLoad)
 
       return initializeResult |> success
     }

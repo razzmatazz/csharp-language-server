@@ -827,6 +827,8 @@ let tryLoadSolutionOnPath (logMessage: AsyncLogFn) solutionPath = async {
         for diag in msbuildWorkspace.Diagnostics do
             do! logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
 
+        do! logMessage (sprintf "finished loading solution \"%s\"" solutionPath)
+
         return Some msbuildWorkspace.CurrentSolution
     with
     | ex ->
