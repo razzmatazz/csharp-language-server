@@ -110,7 +110,6 @@ type ServerStateEvent =
     | ProcessRequestQueue
     | SolutionReloadRequest
     | SolutionReload
-    | SolutionReloadInSync of AsyncReplyChannel<unit>
     | PeriodicTimerTick
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -241,11 +240,6 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
     | SolutionReload ->
         let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
-        return { state with Solution = newSolution }
-
-    | SolutionReloadInSync replyChannel ->
-        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
-        replyChannel.Reply(())
         return { state with Solution = newSolution }
 
     | PeriodicTimerTick ->

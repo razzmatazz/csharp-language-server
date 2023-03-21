@@ -283,8 +283,8 @@ let setupServerHandlers options (lspClient: LspClient) =
         | _ -> ()
       | _ -> ()
 
-      // load solution (on stateActor)
-      do! stateActor.PostAndAsyncReply(SolutionReloadInSync)
+      // start loading the solution
+      stateActor.Post(SolutionReload)
 
       return initializeResult |> success
     }
@@ -1318,8 +1318,6 @@ let setupServerHandlers options (lspClient: LspClient) =
                 |> deserialize<ServerSettingsDto>
                 |> (fun x -> x.csharp)
                 |> Option.defaultValue ServerSettingsCSharpDto.Default
-
-            do! logMessage (sprintf "reconfiguring with %s" (csharpSettings |> string))
 
             let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
             scope.Emit(OptionsChange newOptions)
