@@ -26,13 +26,12 @@ open State
 open System.Threading.Tasks
 open Util
 
-type CSharpSettings =
+type ServerSettingsDto = {
+     csharp: ServerSettingsCSharpDto option
+}
+and ServerSettingsCSharpDto =
   { solution: string option }
   static member Default = { solution = None }
-
-type CSharpSettingsDto = {
-     csharp: CSharpSettings option
-}
 
 type CSharpMetadataParams = {
     TextDocument: TextDocumentIdentifier
@@ -276,9 +275,12 @@ let setupServerHandlers options (lspClient: LspClient) =
 
       match csharpConfigTokensMaybe with
       | Some [| t |] ->
-        let csharpSettings = t |> deserialize<CSharpSettings>
-        let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
-        scope.Emit(OptionsChange newOptions)
+        let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
+        match csharpSettingsMaybe with
+        | Some csharpSettings ->
+          let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
+          scope.Emit(OptionsChange newOptions)
+        | _ -> ()
       | _ -> ()
 
       // load solution (on stateActor)
@@ -1313,9 +1315,9 @@ let setupServerHandlers options (lspClient: LspClient) =
         async {
             let csharpSettings =
                 configParams.Settings
-                |> deserialize<CSharpSettingsDto>
+                |> deserialize<ServerSettingsDto>
                 |> (fun x -> x.csharp)
-                |> Option.defaultValue CSharpSettings.Default
+                |> Option.defaultValue ServerSettingsCSharpDto.Default
 
             do! logMessage (sprintf "reconfiguring with %s" (csharpSettings |> string))
 
