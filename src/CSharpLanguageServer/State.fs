@@ -9,12 +9,12 @@ open Ionide.LanguageServerProtocol.Types
 open RoslynHelpers
 open Util
 
-type Options = {
+type ServerSettings = {
     SolutionPath: string option
     LogLevel: MessageType
 }
 
-let emptyOptions = { SolutionPath = None; LogLevel = MessageType.Log }
+let emptySettings = { SolutionPath = None; LogLevel = MessageType.Log }
 
 type CSharpMetadata = {
     ProjectName: string
@@ -40,11 +40,11 @@ type ServerRequest = {
     Enqueued: DateTime
 }
 and ServerState = {
+    Settings: ServerSettings
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
-    Options: Options
     LastRequestId: int
     RunningRequests: Map<int, ServerRequest>
     RequestQueue: ServerRequest list
@@ -81,11 +81,11 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-let emptyServerState = { ClientCapabilities = None
+let emptyServerState = { Settings = emptySettings
+                         ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
                          DecompiledMetadata = Map.empty
-                         Options = emptyOptions
                          LastRequestId = 0
                          RunningRequests = Map.empty
                          RequestQueue = []
@@ -97,7 +97,7 @@ type ServerDocumentType =
      | AnyDocument
 
 type ServerStateEvent =
-    | OptionsChange of Options
+    | SettingsChange of ServerSettings
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
@@ -140,10 +140,10 @@ let getDocumentForUriOfType state docType (u: string) =
 
 let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
     match msg with
-    | OptionsChange newOptions ->
-        let newState: ServerState = { state with Options = newOptions }
+    | SettingsChange newSettings ->
+        let newState: ServerState = { state with Settings = newSettings }
 
-        let solutionChanged = not (state.Options.SolutionPath = newState.Options.SolutionPath)
+        let solutionChanged = not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
             postMsg SolutionReload
@@ -240,7 +240,7 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
         return { state with SolutionReloadPending = DateTime.Now.AddSeconds(5) |> Some }
 
     | SolutionReload ->
-        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Options.SolutionPath
+        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Settings.SolutionPath
         return { state with Solution = newSolution }
 
     | SolutionLoad ->

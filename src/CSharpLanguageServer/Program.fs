@@ -2,6 +2,7 @@ module CSharpLanguageServer.Program
 
 open Argu
 open System.Reflection
+open State
 
 [<EntryPoint>]
 let entry args =
@@ -23,14 +24,14 @@ let entry args =
             | _ -> Ionide.LanguageServerProtocol.Types.MessageType.Log
 
         // default the verbosity to warning
-        let serverOptions: State.Options = {
+        let settings: ServerSettings = {
             SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
             LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
                        |> Option.defaultValue "log"
                        |> parseLogLevel
         }
 
-        Server.start serverOptions
+        Server.start settings
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message

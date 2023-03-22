@@ -109,7 +109,7 @@ let getDotnetCliVersion () : string =
     else
         "(could not launch `dotnet --version`)"
 
-let setupServerHandlers options (lspClient: LspClient) =
+let setupServerHandlers settings (lspClient: LspClient) =
     let success = LspResult.success
     let mutable logMessageCurrent: AsyncLogFn = fun _ -> async { return() }
     let logMessageInvoke m = logMessageCurrent(m)
@@ -117,7 +117,7 @@ let setupServerHandlers options (lspClient: LspClient) =
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
             (fun m -> logMessageInvoke m)
-            { emptyServerState with Options = options })
+            { emptyServerState with Settings = settings })
 
     let getDocumentForUriFromCurrentState docType uri =
         stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
@@ -278,8 +278,8 @@ let setupServerHandlers options (lspClient: LspClient) =
         let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
         match csharpSettingsMaybe with
         | Some csharpSettings ->
-          let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
-          scope.Emit(OptionsChange newOptions)
+          let newSettings = { scope.State.Settings with SolutionPath = csharpSettings.solution }
+          scope.Emit(SettingsChange newSettings)
         | _ -> ()
       | _ -> ()
 
@@ -1319,8 +1319,8 @@ let setupServerHandlers options (lspClient: LspClient) =
                 |> (fun x -> x.csharp)
                 |> Option.defaultValue ServerSettingsCSharpDto.Default
 
-            let newOptions = { scope.State.Options with SolutionPath = csharpSettings.solution }
-            scope.Emit(OptionsChange newOptions)
+            let newServerSettings = { scope.State.Settings with SolutionPath = csharpSettings.solution }
+            scope.Emit(SettingsChange newServerSettings)
 
             return LspResult.Ok ()
         }
