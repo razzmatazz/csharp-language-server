@@ -284,7 +284,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
       | _ -> ()
 
       // start loading the solution, if not already
-      stateActor.Post(SolutionLoad)
+      stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
 
       return initializeResult |> success
     }
@@ -1280,11 +1280,11 @@ let setupServerHandlers settings (lspClient: LspClient) =
             match Path.GetExtension(change.Uri) with
             | ".csproj" ->
                 do! logMessage "change to .csproj detected, will reload solution"
-                scope.Emit(SolutionReloadRequest)
+                scope.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
 
             | ".sln" ->
                 do! logMessage "change to .sln detected, will reload solution"
-                scope.Emit(SolutionReloadRequest)
+                scope.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
 
             | ".cs" ->
                 match change.Type with

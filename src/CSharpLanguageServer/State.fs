@@ -108,9 +108,7 @@ type ServerStateEvent =
     | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
-    | SolutionReloadRequest
-    | SolutionReload
-    | SolutionLoad
+    | SolutionReloadRequest of TimeSpan
     | PeriodicTimerTick
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -146,7 +144,7 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
         let solutionChanged = not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
-            postMsg SolutionReload
+            postMsg (SolutionReloadRequest (TimeSpan.FromMilliseconds(250)))
 
         return newState
 
@@ -234,20 +232,18 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
         let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
         return { state with OpenDocVersions = newOpenDocVersions }
 
-    | SolutionReloadRequest ->
+    | SolutionReloadRequest reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
         // can buffer many incoming requests at once
-        return { state with SolutionReloadPending = DateTime.Now.AddSeconds(5) |> Some }
+        let newSolutionReloadDeadline =
+            let suggestedDeadline = DateTime.Now + reloadNoLaterThanIn
 
-    | SolutionReload ->
-        let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Settings.SolutionPath
-        return { state with Solution = newSolution }
+            match state.SolutionReloadPending with
+            | Some currentDeadline ->
+                if (suggestedDeadline < currentDeadline) then suggestedDeadline else currentDeadline
+            | None -> suggestedDeadline
 
-    | SolutionLoad ->
-        match state.Solution with
-        | Some sln -> ()
-        | None -> postMsg (SolutionReload)
-        return state
+        return { state with SolutionReloadPending = newSolutionReloadDeadline |> Some }
 
     | PeriodicTimerTick ->
         let solutionReloadTime = state.SolutionReloadPending
@@ -255,8 +251,10 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            postMsg SolutionReload
-            return { state with SolutionReloadPending = None }
+            let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Settings.SolutionPath
+
+            return { state with Solution = newSolution
+                                SolutionReloadPending = None }
 
         | false ->
             return state
