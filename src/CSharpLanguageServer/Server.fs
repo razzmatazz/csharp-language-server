@@ -264,34 +264,12 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     }
               }
 
-      let! workspaceCSharpConfig =
-        lspClient.WorkspaceConfiguration(
-          { items=[| { Section=Some "csharp"; ScopeUri=None } |] })
-
-      let csharpConfigTokensMaybe =
-        match workspaceCSharpConfig with
-        | Ok ts -> Some ts
-        | _ -> None
-
-      match csharpConfigTokensMaybe with
-      | Some [| t |] ->
-        let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
-        match csharpSettingsMaybe with
-        | Some csharpSettings ->
-          let newSettings = { scope.State.Settings with SolutionPath = csharpSettings.solution }
-          scope.Emit(SettingsChange newSettings)
-        | _ -> ()
-      | _ -> ()
-
-      // start loading the solution, if not already
-      stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
-
       return initializeResult |> success
     }
 
-    let handleInitialized (_scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
+    let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
         async {
-            // do! logMessage "\"initialized\" notification received from client"
+            // do! logMessage "handleInitialized: \"initialized\" notification received from client"
 
             //
             // registering w/client for didChangeWatchedFiles notifications"
@@ -305,13 +283,62 @@ let setupServerHandlers settings (lspClient: LspClient) =
                   RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
                 }
 
-            let! regResult = lspClient.ClientRegisterCapability(
-                { Registrations = [| didChangeWatchedFilesRegistration |] })
+            try
+                let! regResult =
+                    lspClient.ClientRegisterCapability(
+                        { Registrations = [| didChangeWatchedFilesRegistration |] })
 
-            match regResult with
-            | Ok _ -> ()
-            | Error error ->
-                do! infoMessage (sprintf "  ...didChangeWatchedFiles registration has failed with %s" (error |> string))
+                match regResult with
+                | Ok _ -> ()
+                | Error error ->
+                    do! infoMessage (sprintf "handleInitialized: didChangeWatchedFiles registration has failed with %s"
+                                             (error |> string))
+            with
+            | ex ->
+                do! infoMessage (sprintf "handleInitialized: didChangeWatchedFiles registration has failed with %s"
+                                         (ex |> string))
+
+            //
+            // retrieve csharp settings
+            //
+            try
+                let! workspaceCSharpConfig =
+                    lspClient.WorkspaceConfiguration(
+                        { items=[| { Section=Some "csharp"; ScopeUri=None } |] })
+
+                let csharpConfigTokensMaybe =
+                    match workspaceCSharpConfig with
+                    | Ok ts -> Some ts
+                    | _ -> None
+
+                let newSettingsMaybe =
+                  match csharpConfigTokensMaybe with
+                  | Some [| t |] ->
+                      let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
+
+                      match csharpSettingsMaybe with
+                      | Some csharpSettings ->
+                          Some { scope.State.Settings with SolutionPath = csharpSettings.solution }
+                      | _ -> None
+                  | _ -> None
+
+                // do! logMessage (sprintf "handleInitialized: newSettingsMaybe=%s" (string newSettingsMaybe))
+
+                match newSettingsMaybe with
+                | Some newSettings ->
+                    scope.Emit(SettingsChange newSettings)
+                | _ -> ()
+            with
+            | ex ->
+                do! infoMessage (sprintf "handleInitialized: could not retrieve `csharp` workspace configuration section: %s"
+                                         (ex |> string))
+
+            //
+            // start loading the solution
+            //
+            stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
+
+            // do! logMessage "handleInitialized: OK"
 
             return LspResult.Ok()
         }
