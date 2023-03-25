@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-* Updatre Roslyn to 4.6.0-1.final, Microsoft.Build* to 17.5.0
+* Update Roslyn libs to 4.6.0-1.final, Microsoft.Build* to 17.5.0
 * Finish initialization early and load solution/project in background
   - Previous behaviour was causing problems in eglot (emacs) where client has a timeout set for server initialization
 * Add support for server configuration via LSP:
@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Inlay hint support
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/71 
   and https://github.com/razzmatazz/csharp-language-server/pull/73
-* Remove timeout on 'codelens/resolve' handler -- that wasn't a good idea to begin with
+* Remove timeout on handler for `codelens/resolve` -- that wasn't a good idea to begin with
 
 ## [0.6.1] - 2023-02-26 / Marcinkonys
 * Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;
