@@ -274,29 +274,39 @@ let setupServerHandlers settings (lspClient: LspClient) =
             //
             // registering w/client for didChangeWatchedFiles notifications"
             //
-            let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
-                                      Kind = None }
+            let clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg =
+                scope.ClientCapabilities
+                |> Option.bind (fun x -> x.Workspace)
+                |> Option.bind (fun x -> x.DidChangeWatchedFiles)
+                |> Option.bind (fun x -> x.DynamicRegistration)
+                |> Option.defaultValue true
 
-            let didChangeWatchedFilesRegistration: Types.Registration =
-                { Id = "id:workspace/didChangeWatchedFiles"
-                  Method = "workspace/didChangeWatchedFiles"
-                  RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
-                }
+            match clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg with
+            | true ->
+                let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
+                                          Kind = None }
 
-            try
-                let! regResult =
-                    lspClient.ClientRegisterCapability(
-                        { Registrations = [| didChangeWatchedFilesRegistration |] })
+                let didChangeWatchedFilesRegistration: Types.Registration =
+                    { Id = "id:workspace/didChangeWatchedFiles"
+                      Method = "workspace/didChangeWatchedFiles"
+                      RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
+                    }
 
-                match regResult with
-                | Ok _ -> ()
-                | Error error ->
+                try
+                    let! regResult =
+                        lspClient.ClientRegisterCapability(
+                            { Registrations = [| didChangeWatchedFilesRegistration |] })
+
+                    match regResult with
+                    | Ok _ -> ()
+                    | Error error ->
+                        do! infoMessage (sprintf "handleInitialized: didChangeWatchedFiles registration has failed with %s"
+                                                 (error |> string))
+                with
+                | ex ->
                     do! infoMessage (sprintf "handleInitialized: didChangeWatchedFiles registration has failed with %s"
-                                             (error |> string))
-            with
-            | ex ->
-                do! infoMessage (sprintf "handleInitialized: didChangeWatchedFiles registration has failed with %s"
-                                         (ex |> string))
+                                             (ex |> string))
+            | false -> ()
 
             //
             // retrieve csharp settings
