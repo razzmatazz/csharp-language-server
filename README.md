@@ -1,5 +1,5 @@
 # Description
-This is a hacky Roslyn-based LSP server as an alternative to 
+This is a hacky Roslyn-based LSP server for C#, as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
 `csharp-ls` requires .NET 7 SDK to be installed. However it has been reported 

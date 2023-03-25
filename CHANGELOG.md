@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.7.0] - 2023-03-25 / Simnas
 * Update Roslyn libs to 4.6.0-1.final, Microsoft.Build* to 17.5.0
 * Finish initialization early and load solution/project in background
   - Previous behaviour was causing problems in eglot (emacs) where client has a timeout set for server initialization
@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/71 
   and https://github.com/razzmatazz/csharp-language-server/pull/73
 * Remove timeout on handler for `codelens/resolve` -- that wasn't a good idea to begin with
+
+### More about Simnas, Lithuania
+- [Simnas on WP](https://en.wikipedia.org/wiki/Simnas)
+- [Google Images on Simnas](https://www.google.com/search?tbm=isch&q=simnas)
 
 ## [0.6.1] - 2023-02-26 / Marcinkonys
 * Fixes for Windows where file:// URIs were not parsed/built properly from native filenames before;
