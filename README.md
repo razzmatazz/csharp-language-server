@@ -52,7 +52,8 @@ $ (cd src && dotnet build)
 - `textDocument/documentHighlight` support:
   - highlighting other symbol references in the document on hover;
 - `codeAction/resolve` support for better performance when invoking code actions;
-- semantic token support;
+- semantic token support (thanks to @tcx4c70);
+- inlay hint support (thanks to @tcx4c70);
 - go-to-definition in metadata support (needs integration from your LSP client).
 
 # Acknowledgements
