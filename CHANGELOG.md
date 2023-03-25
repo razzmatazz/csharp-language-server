@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Updatre Roslyn to 4.6.0-1.final, Microsoft.Build* to 17.5.0
 * Finish initialization early and load solution/project in background
   - Previous behaviour was causing problems in eglot (emacs) where client has a timeout set for server initialization
 * Add support for server configuration via LSP:
