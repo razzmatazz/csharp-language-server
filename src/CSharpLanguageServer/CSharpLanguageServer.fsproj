@@ -32,7 +32,7 @@
     <PackageReference Include="Castle.Core" Version="5.1.1" />
     <PackageReference Include="ICSharpCode.Decompiler" Version="7.2.1.6856" />
     <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.12" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.14" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.5.5" />
     <PackageReference Include="Microsoft.Build" Version="17.5.0" ExcludeAssets="runtime" />
