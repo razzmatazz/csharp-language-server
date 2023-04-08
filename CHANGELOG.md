@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.7.1] - 2023-04-08 / Igliauka
+* Avoid a crash when client does not signal textDocument/publishDiagnostics cap
+  - Reported and fixed by @sharpSteff in https://github.com/razzmatazz/csharp-language-server/pull/77
+
+- [Google Images on Igliauka](https://www.google.com/search?tbm=isch&q=igliauka)
+
 ## [0.7.0] - 2023-03-25 / Simnas
 * Update Roslyn libs to 4.6.0-1.final, Microsoft.Build* to 17.5.0
 * Finish initialization early and load solution/project in background
