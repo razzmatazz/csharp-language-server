@@ -49,13 +49,18 @@ let roslynTagToLspCompletion tag =
 let lspPositionForRoslynLinePosition (pos: LinePosition): Types.Position =
     { Line = pos.Line ; Character = pos.Character }
 
-let roslynLinePositionForLspPosition (pos: Types.Position) =
-    LinePosition(pos.Line, pos.Character)
+let roslynLinePositionForLspPosition (lines: TextLineCollection) (pos: Types.Position) =
+    if pos.Line < 0 then
+        LinePosition(0, 0)
+    else if pos.Line >= lines.Count then
+        LinePosition(lines.Count - 1, lines[lines.Count - 1].EndIncludingLineBreak - lines[lines.Count - 1].Start)
+    else
+        LinePosition(pos.Line, pos.Character)
 
-let roslynLinePositionSpanForLspRange (range: Types.Range) =
+let roslynLinePositionSpanForLspRange (lines: TextLineCollection) (range: Types.Range) =
     LinePositionSpan(
-        roslynLinePositionForLspPosition range.Start,
-        roslynLinePositionForLspPosition range.End)
+        roslynLinePositionForLspPosition lines range.Start,
+        roslynLinePositionForLspPosition lines range.End)
 
 let lspRangeForRoslynLinePosSpan (pos: LinePositionSpan): Types.Range =
     { Start = lspPositionForRoslynLinePosition pos.Start
@@ -82,7 +87,7 @@ let applyLspContentChangesOnRoslynSourceText
         match change.Range with
         | Some changeRange ->
             let changeTextSpan =
-                changeRange |> roslynLinePositionSpanForLspRange
+                changeRange |> roslynLinePositionSpanForLspRange sourceText.Lines
                             |> sourceText.Lines.GetTextSpan
 
             TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges

@@ -476,7 +476,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
             let textSpan =
                 actionParams.Range
-                |> roslynLinePositionSpanForLspRange
+                |> roslynLinePositionSpanForLspRange docText.Lines
                 |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
@@ -548,7 +548,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
             let textSpan =
                        resolutionData.Value.Range
-                       |> roslynLinePositionSpanForLspRange
+                       |> roslynLinePositionSpanForLspRange docText.Lines
                        |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
@@ -871,8 +871,8 @@ let setupServerHandlers settings (lspClient: LspClient) =
                         |> Option.defaultValue false
 
                     let linePositionSpan = LinePositionSpan(
-                        roslynLinePositionForLspPosition prepareRename.Position,
-                        roslynLinePositionForLspPosition prepareRename.Position)
+                        roslynLinePositionForLspPosition docText.Lines prepareRename.Position,
+                        roslynLinePositionForLspPosition docText.Lines prepareRename.Position)
 
                     let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
@@ -1120,7 +1120,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                 match range with
                 | Some r ->
                     r
-                    |> roslynLinePositionSpanForLspRange
+                    |> roslynLinePositionSpanForLspRange sourceText.Lines
                     |> sourceText.Lines.GetTextSpan
                 | None ->
                     TextSpan(0, sourceText.Length)
@@ -1269,7 +1269,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let textSpan =
                 inlayHintParams.Range
-                |> roslynLinePositionSpanForLspRange
+                |> roslynLinePositionSpanForLspRange sourceText.Lines
                 |> sourceText.Lines.GetTextSpan
 
             let inlayHints =
