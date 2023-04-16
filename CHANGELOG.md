@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Semantic token types fix
+  - By Adam Tao @tcx4c70 inhttps://github.com/razzmatazz/csharp-language-server/pull/84 
 * Fix crash if there is no newline at the end of the last line
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/83 
 
