@@ -42,33 +42,35 @@ let rec unpackException (exn : Exception) =
     | _ -> exn
 
 let ClassificationTypeMap = Map [
-    (ClassificationTypeNames.ClassName,           "class");
-    (ClassificationTypeNames.Comment,             "comment");
-    (ClassificationTypeNames.ConstantName,        "property");
-    (ClassificationTypeNames.ControlKeyword,      "keyword");
-    (ClassificationTypeNames.DelegateName,        "class");
-    (ClassificationTypeNames.EnumMemberName,      "enumMember");
-    (ClassificationTypeNames.EnumName,            "enum");
-    (ClassificationTypeNames.EventName,           "event");
-    (ClassificationTypeNames.ExtensionMethodName, "method");
-    (ClassificationTypeNames.FieldName,           "property");
-    (ClassificationTypeNames.InterfaceName,       "interface");
-    (ClassificationTypeNames.LabelName,           "label");
-    (ClassificationTypeNames.LocalName,           "variable");
-    (ClassificationTypeNames.Keyword,             "keyword");
-    (ClassificationTypeNames.MethodName,          "method");
-    (ClassificationTypeNames.NamespaceName,       "namespace");
-    (ClassificationTypeNames.NumericLiteral,      "number");
-    (ClassificationTypeNames.Operator,            "operator");
-    (ClassificationTypeNames.OperatorOverloaded,  "operator");
-    (ClassificationTypeNames.ParameterName,       "parameter");
-    (ClassificationTypeNames.PropertyName,        "property");
-    (ClassificationTypeNames.RecordClassName,     "class");
-    (ClassificationTypeNames.RecordStructName,    "struct");
-    (ClassificationTypeNames.RegexText,           "regex");
-    (ClassificationTypeNames.StringLiteral,       "string");
-    (ClassificationTypeNames.StructName,          "struct");
-    (ClassificationTypeNames.TypeParameterName,   "typeParameter")
+    (ClassificationTypeNames.ClassName,             "class");
+    (ClassificationTypeNames.Comment,               "comment");
+    (ClassificationTypeNames.ConstantName,          "property");
+    (ClassificationTypeNames.ControlKeyword,        "keyword");
+    (ClassificationTypeNames.DelegateName,          "class");
+    (ClassificationTypeNames.EnumMemberName,        "enumMember");
+    (ClassificationTypeNames.EnumName,              "enum");
+    (ClassificationTypeNames.EventName,             "event");
+    (ClassificationTypeNames.ExtensionMethodName,   "method");
+    (ClassificationTypeNames.FieldName,             "property");
+    (ClassificationTypeNames.Identifier,            "variable");
+    (ClassificationTypeNames.InterfaceName,         "interface");
+    (ClassificationTypeNames.LabelName,             "variable");
+    (ClassificationTypeNames.LocalName,             "variable");
+    (ClassificationTypeNames.Keyword,               "keyword");
+    (ClassificationTypeNames.MethodName,            "method");
+    (ClassificationTypeNames.NamespaceName,         "namespace");
+    (ClassificationTypeNames.NumericLiteral,        "number");
+    (ClassificationTypeNames.Operator,              "operator");
+    (ClassificationTypeNames.OperatorOverloaded,    "operator");
+    (ClassificationTypeNames.ParameterName,         "parameter");
+    (ClassificationTypeNames.PropertyName,          "property");
+    (ClassificationTypeNames.RecordClassName,       "class");
+    (ClassificationTypeNames.RecordStructName,      "struct");
+    (ClassificationTypeNames.RegexText,             "regex");
+    (ClassificationTypeNames.StringLiteral,         "string");
+    (ClassificationTypeNames.StructName,            "struct");
+    (ClassificationTypeNames.TypeParameterName,     "typeParameter");
+    (ClassificationTypeNames.VerbatimStringLiteral, "string")
 ]
 
 let ClassificationModifierMap = Map [
