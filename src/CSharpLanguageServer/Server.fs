@@ -1283,9 +1283,14 @@ let setupServerHandlers settings (lspClient: LspClient) =
     }
 
     let toHierarchyItem (symbol: ISymbol) (location: Location): HierarchyItem =
+        let displayStyle = SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
         let (detail, kind) = getSymbolNameAndKind None None symbol
-        { Name = symbol.Name // TODO: 1. It might be empty string?
-                             //       2. For constructor, it will show ".ctor"
+        { Name = symbol.ToDisplayString(displayStyle)
           Kind = kind
           Tags = None
           Detail = detail |> Some // TODO: It's sooo long...
