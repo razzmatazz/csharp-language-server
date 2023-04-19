@@ -1345,6 +1345,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
             let baseType =
                 symbol
                 |> Option.bind (fun sym -> Option.ofObj sym.BaseType)
+                |> Option.filter (fun sym -> sym.SpecialType = SpecialType.None)
                 |> Option.toList
             let interfaces =
                 symbol
