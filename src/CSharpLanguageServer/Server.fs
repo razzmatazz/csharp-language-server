@@ -1349,10 +1349,8 @@ let setupServerHandlers settings (lspClient: LspClient) =
                 |> Option.toList
             let interfaces =
                 symbol
-                |> Option.map (fun sym -> sym.Interfaces)
                 |> Option.toList
-                |> Seq.collect id
-                |> Seq.toList
+                |> List.collect (fun sym -> Seq.toList sym.Interfaces)
             let supertypes = baseType @ interfaces
             return
                 supertypes
