@@ -405,6 +405,16 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         else
             root |> flattenDocumentSymbol |> Array.ofSeq
 
+    override __.VisitNamespaceDeclaration(node) =
+        push node node.Name.Span
+        base.VisitNamespaceDeclaration(node)
+        pop node
+
+    override __.VisitFileScopedNamespaceDeclaration(node) =
+        push node node.Name.Span
+        base.VisitFileScopedNamespaceDeclaration(node)
+        pop node
+
     override __.VisitEnumDeclaration(node) =
         push node node.Identifier.Span
         base.VisitEnumDeclaration(node)
@@ -425,9 +435,44 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         base.VisitRecordDeclaration(node)
         pop node
 
+    override __.VisitStructDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitStructDeclaration(node)
+        pop node
+
+    override __.VisitInterfaceDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitInterfaceDeclaration(node)
+        pop node
+
+    override __.VisitDelegateDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitDelegateDeclaration(node)
+        pop node
+
     override __.VisitConstructorDeclaration(node) =
         push node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
+        pop node
+
+    override __.VisitDestructorDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitDestructorDeclaration(node)
+        pop node
+
+    override __.VisitOperatorDeclaration(node) =
+        push node node.OperatorToken.Span
+        base.VisitOperatorDeclaration(node)
+        pop node
+
+    override __.VisitIndexerDeclaration(node) =
+        push node node.ThisKeyword.Span
+        base.VisitIndexerDeclaration(node)
+        pop node
+
+    override __.VisitConversionOperatorDeclaration(node) =
+        push node node.Type.Span
+        base.VisitConversionOperatorDeclaration(node)
         pop node
 
     override __.VisitMethodDeclaration(node) =
@@ -439,6 +484,18 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         push node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
         pop node
+
+    override __.VisitVariableDeclarator(node) =
+        let grandparent =
+            node.Parent |> Option.ofObj
+            |> Option.bind (fun node -> node.Parent |> Option.ofObj)
+        // Only show field variables and ignore local variables
+        if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
+            push node node.Identifier.Span
+            base.VisitVariableDeclarator(node)
+            pop node
+        else
+            base.VisitVariableDeclarator(node)
 
     override __.VisitEventDeclaration(node) =
         push node node.Identifier.Span
