@@ -530,9 +530,37 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
         collect node node.Identifier.Span
         base.VisitRecordDeclaration(node)
 
+    override __.VisitStructDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitStructDeclaration(node)
+
+    override __.VisitInterfaceDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitInterfaceDeclaration(node)
+
+    override __.VisitDelegateDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitDelegateDeclaration(node)
+
     override __.VisitConstructorDeclaration(node) =
         collect node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
+
+    override __.VisitDestructorDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitDestructorDeclaration(node)
+
+    override __.VisitOperatorDeclaration(node) =
+        collect node node.OperatorToken.Span
+        base.VisitOperatorDeclaration(node)
+
+    override __.VisitIndexerDeclaration(node) =
+        collect node node.ThisKeyword.Span
+        base.VisitIndexerDeclaration(node)
+
+    override __.VisitConversionOperatorDeclaration(node) =
+        collect node node.Type.Span
+        base.VisitConversionOperatorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
         collect node node.Identifier.Span
@@ -541,6 +569,17 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
     override __.VisitPropertyDeclaration(node) =
         collect node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
+
+    override __.VisitVariableDeclarator(node) =
+        let grandparent =
+            node.Parent |> Option.ofObj
+            |> Option.bind (fun node -> node.Parent |> Option.ofObj)
+        // Only show field variables and ignore local variables
+        if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
+            collect node node.Identifier.Span
+            base.VisitVariableDeclarator(node)
+        else
+            base.VisitVariableDeclarator(node)
 
     override __.VisitEventDeclaration(node) =
         collect node node.Identifier.Span
