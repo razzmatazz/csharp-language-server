@@ -335,8 +335,15 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             | Types.SymbolKind.Struct -> None
             | _ -> Some fullSymbolName
 
+        let displayStyle = SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType ||| SymbolDisplayParameterOptions.IncludeName ||| SymbolDisplayParameterOptions.IncludeDefaultValue),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+
         let docSymbol = {
-            Name           = symbol.Name
+            Name           = symbol.ToDisplayString(displayStyle)
             Detail         = symbolDetail
             Kind           = symbolKind
             Range          = lspRange
