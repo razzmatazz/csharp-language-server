@@ -312,12 +312,12 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
 
     let mutable symbolStack = []
 
-    let push (node: SyntaxNode) (identifier: SyntaxToken) =
+    let push (node: SyntaxNode) (nameSpan: TextSpan) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
 
         let (fullSymbolName, symbolKind) =
             getSymbolNameAndKind (Some semanticModel)
-                                 (Some identifier.Span.Start)
+                                 (Some nameSpan.Start)
                                  symbol
 
         let lspRange =
@@ -326,7 +326,8 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             |> lspRangeForRoslynLinePosSpan
 
         let selectionLspRange =
-            identifier.GetLocation().GetLineSpan().Span
+            nameSpan
+            |> docText.Lines.GetLinePositionSpan
             |> lspRangeForRoslynLinePosSpan
 
         let symbolDetail =
@@ -405,42 +406,42 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             root |> flattenDocumentSymbol |> Array.ofSeq
 
     override __.VisitEnumDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEnumDeclaration(node)
         pop node
 
     override __.VisitEnumMemberDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEnumMemberDeclaration(node)
         pop node
 
     override __.VisitClassDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitClassDeclaration(node)
         pop node
 
     override __.VisitRecordDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitRecordDeclaration(node)
         pop node
 
     override __.VisitConstructorDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
         pop node
 
     override __.VisitMethodDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitMethodDeclaration(node)
         pop node
 
     override __.VisitPropertyDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
         pop node
 
     override __.VisitEventDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEventDeclaration(node)
         pop node
 
