@@ -266,6 +266,10 @@ let getSymbolNameAndKind
         (formatSymbol ms showAttributes semanticModel pos,
             match ms.MethodKind with
             | MethodKind.Constructor -> Types.SymbolKind.Constructor
+            | MethodKind.StaticConstructor -> Types.SymbolKind.Constructor
+            | MethodKind.BuiltinOperator -> Types.SymbolKind.Operator
+            | MethodKind.UserDefinedOperator -> Types.SymbolKind.Operator
+            | MethodKind.Conversion -> Types.SymbolKind.Operator
             | _ -> Types.SymbolKind.Method)
 
     | :? ITypeSymbol as ts ->
@@ -275,7 +279,7 @@ let getSymbolNameAndKind
             | TypeKind.Enum -> Types.SymbolKind.Enum
             | TypeKind.Struct -> Types.SymbolKind.Struct
             | TypeKind.Interface -> Types.SymbolKind.Interface
-            | TypeKind.Delegate -> Types.SymbolKind.Function
+            | TypeKind.Delegate -> Types.SymbolKind.Class
             | TypeKind.Array -> Types.SymbolKind.Array
             | TypeKind.TypeParameter -> Types.SymbolKind.TypeParameter
             | _ -> Types.SymbolKind.Class)
@@ -283,6 +287,11 @@ let getSymbolNameAndKind
     | :? IEventSymbol as es ->
         (formatSymbol es showAttributes semanticModel pos,
             Types.SymbolKind.Event)
+
+    | :? INamespaceSymbol as ns ->
+
+        (formatSymbol ns showAttributes semanticModel pos,
+            Types.SymbolKind.Namespace)
 
     | _ ->
         (symbol.ToString(), Types.SymbolKind.File)
