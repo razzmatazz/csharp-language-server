@@ -117,3 +117,7 @@ let GetSemanticTokenModifierFlagFromClassification (classification: string) =
     |> Option.defaultValue 0u
     |> int32
     |> (<<<) 1u
+
+
+let curry f x y = f (x, y)
+let uncurry f (x, y) = f x y

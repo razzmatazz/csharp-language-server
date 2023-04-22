@@ -261,6 +261,8 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                    Full = true |> First |> Some
                                  }
                         InlayHintProvider = Some { ResolveProvider = Some false }
+                        TypeHierarchyProvider = Some true
+                        CallHierarchyProvider = Some true
                     }
               }
 
@@ -1280,6 +1282,193 @@ let setupServerHandlers settings (lspClient: LspClient) =
             return inlayHints |> Seq.toArray |> Some |> success
     }
 
+    let toHierarchyItem (symbol: ISymbol) (location: Location): HierarchyItem =
+        let displayStyle = SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+        let (_, kind) = getSymbolNameAndKind None None symbol
+        let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
+        let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
+        { Name = symbol.ToDisplayString(displayStyle)
+          Kind = kind
+          Tags = None
+          Detail = containingType |> Option.orElse containingNamespace |> Option.map (fun sym -> sym.ToDisplayString())
+          Uri = location.Uri
+          Range = location.Range
+          SelectionRange = location.Range
+          Data = None }
+
+    let handleTextDocumentPrepareTypeHierarchy (scope: ServerRequestScope) (prepareParams: TypeHierarchyPrepareParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position =
+                prepareParams.Position
+                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> sourceText.Lines.GetPosition
+            let symbol =
+                SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+                |> Async.AwaitTask
+                |> Async.RunSynchronously
+                |> Option.ofObj
+                |> Option.filter (fun sym -> sym :? INamedTypeSymbol)
+                |> Option.toList
+            let! locations = scope.ResolveSymbolLocations doc.Project symbol
+            return
+                Seq.allPairs symbol locations
+                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
+
+    let handleTypeHierarchySupertypes (scope: ServerRequestScope) (superParams: TypeHierarchySupertypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri superParams.Item.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position =
+                superParams.Item.Range.Start
+                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> sourceText.Lines.GetPosition
+            let symbol =
+                SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+                |> Async.AwaitTask
+                |> Async.RunSynchronously
+                |> Option.ofObj
+                |> Option.bind (fun sym ->
+                    match sym with
+                    | :? INamedTypeSymbol as namedType -> Some namedType
+                    | _ -> None)
+            let baseType =
+                symbol
+                |> Option.bind (fun sym -> Option.ofObj sym.BaseType)
+                |> Option.filter (fun sym -> sym.SpecialType = SpecialType.None)
+                |> Option.toList
+            let interfaces =
+                symbol
+                |> Option.toList
+                |> List.collect (fun sym -> Seq.toList sym.Interfaces)
+            let supertypes = baseType @ interfaces
+            return
+                supertypes
+                |> Seq.map (fun sym -> scope.ResolveSymbolLocations doc.Project [sym])
+                |> Seq.map Async.RunSynchronously
+                |> Seq.zip supertypes
+                |> Seq.collect (fun (sym, locs) -> Seq.map (fun loc -> (sym, loc)) locs)
+                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
+
+    let handleTypeHierarchySubtypes (scope: ServerRequestScope) (subParams: TypeHierarchySubtypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri subParams.Item.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position =
+                subParams.Item.Range.Start
+                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> sourceText.Lines.GetPosition
+            let symbol =
+                SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+                |> Async.AwaitTask
+                |> Async.RunSynchronously
+                |> Option.ofObj
+                |> Option.bind (fun sym ->
+                    match sym with
+                    | :? INamedTypeSymbol as namedType -> Some namedType
+                    | _ -> None)
+                |> Option.toList
+            let derivedClasses =
+                symbol
+                |> Seq.collect (fun sym -> SymbolFinder.FindDerivedClassesAsync(sym, scope.Solution, false) |> Async.AwaitTask |> Async.RunSynchronously)
+                |> Seq.toList
+            let derivedInterfaces =
+                symbol
+                |> Seq.collect (fun sym -> SymbolFinder.FindDerivedInterfacesAsync(sym, scope.Solution, false) |> Async.AwaitTask |> Async.RunSynchronously)
+                |> Seq.toList
+            let implementations =
+                symbol
+                |> Seq.collect (fun sym -> SymbolFinder.FindImplementationsAsync(sym, scope.Solution, false) |> Async.AwaitTask |> Async.RunSynchronously)
+                |> Seq.toList
+            let subtypes = derivedClasses @ derivedInterfaces @ implementations
+            return
+                subtypes
+                |> Seq.map (fun sym -> scope.ResolveSymbolLocations doc.Project [sym])
+                |> Seq.map Async.RunSynchronously
+                |> Seq.zip subtypes
+                |> Seq.collect (fun (sym, locs) -> Seq.map (fun loc -> (sym, loc)) locs)
+                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
+
+    let handleTextDocumentPrepareCallHierarchy (scope: ServerRequestScope) (prepareParams: CallHierarchyPrepareParams): AsyncLspResult<CallHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position =
+                prepareParams.Position
+                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> sourceText.Lines.GetPosition
+            let symbols =
+                SymbolFinder.FindSymbolAtPositionAsync(doc, position)
+                |> Async.AwaitTask
+                |> Async.RunSynchronously
+                |> Option.ofObj
+                |> Option.filter isCallableSymbol
+                |> Option.toList
+            let! locations = scope.ResolveSymbolLocations doc.Project symbols
+            return Seq.allPairs symbols locations
+                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
+
+    let handleCallHierarchyIncomingCalls (scope: ServerRequestScope) (incomingParams: CallHierarchyIncomingCallsParams): AsyncLspResult<CallHierarchyIncomingCall [] option> = async {
+        let toCallHierarchyIncomingCalls (info: SymbolCallerInfo): CallHierarchyIncomingCall seq =
+            let fromRanges = info.Locations |> Seq.map (fun l -> l.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan) |> Seq.toArray
+            info.CallingSymbol.Locations
+            |> Seq.map (fun loc ->
+                { From = toHierarchyItem (info.CallingSymbol) (loc |> lspLocationForRoslynLocation)
+                  FromRanges = fromRanges })
+
+        match scope.GetUserDocumentForUri incomingParams.Item.Uri with
+        | None -> return None |> success
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position =
+                incomingParams.Item.Range.Start
+                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> sourceText.Lines.GetPosition
+            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let callers =
+                symbol
+                |> Option.ofObj
+                |> Option.toList
+                |> Seq.collect (fun sym -> SymbolFinder.FindCallersAsync(sym, scope.Solution) |> Async.AwaitTask |> Async.RunSynchronously)
+                |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
+            return callers
+                |> Seq.collect toCallHierarchyIncomingCalls
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
+
+    let handleCallHierarchyOutgoingCalls (scope: ServerRequestScope) (outgoingParams: CallHierarchyOutgoingCallsParams): AsyncLspResult<CallHierarchyOutgoingCall [] option> = async {
+        // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol. Then how can we implement it? Parsing AST manually?
+        return None |> success
+    }
+
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
         let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
@@ -1481,6 +1670,12 @@ let setupServerHandlers settings (lspClient: LspClient) =
         ("textDocument/semanticTokens/full", handleSemanticTokensFull)           |> requestHandlingWithReadOnlyScope
         ("textDocument/semanticTokens/range", handleSemanticTokensRange)         |> requestHandlingWithReadOnlyScope
         ("textDocument/inlayHint"         , handleTextDocumentInlayHint)         |> requestHandlingWithReadOnlyScope
+        ("textDocument/prepareTypeHierarchy", handleTextDocumentPrepareTypeHierarchy) |> requestHandlingWithReadOnlyScope
+        ("typeHierarchy/supertypes"       , handleTypeHierarchySupertypes)       |> requestHandlingWithReadOnlyScope
+        ("typeHierarchy/subtypes"         , handleTypeHierarchySubtypes)         |> requestHandlingWithReadOnlyScope
+        ("textDocument/prepareCallHierarchy", handleTextDocumentPrepareCallHierarchy) |> requestHandlingWithReadOnlyScope
+        ("callHierarchy/incomingCalls"    , handleCallHierarchyIncomingCalls)    |> requestHandlingWithReadOnlyScope
+        ("callHierarchy/outgoingCalls"    , handleCallHierarchyOutgoingCalls)    |> requestHandlingWithReadOnlyScope
         ("workspace/symbol"               , handleWorkspaceSymbol)               |> requestHandlingWithReadOnlyScope
         ("workspace/didChangeWatchedFiles", handleWorkspaceDidChangeWatchedFiles) |> requestHandlingWithReadWriteScope
         ("workspace/didChangeConfiguration", handleWorkspaceDidChangeConfiguration) |> requestHandlingWithReadWriteScope

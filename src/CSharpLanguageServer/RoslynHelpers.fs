@@ -277,7 +277,12 @@ let getSymbolNameAndKind
             | TypeKind.Interface -> Types.SymbolKind.Interface
             | TypeKind.Delegate -> Types.SymbolKind.Function
             | TypeKind.Array -> Types.SymbolKind.Array
+            | TypeKind.TypeParameter -> Types.SymbolKind.TypeParameter
             | _ -> Types.SymbolKind.Class)
+
+    | :? IEventSymbol as es ->
+        (formatSymbol es showAttributes semanticModel pos,
+            Types.SymbolKind.Event)
 
     | _ ->
         (symbol.ToString(), Types.SymbolKind.File)
@@ -1255,3 +1260,10 @@ let getParameterForAttributeArgumentSyntax (semanticModel: SemanticModel) (argum
             | _ -> None
         | _ -> None
     | _ -> None
+
+let isCallableSymbol (symbol: ISymbol): bool =
+    if isNull symbol then
+        false
+    else
+        List.contains symbol.Kind [Microsoft.CodeAnalysis.SymbolKind.Method; Microsoft.CodeAnalysis.SymbolKind.Field;
+                                   Microsoft.CodeAnalysis.SymbolKind.Event; Microsoft.CodeAnalysis.SymbolKind.Property]
