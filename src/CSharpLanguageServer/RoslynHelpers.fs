@@ -451,42 +451,42 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
     let mutable collectedSymbols = []
 
-    let collect (node: SyntaxNode) (identifier: SyntaxToken) =
+    let collect (node: SyntaxNode) (nameSpan: TextSpan) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collectedSymbols <- (symbol, identifier.GetLocation()) :: collectedSymbols
+        collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
 
     member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitEnumDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEnumDeclaration(node)
 
     override __.VisitEnumMemberDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEnumMemberDeclaration(node)
 
     override __.VisitClassDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitClassDeclaration(node)
 
     override __.VisitRecordDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitRecordDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
 
     override __.VisitEventDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEventDeclaration(node)
 
 
