@@ -266,6 +266,10 @@ let getSymbolNameAndKind
         (formatSymbol ms showAttributes semanticModel pos,
             match ms.MethodKind with
             | MethodKind.Constructor -> Types.SymbolKind.Constructor
+            | MethodKind.StaticConstructor -> Types.SymbolKind.Constructor
+            | MethodKind.BuiltinOperator -> Types.SymbolKind.Operator
+            | MethodKind.UserDefinedOperator -> Types.SymbolKind.Operator
+            | MethodKind.Conversion -> Types.SymbolKind.Operator
             | _ -> Types.SymbolKind.Method)
 
     | :? ITypeSymbol as ts ->
@@ -275,7 +279,7 @@ let getSymbolNameAndKind
             | TypeKind.Enum -> Types.SymbolKind.Enum
             | TypeKind.Struct -> Types.SymbolKind.Struct
             | TypeKind.Interface -> Types.SymbolKind.Interface
-            | TypeKind.Delegate -> Types.SymbolKind.Function
+            | TypeKind.Delegate -> Types.SymbolKind.Class
             | TypeKind.Array -> Types.SymbolKind.Array
             | TypeKind.TypeParameter -> Types.SymbolKind.TypeParameter
             | _ -> Types.SymbolKind.Class)
@@ -283,6 +287,11 @@ let getSymbolNameAndKind
     | :? IEventSymbol as es ->
         (formatSymbol es showAttributes semanticModel pos,
             Types.SymbolKind.Event)
+
+    | :? INamespaceSymbol as ns ->
+
+        (formatSymbol ns showAttributes semanticModel pos,
+            Types.SymbolKind.Namespace)
 
     | _ ->
         (symbol.ToString(), Types.SymbolKind.File)
@@ -303,12 +312,12 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
 
     let mutable symbolStack = []
 
-    let push (node: SyntaxNode) (identifier: SyntaxToken) =
+    let push (node: SyntaxNode) (nameSpan: TextSpan) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
 
         let (fullSymbolName, symbolKind) =
             getSymbolNameAndKind (Some semanticModel)
-                                 (Some identifier.Span.Start)
+                                 (Some nameSpan.Start)
                                  symbol
 
         let lspRange =
@@ -317,7 +326,8 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             |> lspRangeForRoslynLinePosSpan
 
         let selectionLspRange =
-            identifier.GetLocation().GetLineSpan().Span
+            nameSpan
+            |> docText.Lines.GetLinePositionSpan
             |> lspRangeForRoslynLinePosSpan
 
         let symbolDetail =
@@ -326,8 +336,15 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             | Types.SymbolKind.Struct -> None
             | _ -> Some fullSymbolName
 
+        let displayStyle = SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType ||| SymbolDisplayParameterOptions.IncludeName ||| SymbolDisplayParameterOptions.IncludeDefaultValue),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+
         let docSymbol = {
-            Name           = symbol.Name
+            Name           = symbol.ToDisplayString(displayStyle)
             Detail         = symbolDetail
             Kind           = symbolKind
             Range          = lspRange
@@ -388,43 +405,100 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         else
             root |> flattenDocumentSymbol |> Array.ofSeq
 
+    override __.VisitNamespaceDeclaration(node) =
+        push node node.Name.Span
+        base.VisitNamespaceDeclaration(node)
+        pop node
+
+    override __.VisitFileScopedNamespaceDeclaration(node) =
+        push node node.Name.Span
+        base.VisitFileScopedNamespaceDeclaration(node)
+        pop node
+
     override __.VisitEnumDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEnumDeclaration(node)
         pop node
 
     override __.VisitEnumMemberDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEnumMemberDeclaration(node)
         pop node
 
     override __.VisitClassDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitClassDeclaration(node)
         pop node
 
     override __.VisitRecordDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitRecordDeclaration(node)
         pop node
 
+    override __.VisitStructDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitStructDeclaration(node)
+        pop node
+
+    override __.VisitInterfaceDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitInterfaceDeclaration(node)
+        pop node
+
+    override __.VisitDelegateDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitDelegateDeclaration(node)
+        pop node
+
     override __.VisitConstructorDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
         pop node
 
+    override __.VisitDestructorDeclaration(node) =
+        push node node.Identifier.Span
+        base.VisitDestructorDeclaration(node)
+        pop node
+
+    override __.VisitOperatorDeclaration(node) =
+        push node node.OperatorToken.Span
+        base.VisitOperatorDeclaration(node)
+        pop node
+
+    override __.VisitIndexerDeclaration(node) =
+        push node node.ThisKeyword.Span
+        base.VisitIndexerDeclaration(node)
+        pop node
+
+    override __.VisitConversionOperatorDeclaration(node) =
+        push node node.Type.Span
+        base.VisitConversionOperatorDeclaration(node)
+        pop node
+
     override __.VisitMethodDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitMethodDeclaration(node)
         pop node
 
     override __.VisitPropertyDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
         pop node
 
+    override __.VisitVariableDeclarator(node) =
+        let grandparent =
+            node.Parent |> Option.ofObj
+            |> Option.bind (fun node -> node.Parent |> Option.ofObj)
+        // Only show field variables and ignore local variables
+        if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
+            push node node.Identifier.Span
+            base.VisitVariableDeclarator(node)
+            pop node
+        else
+            base.VisitVariableDeclarator(node)
+
     override __.VisitEventDeclaration(node) =
-        push node node.Identifier
+        push node node.Identifier.Span
         base.VisitEventDeclaration(node)
         pop node
 
@@ -434,42 +508,81 @@ type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
     let mutable collectedSymbols = []
 
-    let collect (node: SyntaxNode) (identifier: SyntaxToken) =
+    let collect (node: SyntaxNode) (nameSpan: TextSpan) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
-        collectedSymbols <- (symbol, identifier.GetLocation()) :: collectedSymbols
+        collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
 
     member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitEnumDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEnumDeclaration(node)
 
     override __.VisitEnumMemberDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEnumMemberDeclaration(node)
 
     override __.VisitClassDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitClassDeclaration(node)
 
     override __.VisitRecordDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitRecordDeclaration(node)
 
+    override __.VisitStructDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitStructDeclaration(node)
+
+    override __.VisitInterfaceDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitInterfaceDeclaration(node)
+
+    override __.VisitDelegateDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitDelegateDeclaration(node)
+
     override __.VisitConstructorDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitConstructorDeclaration(node)
 
+    override __.VisitDestructorDeclaration(node) =
+        collect node node.Identifier.Span
+        base.VisitDestructorDeclaration(node)
+
+    override __.VisitOperatorDeclaration(node) =
+        collect node node.OperatorToken.Span
+        base.VisitOperatorDeclaration(node)
+
+    override __.VisitIndexerDeclaration(node) =
+        collect node node.ThisKeyword.Span
+        base.VisitIndexerDeclaration(node)
+
+    override __.VisitConversionOperatorDeclaration(node) =
+        collect node node.Type.Span
+        base.VisitConversionOperatorDeclaration(node)
+
     override __.VisitMethodDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitPropertyDeclaration(node)
 
+    override __.VisitVariableDeclarator(node) =
+        let grandparent =
+            node.Parent |> Option.ofObj
+            |> Option.bind (fun node -> node.Parent |> Option.ofObj)
+        // Only show field variables and ignore local variables
+        if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
+            collect node node.Identifier.Span
+            base.VisitVariableDeclarator(node)
+        else
+            base.VisitVariableDeclarator(node)
+
     override __.VisitEventDeclaration(node) =
-        collect node node.Identifier
+        collect node node.Identifier.Span
         base.VisitEventDeclaration(node)
 
 

@@ -587,19 +587,20 @@ let setupServerHandlers settings (lspClient: LspClient) =
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
             collector.Visit(syntaxTree.GetRoot())
 
-            let makeCodeLens (_symbol: ISymbol, location: Microsoft.CodeAnalysis.Location): CodeLens =
-                let start = location.GetLineSpan().Span.Start
+            let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan): CodeLens =
+                let start = nameSpan.Start |> docText.Lines.GetLinePosition
 
                 let lensData: CodeLensData = {
                     DocumentUri = lensParams.TextDocument.Uri
                     Position = start |> lspPositionForRoslynLinePosition
                 }
 
-                { Range = (location.GetLineSpan().Span) |> lspRangeForRoslynLinePosSpan
+                { Range = nameSpan |> docText.Lines.GetLinePositionSpan |> lspRangeForRoslynLinePosSpan
                   Command = None
                   Data = lensData |> JToken.FromObject |> Some
                 }
