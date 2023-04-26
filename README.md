@@ -9,6 +9,12 @@ Roslyn/MSBuild libs that Visual Studio & omnisharp does.
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
+# Acknowledgements
+- csharp-ls is not affiliated with Microsoft Corp;
+- csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
+- csharp-ls uses [Roslyn](https://github.com/dotnet/roslyn) to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
+- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
+
 # Installation
 `dotnet tool install --global csharp-ls`
 
@@ -55,12 +61,6 @@ $ (cd src && dotnet build)
 - semantic token support (thanks to @tcx4c70);
 - inlay hint support (thanks to @tcx4c70);
 - go-to-definition in metadata support (needs integration from your LSP client).
-
-# Acknowledgements
-- csharp-ls is not affiliated with Microsoft Corp;
-- csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
-- csharp-ls uses [Roslyn](https://github.com/dotnet/roslyn) to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
-- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
 
 # TODO list
  - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
