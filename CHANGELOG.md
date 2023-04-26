@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Add more symbols to documentSymbols & codeLens
+  - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/87
 * Support type and call hierarchy 
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/74
 * Semantic token types fix
