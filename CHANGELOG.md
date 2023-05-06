@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix crash if there is no newline at the end of the last line
   - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/83 
 
+### More about Varėna, Lithuania
+- [Varėna on WP](https://en.wikipedia.org/wiki/Var%C4%97na)
+- [Google Images on Varėna](https://www.google.com/search?tbm=isch&q=varena+lithuania)
+
 ## [0.7.1] - 2023-04-08 / Igliauka
 * Avoid a crash when client does not signal textDocument/publishDiagnostics cap
   - Reported and fixed by @sharpSteff in https://github.com/razzmatazz/csharp-language-server/pull/77
