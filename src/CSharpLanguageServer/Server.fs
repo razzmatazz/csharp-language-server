@@ -1567,7 +1567,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
             let maybeDocument = scope.GetUserDocumentForUri format.TextDocument.Uri
             let! formattingChanges =
                 match maybeDocument with
-                | Some doc -> handleTextDocumentFormatAsync doc
+                | Some doc -> handleTextDocumentFormatAsync doc format.Options
                 | None -> Array.empty |> async.Return
             return formattingChanges |> Some |> success
         }
@@ -1576,7 +1576,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
              let maybeDocument = scope.GetUserDocumentForUri format.TextDocument.Uri
              let! formattingChanges =
                  match maybeDocument with
-                 | Some doc -> handleTextDocumentRangeFormatAsync doc format.Range
+                 | Some doc -> handleTextDocumentRangeFormatAsync doc format.Options format.Range
                  | None -> Array.empty |> async.Return
              return formattingChanges |> Some |> success
         }

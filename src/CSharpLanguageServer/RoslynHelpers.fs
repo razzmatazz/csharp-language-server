@@ -24,6 +24,8 @@ open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Castle.DynamicProxy
 open Util
+open Microsoft.CodeAnalysis.Options
+open Microsoft.CodeAnalysis.CSharp.Formatting
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -1223,9 +1225,32 @@ let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> =
         return convert oldText (changes |> Seq.toArray)    
     }
 
-let handleTextDocumentFormatAsync (doc: Document) : Async<TextEdit[]> =
+let getFormattingOptions (doc: Document) (formattingOptions: Types.FormattingOptions) : OptionSet =
+    let mutable options = doc.Project.Solution.Options
+
+    options <-
+        options.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, formattingOptions.TabSize)
+
+    options <-
+        options.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
+
+    options <-
+        match formattingOptions.InsertFinalNewline with
+        | Some insertFinalNewline ->
+          options.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
+        | None -> options
+
+    options <-
+        match formattingOptions.TrimFinalNewlines with
+        | Some trimFinalNewlines ->
+          options.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
+        | None -> options
+
+    options
+
+let handleTextDocumentFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) : Async<TextEdit[]> =
     async {
-        let options = doc.Project.Solution.Options
+        let options = getFormattingOptions doc formattingOptions
         let! newDoc = Formatter.FormatAsync(doc, options) |> Async.AwaitTask
         return! getChanges newDoc doc
     }
@@ -1252,9 +1277,9 @@ let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
     let token = root.FindToken position
     getSyntaxNode token
 
-let handleTextDocumentRangeFormatAsync (doc: Document) (range: Range) : Async<TextEdit[]> =
+let handleTextDocumentRangeFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) (range: Range) : Async<TextEdit[]> =
     async {
-        let options = doc.Project.Solution.Options
+        let options = getFormattingOptions doc formattingOptions
         let! text = doc.GetTextAsync() |> Async.AwaitTask
         let startPos = text.Lines.GetPosition(new LinePosition(range.Start.Line, range.Start.Character))
         let endPos = text.Lines.GetPosition(new LinePosition(range.End.Line, range.End.Character))
