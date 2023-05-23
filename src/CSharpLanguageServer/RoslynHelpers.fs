@@ -1226,27 +1226,15 @@ let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> =
     }
 
 let getFormattingOptions (doc: Document) (formattingOptions: Types.FormattingOptions) : OptionSet =
-    let mutable options = doc.Project.Solution.Options
-
-    options <-
-        options.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, formattingOptions.TabSize)
-
-    options <-
-        options.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
-
-    options <-
-        match formattingOptions.InsertFinalNewline with
-        | Some insertFinalNewline ->
-          options.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
-        | None -> options
-
-    options <-
-        match formattingOptions.TrimFinalNewlines with
-        | Some trimFinalNewlines ->
-          options.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
-        | None -> options
-
-    options
+    doc.Project.Solution.Options
+    |> fun o -> o.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, formattingOptions.TabSize)
+    |> fun o -> o.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
+    |> match formattingOptions.InsertFinalNewline with
+        | Some insertFinalNewline -> fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
+        | None -> id
+    |> match formattingOptions.TrimFinalNewlines with
+        | Some trimFinalNewlines -> fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
+        | None -> id
 
 let handleTextDocumentFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) : Async<TextEdit[]> =
     async {
