@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 * Upgrade dependencies: Roslyn, ICSharpCode.Decompiler, Microsoft.Build;
+* Support formatting options
+  - By @weirongxu in https://github.com/razzmatazz/csharp-language-server/pull/94
 
 ## [0.8.0] - 2023-05-06 / Varėna
 * Add more symbols to documentSymbols & codeLens
