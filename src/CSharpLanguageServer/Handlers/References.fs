@@ -1,33 +1,12 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis.FindSymbols
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module References =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+    let provider: bool option = None
 
-    let handle (scope: ServerRequestScope) (refParams: ReferenceParams): AsyncLspResult<Location [] option> = async {
-        let! maybeSymbol = scope.GetSymbolAtPositionOnAnyDocument refParams.TextDocument.Uri refParams.Position
-        match maybeSymbol with
-        | None -> return None |> success
-        | Some (symbol, _, _) ->
-            let! ct = Async.CancellationToken
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, scope.Solution, ct) |> Async.AwaitTask
-            // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
-            return
-                refs
-                |> Seq.collect (fun r -> r.Locations)
-                |> Seq.map (fun rl -> Location.fromRoslynLocation rl.Location)
-                |> Seq.toArray
-                |> Some
-                |> success
-    }
+    let handle (wm: IWorkspaceManager) (p: ReferenceParams) : AsyncLspResult<Location[] option> = notImplemented

@@ -6,7 +6,5 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
-module Hover =
+module Declaration =
     let provider: bool option = None
-
-    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = notImplemented

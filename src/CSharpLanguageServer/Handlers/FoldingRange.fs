@@ -6,7 +6,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
-module Hover =
+module FoldingRange =
     let provider: bool option = None
 
-    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = notImplemented
+    let handle (wm: IWorkspaceManager) (p: FoldingRangeParams) : AsyncLspResult<FoldingRange list option> = notImplemented

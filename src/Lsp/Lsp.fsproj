@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CSharpLanguageServer.$(MSBuildProjectName)</AssemblyName>
+    <Description>C# LSP language server</Description>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>csharp-ls-new</ToolCommandName>
+    <Authors>Saulius Menkevičius</Authors>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    <PackageId>csharp-ls-new</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>csharp;lsp;roslyn</PackageTags>
+    <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <ChangelogFile>..\..\CHANGELOG.md</ChangelogFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.Async" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Common/Common.fsproj" />
+    <ProjectReference Include="../CSharpLanguageServer/CSharpLanguageServer.fsproj" />
+    <ProjectReference Include="../Workspace/Workspace.fsproj" />
+    <ProjectReference Include="../Logging/Logging.fsproj" />
+  </ItemGroup>
+
+</Project>

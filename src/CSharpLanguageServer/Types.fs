@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Types
 
+open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
@@ -33,3 +34,6 @@ type ICSharpLspClient =
     // Use a ClientCapabilitiesDTO instead of ClientCapabilities to avoid Option.map & Option.bind?
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
+
+type IWorkspaceManager =
+    abstract member Initialize: unit -> unit

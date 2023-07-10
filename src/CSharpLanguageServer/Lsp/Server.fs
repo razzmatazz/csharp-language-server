@@ -1,265 +1,137 @@
 namespace CSharpLanguageServer.Lsp
 
 open System
-open System.Diagnostics
-open System.Reflection
 open System.Threading.Tasks
-
 open Ionide.LanguageServerProtocol.Server
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 open StreamJsonRpc
 open FSharpPlus
 
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Common.LspUtil
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Util
-
-module LspUtils =
-    /// Return the JSON-RPC "not implemented" error
-    let notImplemented<'t> = async.Return LspResult.notImplemented<'t>
-
-    /// Do nothing and ignore the notification
-    let ignoreNotification: Async<unit> = async.Return(())
 
 
-open LspUtils
-
-type CSharpLspServer(
-        lspClient: CSharpLspClient,
-        settings: ServerSettings,
-        lspClientLogEventSink: LspClientLogEventSink
-    ) =
+type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceManager) =
 
     let logger = LogProvider.getLoggerByName "LSP"
-
-    let logMessage m =
-        logger.info (Log.setMessage m)
-        async.Return ()
-
-    let stateActor = MailboxProcessor.Start(
-        serverEventLoop
-            logMessage
-            { emptyServerState with Settings = settings })
-
-    let getDocumentForUriFromCurrentState docType uri =
-        stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
-
-    let diagnostics = MailboxProcessor.Start(
-        diagnosticsEventLoop
-            lspClient
-            getDocumentForUriFromCurrentState)
-
-    let mutable timer: System.Threading.Timer option = None
-
-    let setupTimer () =
-        timer <- Some (new System.Threading.Timer(
-            System.Threading.TimerCallback(
-                fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)
-                         do stateActor.Post(PeriodicTimerTick)),
-            null, dueTime=1000, period=250))
-
-    let mutable workspaceFolders: WorkspaceFolder list = []
-
-    let withScope
-            requestType
-            (handlerFn: ServerRequestScope -> 'a -> Async<LspResult<'b>>)
-            param =
-        let requestName = handlerFn.ToString()
-
-        // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
-        //
-        // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
-        // handler until previous one returns a Task (in our case -- F# `async` object.)
-
-        let startRequest rc = StartRequest (requestName, requestType, 0, rc)
-        let requestId, semaphore = stateActor.PostAndReply(startRequest)
-
-        let stateAcquisitionAndHandlerInvocation = async {
-            do! semaphore.WaitAsync() |> Async.AwaitTask
-
-            let! state = stateActor.PostAndAsyncReply(GetState)
-
-            let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
-
-            return! handlerFn scope param
-        }
-
-        let wrapExceptionAsLspResult op =
-            async {
-                let! resultOrExn = op |> Async.Catch
-
-                return
-                    match resultOrExn with
-                    | Choice1Of2 result -> result
-                    | Choice2Of2 exn ->
-                        match exn with
-                        | :? TaskCanceledException -> LspResult.requestCancelled
-                        | :? OperationCanceledException -> LspResult.requestCancelled
-                        | _ -> LspResult.internalError (string exn)
-            }
-
-        stateAcquisitionAndHandlerInvocation
-        |> wrapExceptionAsLspResult
-        |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
-
-    let withReadOnlyScope handlerFn = withScope ReadOnly handlerFn
-    let withReadWriteScope handlerFn = withScope ReadWrite handlerFn
-
-    let ignoreResult handlerFn = async {
-        let! _ = handlerFn
-        return ()
-    }
-
-    let getServerCapabilities
-        (lspClient: InitializeParams) =
-                { ServerCapabilities.Default with
-                    TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities
-                    CompletionProvider = Completion.provider lspClient.Capabilities
-                    HoverProvider = Hover.provider lspClient.Capabilities
-                    SignatureHelpProvider = SignatureHelp.provider lspClient.Capabilities
-                    // DeclarationProvider = Declaration.provider lspClient.Capabilities
-                    DefinitionProvider = Definition.provider lspClient.Capabilities
-                    TypeDefinitionProvider = TypeDefinition.provider lspClient.Capabilities
-                    ImplementationProvider = Implementation.provider lspClient.Capabilities
-                    ReferencesProvider = References.provider lspClient.Capabilities
-                    DocumentHighlightProvider = DocumentHighlight.provider lspClient.Capabilities
-                    DocumentSymbolProvider = DocumentSymbol.provider lspClient.Capabilities
-                    CodeActionProvider = CodeAction.provider lspClient.Capabilities
-                    CodeLensProvider = CodeLens.provider lspClient.Capabilities
-                    // DocumentLinkProvider = DocumentLink.provider lspClient.Capabilities
-                    // ColorProvider = Color.provider lspClient.Capabilities
-                    DocumentFormattingProvider = DocumentFormatting.provider lspClient.Capabilities
-                    DocumentRangeFormattingProvider = DocumentRangeFormatting.provider lspClient.Capabilities
-                    DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider lspClient.Capabilities
-                    RenameProvider = Rename.provider lspClient.Capabilities
-                    // FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
-                    ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
-                    // SelectionRangeProvider = SelectionRange.provider lspClient.Capabilities
-                    // LinkedEditingRangeProvider = LinkedEditingRange.provider lspClient.Capabilities
-                    CallHierarchyProvider = CallHierarchy.provider lspClient.Capabilities
-                    SemanticTokensProvider = SemanticTokens.provider lspClient.Capabilities
-                    // MonikerProvider = Moniker.provider lspClient.Capabilities
-                    TypeHierarchyProvider = TypeHierarchy.provider lspClient.Capabilities
-                    // InlineValueProvider = InlineValue.provider lspClient.Capabilities
-                    InlayHintProvider = InlayHint.provider lspClient.Capabilities
-                    // DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
-                    WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
 
     interface ICSharpLspServer with
         override __.Dispose() = ()
 
-        override __.Initialize(p) =
-            lspClientLogEventSink.SetLspClient(Some lspClient)
+        override __.Initialize(p) = async {
+            let serverCapabilities =
+                { ServerCapabilities.Default with
+                    TextDocumentSync = TextDocumentSync.provider
+                    CompletionProvider = Completion.provider
+                    HoverProvider = Hover.provider
+                    SignatureHelpProvider = SignatureHelp.provider
+                    // DeclarationProvider = Declaration.provider
+                    DefinitionProvider = Definition.provider
+                    TypeDefinitionProvider = TypeDefinition.provider
+                    ImplementationProvider = Implementation.provider
+                    ReferencesProvider = References.provider
+                    DocumentHighlightProvider = DocumentHighlight.provider
+                    DocumentSymbolProvider = DocumentSymbol.provider
+                    CodeActionProvider = CodeAction.provider
+                    CodeLensProvider = CodeLens.provider
+                    DocumentLinkProvider = DocumentLink.provider
+                    // ColorProvider = Color.provider
+                    DocumentFormattingProvider = DocumentFormatting.provider
+                    DocumentRangeFormattingProvider = DocumentRangeFormatting.provider
+                    DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider
+                    RenameProvider = Rename.provider
+                    FoldingRangeProvider = FoldingRange.provider
+                    ExecuteCommandProvider = ExecuteCommand.provider
+                    SelectionRangeProvider = SelectionRange.provider
+                    // LinkedEditingRangeProvider = LinkedEditingRange.provider
+                    CallHierarchyProvider = CallHierarchy.provider
+                    SemanticTokensProvider = SemanticTokens.provider
+                    // MonikerProvider = Moniker.provider
+                    TypeHierarchyProvider = TypeHierarchy.provider
+                    InlineValueProvider = InlineValue.provider
+                    InlayHintProvider = InlayHint.provider
+                    // DiagnosticProvider = Diagnostic.provider
+                    WorkspaceSymbolProvider = WorkspaceSymbol.provider }
 
-            let serverCapabilities = getServerCapabilities p
-            p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
+            let initializeResult =
+                { InitializeResult.Default with
+                    Capabilities = serverCapabilities }
 
-        override __.Initialized(p) =
-            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor)
-              |> ignoreResult
+            return initializeResult |> success
+        }
 
-        override __.Shutdown() =
-            lspClientLogEventSink.SetLspClient(None)
-            () |> async.Return
+        override __.Initialized(p) = ignoreNotification
+
+        override __.Shutdown() = ignoreNotification
 
         override __.Exit() = ignoreNotification
 
-        override this.TextDocumentHover(p) =
-            p |> withReadOnlyScope Hover.handle
+        override this.TextDocumentHover(p) = Hover.handle workspaceManager p
 
-        override this.TextDocumentDidOpen(p) =
-            p |> withReadOnlyScope (TextDocumentSync.didOpen logMessage diagnostics.Post)
-              |> ignoreResult
+        override this.TextDocumentDidOpen(p) = TextDocumentSync.didOpen workspaceManager p
 
-        override this.TextDocumentDidChange(p) =
-            p |> withReadWriteScope (TextDocumentSync.didChange diagnostics.Post)
-              |> ignoreResult
+        override this.TextDocumentDidChange(p) = TextDocumentSync.didChange workspaceManager p
 
-        override this.TextDocumentDidClose(p) =
-            p |> withReadWriteScope (TextDocumentSync.didClose diagnostics.Post)
-              |> ignoreResult
+        override this.TextDocumentDidClose(p) = TextDocumentSync.didClose workspaceManager p
 
-        override this.TextDocumentDidSave(p) =
-            p |> withReadWriteScope (TextDocumentSync.didSave logMessage diagnostics.Post)
-              |> ignoreResult
+        override this.TextDocumentWillSave(p) = TextDocumentSync.willSave workspaceManager p
 
-        override this.TextDocumentWillSave(p) = ignoreNotification
+        override this.TextDocumentWillSaveWaitUntil(p) = TextDocumentSync.willSaveUntil workspaceManager p
 
-        override this.TextDocumentWillSaveWaitUntil(p) = notImplemented
+        override this.TextDocumentDidSave(p) = TextDocumentSync.didSave workspaceManager p
 
-        override this.TextDocumentCompletion(p) =
-            p |> withReadOnlyScope Completion.handle
+        override this.TextDocumentCompletion(p) = Completion.handle workspaceManager p
 
-        override this.CompletionItemResolve(p) = notImplemented
+        override this.CompletionItemResolve(p) = Completion.resolve workspaceManager p
 
-        override this.TextDocumentPrepareRename(p) =
-            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState)
+        override this.TextDocumentPrepareRename(p) = Rename.prepare workspaceManager p
 
-        override this.TextDocumentRename(p) =
-            p |> withReadOnlyScope Rename.handle
+        override this.TextDocumentRename(p) = Rename.handle workspaceManager p
 
-        override this.TextDocumentDefinition(p) =
-            p |> withReadOnlyScope Definition.handle
+        override this.TextDocumentDefinition(p) = Definition.handle workspaceManager p
 
-        override this.TextDocumentReferences(p) =
-            p |> withReadOnlyScope References.handle
+        override this.TextDocumentReferences(p) = References.handle workspaceManager p
 
-        override this.TextDocumentDocumentHighlight(p) =
-            p |> withReadOnlyScope DocumentHighlight.handle
+        override this.TextDocumentDocumentHighlight(p) = DocumentHighlight.handle workspaceManager p
 
-        override this.TextDocumentDocumentLink(p) = notImplemented
+        override this.TextDocumentDocumentLink(p) = DocumentLink.handle workspaceManager p
 
-        override this.DocumentLinkResolve(p) = notImplemented
+        override this.DocumentLinkResolve(p) = DocumentLink.resolve workspaceManager p
 
-        override this.TextDocumentTypeDefinition(p) =
-            p |> withReadOnlyScope TypeDefinition.handle
+        override this.TextDocumentTypeDefinition(p) = TypeDefinition.handle workspaceManager p
 
-        override this.TextDocumentImplementation(p) =
-            p |> withReadOnlyScope Implementation.handle
+        override this.TextDocumentImplementation(p) = Implementation.handle workspaceManager p
 
-        override this.TextDocumentCodeAction(p) =
-            p |> withReadOnlyScope (CodeAction.handle logMessage)
+        override this.TextDocumentCodeAction(p) = CodeAction.handle workspaceManager p
 
-        override this.CodeActionResolve(p) =
-            p |> withReadOnlyScope (CodeAction.resolve logMessage)
+        override this.CodeActionResolve(p) = CodeAction.resolve workspaceManager p
 
-        override this.TextDocumentCodeLens(p) =
-            p |> withReadOnlyScope CodeLens.handle
+        override this.TextDocumentCodeLens(p) = CodeLens.handle workspaceManager p
 
-        override this.CodeLensResolve(p) =
-            p |> withReadOnlyScope CodeLens.resolve
+        override this.CodeLensResolve(p) = CodeLens.resolve workspaceManager p
 
-        override this.TextDocumentSignatureHelp(p) =
-            p |> withReadOnlyScope SignatureHelp.handle
+        override this.TextDocumentSignatureHelp(p) = SignatureHelp.handle workspaceManager p
 
-        override this.TextDocumentDocumentColor(p) = notImplemented
+        override this.TextDocumentDocumentColor(p) = Color.handle workspaceManager p
 
-        override this.TextDocumentColorPresentation(p) = notImplemented
+        override this.TextDocumentColorPresentation(p) = Color.present workspaceManager p
 
-        override this.TextDocumentFormatting(p) =
-            p |> withReadOnlyScope DocumentFormatting.handle
+        override this.TextDocumentFormatting(p) = DocumentFormatting.handle workspaceManager p
 
-        override this.TextDocumentRangeFormatting(p) =
-            p |> withReadOnlyScope DocumentRangeFormatting.handle
+        override this.TextDocumentRangeFormatting(p) = DocumentRangeFormatting.handle workspaceManager p
 
-        override this.TextDocumentOnTypeFormatting(p) =
-            p |> withReadOnlyScope DocumentOnTypeFormatting.handle
+        override this.TextDocumentOnTypeFormatting(p) = DocumentOnTypeFormatting.handle workspaceManager p
 
-        override this.TextDocumentDocumentSymbol(p) =
-            p |> withReadOnlyScope DocumentSymbol.handle
+        override this.TextDocumentDocumentSymbol(p) = DocumentSymbol.handle workspaceManager p
 
-        override __.WorkspaceDidChangeWatchedFiles(p) =
-            p |> withReadWriteScope (Workspace.didChangeWatchedFiles logMessage diagnostics.Post)
-              |> ignoreResult
+        override __.WorkspaceDidChangeWatchedFiles(p) = ignoreNotification
 
         override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification
 
-        override __.WorkspaceDidChangeConfiguration(p) =
-            p |> withReadWriteScope Workspace.didChangeConfiguration
-              |> ignoreResult
+        override __.WorkspaceDidChangeConfiguration(p) = ignoreNotification
 
         override __.WorkspaceWillCreateFiles(p) = notImplemented
 
@@ -273,71 +145,44 @@ type CSharpLspServer(
 
         override __.WorkspaceDidDeleteFiles(p) = ignoreNotification
 
-        override this.WorkspaceSymbol(p) =
-            p |> withReadOnlyScope WorkspaceSymbol.handle
+        override this.WorkspaceSymbol(p) = WorkspaceSymbol.handle workspaceManager p
 
-        override this.WorkspaceExecuteCommand(p) =
-            p |> withReadOnlyScope ExecuteCommand.handle
+        override this.WorkspaceExecuteCommand(p) = ExecuteCommand.handle workspaceManager p
 
-        override this.TextDocumentFoldingRange(p) = notImplemented
+        override this.TextDocumentFoldingRange(p) = FoldingRange.handle workspaceManager p
 
-        override this.TextDocumentSelectionRange(p) = notImplemented
+        override this.TextDocumentSelectionRange(p) = SelectionRange.handle workspaceManager p
 
-        override this.TextDocumentSemanticTokensFull(p) =
-            p |> withReadOnlyScope SemanticTokens.handleFull
+        override this.TextDocumentSemanticTokensFull(p) = SemanticTokens.handleFull workspaceManager p
 
-        override this.TextDocumentSemanticTokensFullDelta(p) =
-            p |> withReadOnlyScope SemanticTokens.handleFullDelta
+        override this.TextDocumentSemanticTokensFullDelta(p) = SemanticTokens.handleFullDelta workspaceManager p
 
-        override this.TextDocumentSemanticTokensRange(p) =
-            p |> withReadOnlyScope SemanticTokens.handleRange
+        override this.TextDocumentSemanticTokensRange(p) = SemanticTokens.handleRange workspaceManager p
 
-        override this.TextDocumentInlayHint(p) =
-            p |> withReadOnlyScope InlayHint.handle
+        override this.TextDocumentInlayHint(p) = InlayHint.handle workspaceManager p
 
-        override this.InlayHintResolve(p) =
-            p |> withReadOnlyScope InlayHint.resolve
+        override this.InlayHintResolve(p) = InlayHint.resolve workspaceManager p
 
-        override __.WorkDoneProgressCancel(p) = ignoreNotification
+        override __.WorkDoneProgessCancel(p) = ignoreNotification
 
-        override this.TextDocumentInlineValue(p) = notImplemented
+        override this.TextDocumentInlineValue(p) = InlineValue.handle workspaceManager p
 
-        override this.TextDocumentPrepareCallHierarchy(p) =
-            p |> withReadOnlyScope CallHierarchy.prepare
+        override this.TextDocumentPrepareCallHierarchy(p) = CallHierarchy.prepare workspaceManager p
 
-        override this.CallHierarchyIncomingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.incomingCalls
+        override this.CallHierarchyIncomingCalls(p) = CallHierarchy.incomingCalls workspaceManager p
 
-        override this.CallHierarchyOutgoingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.outgoingCalls
+        override this.CallHierarchyOutgoingCalls(p) = CallHierarchy.outgoingCalls workspaceManager p
 
-        override this.TextDocumentPrepareTypeHierarchy(p) =
-            p |> withReadOnlyScope TypeHierarchy.prepare
+        override this.TextDocumentPrepareTypeHierarchy(p) = TypeHierarchy.prepare workspaceManager p
 
-        override this.TypeHierarchySupertypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.supertypes
+        override this.TypeHierarchySupertypes(p) = TypeHierarchy.supertypes workspaceManager p
 
-        override this.TypeHierarchySubtypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.subtypes
+        override this.TypeHierarchySubtypes(p) = TypeHierarchy.subtypes workspaceManager p
 
-        override this.TextDocumentDeclaration(p) = notImplemented
+        override __.CSharpMetadata(p) = notImplemented
 
-        override this.WorkspaceDiagnostic(p) = notImplemented
-
-        override this.WorkspaceSymbolResolve(p) = notImplemented
-
-        override this.TextDocumentDiagnostic(p) = notImplemented
-
-        override this.TextDocumentLinkedEditingRange(p) = notImplemented
-
-        override this.TextDocumentMoniker(p) = notImplemented
-
-        override this.CSharpMetadata(p) =
-            p |> withReadOnlyScope CSharpMetadata.handle
 
 module Server =
-    let logger = LogProvider.getLoggerByName "LSP"
-
     let private createRpc (handler: IJsonRpcMessageHandler) : JsonRpc =
         let rec (|HandleableException|_|) (e: exn) =
             match e with
@@ -369,20 +214,15 @@ module Server =
         [ "csharp/metadata", requestHandling (fun s p -> s.CSharpMetadata(p)) ]
         |> Map.ofList
 
-    // TODO:
-    // 1. log the begin and end of request.
-    // 2. if there is exception during the request, log it.
     let private requestHandlings =
         Map.union (defaultRequestHandlings ()) customRequestHandlings
 
-    let startCore settings lspClientLogEventSink =
+    let private startCore clientCreator workspaceManagerCreator =
         use input = Console.OpenStandardInput()
         use output = Console.OpenStandardOutput()
 
         let serverCreator client =
-            new CSharpLspServer(client, settings, lspClientLogEventSink) :> ICSharpLspServer
-
-        let clientCreator = CSharpLspClient
+            new CSharpLspServer(client, workspaceManagerCreator client) :> ICSharpLspServer
 
         Ionide.LanguageServerProtocol.Server.start
             requestHandlings
@@ -392,14 +232,9 @@ module Server =
             serverCreator
             createRpc
 
-    let start options lspClientLogEventSink =
+    let start clientCreator workspaceCreator =
         try
-            let result = startCore options lspClientLogEventSink
+            let result = startCore clientCreator workspaceCreator
             int result
-        with ex ->
-            logger.error (
-                Log.setMessage "{name} crashed:"
-                >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
-                >> Log.addException ex
-            )
+        with _ex ->
             3

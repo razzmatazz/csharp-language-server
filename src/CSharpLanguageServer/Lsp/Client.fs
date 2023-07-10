@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer.Lsp
 
 open Ionide.LanguageServerProtocol
-open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =

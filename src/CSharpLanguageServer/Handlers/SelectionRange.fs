@@ -6,7 +6,8 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
-module Hover =
+module SelectionRange =
     let provider: bool option = None
 
-    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = notImplemented
+    let handle (wm: IWorkspaceManager) (p: SelectionRangeParams) : AsyncLspResult<SelectionRange list option> =
+        notImplemented
