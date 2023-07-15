@@ -41,3 +41,7 @@ module Range =
         LinePositionSpan(
             Position.toLinePosition lines range.Start,
             Position.toLinePosition lines range.End)
+
+    let fromLinePositionSpan (pos: LinePositionSpan): Range =
+        { Start = Position.fromLinePosition pos.Start
+          End = Position.fromLinePosition pos.End }
