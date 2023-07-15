@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Compile Include="LspUtil.fs" />
+    <Compile Include="Util.fs" />
   </ItemGroup>
 
   <ItemGroup>

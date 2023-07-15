@@ -9,15 +9,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Util.fs" />
     <Compile Include="WorkspaceManager.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="FSharpPlus" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Locator" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
+    <PackageReference Include="System.Collections.Concurrent" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Common/Common.fsproj" />
+    <ProjectReference Include="../Logging/Logging.fsproj" />
   </ItemGroup>
 
 </Project>
