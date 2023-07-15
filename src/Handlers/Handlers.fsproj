@@ -44,6 +44,8 @@
 
   <ItemGroup>
     <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.14" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.7.0-1.final" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0-1.final" />
   </ItemGroup>
 
   <ItemGroup>
