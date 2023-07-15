@@ -35,6 +35,7 @@
     <ProjectReference Include="../CSharpLanguageServer/CSharpLanguageServer.fsproj" />
     <ProjectReference Include="../Workspace/Workspace.fsproj" />
     <ProjectReference Include="../Logging/Logging.fsproj" />
+    <ProjectReference Include="../MSBuildWorkspacePatcher/MSBuildWorkspacePatcher.csproj" />
   </ItemGroup>
 
 </Project>
