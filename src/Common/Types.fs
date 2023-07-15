@@ -36,3 +36,5 @@ type ICSharpLspServer =
 type IWorkspaceManager =
     abstract member Initialize: WorkspaceFolder list -> unit
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
+    abstract member GetDocument: DocumentUri -> Document option
+    abstract member ChangeDocument: DocumentUri -> TextDocumentContentChangeEvent [] -> Async<unit>
