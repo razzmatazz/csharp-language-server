@@ -8,9 +8,12 @@ open Serilog.Events
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Workspace
+open CSharpLanguageServer.MSBuildWorkspacePatcher
 
 [<EntryPoint>]
 let entry args =
+    MSBuildWorkspacePatcher.Patch()
+
     let logConfig =
         LoggerConfiguration()
             .MinimumLevel.Verbose()

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CSharpLanguageServer.$(MSBuildProjectName)</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- TODO: Upgrade to a offical version after Lib.Harmony release one -->
+    <PackageReference Include="Lib.Harmony" Version="2.3.0-prerelease.4" />
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.7.0-1.final" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.7.0-1.final" />
+  </ItemGroup>
+
+</Project>
