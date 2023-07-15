@@ -34,4 +34,5 @@ type ICSharpLspServer =
 
 [<Interface>]
 type IWorkspaceManager =
-    abstract member Initialize: unit -> unit
+    abstract member Initialize: WorkspaceFolder list -> unit
+    abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>

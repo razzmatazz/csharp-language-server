@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="LspUtil.fs" />
+    <Compile Include="Util.fs" />
   </ItemGroup>
 
   <ItemGroup>

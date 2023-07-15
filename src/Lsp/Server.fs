@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Lsp
 
 open System
+open System.IO
 open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -10,6 +11,7 @@ open FSharpPlus
 
 open CSharpLanguageServer.Common.Types
 open CSharpLanguageServer.Common.LspUtil
+open CSharpLanguageServer.Common
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 
@@ -22,6 +24,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
         override __.Dispose() = ()
 
         override __.Initialize(p) = async {
+            let workspaceFolders =
+                map Array.toList p.WorkspaceFolders
+                // Can't simplify it to (:: []) like Haskell :(
+                |> Option.orElse (map (Uri.toWorkspaceFolder >> (flip List.cons [])) p.RootUri)
+                |> Option.orElse (map (Path.toWorkspaceFolder >> (flip List.cons [])) p.RootPath)
+                |> Option.orElse (Some [Path.toWorkspaceFolder (Directory.GetCurrentDirectory())])
+            workspaceManager.Initialize (Option.get workspaceFolders)
+
+            // TODO: Monitor the lsp client process (via processId in InitializeParams) and shutdown if the
+            // lsp client dies.
+
             let serverCapabilities =
                 { ServerCapabilities.Default with
                     TextDocumentSync = TextDocumentSync.provider
