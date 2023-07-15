@@ -6,11 +6,15 @@ open CSharpLanguageServer.Common.Types
 open CSharpLanguageServer.Common.LspUtil
 
 module TextDocumentSync =
-    let provider: TextDocumentSyncOptions option = None
+    let provider: TextDocumentSyncOptions option =
+        Some
+            { TextDocumentSyncOptions.Default with
+                Change = Some TextDocumentSyncKind.Incremental }
 
     let didOpen (wm: IWorkspaceManager) (p: DidOpenTextDocumentParams): Async<unit> = ignoreNotification
 
-    let didChange (wm: IWorkspaceManager) (p: DidChangeTextDocumentParams): Async<unit> = ignoreNotification
+    let didChange (wm: IWorkspaceManager) (p: DidChangeTextDocumentParams): Async<unit> =
+        wm.ChangeDocument p.TextDocument.Uri p.ContentChanges
 
     let didClose (wm: IWorkspaceManager) (p: DidCloseTextDocumentParams): Async<unit> = ignoreNotification
 

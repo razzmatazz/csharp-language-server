@@ -4,6 +4,7 @@ open System.Collections.Concurrent
 open Microsoft.Build.Locator
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
+open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open FSharpPlus
@@ -86,6 +87,22 @@ type WorkspaceManager(lspClient: ILspClient) =
             |> Async.Ignore
     }
 
+    member private this.GetWorkspaceWithDocumentId(uri: DocumentUri) : (Workspace * DocumentId) option =
+        let path = Uri.toPath uri
+
+        workspaces.Values
+        |> Seq.filter (fun workspace -> not (isNull workspace.CurrentSolution))
+        |> Seq.map (fun workspace ->
+            (workspace, workspace.CurrentSolution.GetDocumentIdsWithFilePath(path) |> Seq.tryHead))
+        |> Seq.filter (snd >> Option.isSome)
+        |> Seq.map (second Option.get)
+        |> Seq.tryHead
+
+    member this.GetDocument(uri: DocumentUri) : Document option =
+        this.GetWorkspaceWithDocumentId uri
+        |> Option.map (fun (workspace, docId) -> workspace.CurrentSolution.GetDocument(docId))
+        |> Option.bind Option.ofObj
+
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
@@ -94,3 +111,34 @@ type WorkspaceManager(lspClient: ILspClient) =
             MSBuildLocator.RegisterDefaults() |> ignore
 
             this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty |> Async.Start
+
+        override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
+
+        override this.ChangeDocument (uri: DocumentUri) (changes: TextDocumentContentChangeEvent[]) : Async<unit> = async {
+            match this.GetWorkspaceWithDocumentId uri with
+            | None -> return ()
+            | Some(workspace, docId) ->
+                let solution = workspace.CurrentSolution
+                let doc = solution.GetDocument(docId)
+                let! initialSourceText = doc.GetTextAsync() |> Async.AwaitTask
+
+                let applyChange (sourceText: SourceText) (change: Types.TextDocumentContentChangeEvent) =
+                    match change.Range with
+                    | Some changeRange ->
+                        let changeTextSpan =
+                            changeRange
+                            |> Range.toLinePositionSpan sourceText.Lines
+                            |> sourceText.Lines.GetTextSpan
+
+                        TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
+
+                    | None -> SourceText.From(change.Text)
+
+                let newSourceText = Seq.fold applyChange initialSourceText changes
+
+                logger.trace (
+                    Log.setMessage "new source text: \n{newSourceText}"
+                    >> Log.addContext "newSourceText" newSourceText
+                )
+                workspace.TryApplyChanges(solution.WithDocumentText(docId, newSourceText)) |> ignore
+        }
