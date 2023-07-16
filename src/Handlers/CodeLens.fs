@@ -145,10 +145,7 @@ module CodeLens =
         | None -> return p |> success
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position =
-                lensData.Position
-                |> Position.toLinePosition sourceText.Lines
-                |> sourceText.Lines.GetPosition
+            let position = Position.toRoslynPosition sourceText.Lines lensData.Position
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
             let! refs =
                 SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution)
