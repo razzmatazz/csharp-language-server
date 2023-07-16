@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Common.Types
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
@@ -45,4 +46,11 @@ type IWorkspaceManager =
     abstract member WaitInitialized: unit -> Async<unit>
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
     abstract member GetDocument: DocumentUri -> Document option
+    abstract member FindSymbol: DocumentUri -> Position -> Async<ISymbol option>
+    abstract member FindReferences: ISymbol -> Async<ReferencedSymbol seq>
+    abstract member FindImplementations: ISymbol -> Async<ISymbol seq>
+    abstract member FindDerivedClasses: INamedTypeSymbol -> Async<INamedTypeSymbol seq>
+    abstract member FindDerivedInterfaces: INamedTypeSymbol -> Async<INamedTypeSymbol seq>
+    abstract member FindCallers: ISymbol -> Async<SymbolCallerInfo seq>
+    abstract member ResolveSymbolLocations: ISymbol -> Async<Location list>
     abstract member ChangeDocument: DocumentUri -> TextDocumentContentChangeEvent [] -> Async<unit>
