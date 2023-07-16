@@ -17,7 +17,7 @@ open CSharpLanguageServer.Workspace.Util
 
 type WorkspaceManager(lspClient: ILspClient) =
 
-    let mutable workspaces: ConcurrentDictionary<DocumentUri, Workspace> =
+    let workspaces: ConcurrentDictionary<DocumentUri, Workspace> =
         ConcurrentDictionary()
     let initialized: TaskCompletionSource<bool> = TaskCompletionSource<bool>()
 
