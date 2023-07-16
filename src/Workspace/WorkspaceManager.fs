@@ -4,6 +4,7 @@ open System.Collections.Concurrent
 open System.Threading.Tasks
 open Microsoft.Build.Locator
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol
@@ -122,6 +123,64 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         }
 
         override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
+
+        override this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> = async {
+            match this.GetDocument uri with
+            | None -> return None
+            | Some doc ->
+                let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+                return symbol |> Option.ofObj
+        }
+
+        override this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
+            let! symbols =
+                workspaces.Values
+                |> Seq.map (fun workspace -> SymbolFinder.FindReferencesAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+                |> Async.Parallel
+            return symbols |> Seq.collect id
+        }
+
+        override this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> = async {
+            let! symbols =
+                workspaces.Values
+                |> Seq.map (fun workspace -> SymbolFinder.FindImplementationsAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+                |> Async.Parallel
+            return symbols |> Seq.collect id
+        }
+
+        override this.FindDerivedClasses (symbol: INamedTypeSymbol): Async<INamedTypeSymbol seq> = async {
+            let! symbols =
+                workspaces.Values
+                |> Seq.map (fun workspace -> SymbolFinder.FindDerivedClassesAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+                |> Async.Parallel
+            return symbols |> Seq.collect id
+        }
+
+        override this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = async {
+            let! symbols =
+                workspaces.Values
+                |> Seq.map (fun workspace -> SymbolFinder.FindDerivedInterfacesAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+                |> Async.Parallel
+            return symbols |> Seq.collect id
+        }
+
+        override this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> = async {
+            let! symbols =
+                workspaces.Values
+                |> Seq.map (fun workspace -> SymbolFinder.FindCallersAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+                |> Async.Parallel
+            return symbols |> Seq.collect id
+        }
+
+        override this.ResolveSymbolLocations (symbol: ISymbol): Async<Location list> = async {
+            // TODO: Support symbols in decompiled document
+            return
+                symbol.Locations
+                |> Seq.map Location.fromRoslynLocation
+                |> Seq.toList
+        }
 
         override this.ChangeDocument (uri: DocumentUri) (changes: TextDocumentContentChangeEvent[]) : Async<unit> = async {
             match this.GetWorkspaceWithDocumentId uri with
