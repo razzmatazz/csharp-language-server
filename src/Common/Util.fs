@@ -1,8 +1,9 @@
 namespace CSharpLanguageServer.Common
 
 open System
-open Ionide.LanguageServerProtocol.Types
+open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Types
 
 
 module Uri =
@@ -73,3 +74,69 @@ module TextEdit =
     let fromTextChange (lines: TextLineCollection) (changes: TextChange): TextEdit =
         { Range = changes.Span |> Range.fromTextSpan lines
           NewText = changes.NewText }
+
+
+module SymbolKind =
+    let fromSymbol (symbol: ISymbol): SymbolKind =
+        match symbol with
+        | :? ILocalSymbol -> SymbolKind.Variable
+        | :? IFieldSymbol as fs ->
+            if not(isNull fs.ContainingType) && fs.ContainingType.TypeKind = TypeKind.Enum && fs.HasConstantValue then
+                SymbolKind.EnumMember
+            else
+                SymbolKind.Field
+        | :? IPropertySymbol -> SymbolKind.Property
+        | :? IMethodSymbol as ms ->
+            match ms.MethodKind with
+            | MethodKind.Constructor -> SymbolKind.Constructor
+            | MethodKind.StaticConstructor -> SymbolKind.Constructor
+            | MethodKind.BuiltinOperator -> SymbolKind.Operator
+            | MethodKind.UserDefinedOperator -> SymbolKind.Operator
+            | MethodKind.Conversion -> SymbolKind.Operator
+            | _ -> SymbolKind.Method
+        | :? ITypeSymbol as ts ->
+            match ts.TypeKind with
+            | TypeKind.Class -> SymbolKind.Class
+            | TypeKind.Enum -> SymbolKind.Enum
+            | TypeKind.Struct -> SymbolKind.Struct
+            | TypeKind.Interface -> SymbolKind.Interface
+            | TypeKind.Delegate -> SymbolKind.Class
+            | TypeKind.Array -> SymbolKind.Array
+            | TypeKind.TypeParameter -> SymbolKind.TypeParameter
+            | _ -> SymbolKind.Class
+        | :? IEventSymbol -> SymbolKind.Event
+        | :? INamespaceSymbol -> SymbolKind.Namespace
+        | _ -> SymbolKind.File
+
+
+module HierarchyItem =
+    let private displayStyle =
+        SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions =
+                (SymbolDisplayMemberOptions.IncludeParameters
+                 ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions =
+                (SymbolDisplayParameterOptions.IncludeParamsRefOut
+                 ||| SymbolDisplayParameterOptions.IncludeExtensionThis
+                 ||| SymbolDisplayParameterOptions.IncludeType),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+        )
+
+    let fromSymbolAndLocation (symbol: ISymbol) (location: Location): HierarchyItem =
+        let kind = SymbolKind.fromSymbol symbol
+        let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
+        let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
+
+        { Name = symbol.ToDisplayString(displayStyle)
+          Kind = kind
+          Tags = None
+          Detail =
+            containingType
+            |> Option.orElse containingNamespace
+            |> Option.map (fun sym -> sym.ToDisplayString())
+          Uri = location.Uri
+          Range = location.Range
+          SelectionRange = location.Range
+          Data = None }
