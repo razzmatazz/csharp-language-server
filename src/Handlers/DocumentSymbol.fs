@@ -99,15 +99,9 @@ module DocumentSymbol =
                                      (Some nameSpan.Start)
                                      symbol
 
-            let lspRange =
-                node.FullSpan
-                |> docText.Lines.GetLinePositionSpan
-                |> Range.fromLinePositionSpan
+            let lspRange = Range.fromTextSpan docText.Lines node.FullSpan
 
-            let selectionLspRange =
-                nameSpan
-                |> docText.Lines.GetLinePositionSpan
-                |> Range.fromLinePositionSpan
+            let selectionLspRange = Range.fromTextSpan docText.Lines nameSpan
 
             let symbolDetail =
                 match symbolKind with

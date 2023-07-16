@@ -126,7 +126,7 @@ module CodeLens =
                     { DocumentUri = p.TextDocument.Uri
                       Position = start |> Position.fromLinePosition }
 
-                { Range = nameSpan |> docText.Lines.GetLinePositionSpan |> Range.fromLinePositionSpan
+                { Range = nameSpan |> Range.fromTextSpan docText.Lines
                   Command = None
                   Data = lensData |> JToken.FromObject |> Some }
 

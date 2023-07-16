@@ -113,13 +113,9 @@ module SemanticTokens =
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let textSpan =
-                match range with
-                | Some r ->
-                    r
-                    |> Range.toLinePositionSpan sourceText.Lines
-                    |> sourceText.Lines.GetTextSpan
-                | None ->
-                    TextSpan(0, sourceText.Length)
+                range
+                |> Option.map (Range.toTextSpan sourceText.Lines)
+                |> Option.defaultValue (TextSpan(0, sourceText.Length))
             let! spans = Classifier.GetClassifiedSpansAsync(doc, textSpan) |> Async.AwaitTask
             let tokens =
                 spans
