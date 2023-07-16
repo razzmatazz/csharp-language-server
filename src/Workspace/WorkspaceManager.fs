@@ -193,10 +193,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 let applyChange (sourceText: SourceText) (change: Types.TextDocumentContentChangeEvent) =
                     match change.Range with
                     | Some changeRange ->
-                        let changeTextSpan =
-                            changeRange
-                            |> Range.toLinePositionSpan sourceText.Lines
-                            |> sourceText.Lines.GetTextSpan
+                        let changeTextSpan = Range.toTextSpan sourceText.Lines changeRange
 
                         TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
 

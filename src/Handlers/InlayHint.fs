@@ -200,10 +200,7 @@ module InlayHint =
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let textSpan =
-                p.Range
-                |> Range.toLinePositionSpan sourceText.Lines
-                |> sourceText.Lines.GetTextSpan
+            let textSpan = Range.toTextSpan sourceText.Lines p.Range
 
             let inlayHints =
                 root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))

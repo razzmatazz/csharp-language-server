@@ -54,6 +54,10 @@ module Range =
         { Start = Position.fromLinePosition pos.Start
           End = Position.fromLinePosition pos.End }
 
+    let toTextSpan (lines: TextLineCollection) = toLinePositionSpan lines >> lines.GetTextSpan
+
+    let fromTextSpan (lines: TextLineCollection) = lines.GetLinePositionSpan >> fromLinePositionSpan
+
 
 module Location =
     let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location): Location =
@@ -67,5 +71,5 @@ module Location =
 
 module TextEdit =
     let fromTextChange (lines: TextLineCollection) (changes: TextChange): TextEdit =
-        { Range = lines.GetLinePositionSpan(changes.Span) |> Range.fromLinePositionSpan
+        { Range = changes.Span |> Range.fromTextSpan lines
           NewText = changes.NewText }
