@@ -35,6 +35,7 @@ type ICSharpLspClient =
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
 
+[<Interface>]
 type IWorkspaceManager =
     abstract member Initialize: WorkspaceFolder list -> unit
     abstract member WaitInitialized: unit -> Async<unit>
