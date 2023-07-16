@@ -15,7 +15,7 @@ open CSharpLanguageServer.Common.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Workspace.Util
 
-type WorkspaceManager(lspClient: ILspClient) =
+type WorkspaceManager(lspClient: ICSharpLspClient) =
 
     let workspaces: ConcurrentDictionary<DocumentUri, Workspace> =
         ConcurrentDictionary()

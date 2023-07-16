@@ -24,7 +24,7 @@ module Operators =
     let inline (>->) (ma: '``Monad<'a>``) (mb: '``Monad<'b>``): '``Monad<'b>`` = ma >>= (fun _ -> mb)
 
 
-type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceManager) =
+type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceManager) =
 
     let logger = LogProvider.getLoggerByName "LSP"
 
@@ -32,6 +32,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
         override __.Dispose() = ()
 
         override __.Initialize(p) = async {
+            lspClient.Capabilities <- p.Capabilities
             let workspaceFolders =
                 map Array.toList p.WorkspaceFolders
                 // Can't simplify it to (:: []) like Haskell :(
