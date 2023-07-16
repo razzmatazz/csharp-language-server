@@ -149,7 +149,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override this.TextDocumentOnTypeFormatting(p) = workspaceManager.WaitInitialized() >-> DocumentOnTypeFormatting.handle workspaceManager p
 
-        override this.TextDocumentDocumentSymbol(p) = workspaceManager.WaitInitialized() >-> DocumentSymbol.handle workspaceManager p
+        override this.TextDocumentDocumentSymbol(p) = workspaceManager.WaitInitialized() >-> DocumentSymbol.handle workspaceManager lspClient.Capabilities p
 
         override __.WorkspaceDidChangeWatchedFiles(p) = ignoreNotification
 
