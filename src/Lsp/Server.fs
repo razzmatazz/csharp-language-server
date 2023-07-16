@@ -15,6 +15,14 @@ open CSharpLanguageServer.Common
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 
+// Move it to Common project?
+[<AutoOpen>]
+module Operators =
+    // There is no such operator (with type Monad<'a> -> Monad<'b> -> Monad<'b>) in FSharpPlus like `>>` in
+    // Haskell, so just write one.
+    // In F#, `>>` is function composition, that is why we use another operator.
+    let inline (>->) (ma: '``Monad<'a>``) (mb: '``Monad<'b>``): '``Monad<'b>`` = ma >>= (fun _ -> mb)
+
 
 type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceManager) =
 
@@ -35,6 +43,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
             // TODO: Monitor the lsp client process (via processId in InitializeParams) and shutdown if the
             // lsp client dies.
 
+            // TODO: Register the providers after initialization if client support it? It will reduce the
+            // number of requests during initialization, which we can't handle and client usually will cancel.
             let serverCapabilities =
                 { ServerCapabilities.Default with
                     TextDocumentSync = TextDocumentSync.provider
@@ -82,65 +92,65 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
 
         override __.Exit() = ignoreNotification
 
-        override this.TextDocumentHover(p) = Hover.handle workspaceManager p
+        override this.TextDocumentHover(p) = workspaceManager.WaitInitialized() >-> Hover.handle workspaceManager p
 
-        override this.TextDocumentDidOpen(p) = TextDocumentSync.didOpen workspaceManager p
+        override this.TextDocumentDidOpen(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.didOpen workspaceManager p
 
-        override this.TextDocumentDidChange(p) = TextDocumentSync.didChange workspaceManager p
+        override this.TextDocumentDidChange(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.didChange workspaceManager p
 
-        override this.TextDocumentDidClose(p) = TextDocumentSync.didClose workspaceManager p
+        override this.TextDocumentDidClose(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.didClose workspaceManager p
 
-        override this.TextDocumentWillSave(p) = TextDocumentSync.willSave workspaceManager p
+        override this.TextDocumentWillSave(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.willSave workspaceManager p
 
-        override this.TextDocumentWillSaveWaitUntil(p) = TextDocumentSync.willSaveUntil workspaceManager p
+        override this.TextDocumentWillSaveWaitUntil(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.willSaveUntil workspaceManager p
 
-        override this.TextDocumentDidSave(p) = TextDocumentSync.didSave workspaceManager p
+        override this.TextDocumentDidSave(p) = workspaceManager.WaitInitialized() >-> TextDocumentSync.didSave workspaceManager p
 
-        override this.TextDocumentCompletion(p) = Completion.handle workspaceManager p
+        override this.TextDocumentCompletion(p) = workspaceManager.WaitInitialized() >-> Completion.handle workspaceManager p
 
-        override this.CompletionItemResolve(p) = Completion.resolve workspaceManager p
+        override this.CompletionItemResolve(p) = workspaceManager.WaitInitialized() >-> Completion.resolve workspaceManager p
 
-        override this.TextDocumentPrepareRename(p) = Rename.prepare workspaceManager p
+        override this.TextDocumentPrepareRename(p) = workspaceManager.WaitInitialized() >-> Rename.prepare workspaceManager p
 
-        override this.TextDocumentRename(p) = Rename.handle workspaceManager p
+        override this.TextDocumentRename(p) = workspaceManager.WaitInitialized() >-> Rename.handle workspaceManager p
 
-        override this.TextDocumentDeclaration(p) = Declaration.handle workspaceManager p
+        override this.TextDocumentDeclaration(p) = workspaceManager.WaitInitialized() >-> Declaration.handle workspaceManager p
 
-        override this.TextDocumentDefinition(p) = Definition.handle workspaceManager p
+        override this.TextDocumentDefinition(p) = workspaceManager.WaitInitialized() >-> Definition.handle workspaceManager p
 
-        override this.TextDocumentReferences(p) = References.handle workspaceManager p
+        override this.TextDocumentReferences(p) = workspaceManager.WaitInitialized() >-> References.handle workspaceManager p
 
-        override this.TextDocumentDocumentHighlight(p) = DocumentHighlight.handle workspaceManager p
+        override this.TextDocumentDocumentHighlight(p) = workspaceManager.WaitInitialized() >-> DocumentHighlight.handle workspaceManager p
 
-        override this.TextDocumentDocumentLink(p) = DocumentLink.handle workspaceManager p
+        override this.TextDocumentDocumentLink(p) = workspaceManager.WaitInitialized() >-> DocumentLink.handle workspaceManager p
 
-        override this.DocumentLinkResolve(p) = DocumentLink.resolve workspaceManager p
+        override this.DocumentLinkResolve(p) = workspaceManager.WaitInitialized() >-> DocumentLink.resolve workspaceManager p
 
-        override this.TextDocumentTypeDefinition(p) = TypeDefinition.handle workspaceManager p
+        override this.TextDocumentTypeDefinition(p) = workspaceManager.WaitInitialized() >-> TypeDefinition.handle workspaceManager p
 
-        override this.TextDocumentImplementation(p) = Implementation.handle workspaceManager p
+        override this.TextDocumentImplementation(p) = workspaceManager.WaitInitialized() >-> Implementation.handle workspaceManager p
 
-        override this.TextDocumentCodeAction(p) = CodeAction.handle workspaceManager p
+        override this.TextDocumentCodeAction(p) = workspaceManager.WaitInitialized() >-> CodeAction.handle workspaceManager p
 
-        override this.CodeActionResolve(p) = CodeAction.resolve workspaceManager p
+        override this.CodeActionResolve(p) = workspaceManager.WaitInitialized() >-> CodeAction.resolve workspaceManager p
 
-        override this.TextDocumentCodeLens(p) = CodeLens.handle workspaceManager p
+        override this.TextDocumentCodeLens(p) = workspaceManager.WaitInitialized() >-> CodeLens.handle workspaceManager p
 
-        override this.CodeLensResolve(p) = CodeLens.resolve workspaceManager p
+        override this.CodeLensResolve(p) = workspaceManager.WaitInitialized() >-> CodeLens.resolve workspaceManager p
 
-        override this.TextDocumentSignatureHelp(p) = SignatureHelp.handle workspaceManager p
+        override this.TextDocumentSignatureHelp(p) = workspaceManager.WaitInitialized() >-> SignatureHelp.handle workspaceManager p
 
-        override this.TextDocumentDocumentColor(p) = Color.handle workspaceManager p
+        override this.TextDocumentDocumentColor(p) = workspaceManager.WaitInitialized() >-> Color.handle workspaceManager p
 
-        override this.TextDocumentColorPresentation(p) = Color.present workspaceManager p
+        override this.TextDocumentColorPresentation(p) = workspaceManager.WaitInitialized() >-> Color.present workspaceManager p
 
-        override this.TextDocumentFormatting(p) = DocumentFormatting.handle workspaceManager p
+        override this.TextDocumentFormatting(p) = workspaceManager.WaitInitialized() >-> DocumentFormatting.handle workspaceManager p
 
-        override this.TextDocumentRangeFormatting(p) = DocumentRangeFormatting.handle workspaceManager p
+        override this.TextDocumentRangeFormatting(p) = workspaceManager.WaitInitialized() >-> DocumentRangeFormatting.handle workspaceManager p
 
-        override this.TextDocumentOnTypeFormatting(p) = DocumentOnTypeFormatting.handle workspaceManager p
+        override this.TextDocumentOnTypeFormatting(p) = workspaceManager.WaitInitialized() >-> DocumentOnTypeFormatting.handle workspaceManager p
 
-        override this.TextDocumentDocumentSymbol(p) = DocumentSymbol.handle workspaceManager p
+        override this.TextDocumentDocumentSymbol(p) = workspaceManager.WaitInitialized() >-> DocumentSymbol.handle workspaceManager p
 
         override __.TextDocumentMoniker(p) = notImplemented
 
@@ -164,41 +174,41 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
 
         override __.WorkspaceDidDeleteFiles(p) = ignoreNotification
 
-        override this.WorkspaceSymbol(p) = WorkspaceSymbol.handle workspaceManager p
+        override this.WorkspaceSymbol(p) = workspaceManager.WaitInitialized() >-> WorkspaceSymbol.handle workspaceManager p
 
-        override this.WorkspaceSymbolResolve(p) = WorkspaceSymbol.resolve workspaceManager p
+        override this.WorkspaceSymbolResolve(p) = workspaceManager.WaitInitialized() >-> WorkspaceSymbol.resolve workspaceManager p
 
-        override this.WorkspaceExecuteCommand(p) = ExecuteCommand.handle workspaceManager p
+        override this.WorkspaceExecuteCommand(p) = workspaceManager.WaitInitialized() >-> ExecuteCommand.handle workspaceManager p
 
-        override this.TextDocumentFoldingRange(p) = FoldingRange.handle workspaceManager p
+        override this.TextDocumentFoldingRange(p) = workspaceManager.WaitInitialized() >-> FoldingRange.handle workspaceManager p
 
-        override this.TextDocumentSelectionRange(p) = SelectionRange.handle workspaceManager p
+        override this.TextDocumentSelectionRange(p) = workspaceManager.WaitInitialized() >-> SelectionRange.handle workspaceManager p
 
-        override this.TextDocumentSemanticTokensFull(p) = SemanticTokens.handleFull workspaceManager p
+        override this.TextDocumentSemanticTokensFull(p) = workspaceManager.WaitInitialized() >-> SemanticTokens.handleFull workspaceManager p
 
-        override this.TextDocumentSemanticTokensFullDelta(p) = SemanticTokens.handleFullDelta workspaceManager p
+        override this.TextDocumentSemanticTokensFullDelta(p) = workspaceManager.WaitInitialized() >-> SemanticTokens.handleFullDelta workspaceManager p
 
-        override this.TextDocumentSemanticTokensRange(p) = SemanticTokens.handleRange workspaceManager p
+        override this.TextDocumentSemanticTokensRange(p) = workspaceManager.WaitInitialized() >-> SemanticTokens.handleRange workspaceManager p
 
-        override this.TextDocumentInlayHint(p) = InlayHint.handle workspaceManager p
+        override this.TextDocumentInlayHint(p) = workspaceManager.WaitInitialized() >-> InlayHint.handle workspaceManager p
 
-        override this.InlayHintResolve(p) = InlayHint.resolve workspaceManager p
+        override this.InlayHintResolve(p) = workspaceManager.WaitInitialized() >-> InlayHint.resolve workspaceManager p
 
         override __.WorkDoneProgressCancel(p) = ignoreNotification
 
-        override this.TextDocumentInlineValue(p) = InlineValue.handle workspaceManager p
+        override this.TextDocumentInlineValue(p) = workspaceManager.WaitInitialized() >-> InlineValue.handle workspaceManager p
 
-        override this.TextDocumentPrepareCallHierarchy(p) = CallHierarchy.prepare workspaceManager p
+        override this.TextDocumentPrepareCallHierarchy(p) = workspaceManager.WaitInitialized() >-> CallHierarchy.prepare workspaceManager p
 
-        override this.CallHierarchyIncomingCalls(p) = CallHierarchy.incomingCalls workspaceManager p
+        override this.CallHierarchyIncomingCalls(p) = workspaceManager.WaitInitialized() >-> CallHierarchy.incomingCalls workspaceManager p
 
-        override this.CallHierarchyOutgoingCalls(p) = CallHierarchy.outgoingCalls workspaceManager p
+        override this.CallHierarchyOutgoingCalls(p) = workspaceManager.WaitInitialized() >-> CallHierarchy.outgoingCalls workspaceManager p
 
-        override this.TextDocumentPrepareTypeHierarchy(p) = TypeHierarchy.prepare workspaceManager p
+        override this.TextDocumentPrepareTypeHierarchy(p) = workspaceManager.WaitInitialized() >-> TypeHierarchy.prepare workspaceManager p
 
-        override this.TypeHierarchySupertypes(p) = TypeHierarchy.supertypes workspaceManager p
+        override this.TypeHierarchySupertypes(p) = workspaceManager.WaitInitialized() >-> TypeHierarchy.supertypes workspaceManager p
 
-        override this.TypeHierarchySubtypes(p) = TypeHierarchy.subtypes workspaceManager p
+        override this.TypeHierarchySubtypes(p) = workspaceManager.WaitInitialized() >-> TypeHierarchy.subtypes workspaceManager p
 
         override this.TextDocumentDiagnostic(p) = notImplemented
 
@@ -208,6 +218,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, workspaceManager: IWorkspaceMan
 
 
 module Server =
+    let logger = LogProvider.getLoggerByName "LSP"
+
     let private createRpc (handler: IJsonRpcMessageHandler) : JsonRpc =
         let rec (|HandleableException|_|) (e: exn) =
             match e with
