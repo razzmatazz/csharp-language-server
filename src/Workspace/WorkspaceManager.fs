@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Workspace
 
 open System.Collections.Concurrent
+open System.Threading.Tasks
 open Microsoft.Build.Locator
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
@@ -18,6 +19,7 @@ type WorkspaceManager(lspClient: ILspClient) =
 
     let mutable workspaces: ConcurrentDictionary<DocumentUri, Workspace> =
         ConcurrentDictionary()
+    let initialized: TaskCompletionSource<bool> = TaskCompletionSource<bool>()
 
     let logger = LogProvider.getLoggerByName "WorkspaceManager"
 
@@ -108,9 +110,16 @@ type WorkspaceManager(lspClient: ILspClient) =
             this.ChangeWorkspaceFolders added removed
 
         override this.Initialize(workspaceFolders: WorkspaceFolder list) =
-            MSBuildLocator.RegisterDefaults() |> ignore
+            let doInitialize (workspaceFolders: WorkspaceFolder list) = async {
+                MSBuildLocator.RegisterDefaults() |> ignore
+                do! this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty
+                initialized.SetResult(true)
+            }
+            doInitialize workspaceFolders |> Async.Start
 
-            this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty |> Async.Start
+        override this.WaitInitialized() = async {
+            do! initialized.Task |> Async.AwaitTask |> Async.Ignore
+        }
 
         override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
 
