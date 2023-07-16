@@ -35,6 +35,8 @@ module Position =
         else
             LinePosition(pos.Line, pos.Character)
 
+    let toRoslynPosition (lines: TextLineCollection) = toLinePosition lines >> lines.GetPosition
+
 
 module Range =
     let toLinePositionSpan (lines: TextLineCollection) (range: Range): LinePositionSpan =
@@ -45,3 +47,19 @@ module Range =
     let fromLinePositionSpan (pos: LinePositionSpan): Range =
         { Start = Position.fromLinePosition pos.Start
           End = Position.fromLinePosition pos.End }
+
+
+module Location =
+    let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location): Location =
+        if loc.IsInSource then
+            { Uri = loc.SourceTree.FilePath |> Path.toUri
+              Range = loc.GetLineSpan().Span |> Range.fromLinePositionSpan }
+        else
+            { Uri = ""
+              Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 0 } } }
+
+
+module TextEdit =
+    let fromTextChange (lines: TextLineCollection) (changes: TextChange): TextEdit =
+        { Range = lines.GetLinePositionSpan(changes.Span) |> Range.fromLinePositionSpan
+          NewText = changes.NewText }
