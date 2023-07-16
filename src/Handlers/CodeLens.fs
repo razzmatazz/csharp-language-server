@@ -141,15 +141,10 @@ module CodeLens =
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
             |> Option.defaultValue CodeLensData.Default
 
-        match wm.GetDocument lensData.DocumentUri with
+        match! wm.FindSymbol lensData.DocumentUri lensData.Position with
         | None -> return p |> success
-        | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position = Position.toRoslynPosition sourceText.Lines lensData.Position
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-            let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution)
-                |> Async.AwaitTask
+        | Some symbol ->
+            let! refs = wm.FindReferences symbol
             let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0
             let title = sprintf "%d Reference(s)" refNum
 
