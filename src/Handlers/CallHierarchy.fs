@@ -1,25 +1,75 @@
 namespace CSharpLanguageServer.Handlers
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 
+open CSharpLanguageServer.Common
 open CSharpLanguageServer.Common.Types
-open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module CallHierarchy =
-    let provider: bool option = None
+    let private isCallableSymbol (symbol: ISymbol): bool =
+        if isNull symbol then
+            false
+        else
+            List.contains
+                symbol.Kind
+                [ Microsoft.CodeAnalysis.SymbolKind.Method
+                  Microsoft.CodeAnalysis.SymbolKind.Field
+                  Microsoft.CodeAnalysis.SymbolKind.Event
+                  Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let prepare (wm: IWorkspaceManager) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> =
-        notImplemented
+    let provider: bool option = Some true
+
+    let prepare (wm: IWorkspaceManager) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
+        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+        | Some symbol when isCallableSymbol symbol ->
+            let! locations = wm.ResolveSymbolLocations symbol
+            return
+                locations
+                |> Seq.map (HierarchyItem.fromSymbolAndLocation symbol)
+                |> Seq.toArray
+                |> Some
+                |> success
+        | _ -> return None |> success
+    }
 
     let incomingCalls
         (wm: IWorkspaceManager)
         (p: CallHierarchyIncomingCallsParams)
-        : AsyncLspResult<CallHierarchyIncomingCall[] option> =
-        notImplemented
+        : AsyncLspResult<CallHierarchyIncomingCall[] option> = async {
+        let toCallHierarchyIncomingCalls (info: SymbolCallerInfo) : CallHierarchyIncomingCall seq =
+            let fromRanges =
+                info.Locations
+                |> Seq.map (fun l -> l.GetLineSpan().Span |> Range.fromLinePositionSpan)
+                |> Seq.toArray
+            info.CallingSymbol.Locations
+            |> Seq.map (fun loc ->
+                { From = HierarchyItem.fromSymbolAndLocation (info.CallingSymbol) (loc |> Location.fromRoslynLocation)
+                  FromRanges = fromRanges })
+
+        match! wm.FindSymbol p.Item.Uri p.Item.Range.Start with
+        | None -> return None |> success
+        | Some symbol ->
+            let! callers = wm.FindCallers symbol
+            // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
+            // we will miss many callers. Maybe it should have some change in LSP protocol.
+            return
+                callers
+                |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
+                |> Seq.collect toCallHierarchyIncomingCalls
+                |> Seq.toArray
+                |> Some
+                |> success
+    }
 
     let outgoingCalls
         (wm: IWorkspaceManager)
         (p: CallHierarchyOutgoingCallsParams)
-        : AsyncLspResult<CallHierarchyOutgoingCall[] option> =
-        notImplemented
+        : AsyncLspResult<CallHierarchyOutgoingCall[] option> = async {
+        // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
+        // Then how can we implement it? Parsing AST manually?
+        return None |> success
+    }
