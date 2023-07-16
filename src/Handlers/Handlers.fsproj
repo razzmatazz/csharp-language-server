@@ -49,10 +49,12 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.7.0-1.final" />
     <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0-1.final" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+    <PackageReference Include="System.Collections.Immutable" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Common/Common.fsproj" />
+    <ProjectReference Include="../Logging/Logging.fsproj" />
   </ItemGroup>
 
 </Project>
