@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="FSharpPlus" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
   </ItemGroup>

@@ -26,11 +26,10 @@ module CallHierarchy =
     let prepare (wm: IWorkspaceManager) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
         match! wm.FindSymbol p.TextDocument.Uri p.Position with
         | Some symbol when isCallableSymbol symbol ->
-            let! locations = wm.ResolveSymbolLocations symbol
+            let! itemList = HierarchyItem.fromSymbol wm symbol
             return
-                locations
-                |> Seq.map (HierarchyItem.fromSymbolAndLocation symbol)
-                |> Seq.toArray
+                itemList
+                |> List.toArray
                 |> Some
                 |> success
         | _ -> return None |> success

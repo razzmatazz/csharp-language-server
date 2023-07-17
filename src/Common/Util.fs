@@ -4,6 +4,9 @@ open System
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
+open FSharpPlus
+
+open CSharpLanguageServer.Common.Types
 
 
 module Uri =
@@ -140,3 +143,7 @@ module HierarchyItem =
           Range = location.Range
           SelectionRange = location.Range
           Data = None }
+
+    let fromSymbol (wm: IWorkspaceManager) (symbol: ISymbol): Async<HierarchyItem list> =
+        wm.ResolveSymbolLocations symbol
+        |> map (List.map (fromSymbolAndLocation symbol))
