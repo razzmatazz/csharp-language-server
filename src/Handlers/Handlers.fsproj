@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Completion.fs" />
     <Compile Include="Hover.fs" />
     <Compile Include="SignatureHelp.fs" />
