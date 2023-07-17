@@ -106,6 +106,16 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         |> Option.map (fun (workspace, docId) -> workspace.CurrentSolution.GetDocument(docId))
         |> Option.bind Option.ofObj
 
+    member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
+        match this.GetDocument uri with
+        | None -> return None
+        | Some doc ->
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let position = Position.toRoslynPosition sourceText.Lines pos
+            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc)
+    }
+
     member private this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
         workspaces.Values
         |> Seq.map (fun workspace -> SymbolFinder.FindDerivedClassesAsync(symbol, workspace.CurrentSolution, transitive) |> Async.AwaitTask)
@@ -136,15 +146,11 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
 
         override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
 
-        override this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> = async {
-            match this.GetDocument uri with
-            | None -> return None
-            | Some doc ->
-                let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-                let position = Position.toRoslynPosition sourceText.Lines pos
-                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-                return symbol |> Option.ofObj
-        }
+        override this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
+            this.FindSymbol' uri pos |> map (Option.map fst)
+
+        override this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> =
+            this.FindSymbol' uri pos
 
         override this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
             let! symbols =

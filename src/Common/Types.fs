@@ -47,6 +47,7 @@ type IWorkspaceManager =
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
     abstract member GetDocument: DocumentUri -> Document option
     abstract member FindSymbol: DocumentUri -> Position -> Async<ISymbol option>
+    abstract member FindSymbol': DocumentUri -> Position -> Async<(ISymbol * Document) option>
     abstract member FindReferences: ISymbol -> Async<ReferencedSymbol seq>
     abstract member FindImplementations: ISymbol -> Async<ISymbol seq>
     abstract member FindImplementations': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
