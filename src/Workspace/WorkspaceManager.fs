@@ -106,6 +106,18 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         |> Option.map (fun (workspace, docId) -> workspace.CurrentSolution.GetDocument(docId))
         |> Option.bind Option.ofObj
 
+    member private this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+        workspaces.Values
+        |> Seq.map (fun workspace -> SymbolFinder.FindDerivedClassesAsync(symbol, workspace.CurrentSolution, transitive) |> Async.AwaitTask)
+        |> Async.Parallel
+        |> map (Seq.collect id)
+
+    member private this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> =
+        workspaces.Values
+        |> Seq.map (fun workspace -> SymbolFinder.FindDerivedInterfacesAsync(symbol, workspace.CurrentSolution, transitive) |> Async.AwaitTask)
+        |> Async.Parallel
+        |> map (Seq.collect id)
+
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
@@ -142,29 +154,23 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
             return symbols |> Seq.collect id
         }
 
-        override this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> = async {
-            let! symbols =
-                workspaces.Values
-                |> Seq.map (fun workspace -> SymbolFinder.FindImplementationsAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
-                |> Async.Parallel
-            return symbols |> Seq.collect id
-        }
+        override this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> =
+            workspaces.Values
+            |> Seq.map (fun workspace -> SymbolFinder.FindImplementationsAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
+            |> Async.Parallel
+            |> map (Seq.collect id)
 
-        override this.FindDerivedClasses (symbol: INamedTypeSymbol): Async<INamedTypeSymbol seq> = async {
-            let! symbols =
-                workspaces.Values
-                |> Seq.map (fun workspace -> SymbolFinder.FindDerivedClassesAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
-                |> Async.Parallel
-            return symbols |> Seq.collect id
-        }
+        override this.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+            workspaces.Values
+            |> Seq.map (fun workspace -> SymbolFinder.FindImplementationsAsync(symbol, workspace.CurrentSolution, transitive) |> Async.AwaitTask)
+            |> Async.Parallel
+            |> map (Seq.collect id)
 
-        override this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = async {
-            let! symbols =
-                workspaces.Values
-                |> Seq.map (fun workspace -> SymbolFinder.FindDerivedInterfacesAsync(symbol, workspace.CurrentSolution) |> Async.AwaitTask)
-                |> Async.Parallel
-            return symbols |> Seq.collect id
-        }
+        override this.FindDerivedClasses (symbol: INamedTypeSymbol): Async<INamedTypeSymbol seq> = this.FindDerivedClasses' symbol true
+        override this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = this.FindDerivedClasses' symbol transitive
+
+        override this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = this.FindDerivedInterfaces' symbol true
+        override this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = this.FindDerivedInterfaces' symbol transitive
 
         override this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> = async {
             let! symbols =
