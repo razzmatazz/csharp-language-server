@@ -14,7 +14,7 @@ module SignatureInformation =
         let parameters =
             m.Parameters
             |> Seq.map (fun p ->
-                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p
                   Documentation = None })
             |> Array.ofSeq
 
@@ -23,7 +23,7 @@ module SignatureInformation =
                 { Kind = MarkupKind.Markdown
                   Value = DocumentationUtil.markdownDocForSymbol m }
 
-        { Label         = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+        { Label         = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
           Documentation = Some documentation
           Parameters    = Some parameters }
 
