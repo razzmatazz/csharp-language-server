@@ -4,6 +4,8 @@ open System
 open System.Xml.Linq
 open Microsoft.CodeAnalysis
 
+open CSharpLanguageServer.Common
+
 module internal DocumentationUtil =
     type TripleSlashComment =
         { Summary: XElement list
@@ -168,7 +170,7 @@ module internal DocumentationUtil =
         formattedDocLines |> (fun ss -> String.Join("\n", ss))
 
     let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) =
-        let symbolName = sym.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+        let symbolName = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat sym
 
         let symAssemblyName =
             sym.ContainingAssembly

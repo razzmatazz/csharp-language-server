@@ -14,7 +14,7 @@ module SignatureInformation =
         let parameters =
             m.Parameters
             |> Seq.map (fun p ->
-                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) |> U2.First
+                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p |> U2.First
                   Documentation = None })
             |> Array.ofSeq
 
@@ -23,10 +23,10 @@ module SignatureInformation =
                 { Kind = MarkupKind.Markdown
                   Value = DocumentationUtil.markdownDocForSymbol m }
 
-        { Label           = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+        { Label           = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
           Documentation   = Some documentation
           Parameters      = Some parameters
-          ActiveParameter = None}
+          ActiveParameter = None }
 
 // Move it to Common? For now, it's only used in this file.
 module Seq =
