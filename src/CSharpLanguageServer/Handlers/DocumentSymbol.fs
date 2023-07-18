@@ -117,7 +117,7 @@ module DocumentSymbol =
                 miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
 
             let docSymbol = {
-                Name           = symbol.ToDisplayString(displayStyle)
+                Name           = SymbolName.fromSymbol displayStyle symbol
                 Detail         = symbolDetail
                 Kind           = symbolKind
                 Range          = lspRange
