@@ -112,6 +112,10 @@ module SymbolKind =
         | _ -> SymbolKind.File
 
 
+module SymbolName =
+    let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): string = symbol.ToDisplayString(format)
+
+
 module HierarchyItem =
     let private displayStyle =
         SymbolDisplayFormat(
@@ -147,3 +151,16 @@ module HierarchyItem =
     let fromSymbol (wm: IWorkspaceManager) (symbol: ISymbol): Async<HierarchyItem list> =
         wm.ResolveSymbolLocations symbol
         |> map (List.map (fromSymbolAndLocation symbol))
+
+
+module SymbolInformation =
+    let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): SymbolInformation list =
+        let name = SymbolName.fromSymbol format symbol
+        let kind = SymbolKind.fromSymbol symbol
+        symbol.Locations
+        |> Seq.map (fun loc ->
+            { Name = name
+              Kind = kind
+              Location = Location.fromRoslynLocation loc
+              ContainerName = None })
+        |> Seq.toList
