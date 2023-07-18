@@ -152,6 +152,18 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         override this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> =
             this.FindSymbol' uri pos
 
+        override this.FindSymbols (pattern: string option): Async<ISymbol seq> =
+            let findTask =
+                match pattern with
+                | Some pat ->
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+                | None ->
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, konst true, SymbolFilter.TypeAndMember)
+            workspaces.Values
+            |> Seq.map (fun workspace -> findTask workspace.CurrentSolution |> Async.AwaitTask)
+            |> Async.Parallel
+            |> map (Seq.collect id)
+
         override this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
             let! symbols =
                 workspaces.Values
