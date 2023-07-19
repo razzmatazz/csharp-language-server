@@ -23,3 +23,24 @@ module Util =
         with
         | _ ->
             None
+
+
+// Source from https://nbevans.wordpress.com/2014/08/09/a-simple-stereotypical-javascript-like-debounce-service-for-f/
+type Debounce(timeout, fn) as x =
+    let mailbox = MailboxProcessor.Start(fun agent ->
+        let rec loop ida idb = async {
+            match! agent.TryReceive(x.Timeout) with
+            | Some _ -> return! loop ida (idb + 1)
+            | None when ida <> idb ->
+                fn ()
+                return! loop 0 0
+            | None -> return! loop 0 0
+        }
+
+        loop 0 0)
+
+    /// Calls the function, after debouncing has been applied.
+    member __.Bounce() = mailbox.Post(null)
+
+    /// Timeout in ms
+    member val Timeout = timeout with get, set

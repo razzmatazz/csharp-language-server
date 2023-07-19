@@ -17,7 +17,8 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Workspace.Util
 
 type private FileInfo =
-    { Version: int }
+    { Version: int
+      Debouncer: Debounce option }
 
 type WorkspaceManager(lspClient: ICSharpLspClient) =
 
@@ -131,11 +132,32 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         |> Async.Parallel
         |> map (Seq.collect id)
 
+    member private this.GetDiagnostics (uri: DocumentUri): Async<Diagnostic array> = async {
+        match this.GetDocument uri with
+        | None -> return Array.empty
+        | Some doc ->
+            let! semanticModelMaybe = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            match Option.ofObj semanticModelMaybe with
+            | None -> return Array.empty
+            | Some semanticModel ->
+                return semanticModel.GetDiagnostics() |> Seq.map Diagnostic.fromRoslynDiagnostic |> Seq.toArray
+    }
+
+    member private this.PublishDiagnostics (uri: DocumentUri): Async<unit> = async {
+        let! diagnostics = this.GetDiagnostics uri
+        do! lspClient.TextDocumentPublishDiagnostics { Uri = uri; Diagnostics = diagnostics }
+    }
+
     member private this.UpdateFile (uri: DocumentUri) (version: int) =
         let uri = Uri.unescape uri
-        let adder = konst { Version = version }
+        // TODO: If client support pull diagnostics, Debouncer should be None
+        let adder = fun uri ->  {
+            Version = version
+            // TODO: Make timeout configurable?
+            Debouncer = Some (Debounce(250, fun () -> this.PublishDiagnostics uri |> Async.Start)) }
         let updater = konst (fun (info: FileInfo) -> { info with Version = max info.Version version })
-        files.AddOrUpdate(uri, adder, updater) |> ignore
+        let info = files.AddOrUpdate(uri, adder, updater)
+        info.Debouncer |> Option.iter (fun debouncer -> debouncer.Bounce())
 
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
@@ -154,6 +176,8 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         }
 
         override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
+
+        override this.GetDiagnostics (uri: DocumentUri): Async<Diagnostic array> = this.GetDiagnostics uri
 
         override this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
             this.FindSymbol' uri pos |> map (Option.map fst)
