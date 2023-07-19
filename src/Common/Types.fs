@@ -58,4 +58,7 @@ type IWorkspaceManager =
     abstract member FindDerivedInterfaces': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
     abstract member FindCallers: ISymbol -> Async<SymbolCallerInfo seq>
     abstract member ResolveSymbolLocations: ISymbol -> Async<Location list>
-    abstract member ChangeDocument: DocumentUri -> TextDocumentContentChangeEvent [] -> Async<unit>
+    abstract member GetDocumentVersion: DocumentUri -> int option
+    abstract member OpenDocument: DocumentUri -> int -> Async<unit>
+    abstract member CloseDocument: DocumentUri -> Async<unit>
+    abstract member ChangeDocument: DocumentUri -> int -> TextDocumentContentChangeEvent [] -> Async<unit>

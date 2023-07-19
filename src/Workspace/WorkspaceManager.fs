@@ -16,10 +16,13 @@ open CSharpLanguageServer.Common.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Workspace.Util
 
+type private FileInfo =
+    { Version: int }
+
 type WorkspaceManager(lspClient: ICSharpLspClient) =
 
-    let workspaces: ConcurrentDictionary<DocumentUri, Workspace> =
-        ConcurrentDictionary()
+    let workspaces: ConcurrentDictionary<DocumentUri, Workspace> = ConcurrentDictionary()
+    let files: ConcurrentDictionary<DocumentUri, FileInfo> = ConcurrentDictionary()
     let initialized: TaskCompletionSource<bool> = TaskCompletionSource<bool>()
 
     let logger = LogProvider.getLoggerByName "WorkspaceManager"
@@ -128,6 +131,12 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         |> Async.Parallel
         |> map (Seq.collect id)
 
+    member private this.UpdateFile (uri: DocumentUri) (version: int) =
+        let uri = Uri.unescape uri
+        let adder = konst { Version = version }
+        let updater = konst (fun (info: FileInfo) -> { info with Version = max info.Version version })
+        files.AddOrUpdate(uri, adder, updater) |> ignore
+
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
@@ -206,7 +215,20 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 |> Seq.toList
         }
 
-        override this.ChangeDocument (uri: DocumentUri) (changes: TextDocumentContentChangeEvent[]) : Async<unit> = async {
+        override this.GetDocumentVersion (uri: DocumentUri): int option =
+            match Uri.unescape uri |> files.TryGetValue with
+            | true, info -> Some info.Version
+            | _ -> None
+
+        override this.OpenDocument (uri: DocumentUri) (version: int) = async {
+            this.UpdateFile uri version
+        }
+
+        override this.CloseDocument (uri: DocumentUri) = async {
+            Uri.unescape uri |> files.TryRemove |> ignore
+        }
+
+        override this.ChangeDocument (uri: DocumentUri) (version: int) (changes: TextDocumentContentChangeEvent[]) : Async<unit> = async {
             match this.GetWorkspaceWithDocumentId uri with
             | None -> return ()
             | Some(workspace, docId) ->
@@ -230,4 +252,6 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                     >> Log.addContext "newSourceText" newSourceText
                 )
                 workspace.TryApplyChanges(solution.WithDocumentText(docId, newSourceText)) |> ignore
+
+                this.UpdateFile uri version
         }
