@@ -66,7 +66,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
                     DocumentFormattingProvider = DocumentFormatting.provider
                     DocumentRangeFormattingProvider = DocumentRangeFormatting.provider
                     DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider
-                    RenameProvider = Rename.provider
+                    RenameProvider = Rename.provider lspClient.Capabilities
                     FoldingRangeProvider = FoldingRange.provider
                     ExecuteCommandProvider = ExecuteCommand.provider
                     SelectionRangeProvider = SelectionRange.provider
@@ -113,7 +113,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override this.TextDocumentPrepareRename(p) = workspaceManager.WaitInitialized() >-> Rename.prepare workspaceManager p
 
-        override this.TextDocumentRename(p) = workspaceManager.WaitInitialized() >-> Rename.handle workspaceManager p
+        override this.TextDocumentRename(p) = workspaceManager.WaitInitialized() >-> Rename.handle workspaceManager lspClient.Capabilities p
 
         override this.TextDocumentDefinition(p) = workspaceManager.WaitInitialized() >-> Definition.handle workspaceManager p
 
