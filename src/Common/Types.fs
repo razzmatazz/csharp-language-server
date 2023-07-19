@@ -46,6 +46,7 @@ type IWorkspaceManager =
     abstract member WaitInitialized: unit -> Async<unit>
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
     abstract member GetDocument: DocumentUri -> Document option
+    abstract member GetDiagnostics: DocumentUri -> Async<Diagnostic array>
     abstract member FindSymbol: DocumentUri -> Position -> Async<ISymbol option>
     abstract member FindSymbol': DocumentUri -> Position -> Async<(ISymbol * Document) option>
     abstract member FindSymbols: string option -> Async<ISymbol seq>

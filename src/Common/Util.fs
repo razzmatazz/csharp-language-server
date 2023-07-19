@@ -166,3 +166,30 @@ module SymbolInformation =
               Deprecated = None
               Tags = None })
         |> Seq.toList
+
+
+module DiagnosticSeverity =
+    let fromRoslynDiagnosticSeverity (sev: Microsoft.CodeAnalysis.DiagnosticSeverity): DiagnosticSeverity =
+        match sev with
+        | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> DiagnosticSeverity.Information
+        | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> DiagnosticSeverity.Warning
+        | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> DiagnosticSeverity.Error
+        | _ -> DiagnosticSeverity.Warning
+
+
+module Diagnostic =
+    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic): Diagnostic =
+        let diagnosticCodeUrl =
+            diagnostic.Id.ToLowerInvariant()
+            |> sprintf "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-messages/%s"
+            |> Uri
+        { Range = diagnostic.Location.GetLineSpan().Span |> Range.fromLinePositionSpan
+          Severity = Some (diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
+          Code = Some diagnostic.Id
+          CodeDescription = Some { Href = Some diagnosticCodeUrl }
+          Source = Some "lsp"
+          Message = diagnostic.GetMessage()
+          RelatedInformation = None
+          // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
+          Tags = None
+          Data = None }
