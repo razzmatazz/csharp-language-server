@@ -9,14 +9,17 @@ module TextDocumentSync =
     let provider: TextDocumentSyncOptions option =
         Some
             { TextDocumentSyncOptions.Default with
+                OpenClose = Some true
                 Change = Some TextDocumentSyncKind.Incremental }
 
-    let didOpen (wm: IWorkspaceManager) (p: DidOpenTextDocumentParams): Async<unit> = ignoreNotification
+    let didOpen (wm: IWorkspaceManager) (p: DidOpenTextDocumentParams): Async<unit> =
+        wm.OpenDocument p.TextDocument.Uri p.TextDocument.Version
 
     let didChange (wm: IWorkspaceManager) (p: DidChangeTextDocumentParams): Async<unit> =
-        wm.ChangeDocument p.TextDocument.Uri p.ContentChanges
+        wm.ChangeDocument p.TextDocument.Uri p.TextDocument.Version.Value p.ContentChanges
 
-    let didClose (wm: IWorkspaceManager) (p: DidCloseTextDocumentParams): Async<unit> = ignoreNotification
+    let didClose (wm: IWorkspaceManager) (p: DidCloseTextDocumentParams): Async<unit> =
+        wm.CloseDocument p.TextDocument.Uri
 
     let willSave (wm: IWorkspaceManager) (p: WillSaveTextDocumentParams): Async<unit> = ignoreNotification
 
