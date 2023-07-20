@@ -141,6 +141,7 @@ module SemanticTokens =
                Range = Some true
                Full = true |> First |> Some }
 
+    // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
     let handleFull (wm: IWorkspaceManager) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =
         getSemanticTokensRange wm p.TextDocument.Uri None
 

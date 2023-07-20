@@ -38,6 +38,7 @@ module Completion =
 
     // TODO: Add parameters to label so that we can distinguish override versions?
     // TODO: Add doc to response
+    // TODO: Change parameters to snippets like clangd
     let private makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
         { CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some

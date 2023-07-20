@@ -9,6 +9,7 @@ module Util =
         | Projects of string []
 
     // TODO: Ignore some dirs? Like .git, node_modules.
+    // TODO: Is it possible to make it lazy? It will start to find csproj files only if it can't find sln file.
     let findInteresting (rootDir: string) : Interesting option =
         try
             match Directory.EnumerateFiles(rootDir, "*.sln", SearchOption.AllDirectories) |> Seq.tryHead with

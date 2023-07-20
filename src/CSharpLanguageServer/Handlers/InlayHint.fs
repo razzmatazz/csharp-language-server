@@ -15,6 +15,7 @@ open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module InlayHint =
+    // TODO: Do we keep it now or refactor it to use reflection?
     let private getBestOrAllSymbols (info: SymbolInfo) =
         let best = if isNull info.Symbol then None else Some ([| info.Symbol |])
         let all = if info.CandidateSymbols.IsEmpty then None else Some (info.CandidateSymbols |> Array.ofSeq)
