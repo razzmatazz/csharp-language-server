@@ -45,6 +45,7 @@
     <Compile Include="Handlers/DocumentationUtil.fs" />
     <Compile Include="Handlers/ExecuteCommand.fs" />
     <Compile Include="Handlers/FoldingRange.fs" />
+    <Compile Include="Handlers/FormatUtil.fs" />
     <Compile Include="Handlers/Hover.fs" />
     <Compile Include="Handlers/Implementation.fs" />
     <Compile Include="Handlers/Initialization.fs" />
