@@ -108,6 +108,8 @@ module CodeLens =
 
     let provider: CodeLensOptions option = Some { ResolveProvider = Some true }
 
+    // TODO: Add configuration to disable some kind of code lens. For example, I think showing the reference
+    // number of a private member/class is noisy since I usually don't care that.
     let handle (wm: IWorkspaceManager) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
         match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
@@ -145,6 +147,8 @@ module CodeLens =
         | None -> return p |> success
         | Some symbol ->
             let! refs = wm.FindReferences symbol
+            // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
+            // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
             let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0
             let title = sprintf "%d Reference(s)" refNum
 

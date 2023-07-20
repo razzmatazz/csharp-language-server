@@ -14,6 +14,8 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.WindowShowMessage(p) =
         sendServerNotification "window/showMessage" (box p) |> Async.Ignore
 
+    // TODO: Send notifications / requests to client only if client support it
+
     override __.WindowShowMessageRequest(p) =
         sendServerRequest.Send "window/showMessageRequest" (box p)
 

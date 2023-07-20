@@ -169,6 +169,7 @@ module internal DocumentationUtil =
 
         formattedDocLines |> (fun ss -> String.Join("\n", ss))
 
+    // FIXME: Escape '`'
     let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) =
         let symbolName = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat sym
 
