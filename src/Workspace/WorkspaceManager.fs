@@ -86,7 +86,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         do!
             added
             |> map (fun add -> async {
-                let workspace = MSBuildWorkspace.Create()
+                let workspace = Workspace.create()
                 workspaces.[add.Uri] <- workspace
                 do! this.loadWorkspace workspace add.Uri
             })
