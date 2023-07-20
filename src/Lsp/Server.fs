@@ -1,7 +1,9 @@
 namespace CSharpLanguageServer.Lsp
 
 open System
+open System.Diagnostics
 open System.IO
+open System.Reflection
 open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -32,6 +34,17 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
         override __.Dispose() = ()
 
         override __.Initialize(p) = async {
+            logger.info (
+                Log.setMessage "initializing, {name} version {version}"
+                >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
+                // TODO: The version is not correct
+                >> Log.addContext "version" (Assembly.GetExecutingAssembly().GetName().Version)
+            )
+            logger.info (
+                Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+                >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
+            )
+
             lspClient.Capabilities <- p.Capabilities
             let workspaceFolders =
                 map Array.toList p.WorkspaceFolders
@@ -266,5 +279,10 @@ module Server =
         try
             let result = startCore clientCreator workspaceCreator
             int result
-        with _ex ->
+        with ex ->
+            logger.error (
+                Log.setMessage "{name} crashed:"
+                >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
+                >> Log.addException ex
+            )
             3
