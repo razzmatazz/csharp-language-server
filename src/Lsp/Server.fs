@@ -59,7 +59,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
                     ReferencesProvider = References.provider
                     DocumentHighlightProvider = DocumentHighlight.provider
                     DocumentSymbolProvider = DocumentSymbol.provider
-                    CodeActionProvider = CodeAction.provider
+                    CodeActionProvider = CodeAction.provider lspClient.Capabilities
                     CodeLensProvider = CodeLens.provider
                     DocumentLinkProvider = DocumentLink.provider
                     ColorProvider = Color.provider
@@ -131,7 +131,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override this.TextDocumentImplementation(p) = workspaceManager.WaitInitialized() >-> Implementation.handle workspaceManager p
 
-        override this.TextDocumentCodeAction(p) = workspaceManager.WaitInitialized() >-> CodeAction.handle workspaceManager p
+        override this.TextDocumentCodeAction(p) = workspaceManager.WaitInitialized() >-> CodeAction.handle workspaceManager lspClient.Capabilities p
 
         override this.CodeActionResolve(p) = workspaceManager.WaitInitialized() >-> CodeAction.resolve workspaceManager p
 
