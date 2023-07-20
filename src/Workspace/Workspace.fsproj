@@ -10,14 +10,18 @@
 
   <ItemGroup>
     <Compile Include="Util.fs" />
+    <Compile Include="Workspace.fs" />
     <Compile Include="WorkspaceManager.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Castle.Core" Version="5.1.1" />
     <PackageReference Include="FSharpPlus" Version="1.5.0"/>
     <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.22" />
     <PackageReference Include="Microsoft.Build" Version="17.6.3" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.5.5" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0-1.final" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.7.0-1.final" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.7.0-1.final" />
     <PackageReference Include="System.Collections.Concurrent" Version="4.3.0" />
   </ItemGroup>
