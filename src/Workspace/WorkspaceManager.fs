@@ -43,7 +43,20 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         | Some(Solution sln) ->
             logger.info (Log.setMessage "Start to load {slnPath}..." >> Log.addContext "slnPath" sln)
             // TODO: Report progress to client?
-            do! workspace.OpenSolutionAsync(sln) |> Async.AwaitTask |> Async.Ignore
+            try
+                do! workspace.OpenSolutionAsync(sln) |> Async.AwaitTask |> Async.Ignore
+                for diag in workspace.Diagnostics do
+                    logger.warn (
+                        Log.setMessage "Diagnostic during load {slnPath}: {diag}"
+                        >> Log.addContext "slnPath" sln
+                        >> Log.addContext "diag" (diag.ToString())
+                    )
+            with ex ->
+                logger.error (
+                    Log.setMessage "Failed to load {slnPath}:"
+                    >> Log.addContext "slnPath" sln
+                    >> Log.addException ex
+                )
             logger.info (Log.setMessage "Finish to load {slnPath}" >> Log.addContext "slnPath" sln)
         | Some(Projects projs) ->
             logger.info (
@@ -60,7 +73,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                         do! workspace.OpenProjectAsync(proj) |> Async.AwaitTask |> Async.Ignore
                     with ex ->
                         logger.info (
-                            Log.setMessage "Exception during loading {proj}:"
+                            Log.setMessage "Failed to load {proj}:"
                             >> Log.addContext "proj" proj
                             >> Log.addException ex
                         )
@@ -74,6 +87,12 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 Log.setMessage "Finish to load {projNum} projects"
                 >> Log.addContext "projNum" projs.Length
             )
+            for diag in workspace.Diagnostics do
+                logger.warn (
+                    Log.setMessage "Diagnostic during load projects: {diag}"
+                    >> Log.addContext "diag" (diag.ToString())
+                )
+
     }
 
     member this.ChangeWorkspaceFolders (added: WorkspaceFolder[]) (removed: WorkspaceFolder[]) : Async<unit> = async {
