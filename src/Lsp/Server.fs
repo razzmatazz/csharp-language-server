@@ -80,6 +80,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
                     DiagnosticProvider = Diagnostic.provider
                     WorkspaceSymbolProvider = WorkspaceSymbol.provider }
 
+            // TODO: Report server info to client (name, version)
             let initializeResult =
                 { InitializeResult.Default with
                     Capabilities = serverCapabilities }
@@ -252,6 +253,9 @@ module Server =
         [ "csharp/metadata", requestHandling (fun s p -> s.CSharpMetadata(p)) ]
         |> Map.ofList
 
+    // TODO:
+    // 1. log the begin and end of request.
+    // 2. if there is exception during the request, log it.
     let private requestHandlings =
         Map.union (defaultRequestHandlings ()) customRequestHandlings
 

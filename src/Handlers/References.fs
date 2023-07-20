@@ -15,6 +15,7 @@ module References =
         | None -> return None |> success
         | Some symbol ->
             let! refs = wm.FindReferences symbol
+            // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
             return
                 refs
                 |> Seq.collect (fun r -> r.Locations)

@@ -69,6 +69,7 @@ module CodeAction =
         instantiateRoslynProviders<CodeFixProvider>
             (fun _ -> true)
 
+    // TODO: refactor it. I think a long function in functional language is hard to read :)
     let private getRoslynCodeActions (doc: Document) (textSpan: TextSpan)
         : Async<CodeActions.CodeAction list> = async {
         let! ct = Async.CancellationToken
