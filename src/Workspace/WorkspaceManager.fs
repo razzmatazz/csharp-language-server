@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Workspace
 
 open System.Collections.Concurrent
+open System.IO
 open System.Threading.Tasks
 open Microsoft.Build.Locator
 open Microsoft.CodeAnalysis
@@ -179,6 +180,33 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         let info = files.AddOrUpdate(uri, adder, updater)
         info.Debouncer |> Option.iter (fun debouncer -> debouncer.Bounce())
 
+    member private this.SaveDocument (uri: DocumentUri) (text: string option) = async {
+        match text, this.GetWorkspaceWithDocumentId uri with
+        | None, _ -> return ()
+        | Some text, Some (workspace, docId) ->
+            let solution = workspace.CurrentSolution.WithDocumentText(docId, SourceText.From(text))
+            workspace.TryApplyChanges(solution) |> ignore
+        | Some text, None ->
+            let docPath = Uri.toPath uri
+            let docDir = Path.GetDirectoryName(docPath) + string Path.DirectorySeparatorChar
+            let fileOnProjectDir (p: Project) =
+                let projectDir = Path.GetDirectoryName(p.FilePath) + string Path.DirectorySeparatorChar
+                docDir.StartsWith(projectDir)
+            match
+                workspaces.Values
+                |> Seq.collect (fun workspace -> workspace.CurrentSolution.Projects)
+                |> Seq.filter fileOnProjectDir
+                |> Seq.sortByDescending (fun p -> Path.GetDirectoryName(p.FilePath).Length)
+                |> Seq.tryHead
+            with
+            | None -> return ()
+            | Some proj ->
+                let projectDir = Path.GetDirectoryName(proj.FilePath)
+                let docName = docPath.Substring(projectDir.Length+1)
+                let doc = proj.AddDocument(docName, text, folders=null, filePath=docPath)
+                proj.Solution.Workspace.TryApplyChanges(doc.Project.Solution) |> ignore
+    }
+
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
@@ -264,12 +292,18 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
             | true, info -> Some info.Version
             | _ -> None
 
-        override this.OpenDocument (uri: DocumentUri) (version: int) = async {
+        override this.OpenDocument (uri: DocumentUri) (version: int) (text: string) = async {
+            do! this.SaveDocument uri (Some text)
             this.UpdateFile uri version
         }
 
         override this.CloseDocument (uri: DocumentUri) = async {
             Uri.unescape uri |> files.TryRemove |> ignore
+        }
+
+        override this.SaveDocument (uri: DocumentUri) (text: string option) = async {
+            do! this.SaveDocument uri text
+            this.UpdateFile uri 0
         }
 
         override this.ChangeDocument (uri: DocumentUri) (version: int) (changes: TextDocumentContentChangeEvent[]) : Async<unit> = async {

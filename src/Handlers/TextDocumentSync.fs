@@ -10,10 +10,11 @@ module TextDocumentSync =
         Some
             { TextDocumentSyncOptions.Default with
                 OpenClose = Some true
+                Save = Some { IncludeText = Some true }
                 Change = Some TextDocumentSyncKind.Incremental }
 
     let didOpen (wm: IWorkspaceManager) (p: DidOpenTextDocumentParams): Async<unit> =
-        wm.OpenDocument p.TextDocument.Uri p.TextDocument.Version
+        wm.OpenDocument p.TextDocument.Uri p.TextDocument.Version p.TextDocument.Text
 
     let didChange (wm: IWorkspaceManager) (p: DidChangeTextDocumentParams): Async<unit> =
         wm.ChangeDocument p.TextDocument.Uri p.TextDocument.Version p.ContentChanges
@@ -25,4 +26,5 @@ module TextDocumentSync =
 
     let willSaveUntil (wm: IWorkspaceManager) (p: WillSaveTextDocumentParams): AsyncLspResult<TextEdit [] option> = notImplemented
 
-    let didSave (wm: IWorkspaceManager) (p: DidSaveTextDocumentParams): Async<unit> = ignoreNotification
+    let didSave (wm: IWorkspaceManager) (p: DidSaveTextDocumentParams): Async<unit> =
+        wm.SaveDocument p.TextDocument.Uri p.Text
