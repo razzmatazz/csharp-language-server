@@ -213,7 +213,14 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
 
         override this.Initialize(workspaceFolders: WorkspaceFolder list) =
             let doInitialize (workspaceFolders: WorkspaceFolder list) = async {
-                MSBuildLocator.RegisterDefaults() |> ignore
+                let instance = MSBuildLocator.RegisterDefaults()
+                logger.info (
+                    Log.setMessage "MSBuild environment:\nName: {name}\nVersion: {version}\nMSBuildPath: {msbuildPath}\nVisualStudioRootPath: {vsPath}"
+                    >> Log.addContext "name" instance.Name
+                    >> Log.addContext "version" instance.Version
+                    >> Log.addContext "msbuildPath" instance.MSBuildPath
+                    >> Log.addContext "vsPath" instance.VisualStudioRootPath
+                )
                 do! this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty
                 initialized.SetResult(true)
             }
