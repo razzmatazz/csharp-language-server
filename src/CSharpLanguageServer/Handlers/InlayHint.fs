@@ -6,6 +6,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
@@ -192,7 +193,28 @@ module InlayHint =
 
         | _ -> None
 
-    let provider: InlayHintOptions option = Some { ResolveProvider = Some false }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.InlayHint)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : InlayHintOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some { ResolveProvider = Some false }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/inlayHint"
+                  RegisterOptions =
+                    { ResolveProvider = Some false
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (wm: IWorkspaceManager) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
         match wm.GetDocument p.TextDocument.Uri with

@@ -1,8 +1,10 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
 open System.Collections.Generic
 open Microsoft.CodeAnalysis.Classification
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 open FSharpPlus
@@ -135,11 +137,35 @@ module SemanticTokens =
             return Some response |> success
     }
 
-    let provider: SemanticTokensOptions option =
-        Some { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
-                          TokenModifiers = semanticTokenModifiers |> Seq.toArray }
-               Range = Some true
-               Full = true |> First |> Some }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.SemanticTokens)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : SemanticTokensOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
+                              TokenModifiers = semanticTokenModifiers |> Seq.toArray }
+                   Range = Some true
+                   Full = true |> First |> Some }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/semanticTokens"
+                  RegisterOptions =
+                      { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
+                                   TokenModifiers = semanticTokenModifiers |> Seq.toArray }
+                        Range = Some true
+                        Full = true |> First |> Some
+                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
     let handleFull (wm: IWorkspaceManager) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =

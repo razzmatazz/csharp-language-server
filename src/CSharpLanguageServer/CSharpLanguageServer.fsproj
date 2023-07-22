@@ -41,6 +41,7 @@
     <Compile Include="Handlers/DocumentLink.fs" />
     <Compile Include="Handlers/DocumentOnTypeFormatting.fs" />
     <Compile Include="Handlers/DocumentRangeFormatting.fs" />
+    <Compile Include="Handlers/DocumentSelectorUtil.fs" />
     <Compile Include="Handlers/DocumentSymbol.fs" />
     <Compile Include="Handlers/DocumentationUtil.fs" />
     <Compile Include="Handlers/ExecuteCommand.fs" />
@@ -54,6 +55,7 @@
     <Compile Include="Handlers/LinkEditingRange.fs" />
     <Compile Include="Handlers/Moniker.fs" />
     <Compile Include="Handlers/References.fs" />
+    <Compile Include="Handlers/RegistrationOptionsType.fs" />
     <Compile Include="Handlers/Rename.fs" />
     <Compile Include="Handlers/SelectionRange.fs" />
     <Compile Include="Handlers/SemanticTokens.fs" />

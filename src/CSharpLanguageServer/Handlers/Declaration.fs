@@ -7,4 +7,6 @@ open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module Declaration =
-    let provider: bool option = None
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None

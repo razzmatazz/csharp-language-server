@@ -7,4 +7,6 @@ open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module LinkEditingRange =
-    let provider = None
+    let provider (clientCapabilities: ClientCapabilities option) = None
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None

@@ -7,7 +7,9 @@ open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module DocumentLink =
-    let provider: DocumentLinkOptions option = None
+    let provider (clientCapabilities: ClientCapabilities option) : DocumentLinkOptions option = None
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let handle (wm: IWorkspaceManager) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> = notImplemented
 

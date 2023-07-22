@@ -1,7 +1,9 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
@@ -10,7 +12,26 @@ open CSharpLanguageServer.Common
 
 [<RequireQualifiedAccess>]
 module DocumentRangeFormatting =
-    let provider: bool option = Some true
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.RangeFormatting)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : bool option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/rangeFormatting"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (wm: IWorkspaceManager) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         match wm.GetDocument p.TextDocument.Uri with
