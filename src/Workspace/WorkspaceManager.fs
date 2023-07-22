@@ -223,6 +223,9 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 )
                 do! this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty
                 initialized.SetResult(true)
+                let registrationParams = { Registrations = getRegistrations lspClient.Capabilities |> List.toArray }
+                // TODO: Retry on error?
+                do! lspClient.ClientRegisterCapability registrationParams |> Async.Ignore
             }
             doInitialize workspaceFolders |> Async.Start
 

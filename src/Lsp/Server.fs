@@ -57,41 +57,39 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
             // TODO: Monitor the lsp client process (via processId in InitializeParams) and shutdown if the
             // lsp client dies.
 
-            // TODO: Register the providers after initialization if client support it? It will reduce the
-            // number of requests during initialization, which we can't handle and client usually will cancel.
             let serverCapabilities =
                 { ServerCapabilities.Default with
-                    TextDocumentSync = TextDocumentSync.provider
-                    CompletionProvider = Completion.provider
-                    HoverProvider = Hover.provider
-                    SignatureHelpProvider = SignatureHelp.provider
-                    DeclarationProvider = Declaration.provider
-                    DefinitionProvider = Definition.provider
-                    TypeDefinitionProvider = TypeDefinition.provider
-                    ImplementationProvider = Implementation.provider
-                    ReferencesProvider = References.provider
-                    DocumentHighlightProvider = DocumentHighlight.provider
-                    DocumentSymbolProvider = DocumentSymbol.provider
+                    TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities
+                    CompletionProvider = Completion.provider lspClient.Capabilities
+                    HoverProvider = Hover.provider lspClient.Capabilities
+                    SignatureHelpProvider = SignatureHelp.provider lspClient.Capabilities
+                    DeclarationProvider = Declaration.provider lspClient.Capabilities
+                    DefinitionProvider = Definition.provider lspClient.Capabilities
+                    TypeDefinitionProvider = TypeDefinition.provider lspClient.Capabilities
+                    ImplementationProvider = Implementation.provider lspClient.Capabilities
+                    ReferencesProvider = References.provider lspClient.Capabilities
+                    DocumentHighlightProvider = DocumentHighlight.provider lspClient.Capabilities
+                    DocumentSymbolProvider = DocumentSymbol.provider lspClient.Capabilities
                     CodeActionProvider = CodeAction.provider lspClient.Capabilities
-                    CodeLensProvider = CodeLens.provider
-                    DocumentLinkProvider = DocumentLink.provider
-                    ColorProvider = Color.provider
-                    DocumentFormattingProvider = DocumentFormatting.provider
-                    DocumentRangeFormattingProvider = DocumentRangeFormatting.provider
-                    DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider
+                    CodeLensProvider = CodeLens.provider lspClient.Capabilities
+                    DocumentLinkProvider = DocumentLink.provider lspClient.Capabilities
+                    ColorProvider = Color.provider lspClient.Capabilities
+                    DocumentFormattingProvider = DocumentFormatting.provider lspClient.Capabilities
+                    DocumentRangeFormattingProvider = DocumentRangeFormatting.provider lspClient.Capabilities
+                    DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider lspClient.Capabilities
                     RenameProvider = Rename.provider lspClient.Capabilities
-                    FoldingRangeProvider = FoldingRange.provider
-                    ExecuteCommandProvider = ExecuteCommand.provider
-                    SelectionRangeProvider = SelectionRange.provider
-                    LinkedEditingRangeProvider = LinkedEditingRange.provider
-                    CallHierarchyProvider = CallHierarchy.provider
-                    SemanticTokensProvider = SemanticTokens.provider
-                    MonikerProvider = Moniker.provider
-                    TypeHierarchyProvider = TypeHierarchy.provider
-                    InlineValueProvider = InlineValue.provider
-                    InlayHintProvider = InlayHint.provider
-                    DiagnosticProvider = Diagnostic.provider
-                    WorkspaceSymbolProvider = WorkspaceSymbol.provider }
+                    FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
+                    ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
+                    SelectionRangeProvider = SelectionRange.provider lspClient.Capabilities
+                    LinkedEditingRangeProvider = LinkedEditingRange.provider lspClient.Capabilities
+                    CallHierarchyProvider = CallHierarchy.provider lspClient.Capabilities
+                    SemanticTokensProvider = SemanticTokens.provider lspClient.Capabilities
+                    MonikerProvider = Moniker.provider lspClient.Capabilities
+                    TypeHierarchyProvider = TypeHierarchy.provider lspClient.Capabilities
+                    InlineValueProvider = InlineValue.provider lspClient.Capabilities
+                    InlayHintProvider = InlayHint.provider lspClient.Capabilities
+                    DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
+                    WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
 
             // TODO: Report server info to client (name, version)
             let initializeResult =
