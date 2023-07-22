@@ -30,6 +30,8 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
     let logger = LogProvider.getLoggerByName "LSP"
 
+    let mutable workspaceFolders: WorkspaceFolder list = []
+
     interface ICSharpLspServer with
         override __.Dispose() = ()
 
@@ -46,13 +48,12 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
             )
 
             lspClient.Capabilities <- p.Capabilities
-            let workspaceFolders =
+            workspaceFolders <-
                 map Array.toList p.WorkspaceFolders
                 // Can't simplify it to (:: []) like Haskell :(
                 |> Option.orElse (map (Uri.toWorkspaceFolder >> (flip List.cons [])) p.RootUri)
                 |> Option.orElse (map (Path.toWorkspaceFolder >> (flip List.cons [])) p.RootPath)
-                |> Option.orElse (Some [Path.toWorkspaceFolder (Directory.GetCurrentDirectory())])
-            workspaceManager.Initialize (Option.get workspaceFolders)
+                |> Option.defaultValue [Path.toWorkspaceFolder (Directory.GetCurrentDirectory())]
 
             // TODO: Monitor the lsp client process (via processId in InitializeParams) and shutdown if the
             // lsp client dies.
@@ -99,7 +100,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
             return initializeResult |> success
         }
 
-        override __.Initialized(p) = ignoreNotification
+        override __.Initialized(p) = workspaceManager.Initialize workspaceFolders
 
         override __.Shutdown() = ignoreNotification
 
