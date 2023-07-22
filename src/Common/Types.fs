@@ -42,7 +42,7 @@ type ICSharpLspClient =
 
 [<Interface>]
 type IWorkspaceManager =
-    abstract member Initialize: WorkspaceFolder list -> unit
+    abstract member Initialize: WorkspaceFolder list -> Async<unit>
     abstract member WaitInitialized: unit -> Async<unit>
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
     abstract member GetDocument: DocumentUri -> Document option
