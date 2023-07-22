@@ -15,7 +15,9 @@ module TypeHierarchy =
         | :? INamedTypeSymbol -> true
         | _ -> false
 
-    let provider: bool option = Some true
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let prepare (wm: IWorkspaceManager) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
         match! wm.FindSymbol p.TextDocument.Uri p.Position with

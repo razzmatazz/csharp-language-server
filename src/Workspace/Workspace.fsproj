@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Common/Common.fsproj" />
+    <ProjectReference Include="../Handlers/Handlers.fsproj" />
     <ProjectReference Include="../Logging/Logging.fsproj" />
   </ItemGroup>
 

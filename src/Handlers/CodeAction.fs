@@ -285,16 +285,39 @@ module CodeAction =
             }
     }
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeAction)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let private literalSupport (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeAction)
+        |> Option.bind (fun x -> x.CodeActionLiteralSupport)
+
     let provider (clientCapabilities: ClientCapabilities option) : CodeActionOptions option =
-        let literalSupport =
-            clientCapabilities
-            |> Option.bind (fun x -> x.TextDocument)
-            |> Option.bind (fun x -> x.CodeAction)
-            |> Option.bind (fun x -> x.CodeActionLiteralSupport)
-        // TODO: Server can only return CodeActionOptions if literalSupport is not None
-        Some
-            { CodeActionKinds = None
-              ResolveProvider = Some true }
+        match dynamicRegistration clientCapabilities, literalSupport clientCapabilities with
+        | true, _ -> None
+        | false, _ ->
+            // TODO: Server can only return CodeActionOptions if literalSupport is not None
+            Some
+                { CodeActionKinds = None
+                  ResolveProvider = Some true }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/codeAction"
+                  RegisterOptions =
+                    { CodeActionKinds = None
+                      ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (wm: IWorkspaceManager) (clientCapabilities: ClientCapabilities option) (p: CodeActionParams) : AsyncLspResult<TextDocumentCodeActionResult option> = async {
         match wm.GetDocument p.TextDocument.Uri with

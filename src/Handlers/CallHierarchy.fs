@@ -21,7 +21,9 @@ module CallHierarchy =
                   Microsoft.CodeAnalysis.SymbolKind.Event
                   Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let provider: bool option = Some true
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let prepare (wm: IWorkspaceManager) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
         match! wm.FindSymbol p.TextDocument.Uri p.Position with

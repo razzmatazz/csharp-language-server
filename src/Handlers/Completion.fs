@@ -1,7 +1,9 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
@@ -10,10 +12,35 @@ open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module Completion =
-    let provider: CompletionOptions option =
-        Some { ResolveProvider = None
-               TriggerCharacters = Some ([| '.'; '''; |])
-               AllCommitCharacters = None }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Completion)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : CompletionOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some { ResolveProvider = None
+                   TriggerCharacters = Some ([| '.'; '''; |])
+                   AllCommitCharacters = None }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/completion"
+                  RegisterOptions =
+                    { ResolveProvider = None
+                      TriggerCharacters = Some ([| '.'; '''; |])
+                      AllCommitCharacters = None
+                      DocumentSelector = Some defaultDocumentSelector }
+                    |> serialize
+                    |> Some }
 
     let private roslynTagToLspCompletion tag =
         match tag with

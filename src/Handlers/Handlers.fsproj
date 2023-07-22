@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="RegistrationOptionsType.fs" />
+    <Compile Include="DocumentSelectorUtil.fs" />
     <Compile Include="DocumentationUtil.fs" />
     <Compile Include="FormatUtil.fs" />
     <Compile Include="Completion.fs" />

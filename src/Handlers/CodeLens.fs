@@ -1,10 +1,11 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 open Newtonsoft.Json.Linq
@@ -106,7 +107,28 @@ module CodeLens =
             { DocumentUri = ""
               Position = { Line = 0; Character = 0 } }
 
-    let provider: CodeLensOptions option = Some { ResolveProvider = Some true }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeLens)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some { ResolveProvider = Some true }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/codeLens"
+                  RegisterOptions =
+                    { ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     // TODO: Add configuration to disable some kind of code lens. For example, I think showing the reference
     // number of a private member/class is noisy since I usually don't care that.

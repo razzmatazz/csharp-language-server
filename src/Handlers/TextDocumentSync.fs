@@ -6,12 +6,14 @@ open CSharpLanguageServer.Common.Types
 open CSharpLanguageServer.Common.LspUtil
 
 module TextDocumentSync =
-    let provider: TextDocumentSyncOptions option =
+    let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
         Some
             { TextDocumentSyncOptions.Default with
                 OpenClose = Some true
                 Save = Some { IncludeText = Some true }
                 Change = Some TextDocumentSyncKind.Incremental }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let didOpen (wm: IWorkspaceManager) (p: DidOpenTextDocumentParams): Async<unit> =
         wm.OpenDocument p.TextDocument.Uri p.TextDocument.Version p.TextDocument.Text
