@@ -211,23 +211,21 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
 
-        override this.Initialize(workspaceFolders: WorkspaceFolder list) =
-            let doInitialize (workspaceFolders: WorkspaceFolder list) = async {
-                let instance = MSBuildLocator.RegisterDefaults()
-                logger.info (
-                    Log.setMessage "MSBuild environment:\nName: {name}\nVersion: {version}\nMSBuildPath: {msbuildPath}\nVisualStudioRootPath: {vsPath}"
-                    >> Log.addContext "name" instance.Name
-                    >> Log.addContext "version" instance.Version
-                    >> Log.addContext "msbuildPath" instance.MSBuildPath
-                    >> Log.addContext "vsPath" instance.VisualStudioRootPath
-                )
-                do! this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty
-                initialized.SetResult(true)
-                let registrationParams = { Registrations = getRegistrations lspClient.Capabilities |> List.toArray }
-                // TODO: Retry on error?
-                do! lspClient.ClientRegisterCapability registrationParams |> Async.Ignore
-            }
-            doInitialize workspaceFolders |> Async.Start
+        override this.Initialize(workspaceFolders: WorkspaceFolder list) = async {
+            let instance = MSBuildLocator.RegisterDefaults()
+            logger.info (
+                Log.setMessage "MSBuild environment:\nName: {name}\nVersion: {version}\nMSBuildPath: {msbuildPath}\nVisualStudioRootPath: {vsPath}"
+                >> Log.addContext "name" instance.Name
+                >> Log.addContext "version" instance.Version
+                >> Log.addContext "msbuildPath" instance.MSBuildPath
+                >> Log.addContext "vsPath" instance.VisualStudioRootPath
+            )
+            do! this.ChangeWorkspaceFolders (List.toArray workspaceFolders) Array.empty
+            initialized.SetResult(true)
+            let registrationParams = { Registrations = getRegistrations lspClient.Capabilities |> List.toArray }
+            // TODO: Retry on error?
+            do! lspClient.ClientRegisterCapability registrationParams |> Async.Ignore
+        }
 
         override this.WaitInitialized() = async {
             do! initialized.Task |> Async.AwaitTask |> Async.Ignore
