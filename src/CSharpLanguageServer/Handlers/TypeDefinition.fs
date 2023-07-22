@@ -2,20 +2,20 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Text
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
-
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
         let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri

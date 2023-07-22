@@ -80,6 +80,7 @@ module Initialization =
 
     let handleInitialized (lspClient: ILspClient)
                           (stateActor: MailboxProcessor<ServerStateEvent>)
+                          (getRegistrations: (ClientCapabilities option) -> Registration list)
                           (scope: ServerRequestScope)
                           (_p: InitializedParams)
             : Async<LspResult<unit>> =
@@ -88,46 +89,13 @@ module Initialization =
                 Log.setMessage "handleInitialized: \"initialized\" notification received from client"
             )
 
-            //
-            // registering w/client for didChangeWatchedFiles notifications"
-            //
-            let clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg =
-                scope.ClientCapabilities
-                |> Option.bind (fun x -> x.Workspace)
-                |> Option.bind (fun x -> x.DidChangeWatchedFiles)
-                |> Option.bind (fun x -> x.DynamicRegistration)
-                |> Option.defaultValue true
+            let registrationParams = { Registrations = getRegistrations scope.ClientCapabilities |> List.toArray }
+            // TODO: Retry on error?
+            do! lspClient.ClientRegisterCapability registrationParams |> Async.Ignore
 
-            match clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg with
-            | true ->
-                let fileChangeWatcher = { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
-                                          Kind = None }
-
-                let didChangeWatchedFilesRegistration: Registration =
-                    { Id = "id:workspace/didChangeWatchedFiles"
-                      Method = "workspace/didChangeWatchedFiles"
-                      RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
-                    }
-
-                try
-                    let! regResult =
-                        lspClient.ClientRegisterCapability(
-                            { Registrations = [| didChangeWatchedFilesRegistration |] })
-
-                    match regResult with
-                    | Ok _ -> ()
-                    | Error error ->
-                        logger.warn(
-                            Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
-                            >> Log.addContext "error" (string error)
-                        )
-                with
-                | ex ->
-                    logger.warn(
-                        Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
-                        >> Log.addContext "error" (string ex)
-                    )
-            | false -> ()
+            // TODO
+            // TODO: restore registering w/client for didChangeWatchedFiles notifications"
+            // TODO
 
             //
             // retrieve csharp settings

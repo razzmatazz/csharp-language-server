@@ -3,24 +3,43 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.Collections.Immutable
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp.Formatting
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Formatting
+open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.CSharp.Formatting
-open Microsoft.CodeAnalysis.Formatting
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module DocumentRangeFormatting =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.RangeFormatting)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/rangeFormatting"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         match scope.GetUserDocumentForUri p.TextDocument.Uri with

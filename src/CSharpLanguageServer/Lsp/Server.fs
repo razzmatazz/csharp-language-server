@@ -113,6 +113,44 @@ type CSharpLspServer(
         return ()
     }
 
+    let getRegistrations (clientCapabilities: ClientCapabilities option): Registration list =
+        let registrationBuilders =
+            [ CallHierarchy.registration
+              CodeAction.registration
+              CodeLens.registration
+              Color.registration
+              Completion.registration
+              Declaration.registration
+              Definition.registration
+              Diagnostic.registration
+              DocumentFormatting.registration
+              DocumentHighlight.registration
+              DocumentLink.registration
+              DocumentOnTypeFormatting.registration
+              DocumentRangeFormatting.registration
+              DocumentSymbol.registration
+              ExecuteCommand.registration
+              FoldingRange.registration
+              Hover.registration
+              Implementation.registration
+              InlayHint.registration
+              InlineValue.registration
+              LinkedEditingRange.registration
+              Moniker.registration
+              References.registration
+              Rename.registration
+              SelectionRange.registration
+              SemanticTokens.registration
+              SignatureHelp.registration
+              TextDocumentSync.registration
+              TypeDefinition.registration
+              TypeHierarchy.registration
+              WorkspaceSymbol.registration ]
+        registrationBuilders
+        |> List.map ((|>) clientCapabilities)
+        |> List.filter (Option.isSome)
+        |> List.map (Option.get)
+
     let getServerCapabilities
         (lspClient: InitializeParams) =
                 { ServerCapabilities.Default with
@@ -158,7 +196,7 @@ type CSharpLspServer(
             p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
 
         override __.Initialized(p) =
-            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor)
+            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor getRegistrations)
               |> ignoreResult
 
         override __.Shutdown() =

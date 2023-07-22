@@ -13,12 +13,13 @@ open CSharpLanguageServer.RoslynHelpers
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
     let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
-        { TextDocumentSyncOptions.Default with
-            OpenClose = Some true
-            Save = Some { IncludeText = Some true }
-            Change = Some TextDocumentSyncKind.Incremental
-        }
-        |> Some
+        Some
+            { TextDocumentSyncOptions.Default with
+                OpenClose = Some true
+                Save = Some { IncludeText = Some true }
+                Change = Some TextDocumentSyncKind.Incremental }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let didOpen (logMessage: Util.AsyncLogFn)
                 (diagnosticsPost: DiagnosticsEvent -> unit)

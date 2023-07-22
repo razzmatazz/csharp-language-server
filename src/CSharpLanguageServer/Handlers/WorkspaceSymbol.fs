@@ -2,11 +2,12 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
@@ -14,8 +15,26 @@ open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Formatting)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool, WorkspaceSymbolOptions> option =
-        true |> U2.First |> Some
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> U2.First true |> Some
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "workspace/symbol"
+                  RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope)
                (p: WorkspaceSymbolParams)
