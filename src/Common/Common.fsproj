@@ -10,13 +10,14 @@
 
   <ItemGroup>
     <Compile Include="LspUtil.fs" />
-    <Compile Include="Util.fs" />
+    <Compile Include="Extensions.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="FSharpPlus" Version="1.4.1"/>
     <PackageReference Include="Ionide.LanguageServerProtocol" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
+    <PackageReference Include="System.Collections.Concurrent" />
   </ItemGroup>
 
 </Project>
