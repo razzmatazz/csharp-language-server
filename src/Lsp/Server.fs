@@ -228,7 +228,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override this.WorkspaceDiagnostic(p) = notImplemented
 
-        override __.CSharpMetadata(p) = notImplemented
+        override this.CSharpMetadata(p) = workspaceManager.WaitInitialized() >-> CSharpMetadata.handle workspaceManager p
 
 
 module Server =

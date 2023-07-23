@@ -21,10 +21,16 @@ type private FileInfo =
     { Version: int
       Debouncer: Debounce option }
 
+type DecompiledMetadataDocument =
+    { Metadata: CSharpMetadataInformation
+      Document: Document }
+
 type WorkspaceManager(lspClient: ICSharpLspClient) =
 
     let workspaces: ConcurrentDictionary<DocumentUri, Workspace> = ConcurrentDictionary()
     let files: ConcurrentDictionary<DocumentUri, FileInfo> = ConcurrentDictionary()
+    // TODO: Remove item from the dictionary if it isn't used for some time?
+    let decompiledMetadata: ConcurrentDictionary<DocumentUri, DecompiledMetadataDocument> = ConcurrentDictionary()
     let initialized: TaskCompletionSource<bool> = TaskCompletionSource<bool>()
 
     let logger = LogProvider.getLoggerByName "WorkspaceManager"
@@ -129,6 +135,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         this.GetWorkspaceWithDocumentId uri
         |> Option.map (fun (workspace, docId) -> workspace.CurrentSolution.GetDocument(docId))
         |> Option.bind Option.ofObj
+        |> Option.orElse (decompiledMetadata.TryFind (Uri.unescape uri) |> Option.map (fun metadata -> metadata.Document))
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
         match this.GetDocument uri with
@@ -207,6 +214,33 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 proj.Solution.Workspace.TryApplyChanges(doc.Project.Solution) |> ignore
     }
 
+    member private this.ResolveSymbolLocationsFromMetadata (project: Project) (symbol: ISymbol) (location: Microsoft.CodeAnalysis.Location) = async {
+        let fullName = symbol |> getContainingTypeOrThis |> getFullReflectionName
+        let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{location.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+        let! doc =
+            match decompiledMetadata.TryFind uri with
+            | Some metadata -> async { return metadata.Document }
+            | None -> async {
+                let! doc, text = makeDocumentFromMetadata project location.MetadataModule fullName
+                let metadata =
+                    { Metadata =
+                        { ProjectName = project.Name
+                          AssemblyName = location.MetadataModule.ContainingAssembly.Name
+                          SymbolName = fullName
+                          Source = text }
+                      Document = doc }
+                return decompiledMetadata.AddOrUpdate(uri, metadata, (fun _ _ -> metadata)).Document
+            }
+
+        let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+        let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, symbol)
+        collector.Visit(syntaxTree.GetRoot())
+        match collector.GetLocations() with
+        | [] -> return [ { Uri = uri
+                           Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 0 } } } ]
+        | ls -> return ls
+    }
+
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
             this.ChangeWorkspaceFolders added removed
@@ -234,6 +268,9 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         override this.GetDocument(uri: DocumentUri) : Document option = this.GetDocument uri
 
         override this.GetDiagnostics (uri: DocumentUri): Async<Diagnostic array> = this.GetDiagnostics uri
+
+        override this.FindMetadata (uri: DocumentUri): CSharpMetadataInformation option =
+            Uri.unescape uri |> decompiledMetadata.TryFind |> Option.map (fun metadata -> metadata.Metadata)
 
         override this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
             this.FindSymbol' uri pos |> map (Option.map fst)
@@ -287,11 +324,23 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
             return symbols |> Seq.collect id
         }
 
-        override this.ResolveSymbolLocations (symbol: ISymbol): Async<Location list> = async {
-            // TODO: Support symbols in decompiled document
-            return
+        override this.ResolveSymbolLocations (symbol: ISymbol) (project: Project option): Async<Location list> = async {
+            let sourceLocations =
                 symbol.Locations
+                |> Seq.filter (fun l -> l.IsInSource)
                 |> Seq.map Location.fromRoslynLocation
+            let! metadateLocations =
+                match project with
+                | None -> async { return Seq.empty }
+                | Some proj ->
+                    symbol.Locations
+                    |> Seq.filter (fun l -> l.IsInMetadata)
+                    |> Seq.map (this.ResolveSymbolLocationsFromMetadata proj symbol)
+                    |> Async.Parallel
+                    |> map (Seq.collect id)
+
+            return
+                Seq.append sourceLocations metadateLocations
                 |> Seq.toList
         }
 

@@ -31,10 +31,10 @@ module Definition =
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
-        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+        match! wm.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some symbol ->
-            let! locations = wm.ResolveSymbolLocations symbol
+        | Some (symbol, doc) ->
+            let! locations = wm.ResolveSymbolLocations symbol (Some doc.Project)
             return
                 locations
                 |> Array.ofList

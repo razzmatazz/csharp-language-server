@@ -149,7 +149,7 @@ module HierarchyItem =
           Data = None }
 
     let fromSymbol (wm: IWorkspaceManager) (symbol: ISymbol): Async<HierarchyItem list> =
-        wm.ResolveSymbolLocations symbol
+        wm.ResolveSymbolLocations symbol None
         |> map (List.map (fromSymbolAndLocation symbol))
 
 
