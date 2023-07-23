@@ -4,6 +4,7 @@ open System
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
+open FSharpPlus
 
 open CSharpLanguageServer.Common.Types
 
@@ -37,7 +38,7 @@ module Implementation =
         | None -> return None |> success
         | Some symbol ->
             let! impls = wm.FindImplementations symbol
-            let! locations = impls |> Seq.map wm.ResolveSymbolLocations |> Async.Parallel
+            let! locations = impls |> Seq.map (flip wm.ResolveSymbolLocations None) |> Async.Parallel
 
             return
                 locations

@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="Castle.Core" />
     <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
     <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Locator" />

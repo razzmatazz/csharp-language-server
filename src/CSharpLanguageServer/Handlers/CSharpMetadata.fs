@@ -1,22 +1,12 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-open System.Collections.Immutable
-
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.AsyncLspResult
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Common.Types
 
-[<RequireQualifiedAccess>]
 module CSharpMetadata =
-    let handle (scope: ServerRequestScope) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
-        let uri = metadataParams.TextDocument.Uri
-
-        let metadataMaybe =
-            scope.DecompiledMetadata
-            |> Map.tryFind uri
-            |> Option.map (fun x -> x.Metadata)
-
-        return metadataMaybe |> LspResult.success
-    }
+    let handle (wm: IWorkspaceManager) (p: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> =
+        wm.FindMetadata p.TextDocument.Uri |> success

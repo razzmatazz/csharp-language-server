@@ -216,7 +216,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override this.TypeHierarchySubtypes(p) = workspaceManager.WaitInitialized() >-> TypeHierarchy.subtypes workspaceManager p
 
-        override __.CSharpMetadata(p) = notImplemented
+        override this.CSharpMetadata(p) = workspaceManager.WaitInitialized() >-> CSharpMetadata.handle workspaceManager p
 
 
 module Server =
