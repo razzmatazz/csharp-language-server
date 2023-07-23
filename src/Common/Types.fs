@@ -19,10 +19,6 @@ type CSharpMetadataInformation =
       SymbolName: string
       Source: string }
 
-type DecompiledMetadataDocument =
-    { Metadata: CSharpMetadataInformation
-      Document: Document }
-
 type CSharpMetadataParams =
     { TextDocument: TextDocumentIdentifier }
 
@@ -47,6 +43,7 @@ type IWorkspaceManager =
     abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
     abstract member GetDocument: DocumentUri -> Document option
     abstract member GetDiagnostics: DocumentUri -> Async<Diagnostic array>
+    abstract member FindMetadata: DocumentUri -> CSharpMetadataInformation option
     abstract member FindSymbol: DocumentUri -> Position -> Async<ISymbol option>
     abstract member FindSymbol': DocumentUri -> Position -> Async<(ISymbol * Document) option>
     abstract member FindSymbols: string option -> Async<ISymbol seq>
@@ -58,7 +55,8 @@ type IWorkspaceManager =
     abstract member FindDerivedInterfaces: INamedTypeSymbol -> Async<INamedTypeSymbol seq>
     abstract member FindDerivedInterfaces': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
     abstract member FindCallers: ISymbol -> Async<SymbolCallerInfo seq>
-    abstract member ResolveSymbolLocations: ISymbol -> Async<Location list>
+    // Is it really good to let caller tell us the knowledge of workspace? For example, what if project is not in worksapces?
+    abstract member ResolveSymbolLocations: ISymbol -> Project option -> Async<Location list>
     abstract member GetDocumentVersion: DocumentUri -> int option
     abstract member OpenDocument: DocumentUri -> int -> string -> Async<unit>
     abstract member CloseDocument: DocumentUri -> Async<unit>
