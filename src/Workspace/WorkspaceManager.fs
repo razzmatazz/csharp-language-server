@@ -296,9 +296,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         }
 
         override this.GetDocumentVersion (uri: DocumentUri): int option =
-            match Uri.unescape uri |> files.TryGetValue with
-            | true, info -> Some info.Version
-            | _ -> None
+            Uri.unescape uri |> files.TryFind |> Option.map (fun info -> info.Version)
 
         override this.OpenDocument (uri: DocumentUri) (version: int) (text: string) = async {
             do! this.SaveDocument uri (Some text)
