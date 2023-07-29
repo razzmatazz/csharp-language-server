@@ -39,7 +39,6 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
             logger.info (
                 Log.setMessage "initializing, {name} version {version}"
                 >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
-                // TODO: The version is not correct
                 >> Log.addContext "version" (Assembly.GetExecutingAssembly().GetName().Version)
             )
             logger.info (
