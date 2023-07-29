@@ -1,0 +1,15 @@
+<Project>
+
+  <PropertyGroup>
+    <Title>csharp-ls</Title>
+    <Product>csharp-ls</Product>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <ChangelogFile>$(MSBuildThisFileDirectory)CHANGELOG.md</ChangelogFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All"/>
+    <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
