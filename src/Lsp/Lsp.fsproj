@@ -2,20 +2,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>CSharpLanguageServer.$(MSBuildProjectName)</AssemblyName>
-    <Description>C# LSP language server</Description>
-    <PackAsTool>true</PackAsTool>
-    <ToolCommandName>csharp-ls-new</ToolCommandName>
-    <Authors>Saulius Menkevičius</Authors>
-    <PackageOutputPath>./nupkg</PackageOutputPath>
-    <PackageId>csharp-ls-new</PackageId>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>csharp;lsp;roslyn</PackageTags>
-    <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <ChangelogFile>..\..\CHANGELOG.md</ChangelogFile>
+    <IsPackable>false</IsPackable>
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,7 +22,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../Common/Common.fsproj" />
-    <ProjectReference Include="../CSharpLanguageServer/CSharpLanguageServer.fsproj" />
     <ProjectReference Include="../Workspace/Workspace.fsproj" />
     <ProjectReference Include="../Logging/Logging.fsproj" />
     <ProjectReference Include="../MSBuildWorkspacePatcher/MSBuildWorkspacePatcher.csproj" />
