@@ -52,7 +52,7 @@ let entry args =
                 | "warning" -> LogEventLevel.Warning
                 | "info" -> LogEventLevel.Information
                 | "log" -> LogEventLevel.Verbose
-                | _ -> LogEventLevel.Verbose
+                | _ -> LogEventLevel.Information
             let logConfig =
                 LoggerConfiguration()
                     .MinimumLevel.ControlledBy(LoggingLevelSwitch(logLevel))
