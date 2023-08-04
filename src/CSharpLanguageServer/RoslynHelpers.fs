@@ -697,6 +697,7 @@ let instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =
         [ "Microsoft.CodeAnalysis.Features"
           "Microsoft.CodeAnalysis.CSharp.Features"
           "Microsoft.CodeAnalysis.Workspaces"
+          "Microsoft.CodeAnalysis.Options"
         ]
         |> Seq.map Assembly.Load
         |> Array.ofSeq
