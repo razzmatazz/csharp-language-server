@@ -62,3 +62,6 @@ type IWorkspaceManager =
     abstract member CloseDocument: DocumentUri -> Async<unit>
     abstract member SaveDocument: DocumentUri -> string option -> Async<unit>
     abstract member ChangeDocument: DocumentUri -> int -> TextDocumentContentChangeEvent [] -> Async<unit>
+    abstract member RemoveDocument: DocumentUri -> Async<unit>
+    abstract member OnSolutionUpdate: DocumentUri -> FileChangeType -> unit
+    abstract member OnProjectUpdate: DocumentUri -> FileChangeType -> unit
