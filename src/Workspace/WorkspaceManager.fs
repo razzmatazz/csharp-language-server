@@ -202,8 +202,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 workspaces.Values
                 |> Seq.collect (fun workspace -> workspace.CurrentSolution.Projects)
                 |> Seq.filter fileOnProjectDir
-                |> Seq.sortByDescending (fun p -> Path.GetDirectoryName(p.FilePath).Length)
-                |> Seq.tryHead
+                |> Seq.tryMaxBy (fun p -> Path.GetDirectoryName(p.FilePath).Length)
             with
             | None -> return ()
             | Some proj ->
