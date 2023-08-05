@@ -26,6 +26,7 @@
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State.fs" />
     <Compile Include="Lsp/Client.fs" />
+    <Compile Include="Handlers/DidChangeWatchedFiles.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />
     <Compile Include="Handlers/CodeAction.fs" />

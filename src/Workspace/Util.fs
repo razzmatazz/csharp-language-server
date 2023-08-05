@@ -72,6 +72,7 @@ module Util =
               TextDocumentSync.registration
               TypeDefinition.registration
               TypeHierarchy.registration
+              DidChangeWatchedFiles.registration
               WorkspaceSymbol.registration ]
         registrationBuilders
         |> List.map ((|>) clientCapabilities)
