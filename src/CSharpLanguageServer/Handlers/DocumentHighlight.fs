@@ -25,7 +25,7 @@ module DocumentHighlight =
         | true -> None
         | false -> Some true
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = 
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
