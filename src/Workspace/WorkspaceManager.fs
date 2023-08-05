@@ -28,6 +28,7 @@ type DecompiledMetadataDocument =
 type WorkspaceManager(lspClient: ICSharpLspClient) =
 
     let workspaces: ConcurrentDictionary<DocumentUri, Workspace> = ConcurrentDictionary()
+    let workspaceUpdaters: ConcurrentDictionary<DocumentUri, Debounce> = ConcurrentDictionary()
     let files: ConcurrentDictionary<DocumentUri, FileInfo> = ConcurrentDictionary()
     // TODO: Remove item from the dictionary if it isn't used for some time?
     let decompiledMetadata: ConcurrentDictionary<DocumentUri, DecompiledMetadataDocument> = ConcurrentDictionary()
@@ -188,6 +189,12 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
         info.Debouncer |> Option.iter (fun debouncer -> debouncer.Bounce())
 
     member private this.SaveDocument (uri: DocumentUri) (text: string option) = async {
+        let tryLoadText uri =
+            try
+                uri |> Uri.toPath |> File.ReadAllText |> Some
+            with _ ->
+                None
+        let text = text |> Option.orElse (tryLoadText uri)
         match text, this.GetWorkspaceWithDocumentId uri with
         | None, _ -> return ()
         | Some text, Some (workspace, docId) ->
@@ -239,6 +246,20 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                            Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 0 } } } ]
         | ls -> return ls
     }
+
+    member this.OnSolutionOrProjectUpdate (uri: DocumentUri) changeType =
+        let workspaceFolders =
+            workspaces.Keys
+            |> Seq.filter (fun root -> uri.StartsWith(root + string Path.DirectorySeparatorChar))
+        let reload (uri: DocumentUri) =
+            workspaces.TryFind uri
+            |> Option.iter (fun workspace -> this.loadWorkspace (workspace :?> MSBuildWorkspace) uri |> Async.Start)
+            workspaceUpdaters.TryRemove uri |> ignore
+        // TODO: make 1s configurable?
+        let adder = fun uri -> Debounce(1000, konst (reload uri))
+
+        workspaceFolders
+        |> Seq.iter (fun folder -> workspaceUpdaters.AddOrUpdate(folder, adder, flip konst).Bounce())
 
     interface IWorkspaceManager with
         override this.ChangeWorkspaceFolders added removed =
@@ -387,3 +408,16 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
 
                 this.UpdateFile uri version
         }
+
+        override this.RemoveDocument (uri: DocumentUri) : Async<unit> = async {
+            Uri.unescape uri |> files.TryRemove |> ignore
+            match this.GetWorkspaceWithDocumentId uri with
+            | None -> ()
+            | Some (workspace, docId) ->
+                let doc = workspace.CurrentSolution.GetDocument(docId)
+                let project = doc.Project.RemoveDocument(docId)
+                workspace.TryApplyChanges(project.Solution) |> ignore
+        }
+
+        override this.OnSolutionUpdate uri changeType = this.OnSolutionOrProjectUpdate uri changeType
+        override this.OnProjectUpdate uri changeType = this.OnSolutionOrProjectUpdate uri changeType

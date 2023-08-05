@@ -169,7 +169,7 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
 
         override __.TextDocumentLinkedEditingRange(p) = notImplemented
 
-        override __.WorkspaceDidChangeWatchedFiles(p) = ignoreNotification
+        override this.WorkspaceDidChangeWatchedFiles(p) = workspaceManager.WaitInitialized() >-> DidChangeWatchedFiles.handle workspaceManager p
 
         override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification
 
