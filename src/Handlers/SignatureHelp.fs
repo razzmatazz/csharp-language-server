@@ -30,14 +30,6 @@ module SignatureInformation =
           Parameters      = Some parameters
           ActiveParameter = None }
 
-// Move it to Common? For now, it's only used in this file.
-module Seq =
-    let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq): 'T option =
-        if isNull source || Seq.isEmpty source then
-            None
-        else
-            Seq.maxBy projection source |> Some
-
 [<RequireQualifiedAccess>]
 module SignatureHelp =
     type InvocationContext =
