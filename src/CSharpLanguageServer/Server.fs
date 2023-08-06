@@ -330,7 +330,11 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
                       match csharpSettingsMaybe with
                       | Some csharpSettings ->
-                          Some { scope.State.Settings with SolutionPath = csharpSettings.solution }
+
+                          match csharpSettings.solution with
+                          | Some solutionPath-> Some { scope.State.Settings with SolutionPath = Some solutionPath }
+                          | _ -> None
+
                       | _ -> None
                   | _ -> None
 
