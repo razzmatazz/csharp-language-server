@@ -68,7 +68,7 @@ module Completion =
     // TODO: Change parameters to snippets like clangd
     let private makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
         { CompletionItem.Create(item.DisplayText) with
-            Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
+            Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
             SortText         = item.SortText |> Option.ofObj
             FilterText       = item.FilterText |> Option.ofObj
             Detail           = item.InlineDescription |> Option.ofObj
