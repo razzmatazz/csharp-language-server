@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Make --solution cmd line param take effect even when the editor provides us
+with `csharp.` settings;
+  - By @vytautassurvila in https://github.com/razzmatazz/csharp-language-server/pull/105
 * Upgrade dependencies: Roslyn, ICSharpCode.Decompiler, Microsoft.Build;
 * Support formatting options
   - By @weirongxu in https://github.com/razzmatazz/csharp-language-server/pull/94
