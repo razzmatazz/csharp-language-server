@@ -3,13 +3,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.9.0] - 2023-08-12 / Rūdninkai
 * Make --solution cmd line param take effect even when the editor provides us
 with `csharp.` settings;
   - By @vytautassurvila in https://github.com/razzmatazz/csharp-language-server/pull/105
 * Upgrade dependencies: Roslyn, ICSharpCode.Decompiler, Microsoft.Build;
 * Support formatting options
   - By @weirongxu in https://github.com/razzmatazz/csharp-language-server/pull/94
+
+### More about Rūdninkai, Lithuania
+- [Rūdninkai on WP](https://lt.wikipedia.org/wiki/R%C5%ABdninkai)
+- [Google Images on Rūdninkai](https://www.google.com/search?tbm=isch&q=rudninkai+lithuania)
 
 ## [0.8.0] - 2023-05-06 / Varėna
 * Add more symbols to documentSymbols & codeLens
