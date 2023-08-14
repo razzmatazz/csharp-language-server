@@ -15,16 +15,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Castle.Core" Version="5.1.1" />
-    <PackageReference Include="FSharpPlus" Version="1.4.1"/>
-    <PackageReference Include="ICSharpCode.Decompiler" Version="8.0.0.7345" />
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.14" />
-    <PackageReference Include="Microsoft.Build" Version="17.6.3" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.Build.Locator" Version="1.5.5" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0-1.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.7.0-1.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.7.0-1.final" />
-    <PackageReference Include="System.Collections.Concurrent" Version="4.3.0" />
+    <PackageReference Include="Castle.Core" />
+    <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Locator" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
+    <PackageReference Include="System.Collections.Concurrent" />
   </ItemGroup>
 
   <ItemGroup>
