@@ -49,15 +49,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharpPlus" Version="1.5.0"/>
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.22" />
-    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.7.0-1.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.7.0-1.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0-1.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.7.0-1.final" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-    <PackageReference Include="System.Collections.Concurrent" Version="4.3.0" />
-    <PackageReference Include="System.Collections.Immutable" Version="7.0.0" />
+    <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Microsoft.CodeAnalysis" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="System.Collections.Concurrent" />
+    <PackageReference Include="System.Collections.Immutable" />
   </ItemGroup>
 
   <ItemGroup>

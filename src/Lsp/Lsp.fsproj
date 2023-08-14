@@ -14,8 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharpPlus" Version="1.5.0"/>
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.22" />
+    <PackageReference Include="FSharpPlus" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" />
   </ItemGroup>
 
   <ItemGroup>
