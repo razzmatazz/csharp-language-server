@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharpPlus" Version="1.4.1"/>
+    <PackageReference Include="FSharpPlus" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="System.Collections.Concurrent" />
