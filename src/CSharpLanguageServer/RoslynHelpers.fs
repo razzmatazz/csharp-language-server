@@ -8,6 +8,7 @@ open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Host
+open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.CodeActions
 open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CSharp
@@ -925,27 +926,29 @@ type WorkspaceServicesInterceptor (logMessage) =
 
                 invocation.ReturnValue <- updatedReturnValue
 
-let interceptWorkspaceServices logMessage msbuildWorkspace =
-    let workspaceType = typeof<Workspace>
-    let workspaceServicesField = workspaceType.GetField("_services", BindingFlags.Instance ||| BindingFlags.NonPublic)
+type CSharpLspHostServices (logMessage) =
+    inherit HostServices()
 
-    let generator = ProxyGenerator()
-    let interceptor = WorkspaceServicesInterceptor(logMessage)
+    member private this.hostServices = MSBuildMefHostServices.DefaultServices
 
-    let interceptedWorkspaceServices =
-        workspaceServicesField.GetValue(msbuildWorkspace)
-        |> Unchecked.unbox<HostWorkspaceServices>
-        |> (fun ws -> generator.CreateClassProxyWithTarget<HostWorkspaceServices>(ws, interceptor))
-
-    workspaceServicesField.SetValue(msbuildWorkspace, interceptedWorkspaceServices)
+    override this.CreateWorkspaceServices (workspace: Workspace) =
+        // Ugly but we can't:
+        // 1. use Castle since there is no default constructor of MefHostServices.
+        // 2. call this.hostServices.CreateWorkspaceServices directly since it's internal.
+        let methodInfo = this.hostServices.GetType().GetMethod("CreateWorkspaceServices", BindingFlags.Instance|||BindingFlags.NonPublic)
+        let services =
+            methodInfo.Invoke(this.hostServices, [| workspace |])
+            |> Unchecked.unbox<HostWorkspaceServices>
+        let generator = ProxyGenerator()
+        let interceptor = WorkspaceServicesInterceptor(logMessage)
+        generator.CreateClassProxyWithTarget(services, interceptor)
 
 let tryLoadSolutionOnPath (logMessage: AsyncLogFn) solutionPath = async {
     try
         do! logMessage (sprintf "loading solution \"%s\".." solutionPath)
 
-        let msbuildWorkspace = MSBuildWorkspace.Create()
+        let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices(logMessage))
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-        do msbuildWorkspace |> interceptWorkspaceServices logMessage
 
         let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
@@ -962,10 +965,8 @@ let tryLoadSolutionOnPath (logMessage: AsyncLogFn) solutionPath = async {
 }
 
 let tryLoadSolutionFromProjectFiles (logMessage: AsyncLogFn) (projFiles: string list) = async {
-    let msbuildWorkspace = MSBuildWorkspace.Create()
+    let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices(logMessage))
     msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-
-    do msbuildWorkspace |> interceptWorkspaceServices logMessage
 
     for file in projFiles do
         do! logMessage (sprintf "loading project \"%s\".." file)
