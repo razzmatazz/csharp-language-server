@@ -7,6 +7,7 @@ open System.Reflection
 open System.Threading.Tasks
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Host
+open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
 
 open CSharpLanguageServer.Logging
@@ -190,19 +191,21 @@ module Workspace =
 
                     invocation.ReturnValue <- updatedReturnValue
 
-    let private interceptWorkspaceServices msbuildWorkspace =
-        let workspaceType = typeof<Workspace>
-        let workspaceServicesField = workspaceType.GetField("_services", BindingFlags.Instance ||| BindingFlags.NonPublic)
-        let interceptor = WorkspaceServicesInterceptor()
+    type private CSharpLspHostServices() =
+        inherit HostServices()
 
-        let interceptedWorkspaceServices =
-            workspaceServicesField.GetValue(msbuildWorkspace)
-            |> Unchecked.unbox<HostWorkspaceServices>
-            |> (fun ws -> generator.CreateClassProxyWithTarget<HostWorkspaceServices>(ws, interceptor))
+        member private this.hostServices = MSBuildMefHostServices.DefaultServices
 
-        workspaceServicesField.SetValue(msbuildWorkspace, interceptedWorkspaceServices)
+        override this.CreateWorkspaceServices (workspace: Workspace) =
+            // Ugly but we can't:
+            // 1. use Castle since there is no default constructor of MefHostServices.
+            // 2. call this.hostServices.CreateWorkspaceServices directly since it's internal.
+            let methodInfo = this.hostServices.GetType().GetMethod("CreateWorkspaceServices", BindingFlags.Instance|||BindingFlags.NonPublic)
+            let services =
+                methodInfo.Invoke(this.hostServices, [| workspace |])
+                |> Unchecked.unbox<HostWorkspaceServices>
+            let interceptor = WorkspaceServicesInterceptor()
+            generator.CreateClassProxyWithTarget(services, interceptor)
 
     let create () : MSBuildWorkspace =
-        let workspace = MSBuildWorkspace.Create()
-        do interceptWorkspaceServices workspace
-        workspace
+        MSBuildWorkspace.Create(CSharpLspHostServices())
