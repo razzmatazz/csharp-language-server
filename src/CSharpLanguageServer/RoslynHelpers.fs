@@ -892,12 +892,22 @@ type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
+let invocationCheck (invocation: IInvocation) (name: String) =
+    try
+        if invocation.Method.Name = name && invocation.ReturnValue = null then
+            null
+        else
+            invocation.ReturnValue
+    with
+    | _ ->
+        null
+
 type WorkspaceServicesInterceptor (logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             invocation.Proceed()
 
-            if invocation.Method.Name = "GetService" && invocation.ReturnValue = null then
+            if invocationCheck invocation "GetService" = null then
                 let updatedReturnValue =
                     let serviceType = invocation.GenericArguments[0]
                     let generator = ProxyGenerator()
