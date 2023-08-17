@@ -15,6 +15,8 @@ open CSharpLanguageServer.Logging
 module Workspace =
     let private logger = LogProvider.getLoggerByName "Workspace"
 
+    let private generator = ProxyGenerator()
+
     type private CleanCodeGenerationOptionsProviderInterceptor() =
         interface IInterceptor with
             member __.Intercept(invocation: IInvocation) =
@@ -48,8 +50,6 @@ module Workspace =
                 | "get_CleanCodeGenerationOptionsProvider" ->
                     let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
                     let cleanCodeGenOptionsProvType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider")
-
-                    let generator = ProxyGenerator()
                     let interceptor = CleanCodeGenerationOptionsProviderInterceptor()
                     let proxy = generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)
                     invocation.ReturnValue <- proxy
@@ -169,8 +169,6 @@ module Workspace =
                 if invocation.Method.Name = "GetService" && invocation.ReturnValue = null then
                     let updatedReturnValue =
                         let serviceType = invocation.GenericArguments[0]
-                        let generator = ProxyGenerator()
-
                         match serviceType.FullName with
                         | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
                             let interceptor = LegacyWorkspaceOptionServiceInterceptor()
@@ -195,8 +193,6 @@ module Workspace =
     let private interceptWorkspaceServices msbuildWorkspace =
         let workspaceType = typeof<Workspace>
         let workspaceServicesField = workspaceType.GetField("_services", BindingFlags.Instance ||| BindingFlags.NonPublic)
-
-        let generator = ProxyGenerator()
         let interceptor = WorkspaceServicesInterceptor()
 
         let interceptedWorkspaceServices =
