@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fix issues with code actions and other functionality that was
+broken after upgrade to recent roslyn version.
+  - Fixed by Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/111
+
 ## [0.9.0] - 2023-08-12 / Rūdninkai
 * Make --solution cmd line param take effect even when the editor provides us
 with `csharp.` settings;
