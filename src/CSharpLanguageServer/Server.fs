@@ -1052,7 +1052,9 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     let signatureForMethod (m: IMethodSymbol) =
                         let parameters =
                             m.Parameters
-                            |> Seq.map (fun p -> { Label = (string p); Documentation = None })
+                            |> Seq.map (fun p ->
+                                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                                  Documentation = None })
                             |> Array.ofSeq
 
                         let documentation =
@@ -1061,7 +1063,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                 Value = Documentation.markdownDocForSymbol m
                             }
 
-                        { Label         = formatSymbol m true (Some semanticModel) (Some position)
+                        { Label         = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
                           Documentation = Some documentation
                           Parameters    = Some parameters
                         }
