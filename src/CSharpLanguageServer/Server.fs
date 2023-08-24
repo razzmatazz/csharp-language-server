@@ -733,7 +733,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     let baseCompletionItem = CompletionItem.Create(item.DisplayText)
 
                     { baseCompletionItem with
-                        Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
+                        Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
                         SortText         = item.SortText |> Option.ofObj
                         FilterText       = item.FilterText |> Option.ofObj
                         InsertTextFormat = Some Types.InsertTextFormat.PlainText
