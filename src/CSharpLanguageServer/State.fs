@@ -1,6 +1,7 @@
 module CSharpLanguageServer.State
 
 open System
+open System.IO
 open System.Threading
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
@@ -41,6 +42,7 @@ type ServerRequest = {
 }
 and ServerState = {
     Settings: ServerSettings
+    RootPath: string
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
@@ -82,6 +84,7 @@ let pullNextRequestMaybe requestQueue =
         (Some nextRequest, queueRemainder)
 
 let emptyServerState = { Settings = emptySettings
+                         RootPath = Directory.GetCurrentDirectory()
                          ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
@@ -98,6 +101,7 @@ type ServerDocumentType =
 
 type ServerStateEvent =
     | SettingsChange of ServerSettings
+    | RootPathChange of string
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
@@ -214,6 +218,9 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
                     newState
 
+    | RootPathChange rootPath ->
+        return { state with RootPath = rootPath }
+
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }
 
@@ -251,7 +258,7 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            let! newSolution = loadSolutionOnSolutionPathOrCwd logMessage state.Settings.SolutionPath
+            let! newSolution = loadSolutionOnSolutionPathOrDir logMessage state.Settings.SolutionPath state.RootPath
 
             return { state with Solution = newSolution
                                 SolutionReloadPending = None }

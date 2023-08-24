@@ -199,6 +199,13 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 
+      let rootPath =
+          p.RootUri
+          |> Option.map (fun uri -> Uri.UnescapeDataString(Uri(uri.Replace("%3a", ":", true, null)).LocalPath))
+          |> Option.orElse p.RootPath
+          |> Option.defaultValue (Directory.GetCurrentDirectory())
+      scope.Emit(RootPathChange rootPath)
+
       // setup timer so actors get period ticks
       setupTimer ()
 

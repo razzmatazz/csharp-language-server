@@ -1028,16 +1028,15 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
         return solution
 }
 
-let loadSolutionOnSolutionPathOrCwd (logMessage: AsyncLogFn) solutionPathMaybe =
+let loadSolutionOnSolutionPathOrDir (logMessage: AsyncLogFn) solutionPathMaybe rootPath =
     match solutionPathMaybe with
     | Some solutionPath -> async {
         return! tryLoadSolutionOnPath logMessage solutionPath
       }
 
     | None -> async {
-        let cwd = Directory.GetCurrentDirectory()
-        do! logMessage (sprintf "attempting to find and load solution based on cwd (\"%s\").." cwd)
-        return! findAndLoadSolutionOnDir logMessage cwd
+        do! logMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
+        return! findAndLoadSolutionOnDir logMessage rootPath
       }
 
 let getRoslynCodeActions (logMessage: AsyncLogFn) (doc: Document) (textSpan: TextSpan)
