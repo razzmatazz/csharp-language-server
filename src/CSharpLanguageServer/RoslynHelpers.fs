@@ -671,14 +671,13 @@ let findSymbolsInSolution (solution: Solution)
                           pattern
                           (_limit: int option)
         : Async<Types.SymbolInformation list> = async {
-    let mutable symbolsFound = []
-
-    for project in solution.Projects do
-        let! symbols = SymbolFinder.FindSourceDeclarationsWithPatternAsync(
-                           project, pattern, SymbolFilter.TypeAndMember)
-                       |> Async.AwaitTask
-
-        symbolsFound <- (List.ofSeq symbols) @ symbolsFound
+    let findTask =
+        match pattern with
+        | Some pat ->
+            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+        | None ->
+            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
+    let! symbolsFound = findTask solution |> Async.AwaitTask
 
     let symbolToLspSymbolInformation (symbol: ISymbol) : Types.SymbolInformation =
         let (symbolName, symbolKind) = getSymbolNameAndKind None None symbol

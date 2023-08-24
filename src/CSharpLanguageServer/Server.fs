@@ -1477,7 +1477,12 @@ let setupServerHandlers settings (lspClient: LspClient) =
     }
 
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-        let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
+        let pattern =
+            if String.IsNullOrEmpty(symbolParams.Query) then
+                None
+            else
+                Some symbolParams.Query
+        let! symbols = findSymbolsInSolution scope.Solution pattern (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
     }
 
