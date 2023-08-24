@@ -16,7 +16,7 @@ open System
     """doc string
 
 Parameters:
-- `x`: y""")>]
+- `` x ``: y""")>]
 [<TestCase(
     "\n\
       <summary>Gets the standard error output stream.</summary>\n\
@@ -24,7 +24,7 @@ Parameters:
 ",
     """Gets the standard error output stream.
 
-Returns: A `System.IO.TextWriter` that represents the standard error output stream."""
+Returns: A `` System.IO.TextWriter `` that represents the standard error output stream."""
 )>]
 [<TestCase(
     "\n\
@@ -35,10 +35,10 @@ Returns: A `System.IO.TextWriter` that represents the standard error output stre
             <param name=\"condition\">The evaluated condition</param>\n\
  \n\
     ",
-    """Asserts that a condition is true. If the condition is false the method throws an `NUnit.Framework.AssertionException`.
+    """Asserts that a condition is true. If the condition is false the method throws an `` NUnit.Framework.AssertionException ``.
 
 Parameters:
-- `condition`: The evaluated condition"""
+- `` condition ``: The evaluated condition"""
 )>]
 [<TestCase(
     "\n\
@@ -50,11 +50,11 @@ Parameters:
     """Writes a string to the text stream, followed by a line terminator.
 
 Parameters:
-- `value`: The string to write. If `value` is `null`, only the line terminator is written.
+- `` value ``: The string to write. If `` value `` is `` null ``, only the line terminator is written.
 
 Exceptions:
-- `System.ObjectDisposedException`: The `System.IO.TextWriter` is closed.
-- `System.IO.IOException`: An I/O error occurs."""
+- `` System.ObjectDisposedException ``: The `` System.IO.TextWriter `` is closed.
+- `` System.IO.IOException ``: An I/O error occurs."""
 )>]
 [<TestCase("""
 <member name="M:csharp_test.Test.TestSomething2">
@@ -67,7 +67,7 @@ Exceptions:
     "Test method. Does another thing.")>]
 [<TestCase(
     "<summary>test <c>xx</c></summary>",
-    "test `xx`")>]
+    "test `` xx ``")>]
 [<TestCase(
     "<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
     "test contents-of-unknown-tag")>]
@@ -89,13 +89,13 @@ Exceptions:
     "<param name=\"x\">y</param><param name=\"a\">b</param>",
     """
 Parameters:
-- `x`: y
-- `a`: b""")>]
+- `` x ``: y
+- `` a ``: b""")>]
 [<TestCase(
     "<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
     """desc
 
 Types:
-- `x`: y""")>]
+- `` x ``: y""")>]
 let testFormatDocXml (xml, expectedMD: string) =
     Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), String.Join("\n", formatDocXml xml))
