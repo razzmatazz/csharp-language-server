@@ -199,6 +199,13 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
       scope.Emit(ClientCapabilityChange p.Capabilities)
 
+      let rootPath =
+          p.RootUri
+          |> Option.map (fun uri -> Uri.UnescapeDataString(Uri(uri.Replace("%3a", ":", true, null)).LocalPath))
+          |> Option.orElse p.RootPath
+          |> Option.defaultValue (Directory.GetCurrentDirectory())
+      scope.Emit(RootPathChange rootPath)
+
       // setup timer so actors get period ticks
       setupTimer ()
 
@@ -733,7 +740,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     let baseCompletionItem = CompletionItem.Create(item.DisplayText)
 
                     { baseCompletionItem with
-                        Kind             = item.Tags |> Seq.head |> roslynTagToLspCompletion |> Some
+                        Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
                         SortText         = item.SortText |> Option.ofObj
                         FilterText       = item.FilterText |> Option.ofObj
                         InsertTextFormat = Some Types.InsertTextFormat.PlainText
@@ -1052,7 +1059,9 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     let signatureForMethod (m: IMethodSymbol) =
                         let parameters =
                             m.Parameters
-                            |> Seq.map (fun p -> { Label = (string p); Documentation = None })
+                            |> Seq.map (fun p ->
+                                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                                  Documentation = None })
                             |> Array.ofSeq
 
                         let documentation =
@@ -1061,7 +1070,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                 Value = Documentation.markdownDocForSymbol m
                             }
 
-                        { Label         = formatSymbol m true (Some semanticModel) (Some position)
+                        { Label         = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
                           Documentation = Some documentation
                           Parameters    = Some parameters
                         }
@@ -1475,7 +1484,12 @@ let setupServerHandlers settings (lspClient: LspClient) =
     }
 
     let handleWorkspaceSymbol (scope: ServerRequestScope) (symbolParams: Types.WorkspaceSymbolParams): AsyncLspResult<Types.SymbolInformation [] option> = async {
-        let! symbols = findSymbolsInSolution scope.Solution symbolParams.Query (Some 20)
+        let pattern =
+            if String.IsNullOrEmpty(symbolParams.Query) then
+                None
+            else
+                Some symbolParams.Query
+        let! symbols = findSymbolsInSolution scope.Solution pattern (Some 20)
         return symbols |> Array.ofSeq |> Some |> success
     }
 

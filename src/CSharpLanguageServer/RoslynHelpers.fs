@@ -671,14 +671,13 @@ let findSymbolsInSolution (solution: Solution)
                           pattern
                           (_limit: int option)
         : Async<Types.SymbolInformation list> = async {
-    let mutable symbolsFound = []
-
-    for project in solution.Projects do
-        let! symbols = SymbolFinder.FindSourceDeclarationsWithPatternAsync(
-                           project, pattern, SymbolFilter.TypeAndMember)
-                       |> Async.AwaitTask
-
-        symbolsFound <- (List.ofSeq symbols) @ symbolsFound
+    let findTask =
+        match pattern with
+        | Some pat ->
+            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+        | None ->
+            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
+    let! symbolsFound = findTask solution |> Async.AwaitTask
 
     let symbolToLspSymbolInformation (symbol: ISymbol) : Types.SymbolInformation =
         let (symbolName, symbolKind) = getSymbolNameAndKind None None symbol
@@ -1029,16 +1028,15 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
         return solution
 }
 
-let loadSolutionOnSolutionPathOrCwd (logMessage: AsyncLogFn) solutionPathMaybe =
+let loadSolutionOnSolutionPathOrDir (logMessage: AsyncLogFn) solutionPathMaybe rootPath =
     match solutionPathMaybe with
     | Some solutionPath -> async {
         return! tryLoadSolutionOnPath logMessage solutionPath
       }
 
     | None -> async {
-        let cwd = Directory.GetCurrentDirectory()
-        do! logMessage (sprintf "attempting to find and load solution based on cwd (\"%s\").." cwd)
-        return! findAndLoadSolutionOnDir logMessage cwd
+        do! logMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
+        return! findAndLoadSolutionOnDir logMessage rootPath
       }
 
 let getRoslynCodeActions (logMessage: AsyncLogFn) (doc: Document) (textSpan: TextSpan)

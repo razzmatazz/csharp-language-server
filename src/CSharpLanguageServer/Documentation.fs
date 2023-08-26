@@ -53,13 +53,13 @@ let formatTextElement (n: XElement) =
             |> Option.ofObj
             |> Option.map (fun x -> x.Value)
             |> Option.map parseCref
-            |> Option.map (fun s -> sprintf "`%s`" s)
+            |> Option.map (fun s -> sprintf "`` %s ``" s)
             |> listOfOption
 
         let langWordMaybe =
             e.Attribute(XName.Get("langword"))
             |> Option.ofObj
-            |> Option.map (fun x -> sprintf "`%s`" x.Value)
+            |> Option.map (fun x -> sprintf "`` %s ``" x.Value)
             |> listOfOption
 
         crefMaybe |> Seq.append langWordMaybe |> List.ofSeq
@@ -68,11 +68,11 @@ let formatTextElement (n: XElement) =
         match subnode with
         | :? XElement as e ->
             match e.Name.LocalName with
-            | "c" -> [sprintf "`%s`" e.Value]
+            | "c" -> [sprintf "`` %s ``" e.Value]
             | "see" -> formatSeeElement e
             | "paramref" -> e.Attribute(XName.Get("name"))
                             |> Option.ofObj
-                            |> Option.map (fun x -> sprintf "`%s`" x.Value)
+                            |> Option.map (fun x -> sprintf "`` %s ``" x.Value)
                             |> listOfOption
             | _ -> [e.Value]
         | :? XText as t -> t.Value |> normalizeWhitespace |> listOfOne
@@ -136,7 +136,7 @@ let formatComment model : string list =
         | true -> markdownLines
         | false ->
             let formatItem (key, value) =
-                sprintf "- `%s`: %s" key (formatTextElement value)
+                sprintf "- `` %s ``: %s" key (formatTextElement value)
 
             markdownLines
             |> List.append [name + ":"; ""]
@@ -190,13 +190,13 @@ let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticMod
     let symbolInfoLines =
         match symbolName, symAssemblyName with
         | "", "" -> []
-        | typeName, "" -> [sprintf "`%s`" typeName]
+        | typeName, "" -> [sprintf "`` %s ``" typeName]
         | _, _ ->
             let docAssembly = semanticModel.Compilation.Assembly
             if symAssemblyName = docAssembly.Name then
-                [sprintf "`%s`" symbolName]
+                [sprintf "`` %s ``" symbolName]
             else
-                [sprintf "`%s` from assembly `%s`" symbolName symAssemblyName]
+                [sprintf "`` %s `` from assembly `` %s ``" symbolName symAssemblyName]
 
     let comment = parseComment (sym.GetDocumentationCommentXml())
     let formattedDocLines = formatComment comment
