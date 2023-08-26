@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Possible fixes to https://github.com/razzmatazz/csharp-language-server/issues/62 
+and https://github.com/razzmatazz/csharp-language-server/issues/57
+  - By Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/112
 * Fix issues with code actions and other functionality that was
 broken after upgrade to recent roslyn version.
   - Fixed by Adam Tao @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/111
