@@ -30,15 +30,18 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 However there are some features that need a non-standard implementation and this
 is where editor-specific plugins can be helpful.
 
-## emacs/lsp-mode
+## Emacs
+### emacs/lsp-mode
 Supports automatic installation, go-to-metatada (can view code from nuget/compiled dlls)
 and some additional features.
 
 See [emacs/lsp-mode](https://github.com/emacs-lsp/lsp-mode).
 
-## statiolake/vscode-csharp-ls
-Provides integration with VSCode.
+## Visual Studio Code
+### vytautassurvila/vscode-csharp-ls
+See [csharp-ls](https://marketplace.visualstudio.com/items?itemName=vytautassurvila.csharp-ls).
 
+### statiolake/vscode-csharp-ls
 See [vscode-csharp-ls](https://marketplace.visualstudio.com/items?itemName=statiolake.vscode-csharp-ls).
 
 # Building
