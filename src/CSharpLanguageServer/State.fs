@@ -178,14 +178,16 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
                             RequestQueue=state.RequestQueue @ [newRequest] }
 
     | FinishRequest requestId ->
-        let request = state.RunningRequests |> Map.find requestId
-        request.Semaphore.Dispose()
+        let request = state.RunningRequests |> Map.tryFind requestId
+        match request with
+        | Some(request) ->
+            request.Semaphore.Dispose()
+            let newRunningRequests = state.RunningRequests |> Map.remove requestId
+            let newState = { state with RunningRequests = newRunningRequests }
 
-        let newRunningRequests = state.RunningRequests |> Map.remove requestId
-        let newState = { state with RunningRequests = newRunningRequests }
-
-        postMsg ProcessRequestQueue
-        return newState
+            postMsg ProcessRequestQueue
+            return newState
+        | None -> return state
 
     | ProcessRequestQueue ->
         let runningRWRequestMaybe =
