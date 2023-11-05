@@ -39,7 +39,9 @@ See [emacs/lsp-mode](https://github.com/emacs-lsp/lsp-mode).
 
 ## Visual Studio Code
 ### vytautassurvila/vscode-csharp-ls
-See [csharp-ls](https://marketplace.visualstudio.com/items?itemName=vytautassurvila.csharp-ls).
+- Supports code decompilation from metadata
+
+See [csharp-ls](https://marketplace.visualstudio.com/items?itemName=vytautassurvila.csharp-ls) and [vscode-csharp-ls @ github](https://github.com/vytautassurvila/vscode-csharp-ls).
 
 ### statiolake/vscode-csharp-ls
 See [vscode-csharp-ls](https://marketplace.visualstudio.com/items?itemName=statiolake.vscode-csharp-ls).
