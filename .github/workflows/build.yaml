@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04]
-        dotnet: [7.0.201]
+        dotnet: [8.0.100]
 
     runs-on: ${{ matrix.os }}
     defaults:
@@ -17,25 +17,25 @@ jobs:
         working-directory: src
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: ${{ matrix.dotnet }}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ matrix.dotnet }}
 
-    - name: Restore tools
-      run: dotnet tool restore
+      - name: Restore tools
+        run: dotnet tool restore
 
-    - name: Run Build
-      run: dotnet build
+      - name: Run Build
+        run: dotnet build
 
-    - name: Run publish
-      run: (cd CSharpLanguageServer && dotnet pack -c Release -o release)
+      - name: Run publish
+        run: (cd CSharpLanguageServer && dotnet pack -c Release -o release)
 
-    - name: Upload NuGet packages as artifacts
-      uses: actions/upload-artifact@v2
-      with:
-        name: packages
-        path: src/CSharpLanguageServer/release/
+      - name: Upload NuGet packages as artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: packages
+          path: src/CSharpLanguageServer/release/
