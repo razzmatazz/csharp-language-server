@@ -686,6 +686,32 @@ let setupServerHandlers settings (lspClient: LspClient) =
                 None |> success |> async.Return
     }
 
+    let handleTextDocumentTypeDefinition (scope: ServerRequestScope) (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
+        let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri
+
+        return!
+            match docMaybe with
+            | Some doc -> async {
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
+                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+                let symbols =
+                    match Option.ofObj symbolMaybe with
+                    | Some sym -> [sym.ContainingType]
+                    | None -> []
+
+                let! locations =
+                     scope.GetSymbolAtPositionOfType doc.Project symbols
+
+                return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
+              }
+
+            | None ->
+                None |> success |> async.Return
+    }
+
     let handleTextDocumentImplementation (scope: ServerRequestScope) (def: Types.TextDocumentPositionParams): AsyncLspResult<Types.GotoResult option> = async {
         let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri
 
@@ -1675,6 +1701,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
         ("codeLens/resolve"               , handleCodeLensResolve)               |> requestHandlingWithReadOnlyScope
         ("textDocument/completion"        , handleTextDocumentCompletion)        |> requestHandlingWithReadOnlyScope
         ("textDocument/definition"        , handleTextDocumentDefinition)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/typeDefinition"    , handleTextDocumentTypeDefinition)    |> requestHandlingWithReadOnlyScope
         ("textDocument/documentHighlight" , handleTextDocumentDocumentHighlight) |> requestHandlingWithReadOnlyScope
         ("textDocument/documentSymbol"    , handleTextDocumentDocumentSymbol)    |> requestHandlingWithReadOnlyScope
         ("textDocument/hover"             , handleTextDocumentHover)             |> requestHandlingWithReadOnlyScope
