@@ -227,7 +227,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                else
                                    true |> First |> Some
                         DefinitionProvider = Some true
-                        TypeDefinitionProvider = None
+                        TypeDefinitionProvider = Some true
                         ImplementationProvider = Some true
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
