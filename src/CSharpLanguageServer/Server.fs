@@ -696,7 +696,6 @@ let setupServerHandlers settings (lspClient: LspClient) =
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
                 let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
                 let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask;
 
                 let symbols =
                     match Option.ofObj symbolMaybe with
@@ -704,12 +703,15 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     | None -> []
 
                 let typeSymbols = 
-                    match symbols.Head with
-                    | :? ILocalSymbol as loc -> [loc.Type]
-                    | :? IFieldSymbol as field -> [field.Type]
-                    | :? IPropertySymbol as prop -> [prop.Type]
-                    | :? IParameterSymbol as param -> [param.Type]
-                    | _ -> []
+                    if symbols.IsEmpty then
+                        []
+                    else
+                        match symbols.Head with
+                        | :? ILocalSymbol as loc -> [loc.Type]
+                        | :? IFieldSymbol as field -> [field.Type]
+                        | :? IPropertySymbol as prop -> [prop.Type]
+                        | :? IParameterSymbol as param -> [param.Type]
+                        | _ -> []
 
                 let! compilation = doc.Project.GetCompilationAsync(ct) |> Async.AwaitTask
                 let! locations =
