@@ -703,9 +703,9 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     | None -> []
 
                 let typeSymbols = 
-                    if symbols.IsEmpty then
-                        []
-                    else
+                    match symbols with 
+                    | [] -> []
+                    | _  ->
                         match symbols.Head with
                         | :? ILocalSymbol as loc -> [loc.Type]
                         | :? IFieldSymbol as field -> [field.Type]
@@ -713,7 +713,6 @@ let setupServerHandlers settings (lspClient: LspClient) =
                         | :? IParameterSymbol as param -> [param.Type]
                         | _ -> []
 
-                let! compilation = doc.Project.GetCompilationAsync(ct) |> Async.AwaitTask
                 let! locations =
                      scope.ResolveTypeSymbolLocations doc.Project typeSymbols 
 
