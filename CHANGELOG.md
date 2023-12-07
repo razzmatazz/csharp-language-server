@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Add support for textDocument/typeDefinition
+  - By @rudiejd in https://github.com/razzmatazz/csharp-language-server/pull/123
+
 ## [0.10.0] - 2023-11-04 / Seirijai
 * Upgrade dependencies: Roslyn, ICSharpCode.Decompiler, Microsoft.Build;
 * Fix for a crash in serverEventLoop
