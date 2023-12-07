@@ -396,6 +396,24 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         return aggregatedLspLocations
     }
 
+
+    member scope.ResolveTypeSymbolLocations
+            (project: Microsoft.CodeAnalysis.Project)
+            (symbols: Microsoft.CodeAnalysis.ITypeSymbol list) = async {
+        let! ct = Async.CancellationToken
+        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+
+        let mutable aggregatedLspLocations = []
+
+        for sym in symbols do
+            for l in sym.Locations do
+                let! symLspLocations = scope.ResolveSymbolLocation compilation project sym l
+
+                aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
+
+        return aggregatedLspLocations
+    }
+
 type DiagnosticsEvent =
     | DocumentOpenOrChange of string * DateTime
     | DocumentClose of string

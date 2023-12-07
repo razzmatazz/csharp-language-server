@@ -3,3 +3,4 @@ obj
 .ionide/
 .idea/
 .config/
+nupkg/

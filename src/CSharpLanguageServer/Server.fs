@@ -227,7 +227,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                else
                                    true |> First |> Some
                         DefinitionProvider = Some true
-                        TypeDefinitionProvider = None
+                        TypeDefinitionProvider = Some true
                         ImplementationProvider = Some true
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
@@ -678,6 +678,43 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
                 let! locations =
                      scope.ResolveSymbolLocations doc.Project symbols
+
+                return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
+              }
+
+            | None ->
+                None |> success |> async.Return
+    }
+
+    let handleTextDocumentTypeDefinition (scope: ServerRequestScope) (def: Types.TextDocumentPositionParams) : AsyncLspResult<Types.GotoResult option> = async {
+        let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri
+
+        return!
+            match docMaybe with
+            | Some doc -> async {
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
+                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+                let symbols =
+                    match Option.ofObj symbolMaybe with
+                    | Some sym -> [sym]
+                    | None -> []
+
+                let typeSymbols = 
+                    match symbols with 
+                    | [] -> []
+                    | _  ->
+                        match symbols.Head with
+                        | :? ILocalSymbol as loc -> [loc.Type]
+                        | :? IFieldSymbol as field -> [field.Type]
+                        | :? IPropertySymbol as prop -> [prop.Type]
+                        | :? IParameterSymbol as param -> [param.Type]
+                        | _ -> []
+
+                let! locations =
+                     scope.ResolveTypeSymbolLocations doc.Project typeSymbols 
 
                 return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
               }
@@ -1675,6 +1712,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
         ("codeLens/resolve"               , handleCodeLensResolve)               |> requestHandlingWithReadOnlyScope
         ("textDocument/completion"        , handleTextDocumentCompletion)        |> requestHandlingWithReadOnlyScope
         ("textDocument/definition"        , handleTextDocumentDefinition)        |> requestHandlingWithReadOnlyScope
+        ("textDocument/typeDefinition"    , handleTextDocumentTypeDefinition)    |> requestHandlingWithReadOnlyScope
         ("textDocument/documentHighlight" , handleTextDocumentDocumentHighlight) |> requestHandlingWithReadOnlyScope
         ("textDocument/documentSymbol"    , handleTextDocumentDocumentSymbol)    |> requestHandlingWithReadOnlyScope
         ("textDocument/hover"             , handleTextDocumentHover)             |> requestHandlingWithReadOnlyScope
