@@ -2,7 +2,7 @@
 This is a hacky Roslyn-based LSP server for C#, as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
 
-`csharp-ls` requires .NET 7 SDK to be installed. However it has been reported 
+`csharp-ls` requires .NET 8 SDK to be installed. However it has been reported
 to work with projects using older versions of dotnet SDK, including .NET Core 3, 
 .NET Framework 4.8 and possibly older ones too as it uses the standard
 Roslyn/MSBuild libs that Visual Studio & omnisharp does.
