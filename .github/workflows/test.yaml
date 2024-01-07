@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-22.04]
-        dotnet: [7.0.201]
+        dotnet: [8.0.100]
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -16,19 +16,19 @@ jobs:
         working-directory: src
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: ${{ matrix.dotnet }}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ matrix.dotnet }}
 
-    - name: Restore tools
-      run: dotnet tool restore
+      - name: Restore tools
+        run: dotnet tool restore
 
-    - name: Run Build
-      run: dotnet build
+      - name: Run Build
+        run: dotnet build
 
-    - name: Run Tests
-      run: dotnet test --no-build
+      - name: Run Tests
+        run: dotnet test --no-build
