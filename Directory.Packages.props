@@ -21,7 +21,7 @@
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.4.15" />
     <!-- TODO: Upgrade to a offical version after Lib.Harmony release one -->
-    <PackageVersion Include="Lib.Harmony" Version="2.3.0-prerelease.2" />
+    <PackageVersion Include="Lib.Harmony" Version="2.3.0-prerelease.4" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Locator" Version="1.6.10" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
