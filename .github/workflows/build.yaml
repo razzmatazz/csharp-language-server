@@ -12,9 +12,6 @@ jobs:
         dotnet: [8.0.100]
 
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: src
 
     steps:
       - name: Checkout
