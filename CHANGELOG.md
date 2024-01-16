@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* refactoring by @tcx4c70
+  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/102
 * csharp-ls will now use and require .NET 8 runtime/SDK
   - PR by @BeauCranston in https://github.com/razzmatazz/csharp-language-server/pull/122
 * Add support for textDocument/typeDefinition
