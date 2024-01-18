@@ -350,6 +350,8 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             Name           = symbol.ToDisplayString(displayStyle)
             Detail         = symbolDetail
             Kind           = symbolKind
+            Tags           = None
+            Deprecated     = None
             Range          = lspRange
             SelectionRange = selectionLspRange
             Children       = None
@@ -390,6 +392,8 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             Name           = moduleName
             Detail         = None
             Kind           = SymbolKind.File
+            Tags           = None
+            Deprecated     = None
             Range          = emptyRange
             SelectionRange = emptyRange
             Children       = None
@@ -684,6 +688,8 @@ let findSymbolsInSolution (solution: Solution)
 
         { Name = symbolName
           Kind = symbolKind
+          Tags = None
+          Deprecated = None
           Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
           ContainerName = None }
 

@@ -130,7 +130,11 @@ let setupServerHandlers settings (lspClient: LspClient) =
                     let! (newState, eventsToPost) =
                         processDiagnosticsEvent
                             logMessageInvoke
-                            (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri; Diagnostics = diagnostics })
+                            // TODO: can we provide value for PublishDiagnosticsParams.Version?
+                            (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri;
+                                                                                                  Version = None;
+                                                                                                  Diagnostics = diagnostics;
+                                                                                                })
                             (getDocumentForUriFromCurrentState AnyDocument)
                             state
                             inbox.CurrentQueueLength
@@ -231,8 +235,8 @@ let setupServerHandlers settings (lspClient: LspClient) =
                         ImplementationProvider = Some true
                         ReferencesProvider = Some true
                         DocumentHighlightProvider = Some true
-                        DocumentSymbolProvider = Some true
-                        WorkspaceSymbolProvider = Some true
+                        DocumentSymbolProvider = true |> U2.First |> Some
+                        WorkspaceSymbolProvider = true |> U2.First |> Some
                         DocumentFormattingProvider = Some true
                         DocumentRangeFormattingProvider = Some true
                         DocumentOnTypeFormattingProvider =
@@ -246,13 +250,16 @@ let setupServerHandlers settings (lspClient: LspClient) =
                             Some { ResolveProvider = None
                                    TriggerCharacters = Some ([| '.'; '''; |])
                                    AllCommitCharacters = None
+                                   CompletionItem = None
                                  }
                         CodeLensProvider =
                             Some { ResolveProvider = Some true }
                         CodeActionProvider =
-                            Some { CodeActionKinds = None
-                                   ResolveProvider = Some true
-                                 }
+                            { CodeActionKinds = None
+                              ResolveProvider = Some true
+                            }
+                            |> U2.Second
+                            |> Some
                         TextDocumentSync =
                             Some { TextDocumentSyncOptions.Default with
                                      OpenClose = Some true
@@ -292,7 +299,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
             match clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg with
             | true ->
-                let fileChangeWatcher = { GlobPattern = "**/*.{cs,csproj,sln}"
+                let fileChangeWatcher = { GlobPattern = Pattern "**/*.{cs,csproj,sln}"
                                           Kind = None }
 
                 let didChangeWatchedFilesRegistration: Types.Registration =
@@ -433,7 +440,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                 let updatedSolution = updatedDoc.Project.Solution
 
                 scope.Emit(SolutionChange updatedSolution)
-                scope.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version |> Option.defaultValue 0))
+                scope.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version))
 
                 diagnostics.Post(
                     DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
@@ -790,6 +797,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
                 let completionList = {
                     IsIncomplete = false
+                    ItemDefaults = None
                     Items        = completionItems
                 }
 
@@ -1097,7 +1105,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
                         let parameters =
                             m.Parameters
                             |> Seq.map (fun p ->
-                                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                                { Label = p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) |> U2.First
                                   Documentation = None })
                             |> Array.ofSeq
 
@@ -1107,19 +1115,20 @@ let setupServerHandlers settings (lspClient: LspClient) =
                                 Value = Documentation.markdownDocForSymbol m
                             }
 
-                        { Label         = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
-                          Documentation = Some documentation
-                          Parameters    = Some parameters
+                        { Label           = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                          Documentation   = Some documentation
+                          Parameters      = Some parameters
+                          ActiveParameter = None
                         }
 
-                    let activeParameterMaybe =
+                    let activeParameterMaybe: uint option =
                         match matchingMethodMaybe with
                         | Some _ ->
-                            let mutable p = 0
+                            let mutable p: int = 0
                             for comma in invocation.Separators do
                                 let commaBeforePos = comma.Span.Start < position
                                 p <- p + (if commaBeforePos then 1 else 0)
-                            Some p
+                            Some (uint p)
 
                         | None -> None
 
