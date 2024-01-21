@@ -299,7 +299,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
             match clientSupportsWorkspaceDidChangeWatchedFilesDynamicReg with
             | true ->
-                let fileChangeWatcher = { GlobPattern = Pattern "**/*.{cs,csproj,sln}"
+                let fileChangeWatcher = { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
                                           Kind = None }
 
                 let didChangeWatchedFilesRegistration: Types.Registration =
