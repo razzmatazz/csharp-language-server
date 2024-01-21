@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ChangelogFile>$(MSBuildThisFileDirectory)../CHANGELOG.md</ChangelogFile>
+    <Description>Library for implementing Language Server Protocol in F#.</Description>
+    <PackageTags>LSP, editor tooling</PackageTags>
+    <Authors>chethusk; Krzysztof-Cieslak</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/ionide/LanguageServerProtocol</PackageProjectUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FsLibLog.fs comes verbatim from
+         https://github.com/TheAngryByrd/FsLibLog/blob/f81cba440bf0476bb4e2262b57a067a0d6ab78a7/src/FsLibLog/FsLibLog.fs
+
+         Namespace changed from FsLibLog to LanguageServerProtocol.Logging per the instructions in that repo.
+    -->
+    <Compile Include="FsLibLog.fs" />
+    <Compile Include="JsonRpc.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Client.fs" />
+    <Compile Include="Server.fs" />
+    <Compile Include="JsonUtils.fs" />
+    <Compile Include="LanguageServerProtocol.fs" />
+    <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All" />
+    <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <!-- Explicitly pinning our FSharp.Core to 6.0.0 so that consumers can use _any_ 6.x version. -->
+    <PackageReference Update="FSharp.Core" Version="6.0.0" />
+    <PackageReference Include="StreamJsonRpc" Version="2.16.36" />
+  </ItemGroup>
+</Project>
