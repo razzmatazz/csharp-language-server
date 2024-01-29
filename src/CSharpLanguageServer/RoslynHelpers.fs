@@ -510,89 +510,6 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         pop node
 
 
-type DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
-    inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
-
-    let mutable collectedSymbols = []
-
-    let collect (node: SyntaxNode) (nameSpan: TextSpan) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
-
-    member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
-
-    override __.VisitEnumDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitEnumDeclaration(node)
-
-    override __.VisitEnumMemberDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitEnumMemberDeclaration(node)
-
-    override __.VisitClassDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitClassDeclaration(node)
-
-    override __.VisitRecordDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitRecordDeclaration(node)
-
-    override __.VisitStructDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitStructDeclaration(node)
-
-    override __.VisitInterfaceDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitInterfaceDeclaration(node)
-
-    override __.VisitDelegateDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitDelegateDeclaration(node)
-
-    override __.VisitConstructorDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitConstructorDeclaration(node)
-
-    override __.VisitDestructorDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitDestructorDeclaration(node)
-
-    override __.VisitOperatorDeclaration(node) =
-        collect node node.OperatorToken.Span
-        base.VisitOperatorDeclaration(node)
-
-    override __.VisitIndexerDeclaration(node) =
-        collect node node.ThisKeyword.Span
-        base.VisitIndexerDeclaration(node)
-
-    override __.VisitConversionOperatorDeclaration(node) =
-        collect node node.Type.Span
-        base.VisitConversionOperatorDeclaration(node)
-
-    override __.VisitMethodDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitMethodDeclaration(node)
-
-    override __.VisitPropertyDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitPropertyDeclaration(node)
-
-    override __.VisitVariableDeclarator(node) =
-        let grandparent =
-            node.Parent |> Option.ofObj
-            |> Option.bind (fun node -> node.Parent |> Option.ofObj)
-        // Only show field variables and ignore local variables
-        if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
-            collect node node.Identifier.Span
-            base.VisitVariableDeclarator(node)
-        else
-            base.VisitVariableDeclarator(node)
-
-    override __.VisitEventDeclaration(node) =
-        collect node node.Identifier.Span
-        base.VisitEventDeclaration(node)
-
-
 type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -1398,3 +1315,24 @@ let isCallableSymbol (symbol: ISymbol): bool =
     else
         List.contains symbol.Kind [Microsoft.CodeAnalysis.SymbolKind.Method; Microsoft.CodeAnalysis.SymbolKind.Field;
                                    Microsoft.CodeAnalysis.SymbolKind.Event; Microsoft.CodeAnalysis.SymbolKind.Property]
+
+let toHierarchyItem (symbol: ISymbol) (location: Types.Location): Types.HierarchyItem =
+    let displayStyle = SymbolDisplayFormat(
+        typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+        genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+        parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType),
+        miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+
+    let (_, kind) = getSymbolNameAndKind None None symbol
+    let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
+    let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
+
+    { Name = symbol.ToDisplayString(displayStyle)
+      Kind = kind
+      Tags = None
+      Detail = containingType |> Option.orElse containingNamespace |> Option.map (fun sym -> sym.ToDisplayString())
+      Uri = location.Uri
+      Range = location.Range
+      SelectionRange = location.Range
+      Data = None }
