@@ -13,6 +13,7 @@
     <Compile Include="LspUtil.fs" />
     <Compile Include="Conversions.fs" />
     <Compile Include="Extensions.fs" />
+    <Compile Include="ProgressReporter.fs" />
   </ItemGroup>
 
   <ItemGroup>
