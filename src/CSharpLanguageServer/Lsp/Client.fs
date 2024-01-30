@@ -2,6 +2,9 @@ namespace CSharpLanguageServer.Lsp
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+
+open CSharpLanguageServer.Types
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient()
@@ -40,3 +43,11 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
 
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
+
+    override __.WorkDoneProgressCreate(token) =
+        let param: WorkDoneProgressCreateParams = { token = token }
+        sendServerRequest.Send "window/workDoneProgress/create" (box param)
+
+    override __.Progress(token, value) =
+        let param: ProgressParams<_> = { token = token; value = value }
+        sendServerNotification "$/progress" (box param) |> Async.Ignore
