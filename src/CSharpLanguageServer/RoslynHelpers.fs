@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Reflection
+open System.Threading
 open System.Threading.Tasks
 open System.Collections.Immutable
 
@@ -21,8 +22,10 @@ open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.Text
 
+open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Types
 
 type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol) =
@@ -344,14 +347,65 @@ type CSharpLspHostServices () =
         let interceptor = WorkspaceServicesInterceptor()
         generator.CreateClassProxyWithTarget(services, interceptor)
 
-let tryLoadSolutionOnPath (logger: ILog) (showMessage: string -> Async<unit>) solutionPath = async {
-    try
-        do! showMessage (sprintf "loading solution \"%s\".." solutionPath)
+let tryLoadSolutionOnPath
+        (lspClient: ILspClient)
+        (logger: ILog)
+        (showMessage: string -> Async<unit>)
+        solutionPath =
+    let progress = ProgressReporter(lspClient)
+
+    async {
+        try
+            do! progress.Begin(sprintf "Loading solution \"%s\"..." solutionPath)
+
+            let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
+            msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
+            let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+
+            for diag in msbuildWorkspace.Diagnostics do
+                logger.trace (
+                    Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
+                    >> Log.addContext "message" (diag.ToString())
+                )
+
+            do! progress.End (sprintf "finished loading solution \"%s\"" solutionPath)
+
+            return Some msbuildWorkspace.CurrentSolution
+        with
+        | ex ->
+            do! progress.End ("solution loading has failed with error: " + ex.ToString())
+            return None
+    }
+
+let tryLoadSolutionFromProjectFiles
+        (lspClient: ILspClient)
+        (logger: ILog)
+        (showMessage: string -> Async<unit>)
+        (projs: string list) =
+    let progress = ProgressReporter(lspClient)
+
+    async {
+        do! progress.Begin($"Loading {projs.Length} projects...", false, $"0/{projs.Length}", 0u)
+        let loadedProj = ref 0
 
         let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
-        let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+        for file in projs do
+            do! showMessage (sprintf "loading project \"%s\".." file)
+            try
+                do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
+            with ex ->
+                logger.error (
+                    Log.setMessage "could not OpenProjectAsync('{file}'): {exception}"
+                    >> Log.addContext "file" file
+                    >> Log.addContext "ex" (string ex)
+                )
+
+            let loaded = Interlocked.Increment(loadedProj)
+            let percent = 100 * loaded / projs.Length |> uint
+            do! progress.Report(false, $"{loaded}/{projs.Length}", percent)
 
         for diag in msbuildWorkspace.Diagnostics do
             logger.trace (
@@ -359,96 +413,73 @@ let tryLoadSolutionOnPath (logger: ILog) (showMessage: string -> Async<unit>) so
                 >> Log.addContext "message" (diag.ToString())
             )
 
-        do! showMessage (sprintf "finished loading solution \"%s\"" solutionPath)
+        do! progress.End (sprintf "OK, %d project files loaded" projs.Length)
 
+        //workspace <- Some(msbuildWorkspace :> Workspace)
         return Some msbuildWorkspace.CurrentSolution
-    with
-    | ex ->
-        do! showMessage ("solution loading has failed with error: " + ex.ToString())
-        return None
-}
+    }
 
-let tryLoadSolutionFromProjectFiles (logger: ILog) (showMessage: string -> Async<unit>) (projFiles: string list) = async {
-    let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
-    msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+let findAndLoadSolutionOnDir
+        (lspClient: ILspClient)
+        (logger: ILog)
+        (showMessage: string -> Async<unit>)
+        dir =
+    async {
+        let fileNotOnNodeModules (filename: string) =
+            filename.Split(Path.DirectorySeparatorChar)
+            |> Seq.contains "node_modules"
+            |> not
 
-    for file in projFiles do
-        do! showMessage (sprintf "loading project \"%s\".." file)
-        try
-            do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
-        with ex ->
-            logger.error (
-                Log.setMessage "could not OpenProjectAsync('{file}'): {exception}"
-                >> Log.addContext "file" file
-                >> Log.addContext "ex" (string ex)
-            )
-        ()
+        let solutionFiles =
+            Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
+            |> Seq.filter fileNotOnNodeModules
+            |> Seq.toList
 
-    do! showMessage (sprintf "OK, %d project files loaded" projFiles.Length)
+        do! showMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
-    for diag in msbuildWorkspace.Diagnostics do
-        logger.trace (
-            Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
-            >> Log.addContext "message" (diag.ToString())
-        )
+        let singleSolutionFound =
+            match solutionFiles with
+            | [x] -> Some x
+            | _ -> None
 
-    //workspace <- Some(msbuildWorkspace :> Workspace)
-    return Some msbuildWorkspace.CurrentSolution
-}
+        match singleSolutionFound with
+        | None ->
+            do! showMessage ("no or multiple .sln files found on " + dir)
+            do! showMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
-let findAndLoadSolutionOnDir (logger: ILog) (showMessage: string -> Async<unit>) dir = async {
-    let fileNotOnNodeModules (filename: string) =
-        filename.Split(Path.DirectorySeparatorChar)
-        |> Seq.contains "node_modules"
-        |> not
+            let projFiles =
+                let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
+                let fsprojFiles = Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories)
 
-    let solutionFiles =
-        Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
-        |> Seq.filter fileNotOnNodeModules
-        |> Seq.toList
+                [ csprojFiles; fsprojFiles ] |> Seq.concat
+                                                |> Seq.filter fileNotOnNodeModules
+                                                |> Seq.toList
 
-    do! showMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+            if projFiles.Length = 0 then
+                let message = "no or .csproj/.fsproj or sln files found on " + dir
+                do! showMessage message
+                Exception message |> raise
 
-    let singleSolutionFound =
-        match solutionFiles with
-        | [x] -> Some x
-        | _ -> None
+            return! tryLoadSolutionFromProjectFiles lspClient logger showMessage projFiles
 
-    match singleSolutionFound with
-    | None ->
-        do! showMessage ("no or multiple .sln files found on " + dir)
-        do! showMessage ("looking for .csproj/fsproj files on " + dir + "..")
+        | Some solutionPath ->
+            return! tryLoadSolutionOnPath lspClient logger showMessage solutionPath
+    }
 
-        let projFiles =
-            let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
-            let fsprojFiles = Directory.GetFiles(dir, "*.fsproj", SearchOption.AllDirectories)
-
-            [ csprojFiles; fsprojFiles ] |> Seq.concat
-                                            |> Seq.filter fileNotOnNodeModules
-                                            |> Seq.toList
-
-        if projFiles.Length = 0 then
-            let message = "no or .csproj/.fsproj or sln files found on " + dir
-            do! showMessage message
-            Exception message |> raise
-
-        let! solution = tryLoadSolutionFromProjectFiles logger showMessage projFiles
-        return solution
-
-    | Some solutionPath ->
-        let! solution = tryLoadSolutionOnPath logger showMessage solutionPath
-        return solution
-}
-
-let loadSolutionOnSolutionPathOrDir (logger: ILog) (showMessage: string -> Async<unit>) solutionPathMaybe rootPath =
+let loadSolutionOnSolutionPathOrDir
+        (lspClient: ILspClient)
+        (logger: ILog)
+        (showMessage: string -> Async<unit>)
+        solutionPathMaybe
+        rootPath =
     match solutionPathMaybe with
     | Some solutionPath -> async {
-        return! tryLoadSolutionOnPath logger showMessage solutionPath
+        return! tryLoadSolutionOnPath lspClient logger showMessage solutionPath
       }
 
     | None -> async {
         do! showMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
-        return! findAndLoadSolutionOnDir logger showMessage rootPath
+        return! findAndLoadSolutionOnDir lspClient logger showMessage rootPath
       }
 
 let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =

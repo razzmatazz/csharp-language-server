@@ -23,10 +23,10 @@
     <Compile Include="Util.fs" />
     <Compile Include="Conversions.fs" />
     <Compile Include="FormatUtil.fs" />
-    <Compile Include="RoslynHelpers.fs" />
-    <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="ProgressReporter.fs" />
+    <Compile Include="RoslynHelpers.fs" />
+    <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State/ServerState.fs" />
     <Compile Include="State/ServerRequestContext.fs" />
