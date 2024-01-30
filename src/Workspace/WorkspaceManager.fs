@@ -2,6 +2,7 @@ namespace CSharpLanguageServer.Workspace
 
 open System.Collections.Concurrent
 open System.IO
+open System.Threading
 open System.Threading.Tasks
 open Microsoft.Build.Locator
 open Microsoft.CodeAnalysis
@@ -50,8 +51,9 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
             )
         | Some(Solution sln) ->
             logger.info (Log.setMessage "Start to load {slnPath}..." >> Log.addContext "slnPath" sln)
-            // TODO: Report progress to client?
             try
+                let progress = ProgressReporter(lspClient)
+                do! progress.Begin("Loading solution...")
                 do! workspace.OpenSolutionAsync(sln) |> Async.AwaitTask |> Async.Ignore
                 for diag in workspace.Diagnostics do
                     logger.warn (
@@ -59,6 +61,7 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                         >> Log.addContext "slnPath" sln
                         >> Log.addContext "diag" (diag.ToString())
                     )
+                do! progress.End()
             with ex ->
                 logger.error (
                     Log.setMessage "Failed to load {slnPath}:"
@@ -72,6 +75,9 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                 >> Log.addContext "projNum" projs.Length
             )
 
+            let progress = ProgressReporter(lspClient)
+            do! progress.Begin($"Loading {projs.Length} projects...", false, $"0/{projs.Length}", 0u)
+            let loadedProj = ref 0
             do!
                 projs
                 |> map (fun proj -> async {
@@ -87,9 +93,13 @@ type WorkspaceManager(lspClient: ICSharpLspClient) =
                         )
 
                     logger.info (Log.setMessage "Finish to load {proj}" >> Log.addContext "proj" proj)
+                    let loaded = Interlocked.Increment(loadedProj)
+                    let percent = 100 * loaded / projs.Length |> uint
+                    do! progress.Report(false, $"{loaded}/{projs.Length}", percent)
                 })
                 |> Async.Parallel
                 |> Async.Ignore
+            do! progress.End()
 
             logger.info (
                 Log.setMessage "Finish to load {projNum} projects"
