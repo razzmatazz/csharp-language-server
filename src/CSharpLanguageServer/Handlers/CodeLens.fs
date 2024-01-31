@@ -179,11 +179,14 @@ module CodeLens =
             let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0
             let title = sprintf "%d Reference(s)" refNum
 
+            let arg: ReferenceParams =
+                { TextDocument = { Uri = lensData.DocumentUri }
+                  Position = lensData.Position
+                  Context = { IncludeDeclaration = true } }
             let command =
                 { Title = title
-                  Command = "csharp.showReferences"
-                  // TODO: we really want to pass some more info to the client
-                  Arguments = None }
+                  Command = "textDocument/references"
+                  Arguments = Some [| arg |> serialize |] }
 
             return { p with Command = Some command } |> success
     }
