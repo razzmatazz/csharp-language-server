@@ -91,10 +91,13 @@ type CSharpLspServer(lspClient: ICSharpLspClient, workspaceManager: IWorkspaceMa
                     DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
                     WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
 
-            // TODO: Report server info to client (name, version)
             let initializeResult =
                 { InitializeResult.Default with
-                    Capabilities = serverCapabilities }
+                    Capabilities = serverCapabilities
+                    ServerInfo =
+                      Some
+                        { Name = Process.GetCurrentProcess().ProcessName
+                          Version = Some (Assembly.GetExecutingAssembly().GetName().Version.ToString()) }}
 
             return initializeResult |> success
         }
