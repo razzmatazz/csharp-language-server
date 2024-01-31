@@ -1,6 +1,7 @@
 [<AutoOpen>]
 module CSharpLanguageServer.Common.Extensions
 
+open System
 open System.Collections.Concurrent
 
 
@@ -17,3 +18,10 @@ module Seq =
             None
         else
             Seq.maxBy projection source |> Some
+
+
+module Option =
+    let inline ofString (value: string) =
+        match String.IsNullOrWhiteSpace(value) with
+        | true -> None
+        | false -> Some value
