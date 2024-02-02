@@ -293,6 +293,8 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member _.OpenDocVersions = state.OpenDocVersions
     member _.DecompiledMetadata = state.DecompiledMetadata
 
+    member _.logMessage m = logMessage
+
     member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
 
     member scope.GetUserDocumentForUri (u: string) =
@@ -523,3 +525,10 @@ let processDiagnosticsEvent
             doProcessPendingDiagnostics
         else
             async { return state, [] }
+
+type ServerSettingsDto = {
+     csharp: ServerSettingsCSharpDto option
+}
+and ServerSettingsCSharpDto =
+  { solution: string option }
+  static member Default = { solution = None }
