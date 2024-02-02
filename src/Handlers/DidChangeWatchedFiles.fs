@@ -22,7 +22,7 @@ module DidChangeWatchedFiles =
         | true ->
             let fileSystemWatcher =
                 // TODO: Change it to U2 after Ionide.LanguageServerProtocol release a new version.
-                { GlobPattern = Pattern "**/*.{cs,csproj,sln}"
+                { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
                   Kind = Some (WatchKind.Create ||| WatchKind.Change ||| WatchKind.Delete) }
             Some
                 { Id = Guid.NewGuid().ToString()
