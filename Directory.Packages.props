@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RoslynPackageVersion>4.7.0</RoslynPackageVersion>
+    <MSBuildPackageVersion>17.7.2</MSBuildPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Argu" Version="6.1.1" />
+    <PackageVersion Include="Castle.Core" Version="5.1.1" />
+    <PackageVersion Include="coverlet.collector" Version="3.0.3" />
+    <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.1.1" />
+    <PackageVersion Include="Expecto" Version="9.0.4" />
+    <PackageVersion Include="FSharpPlus" Version="1.4.1" />
+    <PackageVersion Include="ICSharpCode.Decompiler" Version="8.1.1.7464" />
+    <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
+    <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.4.23" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.Build.Locator" Version="1.6.10" />
+    <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Features" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Features" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="16.10.0" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="NUnit" Version="3.13.2" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="4.0.0" />
+    <PackageVersion Include="System.Collections.Immutable" Version="7.0.0" />
+  </ItemGroup>
+</Project>

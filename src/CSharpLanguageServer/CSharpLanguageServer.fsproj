@@ -52,26 +52,25 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Argu" Version="6.1.1" />
-    <PackageReference Include="Castle.Core" Version="5.1.1" />
-    <PackageReference Include="ICSharpCode.Decompiler" Version="8.1.1.7464" />
-    <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
-    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.4.23" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="Microsoft.Build.Locator" Version="1.6.10" />
-    <PackageReference Include="Microsoft.Build" Version="17.7.2" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.Build.Framework" Version="17.7.2" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.7.0">
+    <PackageReference Include="Argu" />
+    <PackageReference Include="Castle.Core" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Microsoft.Build.Locator" />
+    <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis">
       <NoWarn>NU1604</NoWarn>
       <NoWarn>NU1701</NoWarn>
     </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0">
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp">
       <NoWarn>NU1604</NoWarn>
       <NoWarn>NU1701</NoWarn>
     </PackageReference>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.7.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.7.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.7.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.7.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Features" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
   </ItemGroup>
 </Project>
