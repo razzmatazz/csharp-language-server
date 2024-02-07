@@ -384,12 +384,3 @@ let startCore options =
         output
         CSharpLspClient
         defaultRpc
-
-let start options =
-    try
-        let result = startCore options
-        int result
-    with
-    | _ex ->
-        // logger.error (Log.setMessage "Start - LSP mode crashed" >> Log.addExn ex)
-        3

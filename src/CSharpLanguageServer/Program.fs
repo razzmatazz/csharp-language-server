@@ -2,7 +2,8 @@ module CSharpLanguageServer.Program
 
 open Argu
 open System.Reflection
-open State
+open CSharpLanguageServer.State
+open CSharpLanguageServer.Lsp
 
 [<EntryPoint>]
 let entry args =
