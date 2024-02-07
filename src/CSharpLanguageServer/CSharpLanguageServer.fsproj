@@ -21,6 +21,7 @@
     <Compile Include="Util.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Documentation.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="State.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />

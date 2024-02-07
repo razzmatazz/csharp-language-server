@@ -7,25 +7,12 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
-open RoslynHelpers
-open Util
-
-type ServerSettings = {
-    SolutionPath: string option
-    LogLevel: MessageType
-}
-
-let emptySettings = { SolutionPath = None; LogLevel = MessageType.Log }
-
-type CSharpMetadata = {
-    ProjectName: string
-    AssemblyName: string
-    SymbolName: string
-    Source: string
-}
+open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Util
+open CSharpLanguageServer.Types
 
 type DecompiledMetadataDocument = {
-    Metadata: CSharpMetadata
+    Metadata: CSharpMetadataInformation
     Document: Document
 }
 
@@ -83,7 +70,7 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-let emptyServerState = { Settings = emptySettings
+let emptyServerState = { Settings = ServerSettings.Default
                          RootPath = Directory.GetCurrentDirectory()
                          ClientCapabilities = None
                          Solution = None

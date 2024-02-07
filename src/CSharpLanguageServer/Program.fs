@@ -2,7 +2,7 @@ module CSharpLanguageServer.Program
 
 open Argu
 open System.Reflection
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 
 [<EntryPoint>]

@@ -5,16 +5,11 @@ open System.Collections.Immutable
 
 open Ionide.LanguageServerProtocol.Types
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module CSharpMetadata =
-    type CSharpMetadataParams = {
-        TextDocument: TextDocumentIdentifier
-    }
-
-    type CSharpMetadataResponse = CSharpMetadata
-
     let handle (scope: ServerRequestScope) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
         let uri = metadataParams.TextDocument.Uri
 
