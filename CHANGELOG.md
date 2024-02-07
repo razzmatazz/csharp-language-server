@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* More refactoring by @tcx4c70
+  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/102
 * Change package management to CPM
   - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/132
 
