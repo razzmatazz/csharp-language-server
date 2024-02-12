@@ -6,6 +6,8 @@ open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
 open System.Diagnostics
+open System.Threading.Tasks
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
@@ -21,10 +23,11 @@ open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
+
+open CSharpLanguageServer
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Lsp
-open System.Threading.Tasks
 open CSharpLanguageServer.Util
 
 let getDotnetCliVersion () : string =
@@ -152,32 +155,7 @@ let setupServerHandlers settings (lspClient: LspClient) =
 
       let initializeResult = {
               InitializeResult.Default with
-                Capabilities =
-                    { ServerCapabilities.Default with
-                        HoverProvider = Handlers.Hover.provider p.Capabilities
-                        RenameProvider = Handlers.Rename.provider p.Capabilities
-                        DefinitionProvider = Handlers.Definition.provider p.Capabilities
-                        TypeDefinitionProvider = Handlers.TypeDefinition.provider p.Capabilities
-                        ImplementationProvider = Handlers.Implementation.provider p.Capabilities
-                        ReferencesProvider = Handlers.References.provider p.Capabilities
-                        DocumentHighlightProvider = Handlers.DocumentHighlight.provider p.Capabilities
-                        DocumentSymbolProvider = Handlers.DocumentSymbol.provider p.Capabilities
-                        WorkspaceSymbolProvider = Handlers.WorkspaceSymbol.provider p.Capabilities
-                        DocumentFormattingProvider = Handlers.DocumentFormatting.provider p.Capabilities
-                        DocumentRangeFormattingProvider = Handlers.DocumentRangeFormatting.provider p.Capabilities
-                        DocumentOnTypeFormattingProvider = Handlers.DocumentOnTypeFormatting.provider p.Capabilities
-                        SignatureHelpProvider = Handlers.SignatureHelp.provider p.Capabilities
-                        CompletionProvider = Handlers.Completion.provider p.Capabilities
-                        CodeLensProvider = Handlers.CodeLens.provider p.Capabilities
-                        CodeActionProvider = Handlers.CodeAction.provider p.Capabilities
-                        TextDocumentSync = Handlers.TextDocumentSync.provider p.Capabilities
-                        FoldingRangeProvider = None
-                        SelectionRangeProvider = None
-                        SemanticTokensProvider = Handlers.SemanticTokens.provider p.Capabilities
-                        InlayHintProvider = Handlers.InlayHint.provider p.Capabilities
-                        TypeHierarchyProvider = Handlers.TypeHierarchy.provider p.Capabilities
-                        CallHierarchyProvider = Handlers.CallHierarchy.provider p.Capabilities
-                    }
+                Capabilities = CSharpLanguageServer.Lsp.Server.getServerCapabilities p
               }
 
       return initializeResult |> success
@@ -373,23 +351,3 @@ let setupServerHandlers settings (lspClient: LspClient) =
         ("csharp/metadata"                   , Handlers.CSharpMetadata.handle)             |> requestHandlingWithReadOnlyScope
     ]
     |> Map.ofList
-
-let startCore options =
-    use input = Console.OpenStandardInput()
-    use output = Console.OpenStandardOutput()
-
-    Ionide.LanguageServerProtocol.Server.startWithSetup
-        (setupServerHandlers options)
-        input
-        output
-        CSharpLspClient
-        defaultRpc
-
-let start options =
-    try
-        let result = startCore options
-        int result
-    with
-    | _ex ->
-        // logger.error (Log.setMessage "Start - LSP mode crashed" >> Log.addExn ex)
-        3

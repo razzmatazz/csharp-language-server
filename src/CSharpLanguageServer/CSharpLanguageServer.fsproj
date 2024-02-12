@@ -18,9 +18,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Logging.fs" />
     <Compile Include="Util.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Documentation.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="State.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />
@@ -46,6 +48,7 @@
     <Compile Include="Handlers/Workspace.fs" />
     <Compile Include="Handlers/WorkspaceSymbol.fs" />
     <Compile Include="Lsp/Client.fs" />
+    <Compile Include="Lsp/Server.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />

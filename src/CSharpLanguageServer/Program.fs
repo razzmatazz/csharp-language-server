@@ -2,7 +2,8 @@ module CSharpLanguageServer.Program
 
 open Argu
 open System.Reflection
-open State
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp
 
 [<EntryPoint>]
 let entry args =
@@ -31,7 +32,8 @@ let entry args =
                        |> parseLogLevel
         }
 
-        Server.start settings
+        Server.start CSharpLanguageServer.Server.setupServerHandlers
+                     settings
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message
