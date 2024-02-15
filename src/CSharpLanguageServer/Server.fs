@@ -25,6 +25,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Logging
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Lsp
@@ -50,6 +51,8 @@ let getDotnetCliVersion () : string =
         "(could not launch `dotnet --version`)"
 
 let setupServerHandlers settings (lspClient: LspClient) =
+    let logger = LogProvider.getLoggerByName "Server"
+
     let success = LspResult.success
     let mutable logMessageCurrent: AsyncLogFn = fun _ -> async { return() }
     let logMessageInvoke m = logMessageCurrent(m)
@@ -101,13 +104,18 @@ let setupServerHandlers settings (lspClient: LspClient) =
                          do stateActor.Post(PeriodicTimerTick)),
             null, dueTime=1000, period=250))
 
-    let logMessageWithLevel l message = async {
-        let messageParams = { Type = l ; Message = "csharp-ls: " + message }
+    // TODO: setup Serilog Sink instead
+    let logMessage message = async {
+        let messageParams = { Type = MessageType.Log ; Message = "csharp-ls: " + message }
         do! lspClient.WindowShowMessage messageParams
+        logger.trace (Log.setMessage message)
     }
 
-    let logMessage = logMessageWithLevel MessageType.Log
-    let infoMessage = logMessageWithLevel MessageType.Info
+    let infoMessage message = async {
+        let messageParams = { Type = MessageType.Info ; Message = "csharp-ls: " + message }
+        do! lspClient.WindowShowMessage messageParams
+        logger.info (Log.setMessage message)
+    }
 
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
       do! infoMessage (sprintf "initializing, csharp-ls version %s; cwd: \"%s\""

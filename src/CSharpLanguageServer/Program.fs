@@ -1,9 +1,16 @@
 module CSharpLanguageServer.Program
 
-open Argu
+open System
 open System.Reflection
+
+open Argu
+open Serilog
+open Serilog.Core
+open Serilog.Events
+
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Logging
 
 [<EntryPoint>]
 let entry args =
@@ -16,20 +23,37 @@ let entry args =
                                              (Assembly.GetExecutingAssembly().GetName().Version |> string)
                                      exit 0)
 
-        let parseLogLevel (s: string) =
-            match s.ToLowerInvariant() with
-            | "error" -> Ionide.LanguageServerProtocol.Types.MessageType.Error
-            | "warning" -> Ionide.LanguageServerProtocol.Types.MessageType.Warning
-            | "info" -> Ionide.LanguageServerProtocol.Types.MessageType.Info
-            | "log" -> Ionide.LanguageServerProtocol.Types.MessageType.Log
-            | _ -> Ionide.LanguageServerProtocol.Types.MessageType.Log
+        let logLevelArg =
+            serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
+            |> Option.defaultValue "log"
 
-        // default the verbosity to warning
+        let logLevel =
+            match logLevelArg with
+                | "error" -> LogEventLevel.Error
+                | "warning" -> LogEventLevel.Warning
+                | "info" -> LogEventLevel.Information
+                | "log" -> LogEventLevel.Verbose
+                | _ -> LogEventLevel.Information
+
+        let logConfig =
+                LoggerConfiguration()
+                    .MinimumLevel.ControlledBy(LoggingLevelSwitch(logLevel))
+                    .Enrich.FromLogContext()
+                    .WriteTo.Async(fun conf ->
+                        conf.Console(
+                            outputTemplate =
+                                "[{Timestamp:HH:mm:ss.fff} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}",
+                            // Redirect all logs to stderr since stdout is used to communicate with client.
+                            standardErrorFromLevel = Nullable<_>(LogEventLevel.Verbose),
+                            theme = Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code
+                        )
+                        |> ignore)
+
+        Log.Logger <- logConfig.CreateLogger()
+
         let settings: ServerSettings = {
             SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
-            LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
-                       |> Option.defaultValue "log"
-                       |> parseLogLevel
+            LogLevel = logLevelArg
         }
 
         Server.start CSharpLanguageServer.Server.setupServerHandlers
