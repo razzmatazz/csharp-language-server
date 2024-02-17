@@ -117,16 +117,10 @@ let setupServerHandlers settings (lspClient: LspClient) =
         logger.info (Log.setMessage message)
     }
 
+    let lspServer: CSharpLanguageServer.Types.ICSharpLspServer =
+        CSharpLanguageServer.Lsp.CSharpLspServer()
+
     let handleInitialize (scope: ServerRequestScope) (p: InitializeParams): AsyncLspResult<InitializeResult> = async {
-      do! infoMessage (sprintf "initializing, csharp-ls version %s; cwd: \"%s\""
-                               (typeof<CSharpLspClient>.Assembly.GetName().Version |> string)
-                               (Directory.GetCurrentDirectory()))
-
-      do! infoMessage "csharp-ls is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
-
-      // do! infoMessage (sprintf "`dotnet --version`: %s"
-      //                          (getDotnetCliVersion ()))
-
       let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
       let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
       if Seq.isEmpty vsInstanceList then
@@ -161,12 +155,8 @@ let setupServerHandlers settings (lspClient: LspClient) =
       // setup timer so actors get period ticks
       setupTimer ()
 
-      let initializeResult = {
-              InitializeResult.Default with
-                Capabilities = CSharpLanguageServer.Lsp.Server.getServerCapabilities p
-              }
-
-      return initializeResult |> success
+      let! initializeResult = lspServer.Initialize(p)
+      return initializeResult
     }
 
     let handleInitialized (scope: ServerRequestScope) (_p: InitializedParams): Async<LspResult<unit>> =
