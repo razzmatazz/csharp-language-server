@@ -3,15 +3,19 @@ namespace CSharpLanguageServer.Lsp
 open System
 open System.Diagnostics
 open System.Reflection
+open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
+open StreamJsonRpc
 open FSharpPlus
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.State
+open CSharpLanguageServer.Util
 
 module LspUtils =
     /// Return the JSON-RPC "not implemented" error
@@ -23,43 +27,90 @@ module LspUtils =
 
 open LspUtils
 
-type CSharpLspServer() =
+type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
     let logger = LogProvider.getLoggerByName "LSP"
 
+    let logMessage m =
+        logger.info (Log.setMessage m)
+        async.Return ()
+
+    let stateActor = MailboxProcessor.Start(
+        serverEventLoop
+            logMessage
+            { emptyServerState with Settings = settings })
+
+    let getDocumentForUriFromCurrentState docType uri =
+        stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
+
+    let diagnostics = MailboxProcessor.Start(
+        diagnosticsEventLoop
+            lspClient
+            getDocumentForUriFromCurrentState)
+
+    let mutable timer: System.Threading.Timer option = None
+
+    let setupTimer () =
+        timer <- Some (new System.Threading.Timer(
+            System.Threading.TimerCallback(
+                fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)
+                         do stateActor.Post(PeriodicTimerTick)),
+            null, dueTime=1000, period=250))
+
     let mutable workspaceFolders: WorkspaceFolder list = []
 
-    interface ICSharpLspServer with
-        override __.Dispose() = ()
+    let withScope
+            requestType
+            (handlerFn: ServerRequestScope -> 'a -> Async<LspResult<'b>>)
+            param =
+        let requestName = handlerFn.ToString()
 
-        override __.Initialize(p) = async {
-            let serverName = "csharp-ls"
-            logger.info (
-                Log.setMessage "initializing, {name} version {version}"
-                >> Log.addContext "name" serverName
-                >> Log.addContext "version" (Assembly.GetExecutingAssembly().GetName().Version)
-            )
-            logger.info (
-                Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
-                >> Log.addContext "name" serverName
-            )
+        // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
+        //
+        // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
+        // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-            //lspClient.Capabilities <- p.Capabilities
-            let lspClient = p
+        let startRequest rc = StartRequest (requestName, requestType, 0, rc)
+        let requestId, semaphore = stateActor.PostAndReply(startRequest)
 
-            (*
-            workspaceFolders <-
-                map Array.toList p.WorkspaceFolders
-                // Can't simplify it to (:: []) like Haskell :(
-                |> Option.orElse (map (Uri.toWorkspaceFolder >> (flip List.cons [])) p.RootUri)
-                |> Option.orElse (map (Path.toWorkspaceFolder >> (flip List.cons [])) p.RootPath)
-                |> Option.defaultValue [Path.toWorkspaceFolder (Directory.GetCurrentDirectory())]
-            *)
+        let stateAcquisitionAndHandlerInvocation = async {
+            do! semaphore.WaitAsync() |> Async.AwaitTask
 
-            // TODO: Monitor the lsp client process (via processId in InitializeParams) and shutdown if the
-            // lsp client dies.
+            let! state = stateActor.PostAndAsyncReply(GetState)
 
-            let serverCapabilities =
+            let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
+
+            return! handlerFn scope param
+        }
+
+        let wrapExceptionAsLspResult op =
+            async {
+                let! resultOrExn = op |> Async.Catch
+
+                return
+                    match resultOrExn with
+                    | Choice1Of2 result -> result
+                    | Choice2Of2 exn ->
+                        match exn with
+                        | :? TaskCanceledException -> LspResult.requestCancelled
+                        | :? OperationCanceledException -> LspResult.requestCancelled
+                        | _ -> LspResult.internalError (string exn)
+            }
+
+        stateAcquisitionAndHandlerInvocation
+        |> wrapExceptionAsLspResult
+        |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
+
+    let withReadOnlyScope handlerFn = withScope ReadOnly handlerFn
+    let withReadWriteScope handlerFn = withScope ReadWrite handlerFn
+
+    let ignoreResult handlerFn = async {
+        let! _ = handlerFn
+        return ()
+    }
+
+    let getServerCapabilities
+        (lspClient: InitializeParams) =
                 { ServerCapabilities.Default with
                     TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities
                     CompletionProvider = Completion.provider lspClient.Capabilities
@@ -93,83 +144,113 @@ type CSharpLspServer() =
                     // DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
                     WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
 
-            // TODO: Report server info to client (name, version)
-            let initializeResult =
-                { InitializeResult.Default with
-                    Capabilities = serverCapabilities }
+    interface ICSharpLspServer with
+        override __.Dispose() = ()
 
-            return initializeResult |> LspResult.success
-        }
+        override __.Initialize(p) =
+            let serverCapabilities = getServerCapabilities p
+            p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
 
-        override __.Initialized(p) = ignoreNotification
+        override __.Initialized(p) =
+            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor)
+              |> ignoreResult
 
         override __.Shutdown() = ignoreNotification
 
         override __.Exit() = ignoreNotification
 
-        override this.TextDocumentHover(p) = notImplemented
+        override this.TextDocumentHover(p) =
+            p |> withReadOnlyScope Hover.handle
 
-        override this.TextDocumentDidOpen(p) = ignoreNotification
+        override this.TextDocumentDidOpen(p) =
+            p |> withReadOnlyScope (TextDocumentSync.didOpen logMessage diagnostics.Post)
+              |> ignoreResult
 
-        override this.TextDocumentDidChange(p) = ignoreNotification
+        override this.TextDocumentDidChange(p) =
+            p |> withReadWriteScope (TextDocumentSync.didChange diagnostics.Post)
+              |> ignoreResult
 
-        override this.TextDocumentDidClose(p) = ignoreNotification
+        override this.TextDocumentDidClose(p) =
+            p |> withReadWriteScope (TextDocumentSync.didClose diagnostics.Post)
+              |> ignoreResult
+
+        override this.TextDocumentDidSave(p) =
+            p |> withReadWriteScope (TextDocumentSync.didSave logMessage diagnostics.Post)
+              |> ignoreResult
 
         override this.TextDocumentWillSave(p) = ignoreNotification
 
         override this.TextDocumentWillSaveWaitUntil(p) = notImplemented
 
-        override this.TextDocumentDidSave(p) = ignoreNotification
-
-        override this.TextDocumentCompletion(p) = notImplemented
+        override this.TextDocumentCompletion(p) =
+            p |> withReadOnlyScope Completion.handle
 
         override this.CompletionItemResolve(p) = notImplemented
 
-        override this.TextDocumentPrepareRename(p) = notImplemented
+        override this.TextDocumentPrepareRename(p) =
+            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState logMessage)
 
-        override this.TextDocumentRename(p) = notImplemented
+        override this.TextDocumentRename(p) =
+            p |> withReadOnlyScope Rename.handle
 
-        override this.TextDocumentDefinition(p) = notImplemented
+        override this.TextDocumentDefinition(p) =
+            p |> withReadOnlyScope Definition.handle
 
-        override this.TextDocumentReferences(p) = notImplemented
+        override this.TextDocumentReferences(p) =
+            p |> withReadOnlyScope References.handle
 
-        override this.TextDocumentDocumentHighlight(p) = notImplemented
+        override this.TextDocumentDocumentHighlight(p) =
+            p |> withReadOnlyScope DocumentHighlight.handle
 
         override this.TextDocumentDocumentLink(p) = notImplemented
 
         override this.DocumentLinkResolve(p) = notImplemented
 
-        override this.TextDocumentTypeDefinition(p) = notImplemented
+        override this.TextDocumentTypeDefinition(p) =
+            p |> withReadOnlyScope TypeDefinition.handle
 
-        override this.TextDocumentImplementation(p) = notImplemented
+        override this.TextDocumentImplementation(p) =
+            p |> withReadOnlyScope Implementation.handle
 
-        override this.TextDocumentCodeAction(p) = notImplemented
+        override this.TextDocumentCodeAction(p) =
+            p |> withReadOnlyScope (CodeAction.handle logMessage)
 
-        override this.CodeActionResolve(p) = notImplemented
+        override this.CodeActionResolve(p) =
+            p |> withReadOnlyScope (CodeAction.resolve logMessage)
 
-        override this.TextDocumentCodeLens(p) = notImplemented
+        override this.TextDocumentCodeLens(p) =
+            p |> withReadOnlyScope CodeLens.handle
 
-        override this.CodeLensResolve(p) = notImplemented
+        override this.CodeLensResolve(p) =
+            p |> withReadOnlyScope CodeLens.resolve
 
-        override this.TextDocumentSignatureHelp(p) = notImplemented
+        override this.TextDocumentSignatureHelp(p) =
+            p |> withReadOnlyScope SignatureHelp.handle
 
         override this.TextDocumentDocumentColor(p) = notImplemented
 
         override this.TextDocumentColorPresentation(p) = notImplemented
 
-        override this.TextDocumentFormatting(p) = notImplemented
+        override this.TextDocumentFormatting(p) =
+            p |> withReadOnlyScope DocumentFormatting.handle
 
-        override this.TextDocumentRangeFormatting(p) = notImplemented
+        override this.TextDocumentRangeFormatting(p) =
+            p |> withReadOnlyScope DocumentRangeFormatting.handle
 
-        override this.TextDocumentOnTypeFormatting(p) = notImplemented
+        override this.TextDocumentOnTypeFormatting(p) =
+            p |> withReadOnlyScope DocumentOnTypeFormatting.handle
 
         override this.TextDocumentDocumentSymbol(p) = notImplemented
 
-        override this.WorkspaceDidChangeWatchedFiles(p) = ignoreNotification
+        override __.WorkspaceDidChangeWatchedFiles(p) =
+            p |> withReadWriteScope (Workspace.didChangeWatchedFiles logMessage diagnostics.Post)
+              |> ignoreResult
 
         override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification
 
-        override __.WorkspaceDidChangeConfiguration(p) = ignoreNotification
+        override __.WorkspaceDidChangeConfiguration(p) =
+            p |> withReadWriteScope Workspace.didChangeConfiguration
+              |> ignoreResult
 
         override __.WorkspaceWillCreateFiles(p) = notImplemented
 
@@ -183,7 +264,8 @@ type CSharpLspServer() =
 
         override __.WorkspaceDidDeleteFiles(p) = ignoreNotification
 
-        override this.WorkspaceSymbol(p) = notImplemented
+        override this.WorkspaceSymbol(p) =
+            p |> withReadOnlyScope WorkspaceSymbol.handle
 
         override this.WorkspaceExecuteCommand(p) = notImplemented
 
@@ -191,13 +273,16 @@ type CSharpLspServer() =
 
         override this.TextDocumentSelectionRange(p) = notImplemented
 
-        override this.TextDocumentSemanticTokensFull(p) = notImplemented
+        override this.TextDocumentSemanticTokensFull(p) =
+            p |> withReadOnlyScope SemanticTokens.handleFull
 
         override this.TextDocumentSemanticTokensFullDelta(p) = notImplemented
 
-        override this.TextDocumentSemanticTokensRange(p) = notImplemented
+        override this.TextDocumentSemanticTokensRange(p) =
+            p |> withReadOnlyScope SemanticTokens.handleRange
 
-        override this.TextDocumentInlayHint(p) = notImplemented
+        override this.TextDocumentInlayHint(p) =
+            p |> withReadOnlyScope InlayHint.handle
 
         override this.InlayHintResolve(p) = notImplemented
 
@@ -205,19 +290,23 @@ type CSharpLspServer() =
 
         override this.TextDocumentInlineValue(p) = notImplemented
 
-        override this.TextDocumentPrepareCallHierarchy(p) = notImplemented
+        override this.TextDocumentPrepareCallHierarchy(p) =
+            p |> withReadOnlyScope CallHierarchy.prepare
 
-        override this.CallHierarchyIncomingCalls(p) = notImplemented
+        override this.CallHierarchyIncomingCalls(p) =
+            p |> withReadOnlyScope CallHierarchy.handleIncomingCalls
 
-        override this.CallHierarchyOutgoingCalls(p) = notImplemented
+        override this.CallHierarchyOutgoingCalls(p) =
+            p |> withReadOnlyScope CallHierarchy.handleOutgoingCalls
 
-        override this.TextDocumentPrepareTypeHierarchy(p) = notImplemented
+        override this.TextDocumentPrepareTypeHierarchy(p) =
+            p |> withReadOnlyScope TypeHierarchy.prepare
 
-        override this.TypeHierarchySupertypes(p) = notImplemented
+        override this.TypeHierarchySupertypes(p) =
+            p |> withReadOnlyScope TypeHierarchy.handleSupertypes
 
-        override this.TypeHierarchySubtypes(p) = notImplemented
-
-        override this.CSharpMetadata(p) = notImplemented
+        override this.TypeHierarchySubtypes(p) =
+            p |> withReadOnlyScope TypeHierarchy.handleSubtypes
 
         override this.TextDocumentDeclaration(p) = notImplemented
 
@@ -231,23 +320,69 @@ type CSharpLspServer() =
 
         override this.TextDocumentMoniker(p) = notImplemented
 
+        override this.CSharpMetadata(p) =
+            p |> withReadOnlyScope CSharpMetadata.handle
+
 module Server =
     let logger = LogProvider.getLoggerByName "LSP"
 
-    let startCore setupServerHandlers options =
+    let private createRpc (handler: IJsonRpcMessageHandler) : JsonRpc =
+        let rec (|HandleableException|_|) (e: exn) =
+            match e with
+            | :? LocalRpcException -> Some()
+            | :? TaskCanceledException -> Some()
+            | :? OperationCanceledException -> Some()
+            | :? System.AggregateException as aex ->
+                if aex.InnerExceptions.Count = 1 then
+                    (|HandleableException|_|) aex.InnerException
+                else
+                    None
+            | _ -> None
+
+        { new JsonRpc(handler) with
+            member this.IsFatalException(ex: Exception) =
+                match ex with
+                | HandleableException -> false
+                | _ -> true }
+
+    let private customRequestHandlings =
+        // Compiler of F# can't infer the type of `s` in `"csharp/metadata", serverRequestHandling (fun s p -> s.CSharpMetadata(p))`
+        // to `ICSharpLspServer` even if we have written the type of `customRequestHandlings` to
+        // `Map<string, ServerRequestHandling<ICSharpLspServer>>`. So write a helper function to avoid write the type of `s` every time.
+        let requestHandling
+            (run: ICSharpLspServer -> 'param -> AsyncLspResult<'result>)
+            : ServerRequestHandling<ICSharpLspServer> =
+            serverRequestHandling run
+
+        [ "csharp/metadata", requestHandling (fun s p -> s.CSharpMetadata(p)) ]
+        |> Map.ofList
+
+    // TODO:
+    // 1. log the begin and end of request.
+    // 2. if there is exception during the request, log it.
+    let private requestHandlings =
+        Map.union (defaultRequestHandlings ()) customRequestHandlings
+
+    let startCore settings =
         use input = Console.OpenStandardInput()
         use output = Console.OpenStandardOutput()
 
-        Ionide.LanguageServerProtocol.Server.startWithSetup
-            (setupServerHandlers options)
+        let serverCreator client =
+            new CSharpLspServer(client, settings) :> ICSharpLspServer
+
+        let clientCreator = CSharpLspClient
+
+        Ionide.LanguageServerProtocol.Server.start
+            requestHandlings
             input
             output
-            CSharpLspClient
-            defaultRpc
+            clientCreator
+            serverCreator
+            createRpc
 
-    let start setupServerHandlers options =
+    let start options =
         try
-            let result = startCore setupServerHandlers options
+            let result = startCore options
             int result
         with ex ->
             logger.error (

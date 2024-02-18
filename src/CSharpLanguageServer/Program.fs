@@ -56,8 +56,7 @@ let entry args =
             LogLevel = logLevelArg
         }
 
-        Server.start CSharpLanguageServer.Server.setupServerHandlers
-                     settings
+        Server.start settings
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message

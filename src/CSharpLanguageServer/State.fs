@@ -3,13 +3,19 @@ module CSharpLanguageServer.State
 open System
 open System.IO
 open System.Threading
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
+
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Logging
 
 type DecompiledMetadataDocument = {
     Metadata: CSharpMetadataInformation
@@ -423,7 +429,6 @@ let emptyDiagnosticsState = {
 }
 
 let processDiagnosticsEvent
-        (_logMessage: AsyncLogFn)
         (publishDiagnostics: string -> Diagnostic[] -> Async<unit>)
         (getDocumentForUri: string -> Async<Document option>)
         (state: DiagnosticsState)
@@ -512,6 +517,40 @@ let processDiagnosticsEvent
             doProcessPendingDiagnostics
         else
             async { return state, [] }
+
+let diagnosticsEventLoop
+        (lspClient: CSharpLspClient)
+        getDocumentForUriFromCurrentState
+        (inbox: MailboxProcessor<DiagnosticsEvent>) =
+    let logger = LogProvider.getLoggerByName "DiagnosticsEventLoop"
+
+    let rec loop state = async {
+        try
+            let! msg = inbox.Receive()
+            let! (newState, eventsToPost) =
+                processDiagnosticsEvent
+                    // TODO: can we provide value for PublishDiagnosticsParams.Version?
+                    (fun docUri diagnostics -> lspClient.TextDocumentPublishDiagnostics { Uri = docUri;
+                                                                                            Version = None;
+                                                                                            Diagnostics = diagnostics;
+                                                                                        })
+                    (getDocumentForUriFromCurrentState AnyDocument)
+                    state
+                    inbox.CurrentQueueLength
+                    msg
+
+            for ev in eventsToPost do inbox.Post(ev)
+
+            return! loop newState
+        with
+        | ex ->
+            logger.warn (
+                Log.setMessage "unhandled exception in `diagnostics`: {message}"
+                >> Log.addContext "message" (string ex))
+            raise ex
+    }
+
+    loop emptyDiagnosticsState
 
 type ServerSettingsDto = {
      csharp: ServerSettingsCSharpDto option
