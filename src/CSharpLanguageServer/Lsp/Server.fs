@@ -27,7 +27,11 @@ module LspUtils =
 
 open LspUtils
 
-type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
+type CSharpLspServer(
+        lspClient: CSharpLspClient,
+        settings: ServerSettings,
+        lspClientLogEventSink: LspClientLogEventSink
+    ) =
 
     let logger = LogProvider.getLoggerByName "LSP"
 
@@ -148,6 +152,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         override __.Dispose() = ()
 
         override __.Initialize(p) =
+            lspClientLogEventSink.SetLspClient(Some lspClient)
+
             let serverCapabilities = getServerCapabilities p
             p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
 
@@ -155,7 +161,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
             p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor)
               |> ignoreResult
 
-        override __.Shutdown() = ignoreNotification
+        override __.Shutdown() =
+            lspClientLogEventSink.SetLspClient(None)
+            () |> async.Return
 
         override __.Exit() = ignoreNotification
 
@@ -364,12 +372,12 @@ module Server =
     let private requestHandlings =
         Map.union (defaultRequestHandlings ()) customRequestHandlings
 
-    let startCore settings =
+    let startCore settings lspClientLogEventSink =
         use input = Console.OpenStandardInput()
         use output = Console.OpenStandardOutput()
 
         let serverCreator client =
-            new CSharpLspServer(client, settings) :> ICSharpLspServer
+            new CSharpLspServer(client, settings, lspClientLogEventSink) :> ICSharpLspServer
 
         let clientCreator = CSharpLspClient
 
@@ -381,9 +389,9 @@ module Server =
             serverCreator
             createRpc
 
-    let start options =
+    let start options lspClientLogEventSink =
         try
-            let result = startCore options
+            let result = startCore options lspClientLogEventSink
             int result
         with ex ->
             logger.error (
