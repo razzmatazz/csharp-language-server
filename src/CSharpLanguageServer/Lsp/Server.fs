@@ -240,7 +240,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         override this.TextDocumentOnTypeFormatting(p) =
             p |> withReadOnlyScope DocumentOnTypeFormatting.handle
 
-        override this.TextDocumentDocumentSymbol(p) = notImplemented
+        override this.TextDocumentDocumentSymbol(p) =
+            p |> withReadOnlyScope DocumentSymbol.handle
 
         override __.WorkspaceDidChangeWatchedFiles(p) =
             p |> withReadWriteScope (Workspace.didChangeWatchedFiles logMessage diagnostics.Post)
