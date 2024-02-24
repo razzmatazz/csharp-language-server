@@ -9,8 +9,8 @@ open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Classification
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module SemanticTokens =
@@ -45,7 +45,7 @@ module SemanticTokens =
                 match range with
                 | Some r ->
                     r
-                    |> roslynLinePositionSpanForLspRange sourceText.Lines
+                    |> Range.toLinePositionSpan sourceText.Lines
                     |> sourceText.Lines.GetTextSpan
                 | None ->
                     TextSpan(0, sourceText.Length)

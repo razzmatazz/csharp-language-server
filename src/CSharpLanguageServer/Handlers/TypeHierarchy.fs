@@ -8,6 +8,7 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module TypeHierarchy =
@@ -21,7 +22,7 @@ module TypeHierarchy =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
                 prepareParams.Position
-                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbol =
                 SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -33,7 +34,7 @@ module TypeHierarchy =
             let! locations = scope.ResolveSymbolLocations doc.Project symbol
             return
                 Seq.allPairs symbol locations
-                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
                 |> LspResult.success
@@ -46,7 +47,7 @@ module TypeHierarchy =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
                 superParams.Item.Range.Start
-                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbol =
                 SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -73,7 +74,7 @@ module TypeHierarchy =
                 |> Seq.map Async.RunSynchronously
                 |> Seq.zip supertypes
                 |> Seq.collect (fun (sym, locs) -> Seq.map (fun loc -> (sym, loc)) locs)
-                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
                 |> LspResult.success
@@ -86,7 +87,7 @@ module TypeHierarchy =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
                 subParams.Item.Range.Start
-                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbol =
                 SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -117,7 +118,7 @@ module TypeHierarchy =
                 |> Seq.map Async.RunSynchronously
                 |> Seq.zip subtypes
                 |> Seq.collect (fun (sym, locs) -> Seq.map (fun loc -> (sym, loc)) locs)
-                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
                 |> LspResult.success

@@ -10,7 +10,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
@@ -33,7 +33,7 @@ module DocumentHighlight =
                 | None -> []
 
             return (Seq.append locationsFromRefs locationsFromDef)
-                    |> Seq.map (fun l -> { Range = (lspLocationForRoslynLocation l).Range ;
+                    |> Seq.map (fun l -> { Range = (Location.fromRoslynLocation l).Range ;
                                             Kind = Some DocumentHighlightKind.Read })
         }
 

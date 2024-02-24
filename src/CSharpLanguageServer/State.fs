@@ -16,6 +16,7 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Conversions
 
 type DecompiledMetadataDocument = {
     Metadata: CSharpMetadataInformation
@@ -369,7 +370,7 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
                 | ls -> ls
 
         else if l.IsInSource then
-            return [lspLocationForRoslynLocation l]
+            return [Location.fromRoslynLocation l]
         else
             return []
     }
@@ -492,7 +493,7 @@ let processDiagnosticsEvent
                     | Some semanticModel ->
                         let diagnostics =
                             semanticModel.GetDiagnostics()
-                            |> Seq.map RoslynHelpers.roslynToLspDiagnostic
+                            |> Seq.map Diagnostic.fromRoslynDiagnostic
                             |> Array.ofSeq
 
                         do! publishDiagnostics docUri diagnostics

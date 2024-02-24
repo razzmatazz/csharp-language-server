@@ -5,28 +5,31 @@ open System.Collections.Generic
 open System.IO
 open System.Reflection
 open System.Threading.Tasks
-open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Host
-open Microsoft.CodeAnalysis.Host.Mef
-open Microsoft.CodeAnalysis.CodeActions
-open Microsoft.CodeAnalysis.CodeRefactorings
-open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Formatting
-open Microsoft.CodeAnalysis.Text
-open Ionide.LanguageServerProtocol
-open Microsoft.CodeAnalysis.MSBuild
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.CSharp.Syntax
 open System.Collections.Immutable
+
+open Castle.DynamicProxy
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
-open Castle.DynamicProxy
-open Util
-open Microsoft.CodeAnalysis.Options
+open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Types
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Formatting
+open Microsoft.CodeAnalysis.CSharp.Syntax
+open Microsoft.CodeAnalysis.CodeActions
+open Microsoft.CodeAnalysis.CodeFixes
+open Microsoft.CodeAnalysis.CodeRefactorings
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Formatting
+open Microsoft.CodeAnalysis.Host
+open Microsoft.CodeAnalysis.Host.Mef
+open Microsoft.CodeAnalysis.MSBuild
+open Microsoft.CodeAnalysis.Options
+open Microsoft.CodeAnalysis.Text
+
+open CSharpLanguageServer.Util
+open CSharpLanguageServer.Conversions
 
 let roslynTagToLspCompletion tag =
     match tag with
@@ -49,38 +52,10 @@ let roslynTagToLspCompletion tag =
     | "Namespace"     -> Types.CompletionItemKind.Module
     | _ -> Types.CompletionItemKind.Property
 
-let lspPositionForRoslynLinePosition (pos: LinePosition): Types.Position =
-    { Line = pos.Line ; Character = pos.Character }
-
-let roslynLinePositionForLspPosition (lines: TextLineCollection) (pos: Types.Position) =
-    if pos.Line < 0 then
-        LinePosition(0, 0)
-    else if pos.Line >= lines.Count then
-        LinePosition(lines.Count - 1, lines[lines.Count - 1].EndIncludingLineBreak - lines[lines.Count - 1].Start)
-    else
-        LinePosition(pos.Line, pos.Character)
-
-let roslynLinePositionSpanForLspRange (lines: TextLineCollection) (range: Types.Range) =
-    LinePositionSpan(
-        roslynLinePositionForLspPosition lines range.Start,
-        roslynLinePositionForLspPosition lines range.End)
-
-let lspRangeForRoslynLinePosSpan (pos: LinePositionSpan): Types.Range =
-    { Start = lspPositionForRoslynLinePosition pos.Start
-      End = lspPositionForRoslynLinePosition pos.End }
-
 let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.TextEdit =
     { Range = docText.Lines.GetLinePositionSpan(c.Span)
-              |> lspRangeForRoslynLinePosSpan
+              |> Range.fromLinePositionSpan
       NewText = c.NewText }
-
-let lspLocationForRoslynLocation(loc: Microsoft.CodeAnalysis.Location): Types.Location =
-    if loc.IsInSource then
-        { Uri = loc.SourceTree.FilePath |> Util.makeFileUri |> string
-          Range = loc.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan }
-    else
-        { Uri = "";
-          Range = { Start = { Line=0; Character=0; }; End = { Line=0; Character=0; } } }
 
 let applyLspContentChangesOnRoslynSourceText
         (changes: Types.TextDocumentContentChangeEvent[])
@@ -90,7 +65,7 @@ let applyLspContentChangesOnRoslynSourceText
         match change.Range with
         | Some changeRange ->
             let changeTextSpan =
-                changeRange |> roslynLinePositionSpanForLspRange sourceText.Lines
+                changeRange |> Range.toLinePositionSpan sourceText.Lines
                             |> sourceText.Lines.GetTextSpan
 
             TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
@@ -326,12 +301,12 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
         let lspRange =
             node.FullSpan
             |> docText.Lines.GetLinePositionSpan
-            |> lspRangeForRoslynLinePosSpan
+            |> Range.fromLinePositionSpan
 
         let selectionLspRange =
             nameSpan
             |> docText.Lines.GetLinePositionSpan
-            |> lspRangeForRoslynLinePosSpan
+            |> Range.fromLinePositionSpan
 
         let symbolDetail =
             match symbolKind with
@@ -347,7 +322,7 @@ type DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel)
             miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
 
         let docSymbol = {
-            Name           = symbol.ToDisplayString(displayStyle)
+            Name           = SymbolName.fromSymbol displayStyle symbol
             Detail         = symbolDetail
             Kind           = symbolKind
             Tags           = None
@@ -521,7 +496,7 @@ type DocumentSymbolCollectorForMatchingSymbolName
         let location: Types.Location =
             { Uri = documentUri
               Range = identifier.GetLocation().GetLineSpan().Span
-                      |> lspRangeForRoslynLinePosSpan }
+                      |> Range.fromLinePositionSpan }
 
         if exactMatch then
             collectedLocations <- location :: collectedLocations
@@ -565,29 +540,6 @@ type DocumentSymbolCollectorForMatchingSymbolName
 
         base.Visit(node)
 
-let roslynToLspDiagnosticSeverity s: Types.DiagnosticSeverity option =
-    match s with
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> Some Types.DiagnosticSeverity.Information
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> Some Types.DiagnosticSeverity.Warning
-    | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> Some Types.DiagnosticSeverity.Error
-    | _ -> Some Types.DiagnosticSeverity.Warning
-
-let roslynToLspDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) : Types.Diagnostic =
-    let diagnosticsCodeUrl =
-          d.Id.ToLowerInvariant()
-          |> (sprintf "https://docs.microsoft.com/en-us/dotnet/csharp/misc/%s")
-          |> Uri
-
-    { Range = d.Location.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan
-      Severity = d.Severity |> roslynToLspDiagnosticSeverity
-      Code = Some d.Id
-      CodeDescription = Some { Href = Some diagnosticsCodeUrl }
-      Source = Some "lsp"
-      Message = d.GetMessage()
-      RelatedInformation = None
-      Tags = None
-      Data = None }
-
 let findSymbolsInSolution (solution: Solution)
                           pattern
                           (_limit: int option)
@@ -599,19 +551,8 @@ let findSymbolsInSolution (solution: Solution)
         | None ->
             fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
     let! symbolsFound = findTask solution |> Async.AwaitTask
-
-    let symbolToLspSymbolInformation (symbol: ISymbol) : Types.SymbolInformation =
-        let (symbolName, symbolKind) = getSymbolNameAndKind None None symbol
-
-        { Name = symbolName
-          Kind = symbolKind
-          Tags = None
-          Deprecated = None
-          Location = symbol.Locations |> Seq.head |> lspLocationForRoslynLocation
-          ContainerName = None }
-
     return symbolsFound
-           |> Seq.map symbolToLspSymbolInformation
+           |> Seq.collect (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
            |> List.ofSeq
 }
 
@@ -1315,24 +1256,3 @@ let isCallableSymbol (symbol: ISymbol): bool =
     else
         List.contains symbol.Kind [Microsoft.CodeAnalysis.SymbolKind.Method; Microsoft.CodeAnalysis.SymbolKind.Field;
                                    Microsoft.CodeAnalysis.SymbolKind.Event; Microsoft.CodeAnalysis.SymbolKind.Property]
-
-let toHierarchyItem (symbol: ISymbol) (location: Types.Location): Types.HierarchyItem =
-    let displayStyle = SymbolDisplayFormat(
-        typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
-        genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
-        memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
-        parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType),
-        miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
-
-    let (_, kind) = getSymbolNameAndKind None None symbol
-    let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
-    let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
-
-    { Name = symbol.ToDisplayString(displayStyle)
-      Kind = kind
-      Tags = None
-      Detail = containingType |> Option.orElse containingNamespace |> Option.map (fun sym -> sym.ToDisplayString())
-      Uri = location.Uri
-      Range = location.Range
-      SelectionRange = location.Range
-      Data = None }

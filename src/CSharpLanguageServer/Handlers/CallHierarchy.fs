@@ -7,6 +7,7 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module CallHierarchy =
@@ -20,7 +21,7 @@ module CallHierarchy =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
                 prepareParams.Position
-                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbols =
                 SymbolFinder.FindSymbolAtPositionAsync(doc, position)
@@ -31,7 +32,7 @@ module CallHierarchy =
                 |> Option.toList
             let! locations = scope.ResolveSymbolLocations doc.Project symbols
             return Seq.allPairs symbols locations
-                |> Seq.map (uncurry toHierarchyItem)
+                |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
                 |> LspResult.success
@@ -39,10 +40,10 @@ module CallHierarchy =
 
     let handleIncomingCalls (scope: ServerRequestScope) (incomingParams: CallHierarchyIncomingCallsParams): AsyncLspResult<CallHierarchyIncomingCall [] option> = async {
         let toCallHierarchyIncomingCalls (info: SymbolCallerInfo): CallHierarchyIncomingCall seq =
-            let fromRanges = info.Locations |> Seq.map (fun l -> l.GetLineSpan().Span |> lspRangeForRoslynLinePosSpan) |> Seq.toArray
+            let fromRanges = info.Locations |> Seq.map (fun l -> l.GetLineSpan().Span |> Range.fromLinePositionSpan) |> Seq.toArray
             info.CallingSymbol.Locations
             |> Seq.map (fun loc ->
-                { From = toHierarchyItem (info.CallingSymbol) (loc |> lspLocationForRoslynLocation)
+                { From = HierarchyItem.fromSymbolAndLocation (info.CallingSymbol) (loc |> Location.fromRoslynLocation)
                   FromRanges = fromRanges })
 
         match scope.GetUserDocumentForUri incomingParams.Item.Uri with
@@ -51,7 +52,7 @@ module CallHierarchy =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
                 incomingParams.Item.Range.Start
-                |> roslynLinePositionForLspPosition sourceText.Lines
+                |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
             let callers =

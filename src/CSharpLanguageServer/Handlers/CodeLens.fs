@@ -12,7 +12,7 @@ open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 type private DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -123,10 +123,10 @@ module CodeLens =
 
                 let lensData: CodeLensData = {
                     DocumentUri = lensParams.TextDocument.Uri
-                    Position = start |> lspPositionForRoslynLinePosition
+                    Position = start |> Position.fromLinePosition
                 }
 
-                { Range = nameSpan |> docText.Lines.GetLinePositionSpan |> lspRangeForRoslynLinePosSpan
+                { Range = nameSpan |> docText.Lines.GetLinePositionSpan |> Range.fromLinePositionSpan
                   Command = None
                   Data = lensData |> JToken.FromObject |> Some
                 }
