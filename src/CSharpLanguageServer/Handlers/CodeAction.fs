@@ -13,6 +13,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module CodeAction =
@@ -45,7 +46,7 @@ module CodeAction =
 
             let textSpan =
                 actionParams.Range
-                |> roslynLinePositionSpanForLspRange docText.Lines
+                |> Range.toLinePositionSpan docText.Lines
                 |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =
@@ -120,7 +121,7 @@ module CodeAction =
 
             let textSpan =
                        resolutionData.Value.Range
-                       |> roslynLinePositionSpanForLspRange docText.Lines
+                       |> Range.toLinePositionSpan docText.Lines
                        |> docText.Lines.GetTextSpan
 
             let! roslynCodeActions =

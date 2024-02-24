@@ -12,6 +12,7 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module InlayHint =
@@ -25,7 +26,7 @@ module InlayHint =
             genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
             miscellaneousOptions = (SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral ||| SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier ||| SymbolDisplayMiscellaneousOptions.UseSpecialTypes))
         let toTypeInlayHint (pos: int) (ty: ITypeSymbol): InlayHint =
-            { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
+            { Position = pos |> lines.GetLinePosition |> Position.fromLinePosition
               Label = InlayHintLabel.String (": " + ty.ToDisplayString(typeDisplayStyle))
               Kind = Some InlayHintKind.Type
               TextEdits = None
@@ -45,7 +46,7 @@ module InlayHint =
             | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) -> None
             | _ -> Some par
         let toParameterInlayHint (pos: int) (par: IParameterSymbol): InlayHint =
-            { Position = pos |> lines.GetLinePosition |> lspPositionForRoslynLinePosition
+            { Position = pos |> lines.GetLinePosition |> Position.fromLinePosition
               Label = InlayHintLabel.String (par.Name + ":")
               Kind = Some InlayHintKind.Parameter
               TextEdits = None
@@ -138,7 +139,7 @@ module InlayHint =
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let textSpan =
                 inlayHintParams.Range
-                |> roslynLinePositionSpanForLspRange sourceText.Lines
+                |> Range.toLinePositionSpan sourceText.Lines
                 |> sourceText.Lines.GetTextSpan
 
             let inlayHints =

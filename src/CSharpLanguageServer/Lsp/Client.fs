@@ -5,10 +5,12 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
-    inherit LspClient ()
+    inherit LspClient()
 
     override __.WindowShowMessage(p) =
         sendServerNotification "window/showMessage" (box p) |> Async.Ignore
+
+    // TODO: Send notifications / requests to client only if client support it
 
     override __.WindowShowMessageRequest(p) =
         sendServerRequest.Send "window/showMessageRequest" (box p)
@@ -25,16 +27,16 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.ClientUnregisterCapability(p) =
         sendServerRequest.Send "client/unregisterCapability" (box p)
 
-    override __.WorkspaceWorkspaceFolders () =
+    override __.WorkspaceWorkspaceFolders() =
         sendServerRequest.Send "workspace/workspaceFolders" ()
 
-    override __.WorkspaceConfiguration (p) =
+    override __.WorkspaceConfiguration(p) =
         sendServerRequest.Send "workspace/configuration" (box p)
 
-    override __.WorkspaceApplyEdit (p) =
+    override __.WorkspaceApplyEdit(p) =
         sendServerRequest.Send "workspace/applyEdit" (box p)
 
-    override __.WorkspaceSemanticTokensRefresh () =
+    override __.WorkspaceSemanticTokensRefresh() =
         sendServerNotification "workspace/semanticTokens/refresh" () |> Async.Ignore
 
     override __.TextDocumentPublishDiagnostics(p) =

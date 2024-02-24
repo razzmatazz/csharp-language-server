@@ -14,7 +14,9 @@ module DocumentSymbol =
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool,DocumentSymbolOptions> option =
         true |> U2.First |> Some
 
-    let handle (scope: ServerRequestScope) (p: DocumentSymbolParams): AsyncLspResult<DocumentSymbol [] option> = async {
+    let handle (scope: ServerRequestScope)
+               (p: DocumentSymbolParams)
+            : AsyncLspResult<U2<SymbolInformation [], DocumentSymbol []> option> = async {
         let canEmitDocSymbolHierarchy =
             scope.ClientCapabilities
             |> Option.bind (fun cc -> cc.TextDocument)
@@ -35,6 +37,7 @@ module DocumentSymbol =
             collector.Visit(syntaxTree.GetRoot())
 
             return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
+                   |> U2.Second
                    |> Some
                    |> LspResult.success
 

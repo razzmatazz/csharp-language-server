@@ -22,6 +22,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module Rename =
@@ -64,8 +65,8 @@ module Rename =
                         |> Option.defaultValue false
 
                     let linePositionSpan = LinePositionSpan(
-                        roslynLinePositionForLspPosition docText.Lines prepareRename.Position,
-                        roslynLinePositionForLspPosition docText.Lines prepareRename.Position)
+                        Position.toLinePosition docText.Lines prepareRename.Position,
+                        Position.toLinePosition docText.Lines prepareRename.Position)
 
                     let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
@@ -94,7 +95,7 @@ module Rename =
                         | Some span, false ->
                             let range =
                                 docText.Lines.GetLinePositionSpan(span)
-                                |> lspRangeForRoslynLinePosSpan
+                                |> Range.fromLinePositionSpan
 
                             let text = docText.GetSubText(span) |> string
 

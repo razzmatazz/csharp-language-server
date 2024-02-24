@@ -3,7 +3,15 @@ module CSharpLanguageServer.Util
 open System
 open System.Runtime.InteropServices
 open System.IO
-open Microsoft.CodeAnalysis.Classification;
+
+open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Types
+open Microsoft.CodeAnalysis.Classification
+open Serilog
+open Serilog.Core
+open Serilog.Sinks
+open Serilog.Events
+open Serilog.Configuration
 
 let parseFileUri s: string =
     Uri(s).LocalPath
@@ -121,3 +129,41 @@ let GetSemanticTokenModifierFlagFromClassification (classification: string) =
 
 let curry f x y = f (x, y)
 let uncurry f (x, y) = f x y
+
+
+type LspClientLogEventSink(formatProvider: IFormatProvider) =
+    let mutable lspClientMaybe: ILspClient option = None
+
+    let mapLogEventLevel lel =
+        match lel with
+        | LogEventLevel.Verbose -> MessageType.Log
+        | LogEventLevel.Debug -> MessageType.Log
+        | LogEventLevel.Information -> MessageType.Info
+        | LogEventLevel.Warning -> MessageType.Warning
+        | LogEventLevel.Error -> MessageType.Error
+        | LogEventLevel.Fatal -> MessageType.Error
+        | _ -> MessageType.Info
+
+    let shouldEmitLogEvent (logEvent: LogEvent) =
+        match logEvent.Level with
+        | LogEventLevel.Information -> true
+        | LogEventLevel.Warning -> true
+        | LogEventLevel.Error -> true
+        | _ -> false
+
+    member __.SetLspClient(newLspClient: ILspClient option) =
+        lspClientMaybe <- newLspClient
+
+    interface ILogEventSink with
+        member __.Emit(logEvent: LogEvent) =
+            let shouldEmit = shouldEmitLogEvent logEvent
+
+            match lspClientMaybe, shouldEmit with
+            | Some lspClient, true ->
+                let messageParams: LogMessageParams =
+                    { Type = mapLogEventLevel logEvent.Level
+                      Message = logEvent.RenderMessage(formatProvider) }
+
+                lspClient.WindowLogMessage(messageParams) |> Async.StartAsTask |> ignore
+
+            | _, _ -> ()

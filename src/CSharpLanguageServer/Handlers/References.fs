@@ -7,7 +7,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module References =
@@ -22,7 +22,7 @@ module References =
             let! refs = SymbolFinder.FindReferencesAsync(symbol, scope.Solution, ct) |> Async.AwaitTask
             return refs
                     |> Seq.collect (fun r -> r.Locations)
-                    |> Seq.map (fun rl -> lspLocationForRoslynLocation rl.Location)
+                    |> Seq.map (fun rl -> Location.fromRoslynLocation rl.Location)
                     |> Array.ofSeq
                     |> Some
                     |> LspResult.success
