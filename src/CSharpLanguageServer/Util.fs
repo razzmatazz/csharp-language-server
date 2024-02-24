@@ -144,17 +144,26 @@ type LspClientLogEventSink(formatProvider: IFormatProvider) =
         | LogEventLevel.Fatal -> MessageType.Error
         | _ -> MessageType.Info
 
+    let shouldEmitLogEvent (logEvent: LogEvent) =
+        match logEvent.Level with
+        | LogEventLevel.Information -> true
+        | LogEventLevel.Warning -> true
+        | LogEventLevel.Error -> true
+        | _ -> false
+
     member __.SetLspClient(newLspClient: ILspClient option) =
         lspClientMaybe <- newLspClient
 
     interface ILogEventSink with
         member __.Emit(logEvent: LogEvent) =
-            match lspClientMaybe with
-            | Some lspClient ->
+            let shouldEmit = shouldEmitLogEvent logEvent
+
+            match lspClientMaybe, shouldEmit with
+            | Some lspClient, true ->
                 let messageParams: LogMessageParams =
                     { Type = mapLogEventLevel logEvent.Level
                       Message = logEvent.RenderMessage(formatProvider) }
 
                 lspClient.WindowLogMessage(messageParams) |> Async.StartAsTask |> ignore
 
-            | None -> ()
+            | _, _ -> ()
