@@ -23,6 +23,7 @@
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="Documentation.fs" />
     <Compile Include="Types.fs" />
+    <Compile Include="Lsp/Client.fs" />
     <Compile Include="State.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />
@@ -37,6 +38,7 @@
     <Compile Include="Handlers/DocumentSymbol.fs" />
     <Compile Include="Handlers/Hover.fs" />
     <Compile Include="Handlers/Implementation.fs" />
+    <Compile Include="Handlers/Initialization.fs" />
     <Compile Include="Handlers/InlayHint.fs" />
     <Compile Include="Handlers/References.fs" />
     <Compile Include="Handlers/Rename.fs" />
@@ -47,14 +49,13 @@
     <Compile Include="Handlers/TypeHierarchy.fs" />
     <Compile Include="Handlers/Workspace.fs" />
     <Compile Include="Handlers/WorkspaceSymbol.fs" />
-    <Compile Include="Lsp/Client.fs" />
     <Compile Include="Lsp/Server.fs" />
-    <Compile Include="Server.fs" />
     <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="FSharpPlus" />
     <PackageReference Include="Argu" />
     <PackageReference Include="Castle.Core" />
     <PackageReference Include="ICSharpCode.Decompiler" />
@@ -75,5 +76,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Microsoft.CodeAnalysis.Features" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.Async" />
   </ItemGroup>
 </Project>

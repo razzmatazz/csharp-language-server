@@ -21,9 +21,12 @@ open Microsoft.CodeAnalysis.Classification
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Rename =
+    let private logger = LogProvider.getLoggerByName "CodeAction"
+
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool, Types.RenameOptions> option =
         let clientSupportsRenameOptions =
             clientCapabilities

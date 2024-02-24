@@ -1,13 +1,16 @@
 name: Tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 jobs:
   build:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-22.04]
-        dotnet: [8.0.101]
+        dotnet: [8.0.200]
       fail-fast: false
 
     runs-on: ${{ matrix.os }}

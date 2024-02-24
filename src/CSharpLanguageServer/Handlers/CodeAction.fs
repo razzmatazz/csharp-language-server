@@ -12,9 +12,12 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module CodeAction =
+    let private logger = LogProvider.getLoggerByName "CodeAction"
+
     type CSharpCodeActionResolutionData = {
         TextDocumentUri: string
         Range: Range
