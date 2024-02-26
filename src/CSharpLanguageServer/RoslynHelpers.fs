@@ -31,27 +31,6 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
 
-let roslynTagToLspCompletion tag =
-    match tag with
-    | "Class"         -> Types.CompletionItemKind.Class
-    | "Delegate"      -> Types.CompletionItemKind.Function
-    | "Enum"          -> Types.CompletionItemKind.Enum
-    | "EnumMember"    -> Types.CompletionItemKind.EnumMember
-    | "Interface"     -> Types.CompletionItemKind.Interface
-    | "Struct"        -> Types.CompletionItemKind.Struct
-    | "Local"         -> Types.CompletionItemKind.Variable
-    | "Parameter"     -> Types.CompletionItemKind.Variable
-    | "RangeVariable" -> Types.CompletionItemKind.Variable
-    | "Const"         -> Types.CompletionItemKind.Constant
-    | "Event"         -> Types.CompletionItemKind.Event
-    | "Field"         -> Types.CompletionItemKind.Field
-    | "Method"        -> Types.CompletionItemKind.Method
-    | "Property"      -> Types.CompletionItemKind.Property
-    | "Label"         -> Types.CompletionItemKind.Unit
-    | "Keyword"       -> Types.CompletionItemKind.Keyword
-    | "Namespace"     -> Types.CompletionItemKind.Module
-    | _ -> Types.CompletionItemKind.Property
-
 let lspTextEditForRoslynTextChange (docText: SourceText) (c: TextChange): Types.TextEdit =
     { Range = docText.Lines.GetLinePositionSpan(c.Span)
               |> Range.fromLinePositionSpan
