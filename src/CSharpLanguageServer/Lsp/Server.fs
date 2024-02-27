@@ -285,7 +285,8 @@ type CSharpLspServer(
         override this.TextDocumentSemanticTokensFull(p) =
             p |> withReadOnlyScope SemanticTokens.handleFull
 
-        override this.TextDocumentSemanticTokensFullDelta(p) = notImplemented
+        override this.TextDocumentSemanticTokensFullDelta(p) =
+            p |> withReadOnlyScope SemanticTokens.handleFullDelta
 
         override this.TextDocumentSemanticTokensRange(p) =
             p |> withReadOnlyScope SemanticTokens.handleRange
