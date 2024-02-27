@@ -3,6 +3,7 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
@@ -17,13 +18,13 @@ module WorkspaceSymbol =
         true |> U2.First |> Some
 
     let handle (scope: ServerRequestScope)
-               (symbolParams: WorkspaceSymbolParams)
+               (p: WorkspaceSymbolParams)
             : AsyncLspResult<U2<SymbolInformation array,WorkspaceSymbol array> option> = async {
         let pattern =
-            if String.IsNullOrEmpty(symbolParams.Query) then
+            if String.IsNullOrEmpty(p.Query) then
                 None
             else
-                Some symbolParams.Query
+                Some p.Query
         let! symbols = findSymbolsInSolution scope.Solution pattern (Some 20)
 
         return
@@ -31,5 +32,5 @@ module WorkspaceSymbol =
             |> Array.ofSeq
             |> U2.First
             |> Some
-            |> LspResult.success
+            |> success
     }
