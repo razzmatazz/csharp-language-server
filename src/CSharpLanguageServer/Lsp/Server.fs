@@ -312,10 +312,10 @@ type CSharpLspServer(
             p |> withReadOnlyScope TypeHierarchy.prepare
 
         override this.TypeHierarchySupertypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.handleSupertypes
+            p |> withReadOnlyScope TypeHierarchy.supertypes
 
         override this.TypeHierarchySubtypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.handleSubtypes
+            p |> withReadOnlyScope TypeHierarchy.subtypes
 
         override this.TextDocumentDeclaration(p) = notImplemented
 

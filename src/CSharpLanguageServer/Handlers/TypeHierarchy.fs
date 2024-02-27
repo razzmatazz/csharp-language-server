@@ -17,7 +17,6 @@ module TypeHierarchy =
 
     let prepare (scope: ServerRequestScope) (prepareParams: TypeHierarchyPrepareParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
         match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with
-        | None -> return None |> LspResult.success
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
@@ -32,21 +31,20 @@ module TypeHierarchy =
                 |> Option.filter (fun sym -> sym :? INamedTypeSymbol)
                 |> Option.toList
             let! locations = scope.ResolveSymbolLocations doc.Project symbol
-            return
+            let itemList =
                 Seq.allPairs symbol locations
                 |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
-                |> Seq.toArray
-                |> Some
-                |> LspResult.success
+                |> Seq.toList
+            return itemList |> List.toArray |> Some |> success
+        | _ -> return None |> success
     }
 
-    let handleSupertypes (scope: ServerRequestScope) (superParams: TypeHierarchySupertypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
-        match scope.GetUserDocumentForUri superParams.Item.Uri with
-        | None -> return None |> LspResult.success
+    let supertypes (scope: ServerRequestScope) (p: TypeHierarchySupertypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri p.Item.Uri with
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
-                superParams.Item.Range.Start
+                p.Item.Range.Start
                 |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbol =
@@ -77,16 +75,16 @@ module TypeHierarchy =
                 |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
-                |> LspResult.success
+                |> success
+        | _ -> return None |> success
     }
 
-    let handleSubtypes (scope: ServerRequestScope) (subParams: TypeHierarchySubtypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
-        match scope.GetUserDocumentForUri subParams.Item.Uri with
-        | None -> return None |> LspResult.success
+    let subtypes (scope: ServerRequestScope) (p: TypeHierarchySubtypesParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
+        match scope.GetUserDocumentForUri p.Item.Uri with
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position =
-                subParams.Item.Range.Start
+                p.Item.Range.Start
                 |> Position.toLinePosition sourceText.Lines
                 |> sourceText.Lines.GetPosition
             let symbol =
@@ -121,5 +119,6 @@ module TypeHierarchy =
                 |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
                 |> Seq.toArray
                 |> Some
-                |> LspResult.success
+                |> success
+        | _ -> return None |> success
     }
