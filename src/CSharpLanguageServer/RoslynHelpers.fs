@@ -1015,74 +1015,11 @@ let tryAddDocument (logMessage: AsyncLogFn)
     return newDocumentMaybe
   }
 
-let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
-    let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =
-           { NewText = newText
-             Range = {
-                 Start = { Line = linePosition.Start.Line
-                           Character = linePosition.Start.Character }
-                 End = { Line = linePosition.End.Line
-                         Character = linePosition.End.Character } } }
-
-    let defaultTextEdit(oldText: SourceText, change: TextChange) : TextEdit =
-        let linePosition = oldText.Lines.GetLinePositionSpan change.Span
-        mapToTextEdit(linePosition, change.NewText)
-
-    let padLeft(span: TextSpan) : TextSpan =
-        TextSpan.FromBounds(span.Start - 1, span.End)
-    let padRight(span: TextSpan): TextSpan =
-        TextSpan.FromBounds(span.Start, span.End + 1)
-
-    let rec checkSpanLineEndings(newText: string, oldText: SourceText, span: TextSpan, prefix: string) : TextEdit =
-        if span.Start > 0 && newText[0].Equals('\n') && oldText[span.Start - 1].Equals('\r') then
-           checkSpanLineEndings(newText, oldText, padLeft(span), "\r") |> ignore
-        if span.End < oldText.Length - 1 && newText[newText.Length - 1].Equals('\r') && oldText[span.End].Equals('\n') then
-           let linePosition = oldText.Lines.GetLinePositionSpan(padRight(span))
-           mapToTextEdit(linePosition, (prefix + newText.ToString() + "\n"))
-        else
-            let linePosition = oldText.Lines.GetLinePositionSpan span
-            mapToTextEdit(linePosition, newText.ToString())
-
-    let newText = change.NewText
-
-    if newText.Length > 0 then
-        checkSpanLineEndings(newText, oldText, change.Span, String.Empty)
-    else
-        defaultTextEdit(oldText, change)
-
-let convert (oldText: SourceText) (changes: TextChange[]) : TextEdit[] =
-    //why doesnt it pick up that TextSpan implements IComparable<T>?
-    //one of life's many mysteries
-    let comparer (lhs: TextChange) (rhs: TextChange) : int =
-        lhs.Span.CompareTo(rhs.Span)
-    changes
-    |> Seq.sortWith comparer
-    |> Seq.map(fun x -> processChange oldText x)
-    |> Seq.toArray
-
-let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> =
-    async {
-        let! changes = doc.GetTextChangesAsync oldDoc |> Async.AwaitTask
-        let! oldText = oldDoc.GetTextAsync() |> Async.AwaitTask
-        return convert oldText (changes |> Seq.toArray)    
-    }
-
-let getFormattingOptions (doc: Document) (formattingOptions: Types.FormattingOptions) : OptionSet =
-    doc.Project.Solution.Options
-    |> fun o -> o.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, formattingOptions.TabSize)
-    |> fun o -> o.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
-    |> match formattingOptions.InsertFinalNewline with
-        | Some insertFinalNewline -> fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
-        | None -> id
-    |> match formattingOptions.TrimFinalNewlines with
-        | Some trimFinalNewlines -> fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
-        | None -> id
-
 let handleTextDocumentFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) : Async<TextEdit[]> =
     async {
-        let options = getFormattingOptions doc formattingOptions
+        let options = FormatUtil.getFormattingOptions doc formattingOptions
         let! newDoc = Formatter.FormatAsync(doc, options) |> Async.AwaitTask
-        return! getChanges newDoc doc
+        return! FormatUtil.getChanges newDoc doc
     }
 
 let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
@@ -1107,18 +1044,6 @@ let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
     let token = root.FindToken position
     getSyntaxNode token
 
-let handleTextDocumentRangeFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) (range: Range) : Async<TextEdit[]> =
-    async {
-        let options = getFormattingOptions doc formattingOptions
-        let! text = doc.GetTextAsync() |> Async.AwaitTask
-        let startPos = text.Lines.GetPosition(new LinePosition(range.Start.Line, range.Start.Character))
-        let endPos = text.Lines.GetPosition(new LinePosition(range.End.Line, range.End.Character))
-        let! syntaxTree = doc.GetSyntaxRootAsync() |> Async.AwaitTask
-        let tokenStart = syntaxTree.FindToken(startPos).FullSpan.Start
-        let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(tokenStart, endPos), options) |> Async.AwaitTask
-        return! getChanges newDoc doc
-    }
-
 let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) : Async<TextEdit[]> =
     async {
         let options = doc.Project.Solution.Options
@@ -1131,7 +1056,7 @@ let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) 
             match maybeNode with
             | Some node ->
                 let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End), options) |> Async.AwaitTask
-                return! getChanges newDoc doc
+                return! FormatUtil.getChanges newDoc doc
             | None -> return Array.empty<TextEdit>
         | _ -> return Array.empty<TextEdit>
     }
