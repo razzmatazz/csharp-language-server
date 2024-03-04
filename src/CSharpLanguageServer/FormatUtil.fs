@@ -5,10 +5,33 @@ open System
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Options
+open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.Formatting
 
 open Ionide.LanguageServerProtocol.Types
+
+let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
+    if token.IsKind(SyntaxKind.EndOfFileToken) then
+        getSyntaxNode(token.GetPreviousToken())
+    else
+        match token.Kind() with
+        | SyntaxKind.SemicolonToken -> token.Parent |> Some
+        | SyntaxKind.CloseBraceToken ->
+            let parent = token.Parent
+            match parent.Kind() with
+            | SyntaxKind.Block -> parent.Parent |> Some
+            | _ -> parent |> Some
+        | SyntaxKind.CloseParenToken ->
+            if token.GetPreviousToken().IsKind(SyntaxKind.SemicolonToken) && token.Parent.IsKind(SyntaxKind.ForStatement) then
+                token.Parent |> Some
+            else
+                None
+        | _ -> None
+
+let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
+    let token = root.FindToken position
+    getSyntaxNode token
 
 let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
     let mapToTextEdit(linePosition: LinePositionSpan, newText: string) : TextEdit =

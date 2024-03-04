@@ -1022,45 +1022,6 @@ let handleTextDocumentFormatAsync (doc: Document) (formattingOptions: Types.Form
         return! FormatUtil.getChanges newDoc doc
     }
 
-let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
-    if token.IsKind(SyntaxKind.EndOfFileToken) then
-        getSyntaxNode(token.GetPreviousToken())
-    else
-        match token.Kind() with
-        | SyntaxKind.SemicolonToken -> token.Parent |> Some
-        | SyntaxKind.CloseBraceToken ->
-            let parent = token.Parent
-            match parent.Kind() with
-            | SyntaxKind.Block -> parent.Parent |> Some
-            | _ -> parent |> Some
-        | SyntaxKind.CloseParenToken ->
-            if token.GetPreviousToken().IsKind(SyntaxKind.SemicolonToken) && token.Parent.IsKind(SyntaxKind.ForStatement) then
-                token.Parent |> Some
-            else
-                None
-        | _ -> None
-
-let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
-    let token = root.FindToken position
-    getSyntaxNode token
-
-let handleTextOnTypeFormatAsync (doc: Document) (ch: char) (position: Position) : Async<TextEdit[]> =
-    async {
-        let options = doc.Project.Solution.Options
-        let! text = doc.GetTextAsync() |> Async.AwaitTask
-        let pos = text.Lines.GetPosition(new LinePosition(position.Line, position.Character))
-        match ch with
-        | ';' | '}' | ')' ->
-            let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
-            let maybeNode = findFormatTarget root pos
-            match maybeNode with
-            | Some node ->
-                let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End), options) |> Async.AwaitTask
-                return! FormatUtil.getChanges newDoc doc
-            | None -> return Array.empty<TextEdit>
-        | _ -> return Array.empty<TextEdit>
-    }
-
 let makeDocumentFromMetadata
         (compilation: Microsoft.CodeAnalysis.Compilation)
         (project: Microsoft.CodeAnalysis.Project)
