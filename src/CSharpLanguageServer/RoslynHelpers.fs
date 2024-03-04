@@ -1015,13 +1015,6 @@ let tryAddDocument (logMessage: AsyncLogFn)
     return newDocumentMaybe
   }
 
-let handleTextDocumentFormatAsync (doc: Document) (formattingOptions: Types.FormattingOptions) : Async<TextEdit[]> =
-    async {
-        let options = FormatUtil.getFormattingOptions doc formattingOptions
-        let! newDoc = Formatter.FormatAsync(doc, options) |> Async.AwaitTask
-        return! FormatUtil.getChanges newDoc doc
-    }
-
 let makeDocumentFromMetadata
         (compilation: Microsoft.CodeAnalysis.Compilation)
         (project: Microsoft.CodeAnalysis.Project)
