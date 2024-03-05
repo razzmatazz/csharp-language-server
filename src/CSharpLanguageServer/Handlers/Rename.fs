@@ -130,7 +130,6 @@ module Rename =
                 lspDocChangesFromSolutionDiff originalSolution
                                           updatedSolution
                                           scope.OpenDocVersions.TryFind
-                                          scope.logMessage
                                           doc
             return docTextEdit
         }
