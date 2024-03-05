@@ -919,10 +919,3 @@ let getParameterForAttributeArgumentSyntax (semanticModel: SemanticModel) (argum
             | _ -> None
         | _ -> None
     | _ -> None
-
-let isCallableSymbol (symbol: ISymbol): bool =
-    if isNull symbol then
-        false
-    else
-        List.contains symbol.Kind [Microsoft.CodeAnalysis.SymbolKind.Method; Microsoft.CodeAnalysis.SymbolKind.Field;
-                                   Microsoft.CodeAnalysis.SymbolKind.Event; Microsoft.CodeAnalysis.SymbolKind.Property]

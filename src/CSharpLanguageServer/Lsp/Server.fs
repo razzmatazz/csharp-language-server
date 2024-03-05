@@ -304,10 +304,10 @@ type CSharpLspServer(
             p |> withReadOnlyScope CallHierarchy.prepare
 
         override this.CallHierarchyIncomingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.handleIncomingCalls
+            p |> withReadOnlyScope CallHierarchy.incomingCalls
 
         override this.CallHierarchyOutgoingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.handleOutgoingCalls
+            p |> withReadOnlyScope CallHierarchy.outgoingCalls
 
         override this.TextDocumentPrepareTypeHierarchy(p) =
             p |> withReadOnlyScope TypeHierarchy.prepare
