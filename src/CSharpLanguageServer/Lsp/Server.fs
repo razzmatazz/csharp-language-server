@@ -294,7 +294,8 @@ type CSharpLspServer(
         override this.TextDocumentInlayHint(p) =
             p |> withReadOnlyScope InlayHint.handle
 
-        override this.InlayHintResolve(p) = notImplemented
+        override this.InlayHintResolve(p) =
+            p |> withReadOnlyScope InlayHint.resolve
 
         override __.WorkDoneProgressCancel(p) = ignoreNotification
 
