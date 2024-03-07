@@ -207,7 +207,7 @@ module CodeAction =
                                               originatingDoc
             let edit: WorkspaceEdit = {
                 Changes = None
-                DocumentChanges = docTextEdit |> Array.ofList |> Some
+                DocumentChanges = docTextEdit |> Some
             }
 
             let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca

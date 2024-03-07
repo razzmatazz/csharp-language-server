@@ -58,7 +58,7 @@ let lspDocChangesFromSolutionDiff
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
         (originatingDoc: Document)
-        : Async<Types.TextDocumentEdit list> = async {
+        : Async<Types.TextDocumentEdit []> = async {
 
     let! ct = Async.CancellationToken
 
@@ -115,7 +115,7 @@ let lspDocChangesFromSolutionDiff
 
         docTextEdits.Add({ TextDocument = textEditDocument; Edits = diffEdits })
 
-    return docTextEdits |> List.ofSeq
+    return docTextEdits |> Array.ofSeq
 }
 
 let formatSymbol (sym: ISymbol)

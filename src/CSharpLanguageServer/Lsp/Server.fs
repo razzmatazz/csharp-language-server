@@ -196,7 +196,7 @@ type CSharpLspServer(
         override this.CompletionItemResolve(p) = notImplemented
 
         override this.TextDocumentPrepareRename(p) =
-            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState logMessage)
+            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState)
 
         override this.TextDocumentRename(p) =
             p |> withReadOnlyScope Rename.handle
