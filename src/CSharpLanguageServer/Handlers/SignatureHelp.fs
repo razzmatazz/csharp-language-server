@@ -130,7 +130,7 @@ module SignatureHelp =
                         let documentation =
                             Documentation.Markup {
                                 Kind = MarkupKind.Markdown
-                                Value = Documentation.markdownDocForSymbol m
+                                Value = DocumentationUtil.markdownDocForSymbol m
                             }
 
                         { Label           = m.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)

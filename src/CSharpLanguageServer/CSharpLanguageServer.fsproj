@@ -23,7 +23,7 @@
     <Compile Include="Conversions.fs" />
     <Compile Include="FormatUtil.fs" />
     <Compile Include="RoslynHelpers.fs" />
-    <Compile Include="Documentation.fs" />
+    <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State.fs" />

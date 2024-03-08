@@ -20,7 +20,7 @@ module Hover =
         | None -> return None |> success
         | Some (symbol, doc, pos) ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-            let content = Documentation.markdownDocForSymbolWithSignature symbol semanticModel pos |> markdown
+            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel |> markdown
             let hover =
                 { Contents = MarkupContent content
                   // TODO: Support range

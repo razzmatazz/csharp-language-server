@@ -1,6 +1,8 @@
-open NUnit.Framework
-open CSharpLanguageServer.Documentation
 open System
+
+open NUnit.Framework
+
+open CSharpLanguageServer.DocumentationUtil
 
 [<TestCase(
     "",
