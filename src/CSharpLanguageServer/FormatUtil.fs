@@ -1,4 +1,4 @@
-namespace CSharpLanguageServer
+namespace CSharpLanguageServer.Handlers
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
