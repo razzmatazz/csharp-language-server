@@ -38,6 +38,7 @@
     <Compile Include="Handlers/DocumentOnTypeFormatting.fs" />
     <Compile Include="Handlers/DocumentRangeFormatting.fs" />
     <Compile Include="Handlers/DocumentSymbol.fs" />
+    <Compile Include="Handlers/ExecuteCommand.fs" />
     <Compile Include="Handlers/Hover.fs" />
     <Compile Include="Handlers/Implementation.fs" />
     <Compile Include="Handlers/Initialization.fs" />

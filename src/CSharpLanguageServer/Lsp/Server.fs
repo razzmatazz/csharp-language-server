@@ -136,7 +136,7 @@ type CSharpLspServer(
                     DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider lspClient.Capabilities
                     RenameProvider = Rename.provider lspClient.Capabilities
                     // FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
-                    // ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
+                    ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
                     // SelectionRangeProvider = SelectionRange.provider lspClient.Capabilities
                     // LinkedEditingRangeProvider = LinkedEditingRange.provider lspClient.Capabilities
                     CallHierarchyProvider = CallHierarchy.provider lspClient.Capabilities
@@ -276,7 +276,8 @@ type CSharpLspServer(
         override this.WorkspaceSymbol(p) =
             p |> withReadOnlyScope WorkspaceSymbol.handle
 
-        override this.WorkspaceExecuteCommand(p) = notImplemented
+        override this.WorkspaceExecuteCommand(p) =
+            p |> withReadOnlyScope ExecuteCommand.handle
 
         override this.TextDocumentFoldingRange(p) = notImplemented
 
