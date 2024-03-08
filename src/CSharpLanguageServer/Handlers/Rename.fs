@@ -26,7 +26,43 @@ open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module Rename =
-    let private logger = LogProvider.getLoggerByName "CodeAction"
+    let private logger = LogProvider.getLoggerByName "Rename"
+
+    let private lspDocChangesFromSolutionDiff
+        (originalSolution: Solution)
+        (updatedSolution: Solution)
+        (tryGetDocVersionByUri: string -> int option)
+        : Async<TextDocumentEdit[]> =
+        let getEdits
+            (originalSolution: Solution)
+            (updatedSolution: Solution)
+            (docId: DocumentId)
+            : Async<TextDocumentEdit> = async {
+            let originalDoc = originalSolution.GetDocument(docId)
+            let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
+            let updatedDoc = updatedSolution.GetDocument(docId)
+            let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
+
+            let diffEdits: TextEdit array =
+                docChanges
+                |> Seq.sortBy (fun c -> c.Span.Start)
+                |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
+                |> Array.ofSeq
+
+            let uri = originalDoc.FilePath |> Path.toUri
+            let textEditDocument =
+                { Uri = uri
+                  Version = tryGetDocVersionByUri uri }
+
+            return
+                { TextDocument = textEditDocument
+                  Edits = diffEdits }
+        }
+
+        updatedSolution.GetChanges(originalSolution).GetProjectChanges()
+        |> Seq.collect (fun projectChange -> projectChange.GetChangedDocuments())
+        |> Seq.map (getEdits originalSolution updatedSolution)
+        |> Async.Parallel
 
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool, Types.RenameOptions> option =
         let clientSupportsRenameOptions =
@@ -42,105 +78,102 @@ module Rename =
             true |> U2.First |> Some
 
     let prepare (getDocumentForUriFromCurrentState: ServerDocumentType -> string -> Async<Document option>)
-                (logMessage: Util.AsyncLogFn)
                 (_scope: ServerRequestScope)
-                (prepareRename: PrepareRenameParams)
-                : AsyncLspResult<PrepareRenameResult option> =
-        async {
-            let! ct = Async.CancellationToken
-            let! docMaybe = getDocumentForUriFromCurrentState UserDocument
-                                                              prepareRename.TextDocument.Uri
-            let! prepareResult =
-                match docMaybe with
-                | Some doc -> async {
-                    let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-                    let! docText = doc.GetTextAsync() |> Async.AwaitTask
+                (p: PrepareRenameParams)
+                : AsyncLspResult<PrepareRenameResult option> = async {
+        let! docMaybe = getDocumentForUriFromCurrentState UserDocument
+                                                            p.TextDocument.Uri
+        return!
+          match docMaybe with
+          | None -> None |> success |> async.Return
+          | Some doc -> async {
+            let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
-                    let position = docText.Lines.GetPosition(LinePosition(prepareRename.Position.Line, prepareRename.Position.Character))
-                    let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-                    let symbolIsFromMetadata =
-                        symbolMaybe
-                        |> Option.ofObj
-                        |> Option.map (fun s -> s.MetadataToken <> 0)
-                        |> Option.defaultValue false
+            let position = Position.toRoslynPosition docText.Lines p.Position
+            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let symbolIsFromMetadata =
+                symbolMaybe
+                |> Option.ofObj
+                |> Option.map (fun s -> s.MetadataToken <> 0)
+                |> Option.defaultValue false
 
-                    let linePositionSpan = LinePositionSpan(
-                        Position.toLinePosition docText.Lines prepareRename.Position,
-                        Position.toLinePosition docText.Lines prepareRename.Position)
+            let linePositionSpan =
+                Range.toLinePositionSpan docText.Lines { Start = p.Position; End = p.Position }
 
-                    let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
+            let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
-                    let! rootNode = docSyntaxTree.GetRootAsync() |> Async.AwaitTask
-                    let nodeOnPos = rootNode.FindNode(textSpan, findInsideTrivia=false, getInnermostNodeForTie=true)
+            let! rootNode = docSyntaxTree.GetRootAsync() |> Async.AwaitTask
+            let nodeOnPos =
+                rootNode.FindNode(textSpan, findInsideTrivia = false, getInnermostNodeForTie = true)
 
-                    let! spanMaybe =
-                        match nodeOnPos with
-                        | :? PropertyDeclarationSyntax as propDec              -> propDec.Identifier.Span        |> Some |> async.Return
-                        | :? MethodDeclarationSyntax as methodDec              -> methodDec.Identifier.Span      |> Some |> async.Return
-                        | :? BaseTypeDeclarationSyntax as typeDec              -> typeDec.Identifier.Span        |> Some |> async.Return
-                        | :? VariableDeclaratorSyntax as varDec                -> varDec.Identifier.Span         |> Some |> async.Return
-                        | :? EnumMemberDeclarationSyntax as enumMemDec         -> enumMemDec.Identifier.Span     |> Some |> async.Return
-                        | :? ParameterSyntax as paramSyn                       -> paramSyn.Identifier.Span       |> Some |> async.Return
-                        | :? NameSyntax as nameSyn                             -> nameSyn.Span                   |> Some |> async.Return
-                        | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some |> async.Return
-                        | :? ForEachStatementSyntax as forEachSyn              -> forEachSyn.Identifier.Span     |> Some |> async.Return
-                        | :? LocalFunctionStatementSyntax as localFunStSyn     -> localFunStSyn.Identifier.Span  |> Some |> async.Return
-                        | node -> async {
-                            do! logMessage (sprintf "handleTextDocumentPrepareRename: unhandled Type=%s" (string (node.GetType().Name)))
-                            return None
-                          }
+            let spanMaybe =
+                match nodeOnPos with
+                | :? PropertyDeclarationSyntax as propDec              -> propDec.Identifier.Span        |> Some
+                | :? MethodDeclarationSyntax as methodDec              -> methodDec.Identifier.Span      |> Some
+                | :? BaseTypeDeclarationSyntax as typeDec              -> typeDec.Identifier.Span        |> Some
+                | :? VariableDeclaratorSyntax as varDec                -> varDec.Identifier.Span         |> Some
+                | :? EnumMemberDeclarationSyntax as enumMemDec         -> enumMemDec.Identifier.Span     |> Some
+                | :? ParameterSyntax as paramSyn                       -> paramSyn.Identifier.Span       |> Some
+                | :? NameSyntax as nameSyn                             -> nameSyn.Span                   |> Some
+                | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some
+                | :? ForEachStatementSyntax as forEachSyn              -> forEachSyn.Identifier.Span     |> Some
+                | :? LocalFunctionStatementSyntax as localFunStSyn     -> localFunStSyn.Identifier.Span  |> Some
+                | node ->
+                    logger.debug (
+                        Log.setMessage "textDocument/prepareRename: unhandled Type={type}"
+                        >> Log.addContext "type" (node.GetType().Name)
+                    )
+                    None
 
-                    let rangeWithPlaceholderMaybe: PrepareRenameResult option =
-                        match spanMaybe, symbolIsFromMetadata with
-                        | Some span, false ->
-                            let range =
-                                docText.Lines.GetLinePositionSpan(span)
-                                |> Range.fromLinePositionSpan
+            let rangeWithPlaceholderMaybe: PrepareRenameResult option =
+                match spanMaybe, symbolIsFromMetadata with
+                | Some span, false ->
+                    let range = Range.fromTextSpan docText.Lines span
 
-                            let text = docText.GetSubText(span) |> string
+                    let text = docText.ToString(span)
 
-                            { Range = range; Placeholder = text }
-                            |> Types.PrepareRenameResult.RangeWithPlaceholder
-                            |> Some
-                        | _, _ ->
-                            None
+                    { Range = range; Placeholder = text }
+                    |> PrepareRenameResult.RangeWithPlaceholder
+                    |> Some
+                | _, _ -> None
 
-                    return rangeWithPlaceholderMaybe
-                  }
-                | None -> None |> async.Return
+            return rangeWithPlaceholderMaybe |> success
+          }
+    }
 
-            return prepareResult |> success
-        }
+    let handle
+        (scope: ServerRequestScope)
+        (p: RenameParams)
+        : AsyncLspResult<WorkspaceEdit option> = async {
+        let clientCapabilities = scope.ClientCapabilities
+        let! maybeSymbol = scope.GetSymbolAtPositionOnUserDocument p.TextDocument.Uri p.Position
 
-    let handle (scope: ServerRequestScope) (rename: Types.RenameParams): AsyncLspResult<Types.WorkspaceEdit option> = async {
-        let! ct = Async.CancellationToken
-
-        let renameSymbolInDoc symbol (doc: Document) = async {
+        return!
+          match maybeSymbol with
+          | None -> None |> success |> async.Return
+          | Some (symbol, doc, _) -> async {
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =
-                Renamer.RenameSymbolAsync(doc.Project.Solution,
-                                      symbol,
-                                      SymbolRenameOptions(RenameOverloads=true, RenameFile=true),
-                                      rename.NewName,
-                                      ct)
+                Renamer.RenameSymbolAsync(
+                    doc.Project.Solution,
+                    symbol,
+                    SymbolRenameOptions(RenameOverloads = true, RenameInStrings = true, RenameInComments = true),
+                    p.NewName
+                )
                 |> Async.AwaitTask
 
-            let! docTextEdit =
-                lspDocChangesFromSolutionDiff originalSolution
-                                          updatedSolution
-                                          scope.OpenDocVersions.TryFind
-                                          scope.logMessage
-                                          doc
-            return docTextEdit
-        }
+            let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution updatedSolution scope.OpenDocVersions.TryFind
 
-        let! maybeSymbol = scope.GetSymbolAtPositionOnUserDocument rename.TextDocument.Uri rename.Position
-
-        let! docChanges =
-            match maybeSymbol with
-                      | Some (symbol, doc, _) -> renameSymbolInDoc symbol doc
-                      | None -> async { return [] }
-
-        return WorkspaceEdit.Create (docChanges |> Array.ofList, scope.ClientCapabilities.Value) |> Some |> success
+            let clientCapabilities =
+                clientCapabilities
+                |> Option.defaultValue
+                    { Workspace = None
+                      TextDocument = None
+                      General = None
+                      Experimental = None
+                      Window = None }
+            return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success
+          }
     }

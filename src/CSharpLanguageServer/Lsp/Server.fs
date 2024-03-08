@@ -136,7 +136,7 @@ type CSharpLspServer(
                     DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider lspClient.Capabilities
                     RenameProvider = Rename.provider lspClient.Capabilities
                     // FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
-                    // ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
+                    ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
                     // SelectionRangeProvider = SelectionRange.provider lspClient.Capabilities
                     // LinkedEditingRangeProvider = LinkedEditingRange.provider lspClient.Capabilities
                     CallHierarchyProvider = CallHierarchy.provider lspClient.Capabilities
@@ -196,7 +196,7 @@ type CSharpLspServer(
         override this.CompletionItemResolve(p) = notImplemented
 
         override this.TextDocumentPrepareRename(p) =
-            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState logMessage)
+            p |> withReadOnlyScope (Rename.prepare getDocumentForUriFromCurrentState)
 
         override this.TextDocumentRename(p) =
             p |> withReadOnlyScope Rename.handle
@@ -276,7 +276,8 @@ type CSharpLspServer(
         override this.WorkspaceSymbol(p) =
             p |> withReadOnlyScope WorkspaceSymbol.handle
 
-        override this.WorkspaceExecuteCommand(p) = notImplemented
+        override this.WorkspaceExecuteCommand(p) =
+            p |> withReadOnlyScope ExecuteCommand.handle
 
         override this.TextDocumentFoldingRange(p) = notImplemented
 
@@ -285,7 +286,8 @@ type CSharpLspServer(
         override this.TextDocumentSemanticTokensFull(p) =
             p |> withReadOnlyScope SemanticTokens.handleFull
 
-        override this.TextDocumentSemanticTokensFullDelta(p) = notImplemented
+        override this.TextDocumentSemanticTokensFullDelta(p) =
+            p |> withReadOnlyScope SemanticTokens.handleFullDelta
 
         override this.TextDocumentSemanticTokensRange(p) =
             p |> withReadOnlyScope SemanticTokens.handleRange
@@ -293,7 +295,8 @@ type CSharpLspServer(
         override this.TextDocumentInlayHint(p) =
             p |> withReadOnlyScope InlayHint.handle
 
-        override this.InlayHintResolve(p) = notImplemented
+        override this.InlayHintResolve(p) =
+            p |> withReadOnlyScope InlayHint.resolve
 
         override __.WorkDoneProgressCancel(p) = ignoreNotification
 
@@ -303,19 +306,19 @@ type CSharpLspServer(
             p |> withReadOnlyScope CallHierarchy.prepare
 
         override this.CallHierarchyIncomingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.handleIncomingCalls
+            p |> withReadOnlyScope CallHierarchy.incomingCalls
 
         override this.CallHierarchyOutgoingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.handleOutgoingCalls
+            p |> withReadOnlyScope CallHierarchy.outgoingCalls
 
         override this.TextDocumentPrepareTypeHierarchy(p) =
             p |> withReadOnlyScope TypeHierarchy.prepare
 
         override this.TypeHierarchySupertypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.handleSupertypes
+            p |> withReadOnlyScope TypeHierarchy.supertypes
 
         override this.TypeHierarchySubtypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.handleSubtypes
+            p |> withReadOnlyScope TypeHierarchy.subtypes
 
         override this.TextDocumentDeclaration(p) = notImplemented
 

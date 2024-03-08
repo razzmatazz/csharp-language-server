@@ -3,6 +3,7 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -14,7 +15,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
 
-type private DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
+type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
     let mutable collectedSymbols = []
@@ -23,7 +24,8 @@ type private DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
         let symbol = semanticModel.GetDeclaredSymbol(node)
         collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
 
-    member __.GetSymbols() = collectedSymbols |> List.rev |> Array.ofList
+    member __.GetSymbols() =
+        collectedSymbols |> List.rev |> Array.ofList
 
     override __.VisitEnumDeclaration(node) =
         collect node node.Identifier.Span
@@ -83,7 +85,8 @@ type private DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
 
     override __.VisitVariableDeclarator(node) =
         let grandparent =
-            node.Parent |> Option.ofObj
+            node.Parent
+            |> Option.ofObj
             |> Option.bind (fun node -> node.Parent |> Option.ofObj)
         // Only show field variables and ignore local variables
         if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
@@ -96,19 +99,22 @@ type private DocumentSymbolCollectorForCodeLens (semanticModel: SemanticModel) =
         collect node node.Identifier.Span
         base.VisitEventDeclaration(node)
 
-
 [<RequireQualifiedAccess>]
 module CodeLens =
-    type CodeLensData = { DocumentUri: string; Position: Position  }
-
-    let emptyCodeLensData = { DocumentUri=""; Position={ Line=0; Character=0 } }
+    type CodeLensData =
+        { DocumentUri: string
+          Position: Position }
+        static member Default =
+            { DocumentUri = ""
+              Position = { Line = 0; Character = 0 } }
 
     let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
         Some { ResolveProvider = Some true }
 
-    let handle (scope: ServerRequestScope) (lensParams: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
-        let docMaybe = scope.GetAnyDocumentForUri lensParams.TextDocument.Uri
+    let handle (scope: ServerRequestScope) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
+        let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
         match docMaybe with
+        | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -118,36 +124,30 @@ module CodeLens =
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
             collector.Visit(syntaxTree.GetRoot())
 
-            let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan): CodeLens =
+            let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan) : CodeLens =
                 let start = nameSpan.Start |> docText.Lines.GetLinePosition
 
-                let lensData: CodeLensData = {
-                    DocumentUri = lensParams.TextDocument.Uri
-                    Position = start |> Position.fromLinePosition
-                }
+                let lensData: CodeLensData =
+                    { DocumentUri = p.TextDocument.Uri
+                      Position = start |> Position.fromLinePosition }
 
-                { Range = nameSpan |> docText.Lines.GetLinePositionSpan |> Range.fromLinePositionSpan
+                { Range = nameSpan |> Range.fromTextSpan docText.Lines
                   Command = None
-                  Data = lensData |> JToken.FromObject |> Some
-                }
+                  Data = lensData |> JToken.FromObject |> Some }
 
             let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
 
-            return codeLens |> Array.ofSeq |> Some |> LspResult.success
-
-        | None ->
-            return None |> LspResult.success
+            return codeLens |> Array.ofSeq |> Some |> success
     }
 
     let resolve (scope: ServerRequestScope)
-                (codeLens: CodeLens)
+                (p: CodeLens)
             : AsyncLspResult<CodeLens> = async {
-
         let! ct = Async.CancellationToken
         let lensData =
-            codeLens.Data
+            p.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
-            |> Option.defaultValue emptyCodeLensData
+            |> Option.defaultValue CodeLensData.Default
 
         let docMaybe = scope.GetAnyDocumentForUri lensData.DocumentUri
         let doc = docMaybe.Value
@@ -158,18 +158,24 @@ module CodeLens =
             LinePosition(lensData.Position.Line, lensData.Position.Character)
             |> sourceText.Lines.GetPosition
 
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+        let! symbolMaybe =
+            SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct)
+            |> Async.AwaitTask
 
-        let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
-        let locations = refs |> Seq.collect (fun r -> r.Locations)
+        match symbolMaybe |> Option.ofObj with
+        | None -> return p |> success
+        | Some symbol ->
+            let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
+            // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
+            // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
+            let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0
+            let title = sprintf "%d Reference(s)" refNum
 
-        let title = locations |> Seq.length |> sprintf "%d Reference(s)"
+            let command =
+                { Title = title
+                  Command = "csharp.showReferences"
+                  // TODO: we really want to pass some more info to the client
+                  Arguments = None }
 
-        let command =
-            { Title = title
-              Command = "csharp.showReferences"
-              Arguments = None // TODO: we really want to pass some more info to the client
-            }
-
-        return { codeLens with Command=Some command } |> LspResult.success
+            return { p with Command = Some command } |> success
     }

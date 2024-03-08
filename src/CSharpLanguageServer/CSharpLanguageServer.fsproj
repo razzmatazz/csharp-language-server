@@ -21,8 +21,9 @@
     <Compile Include="Logging.fs" />
     <Compile Include="Util.fs" />
     <Compile Include="Conversions.fs" />
+    <Compile Include="FormatUtil.fs" />
     <Compile Include="RoslynHelpers.fs" />
-    <Compile Include="Documentation.fs" />
+    <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State.fs" />
@@ -37,6 +38,7 @@
     <Compile Include="Handlers/DocumentOnTypeFormatting.fs" />
     <Compile Include="Handlers/DocumentRangeFormatting.fs" />
     <Compile Include="Handlers/DocumentSymbol.fs" />
+    <Compile Include="Handlers/ExecuteCommand.fs" />
     <Compile Include="Handlers/Hover.fs" />
     <Compile Include="Handlers/Implementation.fs" />
     <Compile Include="Handlers/Initialization.fs" />
