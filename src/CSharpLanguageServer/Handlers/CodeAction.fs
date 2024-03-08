@@ -327,7 +327,7 @@ module CodeAction =
                             { TextDocumentUri = p.TextDocument.Uri
                               Range = p.Range }
 
-                        logger.info (
+                        logger.debug (
                             Log.setMessage "codeaction data: {data}"
                             >> Log.addContextDestructured "data" resolutionData
                         )
