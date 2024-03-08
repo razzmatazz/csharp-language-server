@@ -93,3 +93,10 @@ type LspClientLogEventSink(formatProvider: IFormatProvider) =
                 lspClient.WindowLogMessage(messageParams) |> Async.StartAsTask |> ignore
 
             | _, _ -> ()
+
+module Seq =
+    let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq): 'T option =
+        if isNull source || Seq.isEmpty source then
+            None
+        else
+            Seq.maxBy projection source |> Some
