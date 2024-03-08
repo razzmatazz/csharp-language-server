@@ -183,6 +183,71 @@ module CodeAction =
           Disabled = None
         }
 
+    let lspDocChangesFromSolutionDiff
+            originalSolution
+            (updatedSolution: Solution)
+            (tryGetDocVersionByUri: string -> int option)
+            (originatingDoc: Document)
+            : Async<TextDocumentEdit list> = async {
+
+        let! ct = Async.CancellationToken
+
+        // make a list of changes
+        let solutionProjectChanges = updatedSolution.GetChanges(originalSolution).GetProjectChanges()
+
+        let docTextEdits = List<TextDocumentEdit>()
+
+        let addedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetAddedDocuments())
+
+        for docId in addedDocs do
+            let newDoc = updatedSolution.GetDocument(docId)
+            let! newDocText = newDoc.GetTextAsync(ct) |> Async.AwaitTask
+
+            let edit: TextEdit =
+                { Range = { Start = { Line=0; Character=0 }; End = { Line=0; Character=0 } }
+                  NewText = newDocText.ToString() }
+
+            let newDocFilePathMaybe =
+                if String.IsNullOrWhiteSpace(newDoc.FilePath)
+                       || (not <| Path.IsPathRooted(newDoc.FilePath)) then
+                    if String.IsNullOrWhiteSpace(originatingDoc.FilePath) then
+                        None
+                    else
+                        let directory = Path.GetDirectoryName(originatingDoc.FilePath)
+                        Path.Combine(directory, newDoc.Name) |> Some
+                else
+                    Some newDoc.FilePath
+
+            match newDocFilePathMaybe with
+            | Some newDocFilePath ->
+                let textEditDocument = { Uri = newDocFilePath |> Path.toUri
+                                         Version = newDocFilePath |> Path.toUri |> tryGetDocVersionByUri }
+
+                docTextEdits.Add({ TextDocument = textEditDocument; Edits = [| edit |] })
+            | None -> ()
+
+        let changedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetChangedDocuments())
+
+        for docId in changedDocs do
+            let originalDoc = originalSolution.GetDocument(docId)
+            let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
+            let updatedDoc = updatedSolution.GetDocument(docId)
+            let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
+
+            let diffEdits: TextEdit array =
+                docChanges
+                |> Seq.sortBy (fun c -> c.Span.Start)
+                |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
+                |> Array.ofSeq
+
+            let textEditDocument = { Uri = originalDoc.FilePath |> Path.toUri
+                                     Version = originalDoc.FilePath |> Path.toUri |> tryGetDocVersionByUri }
+
+            docTextEdits.Add({ TextDocument = textEditDocument; Edits = diffEdits })
+
+        return docTextEdits |> List.ofSeq
+    }
+
     let roslynCodeActionToResolvedLspCodeAction
             originalSolution
             tryGetDocVersionByUri
@@ -207,7 +272,7 @@ module CodeAction =
                                               originatingDoc
             let edit: WorkspaceEdit = {
                 Changes = None
-                DocumentChanges = docTextEdit |> Some
+                DocumentChanges = docTextEdit |> Array.ofList |> Some
             }
 
             let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
