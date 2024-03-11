@@ -1,20 +1,22 @@
 module CSharpLanguageServer.Program
 
+open Argu
 open System
 open System.Reflection
-
-open Argu
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp
 open Serilog
 open Serilog.Core
 open Serilog.Events
+open State
 
-open CSharpLanguageServer.Types
-open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Util
+open CSharpLanguageServer.MSBuildWorkspacePatcher
 
 [<EntryPoint>]
 let entry args =
+    MSBuildWorkspacePatcher.Patch()
+
     try
         let argParser = ArgumentParser.Create<Options.CLIArguments>(programName = "csharp-ls")
         let serverArgs = argParser.Parse args
@@ -23,26 +25,40 @@ let entry args =
             |> Option.iter (fun _ -> printfn "csharp-ls, %s"
                                              (Assembly.GetExecutingAssembly().GetName().Version |> string)
                                      exit 0)
+        let legacy =
+            serverArgs.TryGetResult(<@ Options.CLIArguments.Legacy @>)
+            |> Option.isSome
 
-        let logLevelArg =
-            serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
-            |> Option.defaultValue "log"
+        if legacy then
+            let parseLogLevel (s: string) =
+                match s.ToLowerInvariant() with
+                | "error" -> Ionide.LanguageServerProtocol.Types.MessageType.Error
+                | "warning" -> Ionide.LanguageServerProtocol.Types.MessageType.Warning
+                | "info" -> Ionide.LanguageServerProtocol.Types.MessageType.Info
+                | "log" -> Ionide.LanguageServerProtocol.Types.MessageType.Log
+                | _ -> Ionide.LanguageServerProtocol.Types.MessageType.Log
 
-        let logLevel =
-            match logLevelArg with
+            // default the verbosity to warning
+            let settings: ServerSettings = {
+                SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
+                LogLevel = serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
+                           |> Option.defaultValue "log"
+                           |> parseLogLevel
+            }
+
+            Server.start settings
+        else
+            let logLevel =
+                match serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>) |> Option.defaultValue "log" with
                 | "error" -> LogEventLevel.Error
                 | "warning" -> LogEventLevel.Warning
                 | "info" -> LogEventLevel.Information
                 | "log" -> LogEventLevel.Verbose
                 | _ -> LogEventLevel.Information
-
-        let lspClientLogEventSink = LspClientLogEventSink(formatProvider = null)
-
-        let logConfig =
+            let logConfig =
                 LoggerConfiguration()
                     .MinimumLevel.ControlledBy(LoggingLevelSwitch(logLevel))
                     .Enrich.FromLogContext()
-                    .WriteTo.Sink(lspClientLogEventSink)
                     .WriteTo.Async(fun conf ->
                         conf.Console(
                             outputTemplate =
@@ -53,14 +69,9 @@ let entry args =
                         )
                         |> ignore)
 
-        Log.Logger <- logConfig.CreateLogger()
+            Log.Logger <- logConfig.CreateLogger()
 
-        let settings: ServerSettings = {
-            SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
-            LogLevel = logLevelArg
-        }
-
-        Server.start settings lspClientLogEventSink
+            CSharpLanguageServer.Lsp.Server.start CSharpLanguageServer.Lsp.CSharpLspClient CSharpLanguageServer.Workspace.WorkspaceManager
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message

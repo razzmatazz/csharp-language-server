@@ -20,6 +20,8 @@
     <PackageVersion Include="ICSharpCode.Decompiler" Version="8.1.1.7464" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.4.23" />
+    <!-- TODO: Upgrade to a offical version after Lib.Harmony release one -->
+    <PackageVersion Include="Lib.Harmony" Version="2.3.0-prerelease.4" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Locator" Version="1.6.10" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
@@ -38,5 +40,7 @@
     <PackageVersion Include="Serilog" Version="3.0.1" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="4.1.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="1.5.0" />
+    <PackageVersion Include="System.Collections.Concurrent" Version="4.3.0" />
+    <PackageVersion Include="YoloDev.Expecto.TestSdk" Version="0.13.3" />
   </ItemGroup>
 </Project>

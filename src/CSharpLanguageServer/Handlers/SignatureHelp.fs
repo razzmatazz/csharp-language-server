@@ -1,31 +1,22 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp.Syntax
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.Classification
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.Text
 open FSharpPlus
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Types
 
 module SignatureInformation =
     let internal fromMethod (m: IMethodSymbol) =
         let parameters =
             m.Parameters
             |> Seq.map (fun p ->
-                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p |> U2.First
+                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p
                   Documentation = None })
             |> Array.ofSeq
 
@@ -36,7 +27,6 @@ module SignatureInformation =
 
         { Label         = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
           Documentation = Some documentation
-          ActiveParameter = None
           Parameters    = Some parameters }
 
 [<RequireQualifiedAccess>]
@@ -61,14 +51,35 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map (uncurry score) |> Seq.sum
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.SignatureHelp)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : SignatureHelpOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
             Some
                 { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
                   RetriggerCharacters = None }
 
-    let handle (scope: ServerRequestScope) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
-        let docMaybe = scope.GetUserDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/signatureHelp"
+                  RegisterOptions =
+                      { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
+                        RetriggerCharacters = None
+                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+
+    let handle (wm: IWorkspaceManager) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
+        match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
@@ -127,7 +138,6 @@ module SignatureHelp =
                 let activeParameterMaybe =
                     invocation.Separators
                     |> List.tryFindIndex (fun comma -> comma.Span.Start >= position)
-                    |> Option.map uint
 
                 let signatureHelpResult =
                     { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq

@@ -2,16 +2,16 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Collections.Generic
-
+open Microsoft.CodeAnalysis.Classification
+open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Classification
+open FSharpPlus
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Common.Types
+open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module SemanticTokens =
@@ -109,9 +109,8 @@ module SemanticTokens =
                 cChar
         (deltaLine, deltaChar, cLen, cToken, cModifiers)
 
-    let private getSemanticTokensRange (scope: ServerRequestScope) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
-        let docMaybe = scope.GetUserDocumentForUri uri
-        match docMaybe with
+    let private getSemanticTokensRange (wm: IWorkspaceManager) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
+        match wm.GetDocument uri with
         | None -> return None |> success
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
@@ -138,23 +137,45 @@ module SemanticTokens =
             return Some response |> success
     }
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.SemanticTokens)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : SemanticTokensOptions option =
-        Some { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
-                          TokenModifiers = semanticTokenModifiers |> Seq.toArray }
-               Range = Some true
-               Full = true |> First |> Some
-             }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
+                              TokenModifiers = semanticTokenModifiers |> Seq.toArray }
+                   Range = Some true
+                   Full = true |> First |> Some }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/semanticTokens"
+                  RegisterOptions =
+                      { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
+                                   TokenModifiers = semanticTokenModifiers |> Seq.toArray }
+                        Range = Some true
+                        Full = true |> First |> Some
+                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
-    let handleFull (scope: ServerRequestScope) (p: SemanticTokensParams): AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange scope p.TextDocument.Uri None
+    let handleFull (wm: IWorkspaceManager) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =
+        getSemanticTokensRange wm p.TextDocument.Uri None
 
     let handleFullDelta
-        (scope: ServerRequestScope)
+        (wm: IWorkspaceManager)
         (p: SemanticTokensDeltaParams)
         : AsyncLspResult<U2<SemanticTokens, SemanticTokensDelta> option> =
-        LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>
-        |> async.Return
+        notImplemented
 
-    let handleRange (scope: ServerRequestScope) (p: SemanticTokensRangeParams): AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange scope p.TextDocument.Uri (Some p.Range)
+    let handleRange (wm: IWorkspaceManager) (p: SemanticTokensRangeParams) : AsyncLspResult<SemanticTokens option> =
+        getSemanticTokensRange wm p.TextDocument.Uri (Some p.Range)

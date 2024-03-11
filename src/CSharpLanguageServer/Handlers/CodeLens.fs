@@ -1,19 +1,17 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 open Newtonsoft.Json.Linq
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Types
 
 type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -108,18 +106,38 @@ module CodeLens =
             { DocumentUri = ""
               Position = { Line = 0; Character = 0 } }
 
-    let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
-        Some { ResolveProvider = Some true }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeLens)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-    let handle (scope: ServerRequestScope) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
-        let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+    let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some { ResolveProvider = Some true }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/codeLens"
+                  RegisterOptions =
+                    { ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+
+    // TODO: Add configuration to disable some kind of code lens. For example, I think showing the reference
+    // number of a private member/class is noisy since I usually don't care that.
+    let handle (wm: IWorkspaceManager) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
+        match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let! ct = Async.CancellationToken
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
             collector.Visit(syntaxTree.GetRoot())
@@ -140,32 +158,16 @@ module CodeLens =
             return codeLens |> Array.ofSeq |> Some |> success
     }
 
-    let resolve (scope: ServerRequestScope)
-                (p: CodeLens)
-            : AsyncLspResult<CodeLens> = async {
-        let! ct = Async.CancellationToken
+    let resolve (wm: IWorkspaceManager) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
         let lensData =
             p.Data
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
             |> Option.defaultValue CodeLensData.Default
 
-        let docMaybe = scope.GetAnyDocumentForUri lensData.DocumentUri
-        let doc = docMaybe.Value
-
-        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-
-        let position =
-            LinePosition(lensData.Position.Line, lensData.Position.Character)
-            |> sourceText.Lines.GetPosition
-
-        let! symbolMaybe =
-            SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct)
-            |> Async.AwaitTask
-
-        match symbolMaybe |> Option.ofObj with
+        match! wm.FindSymbol lensData.DocumentUri lensData.Position with
         | None -> return p |> success
         | Some symbol ->
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, ct) |> Async.AwaitTask
+            let! refs = wm.FindReferences symbol
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
             // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
             let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0

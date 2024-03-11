@@ -2,29 +2,44 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Collections.Immutable
-
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
+open CSharpLanguageServer.Common
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.DocumentHighlight)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/documentHighlight"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let private shouldHighlight (symbol: ISymbol) =
         match symbol with
         | :? INamespaceSymbol -> false
         | _ -> true
 
-    let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
+    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
         let filePath = Uri.toPath p.TextDocument.Uri
 
         // We only need to find references in the file (not the whole workspace), so we don't use
@@ -48,9 +63,9 @@ module DocumentHighlight =
                       Kind = Some DocumentHighlightKind.Read })
         }
 
-        match scope.GetDocumentForUriOfType AnyDocument p.TextDocument.Uri with
+        match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
-        | Some (doc, docType) ->
+        | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position = Position.toRoslynPosition sourceText.Lines p.Position
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask

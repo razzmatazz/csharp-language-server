@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Types
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
@@ -33,3 +35,33 @@ type ICSharpLspClient =
     // Use a ClientCapabilitiesDTO instead of ClientCapabilities to avoid Option.map & Option.bind?
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
+
+[<Interface>]
+type IWorkspaceManager =
+    abstract member Initialize: WorkspaceFolder list -> Async<unit>
+    abstract member WaitInitialized: unit -> Async<unit>
+    abstract member ChangeWorkspaceFolders: WorkspaceFolder [] -> WorkspaceFolder [] -> Async<unit>
+    abstract member GetDocument: DocumentUri -> Document option
+    abstract member GetDiagnostics: DocumentUri -> Async<Diagnostic array>
+    abstract member FindMetadata: DocumentUri -> CSharpMetadataInformation option
+    abstract member FindSymbol: DocumentUri -> Position -> Async<ISymbol option>
+    abstract member FindSymbol': DocumentUri -> Position -> Async<(ISymbol * Document) option>
+    abstract member FindSymbols: string option -> Async<ISymbol seq>
+    abstract member FindReferences: ISymbol -> Async<ReferencedSymbol seq>
+    abstract member FindImplementations: ISymbol -> Async<ISymbol seq>
+    abstract member FindImplementations': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
+    abstract member FindDerivedClasses: INamedTypeSymbol -> Async<INamedTypeSymbol seq>
+    abstract member FindDerivedClasses': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
+    abstract member FindDerivedInterfaces: INamedTypeSymbol -> Async<INamedTypeSymbol seq>
+    abstract member FindDerivedInterfaces': INamedTypeSymbol -> bool -> Async<INamedTypeSymbol seq>
+    abstract member FindCallers: ISymbol -> Async<SymbolCallerInfo seq>
+    // Is it really good to let caller tell us the knowledge of workspace? For example, what if project is not in worksapces?
+    abstract member ResolveSymbolLocations: ISymbol -> Project option -> Async<Location list>
+    abstract member GetDocumentVersion: DocumentUri -> int option
+    abstract member OpenDocument: DocumentUri -> int -> string -> Async<unit>
+    abstract member CloseDocument: DocumentUri -> Async<unit>
+    abstract member SaveDocument: DocumentUri -> string option -> Async<unit>
+    abstract member ChangeDocument: DocumentUri -> int -> TextDocumentContentChangeEvent [] -> Async<unit>
+    abstract member RemoveDocument: DocumentUri -> Async<unit>
+    abstract member OnSolutionUpdate: DocumentUri -> FileChangeType -> unit
+    abstract member OnProjectUpdate: DocumentUri -> FileChangeType -> unit

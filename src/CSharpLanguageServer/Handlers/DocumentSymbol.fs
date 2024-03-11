@@ -1,17 +1,16 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Common.Types
 
 [<RequireQualifiedAccess>]
 module DocumentSymbol =
@@ -122,8 +121,6 @@ module DocumentSymbol =
                 Name           = SymbolName.fromSymbol displayStyle symbol
                 Detail         = symbolDetail
                 Kind           = symbolKind
-                Tags           = None
-                Deprecated     = None
                 Range          = lspRange
                 SelectionRange = selectionLspRange
                 Children       = None
@@ -164,8 +161,6 @@ module DocumentSymbol =
                 Name           = moduleName
                 Detail         = None
                 Kind           = SymbolKind.File
-                Tags           = None
-                Deprecated     = None
                 Range          = emptyRange
                 SelectionRange = emptyRange
                 Children       = None
@@ -281,15 +276,34 @@ module DocumentSymbol =
             base.VisitEventDeclaration(node)
             pop node
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool,DocumentSymbolOptions> option =
-        true |> U2.First |> Some
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.DocumentSymbol)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option) : bool option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/documentSymbol"
+                  RegisterOptions =
+                    { Label = None
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle
-        (scope: ServerRequestScope)
+        (wm: IWorkspaceManager)
+        (clientCapabilities: ClientCapabilities option)
         (p: DocumentSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
-        let clientCapabilities = scope.ClientCapabilities
-
         let canEmitDocSymbolHierarchy =
             clientCapabilities
             |> Option.bind (fun cc -> cc.TextDocument)
@@ -297,8 +311,7 @@ module DocumentSymbol =
             |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
             |> Option.defaultValue false
 
-        let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+        match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
@@ -310,7 +323,7 @@ module DocumentSymbol =
             collector.Visit(syntaxTree.GetRoot())
 
             return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
-                   |> U2.Second
+                   |> Second
                    |> Some
                    |> success
     }

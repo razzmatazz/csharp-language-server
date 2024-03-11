@@ -1,27 +1,46 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
-open Ionide.LanguageServerProtocol
+open Microsoft.CodeAnalysis.Completion
+open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Ionide.LanguageServerProtocol.Server
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Completion
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Common.LspUtil
 
 [<RequireQualifiedAccess>]
 module Completion =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Completion)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : CompletionOptions option =
-        Some { ResolveProvider = None
-               TriggerCharacters = Some ([| '.'; '''; |])
-               AllCommitCharacters = None
-               CompletionItem = None
-             }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some { ResolveProvider = None
+                   TriggerCharacters = Some ([| '.'; '''; |])
+                   AllCommitCharacters = None }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/completion"
+                  RegisterOptions =
+                    { ResolveProvider = None
+                      TriggerCharacters = Some ([| '.'; '''; |])
+                      AllCommitCharacters = None
+                      DocumentSelector = Some defaultDocumentSelector }
+                    |> serialize
+                    |> Some }
 
     let private roslynTagToLspCompletion tag =
         match tag with
@@ -48,28 +67,25 @@ module Completion =
     // TODO: Add doc to response
     // TODO: Change parameters to snippets like clangd
     let private makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
-        { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
+        { CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
             SortText         = item.SortText |> Option.ofObj
             FilterText       = item.FilterText |> Option.ofObj
             Detail           = item.InlineDescription |> Option.ofObj
             InsertTextFormat = Some InsertTextFormat.PlainText }
 
-    let handle (scope: ServerRequestScope) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
-        let docMaybe = scope.GetUserDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+    let handle (wm: IWorkspaceManager) (p: CompletionParams) : AsyncLspResult<CompletionList option> = async {
+        match wm.GetDocument p.TextDocument.Uri with
+        | None -> return None |> success
         | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+
             let position =
                 sourceText.Lines.GetPosition(LinePosition(p.Position.Line, p.Position.Character))
 
             let completionService = CompletionService.GetService(doc)
             // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
             // `AbandonedMutexException`, `Accessibility`, ..., which are unnecessary and time-consuming.
-            if isNull completionService then
-                return ()
-
             let! completions = completionService.GetCompletionsAsync(doc, position) |> Async.AwaitTask
 
             match Option.ofObj completions with
@@ -81,9 +97,8 @@ module Completion =
                     |> Array.ofSeq
                 let completionList =
                     { IsIncomplete = false
-                      ItemDefaults = None
                       Items = items }
                 return completionList |> Some |> success
-
-        | None -> return success None
     }
+
+    let resolve (wm: IWorkspaceManager) (p: CompletionItem) : AsyncLspResult<CompletionItem> = notImplemented

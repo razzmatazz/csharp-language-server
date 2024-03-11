@@ -1,16 +1,12 @@
-namespace CSharpLanguageServer
+namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Xml.Linq
-open System.Collections.Generic
-
 open Microsoft.CodeAnalysis
-open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Common
 
-module DocumentationUtil =
+module internal DocumentationUtil =
     type TripleSlashComment =
         { Summary: XElement list
           Params: (string * XElement) list

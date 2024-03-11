@@ -1,28 +1,17 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
-open Ionide.LanguageServerProtocol
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp.Syntax
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Rename
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.Classification
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module Rename =
@@ -64,29 +53,41 @@ module Rename =
         |> Seq.map (getEdits originalSolution updatedSolution)
         |> Async.Parallel
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, Types.RenameOptions> option =
-        let clientSupportsRenameOptions =
-            clientCapabilities
-            |> Option.bind (fun x -> x.TextDocument)
-            |> Option.bind (fun x -> x.Rename)
-            |> Option.bind (fun x -> x.PrepareSupport)
-            |> Option.defaultValue false
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Rename)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-        if clientSupportsRenameOptions then
-            U2.Second { PrepareProvider = Some true } |> Some
-        else
-            true |> U2.First |> Some
+    let private prepareSupport (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Rename)
+        |> Option.bind (fun x -> x.PrepareSupport)
+        |> Option.defaultValue false
 
-    let prepare (getDocumentForUriFromCurrentState: ServerDocumentType -> string -> Async<Document option>)
-                (_scope: ServerRequestScope)
-                (p: PrepareRenameParams)
-                : AsyncLspResult<PrepareRenameResult option> = async {
-        let! docMaybe = getDocumentForUriFromCurrentState UserDocument
-                                                            p.TextDocument.Uri
-        return!
-          match docMaybe with
-          | None -> None |> success |> async.Return
-          | Some doc -> async {
+    let provider (clientCapabilities: ClientCapabilities option): U2<bool, RenameOptions> option =
+        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
+        | true, _ -> None
+        | false, true -> Some (Second { PrepareProvider = Some true })
+        | false, false -> Some (First true)
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/rename"
+                  RegisterOptions =
+                      { PrepareProvider = Some (prepareSupport clientCapabilities)
+                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+
+    let prepare (wm: IWorkspaceManager) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
+        match wm.GetDocument p.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
             let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
@@ -139,20 +140,16 @@ module Rename =
                 | _, _ -> None
 
             return rangeWithPlaceholderMaybe |> success
-          }
     }
 
     let handle
-        (scope: ServerRequestScope)
+        (wm: IWorkspaceManager)
+        (clientCapabilities: ClientCapabilities option)
         (p: RenameParams)
         : AsyncLspResult<WorkspaceEdit option> = async {
-        let clientCapabilities = scope.ClientCapabilities
-        let! maybeSymbol = scope.GetSymbolAtPositionOnUserDocument p.TextDocument.Uri p.Position
-
-        return!
-          match maybeSymbol with
-          | None -> None |> success |> async.Return
-          | Some (symbol, doc, _) -> async {
+        match! wm.FindSymbol' p.TextDocument.Uri p.Position with
+        | None -> return None |> success
+        | Some (symbol, doc) ->
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =
@@ -164,16 +161,14 @@ module Rename =
                 )
                 |> Async.AwaitTask
 
-            let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution updatedSolution scope.OpenDocVersions.TryFind
+            let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution updatedSolution wm.GetDocumentVersion
 
             let clientCapabilities =
                 clientCapabilities
                 |> Option.defaultValue
                     { Workspace = None
                       TextDocument = None
-                      General = None
                       Experimental = None
                       Window = None }
             return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success
-          }
     }

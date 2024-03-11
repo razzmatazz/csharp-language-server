@@ -4,8 +4,12 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+open CSharpLanguageServer.Common.Types
+
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient()
+
+    let mutable capabilities: ClientCapabilities option = None
 
     override __.WindowShowMessage(p) =
         sendServerNotification "window/showMessage" (box p) |> Async.Ignore
@@ -41,3 +45,6 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
 
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
+
+    interface ICSharpLspClient with
+        override this.Capabilities with get() = capabilities and set(v) = capabilities <- v
