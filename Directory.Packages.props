@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RoslynPackageVersion>4.7.0</RoslynPackageVersion>
+    <RoslynPackageVersion>4.9.2</RoslynPackageVersion>
     <MSBuildPackageVersion>17.7.2</MSBuildPackageVersion>
   </PropertyGroup>
 
@@ -34,7 +34,7 @@
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageVersion Include="NUnit" Version="3.13.2" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.0.0" />
-    <PackageVersion Include="System.Collections.Immutable" Version="7.0.0" />
+    <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Include="Serilog" Version="3.0.1" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="4.1.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="1.5.0" />
