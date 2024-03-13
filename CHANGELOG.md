@@ -4,14 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Update Roslyn 4.7.0->4.9.2 to support C# 12
+  - PR by @arussellk: https://github.com/razzmatazz/csharp-language-server/pull/141
 * Register server capabilities with the client lazily to improve startup performance
-  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/102
+  - PR by @tcx4c70: https://github.com/razzmatazz/csharp-language-server/pull/102
 * Rework logging to be based on Serilog
-  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/134
+  - PR by @tcx4c70: https://github.com/razzmatazz/csharp-language-server/pull/134
 * More refactoring by @tcx4c70
-  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/102
+  - PR by @tcx4c70: https://github.com/razzmatazz/csharp-language-server/pull/102
 * Change package management to CPM
-  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/132
+  - PR by @tcx4c70: https://github.com/razzmatazz/csharp-language-server/pull/132
 
 ## [0.11.0] - 2024-01-21 / Jieznas
 * Update Ionide.LanguageServerProtocol dependency to v0.4.22
