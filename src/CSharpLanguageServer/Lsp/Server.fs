@@ -145,6 +145,7 @@ type CSharpLspServer(
               TextDocumentSync.registration
               TypeDefinition.registration
               TypeHierarchy.registration
+              Workspace.registration
               WorkspaceSymbol.registration ]
         registrationBuilders
         |> List.map ((|>) clientCapabilities)
