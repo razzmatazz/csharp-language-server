@@ -61,6 +61,12 @@ module Initialization =
 
         MSBuildLocator.RegisterInstance(vsInstance)
 
+(*
+        logger.trace (
+            Log.setMessage "handleInitialize: p.Capabilities={caps}"
+            >> Log.addContext "caps" (serialize p.Capabilities)
+        )
+*)
         scope.Emit(ClientCapabilityChange p.Capabilities)
 
         // TODO use p.RootUri
@@ -90,12 +96,22 @@ module Initialization =
             )
 
             let registrationParams = { Registrations = getRegistrations scope.ClientCapabilities |> List.toArray }
-            // TODO: Retry on error?
-            do! lspClient.ClientRegisterCapability registrationParams |> Async.Ignore
 
-            // TODO
-            // TODO: restore registering w/client for didChangeWatchedFiles notifications"
-            // TODO
+            // TODO: Retry on error?
+            try
+                match! lspClient.ClientRegisterCapability registrationParams with
+                | Ok _ -> ()
+                | Error error ->
+                    logger.warn(
+                        Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
+                        >> Log.addContext "error" (string error)
+                    )
+            with
+            | ex ->
+                logger.warn(
+                    Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
+                    >> Log.addContext "error" (string ex)
+                )
 
             //
             // retrieve csharp settings
