@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Register server capabilities with the client lazily to improve startup performance
+  - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/102
 * Rework logging to be based on Serilog
   - PR by @tcx4c70 in https://github.com/razzmatazz/csharp-language-server/pull/134
 * More refactoring by @tcx4c70

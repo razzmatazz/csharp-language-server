@@ -2,19 +2,41 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Implementation =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        false
+        // TODO: 
+        // clientCapabilities
+        // |> Option.bind (fun x -> x.TextDocument)
+        // |> Option.bind (fun x -> x.Implementation)
+        // |> Option.bind (fun x -> x.DynamicRegistration)
+        // |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/implementation"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams): AsyncLspResult<GotoResult option> = async {
         let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri

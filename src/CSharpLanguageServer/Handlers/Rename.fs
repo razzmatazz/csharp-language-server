@@ -2,27 +2,26 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp
+open Microsoft.CodeAnalysis.CSharp.Syntax
+open Microsoft.CodeAnalysis.Classification
+open Microsoft.CodeAnalysis.CodeFixes
+open Microsoft.CodeAnalysis.Completion
+open Microsoft.CodeAnalysis.FindSymbols
+open Microsoft.CodeAnalysis.Rename
+open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.Classification
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Rename =
@@ -64,18 +63,36 @@ module Rename =
         |> Seq.map (getEdits originalSolution updatedSolution)
         |> Async.Parallel
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, Types.RenameOptions> option =
-        let clientSupportsRenameOptions =
-            clientCapabilities
-            |> Option.bind (fun x -> x.TextDocument)
-            |> Option.bind (fun x -> x.Rename)
-            |> Option.bind (fun x -> x.PrepareSupport)
-            |> Option.defaultValue false
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Rename)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-        if clientSupportsRenameOptions then
-            U2.Second { PrepareProvider = Some true } |> Some
-        else
-            true |> U2.First |> Some
+    let private prepareSupport (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Rename)
+        |> Option.bind (fun x -> x.PrepareSupport)
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities option): U2<bool, RenameOptions> option =
+        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
+        | true, _ -> None
+        | false, true -> Some (Second { PrepareProvider = Some true })
+        | false, false -> Some (First true)
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/rename"
+                  RegisterOptions =
+                      { PrepareProvider = Some (prepareSupport clientCapabilities)
+                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let prepare (getDocumentForUriFromCurrentState: ServerDocumentType -> string -> Async<Document option>)
                 (_scope: ServerRequestScope)

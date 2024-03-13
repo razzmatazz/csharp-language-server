@@ -14,6 +14,26 @@ open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module Workspace =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.Workspace)
+        |> Option.bind (fun x -> x.DidChangeWatchedFiles)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let fileChangeWatcher = { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
+                                      Kind = None }
+
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "workspace/didChangeWatchedFiles"
+                  RegisterOptions = { Watchers = [| fileChangeWatcher |] } |> serialize |> Some
+                }
+
     let didChangeWatchedFiles (logMessage: Util.AsyncLogFn)
                               (diagnosticsPost: DiagnosticsEvent -> unit)
                               (scope: ServerRequestScope)

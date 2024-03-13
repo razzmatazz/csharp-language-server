@@ -23,8 +23,9 @@ module CallHierarchy =
                   Microsoft.CodeAnalysis.SymbolKind.Event
                   Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let prepare (scope: ServerRequestScope) (prepareParams: CallHierarchyPrepareParams): AsyncLspResult<CallHierarchyItem[] option> = async {
         match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with

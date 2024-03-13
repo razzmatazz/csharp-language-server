@@ -2,18 +2,20 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
+open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -108,8 +110,28 @@ module CodeLens =
             { DocumentUri = ""
               Position = { Line = 0; Character = 0 } }
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeLens)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
-        Some { ResolveProvider = Some true }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some { ResolveProvider = Some true }
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/codeLens"
+                  RegisterOptions =
+                    { ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
         let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri

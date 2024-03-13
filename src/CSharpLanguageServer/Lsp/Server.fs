@@ -113,6 +113,45 @@ type CSharpLspServer(
         return ()
     }
 
+    let getRegistrations (clientCapabilities: ClientCapabilities option): Registration list =
+        let registrationBuilders =
+            [ CallHierarchy.registration
+              CodeAction.registration
+              CodeLens.registration
+              Color.registration
+              Completion.registration
+              Declaration.registration
+              Definition.registration
+              Diagnostic.registration
+              DocumentFormatting.registration
+              DocumentHighlight.registration
+              DocumentLink.registration
+              DocumentOnTypeFormatting.registration
+              DocumentRangeFormatting.registration
+              DocumentSymbol.registration
+              ExecuteCommand.registration
+              FoldingRange.registration
+              Hover.registration
+              Implementation.registration
+              InlayHint.registration
+              InlineValue.registration
+              LinkedEditingRange.registration
+              Moniker.registration
+              References.registration
+              Rename.registration
+              SelectionRange.registration
+              SemanticTokens.registration
+              SignatureHelp.registration
+              TextDocumentSync.registration
+              TypeDefinition.registration
+              TypeHierarchy.registration
+              Workspace.registration
+              WorkspaceSymbol.registration ]
+        registrationBuilders
+        |> List.map ((|>) clientCapabilities)
+        |> List.filter (Option.isSome)
+        |> List.map (Option.get)
+
     let getServerCapabilities
         (lspClient: InitializeParams) =
                 { ServerCapabilities.Default with
@@ -158,7 +197,7 @@ type CSharpLspServer(
             p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
 
         override __.Initialized(p) =
-            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor)
+            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor getRegistrations)
               |> ignoreResult
 
         override __.Shutdown() =
@@ -210,9 +249,11 @@ type CSharpLspServer(
         override this.TextDocumentDocumentHighlight(p) =
             p |> withReadOnlyScope DocumentHighlight.handle
 
-        override this.TextDocumentDocumentLink(p) = notImplemented
+        override this.TextDocumentDocumentLink(p) =
+            p |> withReadOnlyScope DocumentLink.handle
 
-        override this.DocumentLinkResolve(p) = notImplemented
+        override this.DocumentLinkResolve(p) =
+            p |> withReadOnlyScope DocumentLink.resolve
 
         override this.TextDocumentTypeDefinition(p) =
             p |> withReadOnlyScope TypeDefinition.handle
@@ -235,9 +276,11 @@ type CSharpLspServer(
         override this.TextDocumentSignatureHelp(p) =
             p |> withReadOnlyScope SignatureHelp.handle
 
-        override this.TextDocumentDocumentColor(p) = notImplemented
+        override this.TextDocumentDocumentColor(p) =
+            p |> withReadOnlyScope Color.handle
 
-        override this.TextDocumentColorPresentation(p) = notImplemented
+        override this.TextDocumentColorPresentation(p) =
+            p |> withReadOnlyScope Color.present
 
         override this.TextDocumentFormatting(p) =
             p |> withReadOnlyScope DocumentFormatting.handle
@@ -279,9 +322,11 @@ type CSharpLspServer(
         override this.WorkspaceExecuteCommand(p) =
             p |> withReadOnlyScope ExecuteCommand.handle
 
-        override this.TextDocumentFoldingRange(p) = notImplemented
+        override this.TextDocumentFoldingRange(p) =
+            p |> withReadOnlyScope FoldingRange.handle
 
-        override this.TextDocumentSelectionRange(p) = notImplemented
+        override this.TextDocumentSelectionRange(p) =
+            p |> withReadOnlyScope SelectionRange.handle
 
         override this.TextDocumentSemanticTokensFull(p) =
             p |> withReadOnlyScope SemanticTokens.handleFull
@@ -320,7 +365,8 @@ type CSharpLspServer(
         override this.TypeHierarchySubtypes(p) =
             p |> withReadOnlyScope TypeHierarchy.subtypes
 
-        override this.TextDocumentDeclaration(p) = notImplemented
+        override this.TextDocumentDeclaration(p) =
+            p |> withReadOnlyScope Declaration.handle
 
         override this.WorkspaceDiagnostic(p) = notImplemented
 
@@ -328,9 +374,11 @@ type CSharpLspServer(
 
         override this.TextDocumentDiagnostic(p) = notImplemented
 
-        override this.TextDocumentLinkedEditingRange(p) = notImplemented
+        override this.TextDocumentLinkedEditingRange(p) =
+            p |> withReadOnlyScope LinkedEditingRange.handle
 
-        override this.TextDocumentMoniker(p) = notImplemented
+        override this.TextDocumentMoniker(p) =
+            p |> withReadOnlyScope Moniker.handle
 
         override this.CSharpMetadata(p) =
             p |> withReadOnlyScope CSharpMetadata.handle

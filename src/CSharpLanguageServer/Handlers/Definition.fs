@@ -9,11 +9,30 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Definition =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Definition)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/definition"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
         let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri

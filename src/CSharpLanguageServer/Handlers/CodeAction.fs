@@ -21,6 +21,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 type CSharpCodeActionResolutionData =
     { TextDocumentUri: string
@@ -289,12 +290,40 @@ module CodeAction =
             }
     }
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool,CodeActionOptions> option =
-        { CodeActionKinds = None
-          ResolveProvider = Some true
-        }
-        |> U2.Second
-        |> Some
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeAction)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
+    let private literalSupport (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CodeAction)
+        |> Option.bind (fun x -> x.CodeActionLiteralSupport)
+
+    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, CodeActionOptions> option =
+        match dynamicRegistration clientCapabilities, literalSupport clientCapabilities with
+        | true, _ -> None
+        | false, _ ->
+            // TODO: Server can only return CodeActionOptions if literalSupport is not None
+            U2.Second
+                { CodeActionKinds = None
+                  ResolveProvider = Some true }
+            |> Some
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/codeAction"
+                  RegisterOptions =
+                    { CodeActionKinds = None
+                      ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (logMessage: Util.AsyncLogFn)
                (scope: ServerRequestScope)

@@ -12,8 +12,9 @@ open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module TypeHierarchy =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+    let provider (clientCapabilities: ClientCapabilities option) : bool option = Some true
+
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let prepare (scope: ServerRequestScope) (prepareParams: TypeHierarchyPrepareParams): AsyncLspResult<TypeHierarchyItem [] option> = async {
         match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with
