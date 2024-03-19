@@ -2,15 +2,17 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
+    open Microsoft.CodeAnalysis.FindSymbols
     let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
         clientCapabilities
         |> Option.bind (fun x -> x.TextDocument)
@@ -31,6 +33,22 @@ module WorkspaceSymbol =
                 { Id = Guid.NewGuid().ToString()
                   Method = "workspace/symbol"
                   RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
+
+    let findSymbolsInSolution (solution: Solution)
+                              pattern
+                              (_limit: int option)
+            : Async<SymbolInformation list> = async {
+        let findTask =
+            match pattern with
+            | Some pat ->
+                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+            | None ->
+                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
+        let! symbolsFound = findTask solution |> Async.AwaitTask
+        return symbolsFound
+            |> Seq.collect (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
+            |> List.ofSeq
+    }
 
     let handle (scope: ServerRequestScope)
                (p: WorkspaceSymbolParams)
