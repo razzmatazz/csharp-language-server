@@ -5,7 +5,6 @@ open System.IO
 
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
-open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer

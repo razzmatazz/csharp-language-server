@@ -3,22 +3,15 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.Classification
-open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.Text
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types

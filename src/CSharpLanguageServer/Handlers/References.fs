@@ -7,7 +7,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 open Microsoft.CodeAnalysis.FindSymbols
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types

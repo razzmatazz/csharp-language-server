@@ -4,15 +4,11 @@ open System
 open System.IO
 
 open System.Reflection
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging

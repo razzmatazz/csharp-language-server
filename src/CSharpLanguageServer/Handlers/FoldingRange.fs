@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
 
@@ -11,4 +12,4 @@ module FoldingRange =
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let handle (scope: ServerRequestScope) (p: FoldingRangeParams) : AsyncLspResult<FoldingRange list option> =
-        LspResult.notImplemented<FoldingRange list option> |> async.Return
+        notImplemented<FoldingRange list option> |> async.Return

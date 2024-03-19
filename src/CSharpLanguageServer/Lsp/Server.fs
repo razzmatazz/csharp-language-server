@@ -2,11 +2,9 @@ namespace CSharpLanguageServer.Lsp
 
 open System
 open System.Diagnostics
-open System.Reflection
 open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Server
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open StreamJsonRpc
 open FSharpPlus

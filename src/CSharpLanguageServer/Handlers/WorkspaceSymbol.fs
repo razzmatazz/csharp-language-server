@@ -2,14 +2,10 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.RoslynHelpers
 

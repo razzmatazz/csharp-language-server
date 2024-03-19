@@ -7,8 +7,6 @@ open System.Threading
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
-open Ionide.LanguageServerProtocol
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.RoslynHelpers

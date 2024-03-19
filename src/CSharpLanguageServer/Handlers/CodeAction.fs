@@ -10,7 +10,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 open Ionide.LanguageServerProtocol.Server
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CodeFixes
@@ -18,7 +17,6 @@ open Microsoft.CodeAnalysis.CodeActions
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types

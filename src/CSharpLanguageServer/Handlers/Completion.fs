@@ -4,9 +4,6 @@ open System
 
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Completion
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
@@ -14,7 +11,6 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]

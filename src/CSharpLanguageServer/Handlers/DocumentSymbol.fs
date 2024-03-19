@@ -11,7 +11,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
 

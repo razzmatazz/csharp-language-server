@@ -6,12 +6,9 @@ open System.IO
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis.Classification
-open Serilog
 open Serilog.Core
 open Serilog.Sinks
 open Serilog.Events
-open Serilog.Configuration
 
 let parseFileUri s: string =
     Uri(s).LocalPath

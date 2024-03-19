@@ -3,7 +3,6 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer

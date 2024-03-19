@@ -15,17 +15,11 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.CodeActions
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Formatting
 open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
-open Microsoft.CodeAnalysis.Options
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.Util

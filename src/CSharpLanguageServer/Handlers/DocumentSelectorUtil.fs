@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System.Runtime.CompilerServices
+
 open Ionide.LanguageServerProtocol.Types
 
 [<AutoOpen>]

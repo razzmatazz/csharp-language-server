@@ -1,8 +1,5 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-open System.Collections.Immutable
-
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
