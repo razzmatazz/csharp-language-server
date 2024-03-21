@@ -4,7 +4,6 @@ open System
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Rename
 open Ionide.LanguageServerProtocol.Server
@@ -91,12 +90,9 @@ module Rename =
                 (_scope: ServerRequestScope)
                 (p: PrepareRenameParams)
                 : AsyncLspResult<PrepareRenameResult option> = async {
-        let! docMaybe = getDocumentForUriFromCurrentState UserDocument
-                                                            p.TextDocument.Uri
-        return!
-          match docMaybe with
-          | None -> None |> success |> async.Return
-          | Some doc -> async {
+        match! getDocumentForUriFromCurrentState UserDocument p.TextDocument.Uri with
+        | None -> return None |> success
+        | Some doc ->
             let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
@@ -149,20 +145,15 @@ module Rename =
                 | _, _ -> None
 
             return rangeWithPlaceholderMaybe |> success
-          }
     }
 
     let handle
         (scope: ServerRequestScope)
         (p: RenameParams)
         : AsyncLspResult<WorkspaceEdit option> = async {
-        let clientCapabilities = scope.ClientCapabilities
-        let! maybeSymbol = scope.GetSymbolAtPositionOnUserDocument p.TextDocument.Uri p.Position
-
-        return!
-          match maybeSymbol with
-          | None -> None |> success |> async.Return
-          | Some (symbol, doc, _) -> async {
+        match! scope.GetSymbolAtPositionOnUserDocument p.TextDocument.Uri p.Position with
+        | None -> return None |> success
+        | Some (symbol, doc, _) ->
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =
@@ -177,13 +168,12 @@ module Rename =
             let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution updatedSolution scope.OpenDocVersions.TryFind
 
             let clientCapabilities =
-                clientCapabilities
+                scope.ClientCapabilities
                 |> Option.defaultValue
                     { Workspace = None
                       TextDocument = None
-                      General = None
                       Experimental = None
-                      Window = None }
+                      Window = None
+                      General = None }
             return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success
-          }
     }
