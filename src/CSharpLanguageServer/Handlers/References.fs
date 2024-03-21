@@ -1,31 +1,47 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Common
+open CSharpLanguageServer.Common.Types
 
 [<RequireQualifiedAccess>]
 module References =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.References)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
 
-    let handle (scope: ServerRequestScope) (refParams: ReferenceParams): AsyncLspResult<Location [] option> = async {
-        let! maybeSymbol = scope.GetSymbolAtPositionOnAnyDocument refParams.TextDocument.Uri refParams.Position
-        match maybeSymbol with
-        | Some (symbol, _, _) ->
-            let! ct = Async.CancellationToken
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, scope.Solution, ct) |> Async.AwaitTask
-            return refs
-                    |> Seq.collect (fun r -> r.Locations)
-                    |> Seq.map (fun rl -> lspLocationForRoslynLocation rl.Location)
-                    |> Array.ofSeq
-                    |> Some
-                    |> LspResult.success
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/references"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-        | None -> return None |> LspResult.success
+    let handle (wm: IWorkspaceManager) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+        | None -> return None |> success
+        | Some symbol ->
+            let! refs = wm.FindReferences symbol
+            // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
+            return
+                refs
+                |> Seq.collect (fun r -> r.Locations)
+                |> Seq.map (fun rl -> Location.fromRoslynLocation rl.Location)
+                |> Seq.toArray
+                |> Some
+                |> success
     }

@@ -1,48 +1,47 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Types.LspResult
+open FSharpPlus
+
+open CSharpLanguageServer.Common.Types
 
 [<RequireQualifiedAccess>]
 module Implementation =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Implementation)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
 
-    let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams): AsyncLspResult<GotoResult option> = async {
-        let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/implementation"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-        return!
-            match docMaybe with
-            | Some doc -> async {
-                let! ct = Async.CancellationToken
-                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-                let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
+        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+        | None -> return None |> success
+        | Some symbol ->
+            let! impls = wm.FindImplementations symbol
+            let! locations = impls |> Seq.map (flip wm.ResolveSymbolLocations None) |> Async.Parallel
 
-                let! symbols = async {
-                    match Option.ofObj symbolMaybe with
-                    | Some sym ->
-                        let! implSymbols =
-                            SymbolFinder.FindImplementationsAsync(sym, scope.Solution)
-                            |> Async.AwaitTask
-
-                        return implSymbols |> List.ofSeq
-                    | None -> return []
-                }
-
-                let! locations =
-                    scope.ResolveSymbolLocations doc.Project symbols
-
-                return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> LspResult.success
-              }
-
-            | None -> async {
-                return None |> LspResult.success
-              }
+            return
+                locations
+                |> Array.collect List.toArray
+                |> GotoResult.Multiple
+                |> Some
+                |> success
     }

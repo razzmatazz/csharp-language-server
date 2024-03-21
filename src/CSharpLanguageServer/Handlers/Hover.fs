@@ -1,37 +1,44 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
-open CSharpLanguageServer
-open CSharpLanguageServer.State
+
+open CSharpLanguageServer.Common.Types
 
 [<RequireQualifiedAccess>]
 module Hover =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.Hover)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        Some true
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
 
-    let handle (scope: ServerRequestScope) (hoverPos: Types.TextDocumentPositionParams): AsyncLspResult<Types.Hover option> = async {
-        let! maybeSymbol = scope.GetSymbolAtPositionOnAnyDocument hoverPos.TextDocument.Uri hoverPos.Position
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/hover"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-        let! contents =
-            match maybeSymbol with
-            | Some (sym, doc, pos) -> async {
-                let! ct = Async.CancellationToken
-                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-
-                return Documentation.markdownDocForSymbolWithSignature sym semanticModel pos
-                       |> fun s -> MarkedString.WithLanguage { Language = "markdown"; Value = s }
-                       |> fun s -> [s]
-              }
-            | _ -> async { return [] }
-
-        return Some { Contents = contents |> Array.ofSeq |> MarkedStrings
-                      Range = None } |> success
+    let handle (wm: IWorkspaceManager) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
+        match! wm.FindSymbol' p.TextDocument.Uri p.Position with
+        | None -> return None |> success
+        | Some (symbol, doc) ->
+            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel |> markdown
+            let hover =
+                { Contents = MarkupContent content
+                  // TODO: Support range
+                  Range = None }
+            return hover |> Some |> success
     }
