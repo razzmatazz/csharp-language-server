@@ -123,11 +123,11 @@ module DocumentSymbol =
                 Name           = SymbolName.fromSymbol displayStyle symbol
                 Detail         = symbolDetail
                 Kind           = symbolKind
-                Tags           = None
-                Deprecated     = None
                 Range          = lspRange
                 SelectionRange = selectionLspRange
                 Children       = None
+                Tags           = None
+                Deprecated     = None
             }
 
             symbolStack <- docSymbol :: symbolStack
@@ -165,11 +165,11 @@ module DocumentSymbol =
                 Name           = moduleName
                 Detail         = None
                 Kind           = SymbolKind.File
-                Tags           = None
-                Deprecated     = None
                 Range          = emptyRange
                 SelectionRange = emptyRange
                 Children       = None
+                Tags           = None
+                Deprecated     = None
             }
 
             symbolStack <- [root]
@@ -292,7 +292,7 @@ module DocumentSymbol =
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool, DocumentSymbolOptions> option =
         match dynamicRegistration clientCapabilities with
         | true -> None
-        | false -> U2.First true |> Some
+        | false -> true |> U2.First |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -309,17 +309,14 @@ module DocumentSymbol =
         (scope: ServerRequestScope)
         (p: DocumentSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
-        let clientCapabilities = scope.ClientCapabilities
-
         let canEmitDocSymbolHierarchy =
-            clientCapabilities
+            scope.ClientCapabilities
             |> Option.bind (fun cc -> cc.TextDocument)
             |> Option.bind (fun cc -> cc.DocumentSymbol)
             |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
             |> Option.defaultValue false
 
-        let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+        match scope.GetAnyDocumentForUri p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
