@@ -7,7 +7,6 @@ open System.IO
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Serilog.Core
-open Serilog.Sinks
 open Serilog.Events
 
 let parseFileUri s: string =
@@ -97,3 +96,9 @@ module Seq =
             None
         else
             Seq.maxBy projection source |> Some
+
+module Option =
+    let inline ofString (value: string) =
+        match String.IsNullOrWhiteSpace(value) with
+        | true -> None
+        | false -> Some value
