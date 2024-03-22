@@ -30,10 +30,10 @@ module SignatureInformation =
                 { Kind = MarkupKind.Markdown
                   Value = DocumentationUtil.markdownDocForSymbol m }
 
-        { Label         = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
-          Documentation = Some documentation
-          ActiveParameter = None
-          Parameters    = Some parameters }
+        { Label           = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
+          Documentation   = Some documentation
+          Parameters      = Some parameters
+          ActiveParameter = None }
 
 [<RequireQualifiedAccess>]
 module SignatureHelp =
