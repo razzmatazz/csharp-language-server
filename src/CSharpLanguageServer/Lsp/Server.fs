@@ -368,7 +368,8 @@ type CSharpLspServer(
 
         override this.WorkspaceDiagnostic(p) = notImplemented
 
-        override this.WorkspaceSymbolResolve(p) = notImplemented
+        override this.WorkspaceSymbolResolve(p) =
+            p |> withReadOnlyScope WorkspaceSymbol.resolve
 
         override this.TextDocumentDiagnostic(p) = notImplemented
 
