@@ -2,14 +2,15 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.IO
-
 open System.Reflection
+
 open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 

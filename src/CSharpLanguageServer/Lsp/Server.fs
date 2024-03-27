@@ -13,6 +13,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Util
 
 module LspUtils =

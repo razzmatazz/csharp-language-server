@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types

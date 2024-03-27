@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
