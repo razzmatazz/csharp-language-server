@@ -15,17 +15,10 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.CodeActions
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.CodeRefactorings
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Formatting
 open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
-open Microsoft.CodeAnalysis.Options
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.Util
@@ -164,22 +157,6 @@ type DocumentSymbolCollectorForMatchingSymbolName
             // TODO: collect other type of syntax nodes too
 
         base.Visit(node)
-
-let findSymbolsInSolution (solution: Solution)
-                          pattern
-                          (_limit: int option)
-        : Async<Types.SymbolInformation list> = async {
-    let findTask =
-        match pattern with
-        | Some pat ->
-            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
-        | None ->
-            fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
-    let! symbolsFound = findTask solution |> Async.AwaitTask
-    return symbolsFound
-           |> Seq.collect (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
-           |> List.ofSeq
-}
 
 type CleanCodeGenerationOptionsProviderInterceptor (_logMessage) =
     interface IInterceptor with

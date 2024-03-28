@@ -3,15 +3,13 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
@@ -25,7 +23,7 @@ module WorkspaceSymbol =
     let provider (clientCapabilities: ClientCapabilities option) : U2<bool, WorkspaceSymbolOptions> option =
         match dynamicRegistration clientCapabilities with
         | true -> None
-        | false -> U2.First true |> Some
+        | false -> true |> U2.First |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -36,20 +34,40 @@ module WorkspaceSymbol =
                   Method = "workspace/symbol"
                   RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
 
+    let findSymbolsInSolution (solution: Solution)
+                              pattern
+                              (_limit: int option)
+            : Async<ISymbol seq> = async {
+        let findTask =
+            match pattern with
+            | Some pat ->
+                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+            | None ->
+                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
+
+        return! findTask solution |> Async.AwaitTask
+    }
+
     let handle (scope: ServerRequestScope)
                (p: WorkspaceSymbolParams)
-            : AsyncLspResult<U2<SymbolInformation array,WorkspaceSymbol array> option> = async {
+            : AsyncLspResult<U2<SymbolInformation[],WorkspaceSymbol[]> option> = async {
         let pattern =
             if String.IsNullOrEmpty(p.Query) then
                 None
             else
                 Some p.Query
         let! symbols = findSymbolsInSolution scope.Solution pattern (Some 20)
-
         return
             symbols
-            |> Array.ofSeq
+            |> Seq.map (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
+            |> Seq.collect id
+            // TODO: make 100 configurable?
+            |> Seq.truncate 100
+            |> Seq.toArray
             |> U2.First
             |> Some
             |> success
     }
+
+    let resolve (scope: ServerRequestScope) (p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
+        LspResult.notImplemented<WorkspaceSymbol> |> async.Return

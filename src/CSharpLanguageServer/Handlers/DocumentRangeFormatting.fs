@@ -1,11 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open System.Collections.Immutable
 
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp.Formatting
-open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Formatting
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
@@ -14,7 +10,6 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
 

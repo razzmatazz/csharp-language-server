@@ -2,12 +2,9 @@ namespace CSharpLanguageServer
 
 open System
 open System.Xml.Linq
-open System.Collections.Generic
 
 open Microsoft.CodeAnalysis
-open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 
 module DocumentationUtil =

@@ -2,11 +2,9 @@ namespace CSharpLanguageServer.Lsp
 
 open System
 open System.Diagnostics
-open System.Reflection
 open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Server
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open StreamJsonRpc
 open FSharpPlus
@@ -15,6 +13,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Util
 
 module LspUtils =
@@ -370,7 +369,8 @@ type CSharpLspServer(
 
         override this.WorkspaceDiagnostic(p) = notImplemented
 
-        override this.WorkspaceSymbolResolve(p) = notImplemented
+        override this.WorkspaceSymbolResolve(p) =
+            p |> withReadOnlyScope WorkspaceSymbol.resolve
 
         override this.TextDocumentDiagnostic(p) = notImplemented
 
