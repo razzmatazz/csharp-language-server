@@ -127,6 +127,11 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         return aggregatedLspLocations
     }
 
+    member this.ResolveSymbolLocations'
+            (symbol: Microsoft.CodeAnalysis.ISymbol)
+            (project: Microsoft.CodeAnalysis.Project) =
+        this.ResolveSymbolLocations project [symbol]
+
     member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
         match this.GetAnyDocumentForUri uri with
         | None -> return None
