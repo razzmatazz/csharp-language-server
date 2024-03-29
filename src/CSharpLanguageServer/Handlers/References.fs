@@ -5,7 +5,6 @@ open System
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis.FindSymbols
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
@@ -34,13 +33,11 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (refParams: ReferenceParams): AsyncLspResult<Location [] option> = async {
-        let! maybeSymbol = scope.GetSymbolAtPositionOnAnyDocument refParams.TextDocument.Uri refParams.Position
-        match maybeSymbol with
+    let handle (scope: ServerRequestScope) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+        match! scope.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some (symbol, _, _) ->
-            let! ct = Async.CancellationToken
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, scope.Solution, ct) |> Async.AwaitTask
+        | Some symbol ->
+            let! refs = scope.FindReferences symbol
             // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
             return
                 refs

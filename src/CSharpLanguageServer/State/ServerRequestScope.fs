@@ -161,3 +161,10 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
 
         return aggregatedLspLocations
     }
+
+    member this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
+        match this.State.Solution with
+        | None -> return []
+        | Some solution ->
+            return! SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
+    }
