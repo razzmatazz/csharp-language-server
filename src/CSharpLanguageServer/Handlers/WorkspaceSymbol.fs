@@ -3,7 +3,6 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
@@ -34,29 +33,13 @@ module WorkspaceSymbol =
                   Method = "workspace/symbol"
                   RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
 
-    let findSymbolsInSolution (solution: Solution)
-                              pattern
-                              (_limit: int option)
-            : Async<ISymbol seq> = async {
-        let findTask =
-            match pattern with
-            | Some pat ->
-                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
-            | None ->
-                fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, (fun _ -> true), SymbolFilter.TypeAndMember)
-
-        return! findTask solution |> Async.AwaitTask
-    }
-
-    let handle (scope: ServerRequestScope)
-               (p: WorkspaceSymbolParams)
-            : AsyncLspResult<U2<SymbolInformation[],WorkspaceSymbol[]> option> = async {
+    let handle (scope: ServerRequestScope) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
         let pattern =
             if String.IsNullOrEmpty(p.Query) then
                 None
             else
                 Some p.Query
-        let! symbols = findSymbolsInSolution scope.Solution pattern (Some 20)
+        let! symbols = scope.FindSymbols pattern
         return
             symbols
             |> Seq.map (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)

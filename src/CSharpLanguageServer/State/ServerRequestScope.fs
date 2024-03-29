@@ -162,6 +162,19 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         return aggregatedLspLocations
     }
 
+    member this.FindSymbols (pattern: string option): Async<ISymbol seq> = async {
+        let findTask =
+                match pattern with
+                | Some pat ->
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+                | None ->
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, konst true, SymbolFilter.TypeAndMember)
+
+        match this.State.Solution with
+        | None -> return []
+        | Some solution -> return! findTask solution |> Async.AwaitTask
+    }
+
     member this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
         match this.State.Solution with
         | None -> return []
