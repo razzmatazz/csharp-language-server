@@ -28,8 +28,7 @@ open LspUtils
 
 type CSharpLspServer(
         lspClient: CSharpLspClient,
-        settings: ServerSettings,
-        lspClientLogEventSink: LspClientLogEventSink
+        settings: ServerSettings
     ) =
 
     let logger = LogProvider.getLoggerByName "LSP"
@@ -190,17 +189,14 @@ type CSharpLspServer(
         override __.Dispose() = ()
 
         override __.Initialize(p) =
-            lspClientLogEventSink.SetLspClient(Some lspClient)
-
             let serverCapabilities = getServerCapabilities p
-            p |> withReadWriteScope (Initialization.handleInitialize setupTimer serverCapabilities)
+            p |> withReadWriteScope (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
 
         override __.Initialized(p) =
             p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor getRegistrations)
               |> ignoreResult
 
         override __.Shutdown() =
-            lspClientLogEventSink.SetLspClient(None)
             () |> async.Return
 
         override __.Exit() = ignoreNotification
@@ -423,12 +419,12 @@ module Server =
     let private requestHandlings =
         Map.union (defaultRequestHandlings ()) customRequestHandlings
 
-    let startCore settings lspClientLogEventSink =
+    let startCore settings =
         use input = Console.OpenStandardInput()
         use output = Console.OpenStandardOutput()
 
         let serverCreator client =
-            new CSharpLspServer(client, settings, lspClientLogEventSink) :> ICSharpLspServer
+            new CSharpLspServer(client, settings) :> ICSharpLspServer
 
         let clientCreator = CSharpLspClient
 
@@ -440,9 +436,9 @@ module Server =
             serverCreator
             createRpc
 
-    let start options lspClientLogEventSink =
+    let start options =
         try
-            let result = startCore options lspClientLogEventSink
+            let result = startCore options
             int result
         with ex ->
             logger.error (
