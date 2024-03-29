@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentOnTypeFormatting =
@@ -47,7 +48,7 @@ module DocumentOnTypeFormatting =
         | Some doc ->
             let options = FormatUtil.getFormattingOptions doc p.Options
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let pos = sourceText.Lines.GetPosition(new LinePosition(p.Position.Line, p.Position.Character))
+            let pos = Position.toRoslynPosition sourceText.Lines p.Position
 
             match p.Ch with
             | ';'
