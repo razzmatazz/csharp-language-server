@@ -33,8 +33,8 @@ module TypeHierarchy =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false ->
+        | false -> None
+        | true ->
             let registerOptions: TypeHierarchyRegistrationOptions =
                 { DocumentSelector = Some defaultDocumentSelector }
             Some
