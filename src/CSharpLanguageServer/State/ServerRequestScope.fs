@@ -63,13 +63,14 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         for e in es do this.Emit e
 
     member this.ResolveSymbolLocation
-            (compilation: Microsoft.CodeAnalysis.Compilation)
-            (project: Microsoft.CodeAnalysis.Project)
+            (project: Microsoft.CodeAnalysis.Project option)
             sym
             (l: Microsoft.CodeAnalysis.Location) = async {
-        let! ct = Async.CancellationToken
+        match l.IsInMetadata, l.IsInSource, project with
+        | true, _, Some project ->
+            let! ct = Async.CancellationToken
+            let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-        if l.IsInMetadata then
             let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
             let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
 
@@ -104,33 +105,24 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
                 | [] -> [fallbackLocationInMetadata]
                 | ls -> ls
 
-        else if l.IsInSource then
+        | false, true, _ ->
             return [Location.fromRoslynLocation l]
-        else
+
+        | _, _, _ ->
             return []
     }
 
     member this.ResolveSymbolLocations
-            (project: Microsoft.CodeAnalysis.Project)
-            (symbols: Microsoft.CodeAnalysis.ISymbol list) = async {
-        let! ct = Async.CancellationToken
-        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
-
+            (symbol: Microsoft.CodeAnalysis.ISymbol)
+            (project: Microsoft.CodeAnalysis.Project option) = async {
         let mutable aggregatedLspLocations = []
+        for l in symbol.Locations do
+            let! symLspLocations = this.ResolveSymbolLocation project symbol l
 
-        for sym in symbols do
-            for l in sym.Locations do
-                let! symLspLocations = this.ResolveSymbolLocation compilation project sym l
-
-                aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
+            aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
 
         return aggregatedLspLocations
     }
-
-    member this.ResolveSymbolLocations'
-            (symbol: Microsoft.CodeAnalysis.ISymbol)
-            (project: Microsoft.CodeAnalysis.Project) =
-        this.ResolveSymbolLocations project [symbol]
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
         match this.GetAnyDocumentForUri uri with
@@ -145,17 +137,49 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
         this.FindSymbol' uri pos |> map (Option.map fst)
 
+    member private this._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+        match state.Solution with
+        | None -> async.Return []
+        | Some currentSolution ->
+            SymbolFinder.FindDerivedClassesAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+
+    member private this._FindDerivedInterfaces (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> =
+        match state.Solution with
+        | None -> async.Return []
+        | Some currentSolution ->
+            SymbolFinder.FindDerivedInterfacesAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+
+    member this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> =
+        match state.Solution with
+        | None -> async.Return []
+        | Some currentSolution ->
+            SymbolFinder.FindImplementationsAsync(symbol, currentSolution) |> Async.AwaitTask
+
+    member this.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+        match state.Solution with
+        | None -> async.Return []
+        | Some currentSolution ->
+            SymbolFinder.FindImplementationsAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+
+    member this.FindDerivedClasses (symbol: INamedTypeSymbol): Async<INamedTypeSymbol seq> = this._FindDerivedClasses symbol true
+    member this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = this._FindDerivedClasses symbol transitive
+
+    member this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol true
+    member this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol transitive
+
+    member this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> =
+        match state.Solution with
+        | None -> async.Return []
+        | Some currentSolution -> SymbolFinder.FindCallersAsync(symbol, currentSolution) |> Async.AwaitTask
+
     member this.ResolveTypeSymbolLocations
             (project: Microsoft.CodeAnalysis.Project)
             (symbols: Microsoft.CodeAnalysis.ITypeSymbol list) = async {
-        let! ct = Async.CancellationToken
-        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
-
         let mutable aggregatedLspLocations = []
 
         for sym in symbols do
             for l in sym.Locations do
-                let! symLspLocations = this.ResolveSymbolLocation compilation project sym l
+                let! symLspLocations = this.ResolveSymbolLocation (Some project) sym l
 
                 aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
 
@@ -181,3 +205,6 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         | Some solution ->
             return! SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
     }
+
+    member this.GetDocumentVersion (uri: DocumentUri): int option =
+        Uri.unescape uri |> this.OpenDocVersions.TryFind

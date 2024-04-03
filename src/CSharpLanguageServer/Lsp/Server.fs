@@ -257,10 +257,10 @@ type CSharpLspServer(
             p |> withReadOnlyScope Implementation.handle
 
         override this.TextDocumentCodeAction(p) =
-            p |> withReadOnlyScope (CodeAction.handle logMessage)
+            p |> withReadOnlyScope CodeAction.handle
 
         override this.CodeActionResolve(p) =
-            p |> withReadOnlyScope (CodeAction.resolve logMessage)
+            p |> withReadOnlyScope CodeAction.resolve
 
         override this.TextDocumentCodeLens(p) =
             p |> withReadOnlyScope CodeLens.handle
