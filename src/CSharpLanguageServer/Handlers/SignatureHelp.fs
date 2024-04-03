@@ -5,12 +5,6 @@ open System
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.Classification
-open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Rename
-open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
@@ -36,10 +30,10 @@ module SignatureInformation =
                 { Kind = MarkupKind.Markdown
                   Value = DocumentationUtil.markdownDocForSymbol m }
 
-        { Label         = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
-          Documentation = Some documentation
-          ActiveParameter = None
-          Parameters    = Some parameters }
+        { Label           = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
+          Documentation   = Some documentation
+          Parameters      = Some parameters
+          ActiveParameter = None }
 
 [<RequireQualifiedAccess>]
 module SignatureHelp =

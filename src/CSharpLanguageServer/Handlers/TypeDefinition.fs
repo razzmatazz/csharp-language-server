@@ -2,50 +2,57 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open FSharpPlus
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) : bool =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.TypeDefinition)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let provider (clientCapabilities: ClientCapabilities option) : bool option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
 
-    let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
-        let docMaybe = scope.GetAnyDocumentForUri def.TextDocument.Uri
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some {
+                Id = Guid.NewGuid().ToString()
+                Method = "textDocument/typeDefinition"
+                RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-        match docMaybe with
+    let handle (wm: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
+        match! wm.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(def.Position.Line, def.Position.Character))
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-
-            let symbols =
-                match Option.ofObj symbolMaybe with
-                | Some sym -> [sym]
-                | None -> []
-
-            let typeSymbols =
-                match symbols with
-                | [] -> []
-                | _  ->
-                    match symbols.Head with
-                    | :? ILocalSymbol as loc -> [loc.Type]
-                    | :? IFieldSymbol as field -> [field.Type]
-                    | :? IPropertySymbol as prop -> [prop.Type]
-                    | :? IParameterSymbol as param -> [param.Type]
-                    | _ -> []
-
+        | Some (symbol, doc) ->
+            let typeSymbol =
+                match symbol with
+                | :? ILocalSymbol as localSymbol -> [localSymbol.Type]
+                | :? IFieldSymbol as fieldSymbol -> [fieldSymbol.Type]
+                | :? IPropertySymbol as propertySymbol -> [propertySymbol.Type]
+                | :? IParameterSymbol as parameterSymbol -> [parameterSymbol.Type]
+                | _ -> []
             let! locations =
-                    scope.ResolveTypeSymbolLocations doc.Project typeSymbols
-
-            return locations |> Array.ofSeq |> GotoResult.Multiple |> Some |> success
+                typeSymbol
+                |> map (flip wm.ResolveSymbolLocations (Some doc.Project))
+                |> Async.Parallel
+                |> map (Seq.collect id >> Seq.toArray)
+            return
+                locations
+                |> GotoResult.Multiple
+                |> Some
+                |> success
     }

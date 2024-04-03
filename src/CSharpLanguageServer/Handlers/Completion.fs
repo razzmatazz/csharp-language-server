@@ -2,20 +2,18 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.Completion
+open FSharpPlus
 open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Ionide.LanguageServerProtocol.Server
+open Microsoft.CodeAnalysis.Completion
+open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -33,8 +31,7 @@ module Completion =
             Some { ResolveProvider = None
                    TriggerCharacters = Some ([| '.'; '''; |])
                    AllCommitCharacters = None
-                   CompletionItem = None
-                 }
+                   CompletionItem = None }
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -47,7 +44,8 @@ module Completion =
                     { ResolveProvider = None
                       TriggerCharacters = Some ([| '.'; '''; |])
                       AllCommitCharacters = None
-                      DocumentSelector = Some defaultDocumentSelector }
+                      CompletionItem = None
+                    }
                     |> serialize
                     |> Some }
 
@@ -73,45 +71,54 @@ module Completion =
         | _ -> CompletionItemKind.Property
 
     // TODO: Add parameters to label so that we can distinguish override versions?
-    // TODO: Add doc to response
     // TODO: Change parameters to snippets like clangd
-    let private makeLspCompletionItem (item: Microsoft.CodeAnalysis.Completion.CompletionItem) =
+    let private makeLspCompletionItem
+        (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
+        (description: Microsoft.CodeAnalysis.Completion.CompletionDescription option) =
         { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
-            SortText         = item.SortText |> Option.ofObj
-            FilterText       = item.FilterText |> Option.ofObj
-            Detail           = item.InlineDescription |> Option.ofObj
-            InsertTextFormat = Some InsertTextFormat.PlainText }
+            SortText         = item.SortText |> Option.ofString
+            FilterText       = item.FilterText |> Option.ofString
+            Detail           = item.InlineDescription |> Option.ofString
+            TextEditText     = item.DisplayTextPrefix |> Option.ofObj
+            InsertTextFormat = Some InsertTextFormat.PlainText
+            // TODO: Change description to MarkupContent instead of plain text?
+            Documentation    = description |> Option.map (fun x -> Documentation.String x.Text) }
 
     let handle (scope: ServerRequestScope) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
         let docMaybe = scope.GetUserDocumentForUri p.TextDocument.Uri
         match docMaybe with
+        | None -> return None |> success
         | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+
             let position =
                 sourceText.Lines.GetPosition(LinePosition(p.Position.Line, p.Position.Character))
 
             let completionService = CompletionService.GetService(doc)
             // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
             // `AbandonedMutexException`, `Accessibility`, ..., which are unnecessary and time-consuming.
-            if isNull completionService then
-                return ()
-
             let! completions = completionService.GetCompletionsAsync(doc, position) |> Async.AwaitTask
 
             match Option.ofObj completions with
             | None -> return None |> success
             | Some completions ->
-                let items =
+                // TODO: Move it to resolve? But it needs us to remember/cache the completions.ItemsList.
+                let! descriptions =
                     completions.ItemsList
-                    |> Seq.map makeLspCompletionItem
+                    |> Seq.map (fun item -> completionService.GetDescriptionAsync(doc, item) |> Async.AwaitTask)
+                    |> Async.Parallel
+                    |> Async.map (Seq.map Option.ofObj)
+                let items =
+                    Seq.zip completions.ItemsList descriptions
+                    |> Seq.map (uncurry makeLspCompletionItem)
                     |> Array.ofSeq
                 let completionList =
                     { IsIncomplete = false
-                      ItemDefaults = None
-                      Items = items }
+                      Items = items
+                      ItemDefaults = None }
                 return completionList |> Some |> success
-
-        | None -> return success None
     }
+
+    let resolve (scope: ServerRequestScope) (p: CompletionItem) : AsyncLspResult<CompletionItem> =
+        LspResult.notImplemented<CompletionItem> |> async.Return

@@ -10,8 +10,6 @@ open Serilog.Events
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
-open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Util
 
 [<EntryPoint>]
 let entry args =
@@ -36,13 +34,10 @@ let entry args =
                 | "log" -> LogEventLevel.Verbose
                 | _ -> LogEventLevel.Information
 
-        let lspClientLogEventSink = LspClientLogEventSink(formatProvider = null)
-
         let logConfig =
                 LoggerConfiguration()
                     .MinimumLevel.ControlledBy(LoggingLevelSwitch(logLevel))
                     .Enrich.FromLogContext()
-                    .WriteTo.Sink(lspClientLogEventSink)
                     .WriteTo.Async(fun conf ->
                         conf.Console(
                             outputTemplate =
@@ -60,7 +55,7 @@ let entry args =
             LogLevel = logLevelArg
         }
 
-        Server.start settings lspClientLogEventSink
+        Server.start settings
     with
     | :? ArguParseException as ex ->
         printfn "%s" ex.Message

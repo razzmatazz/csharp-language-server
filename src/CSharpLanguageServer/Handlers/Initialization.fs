@@ -2,18 +2,15 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.IO
-
 open System.Reflection
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
+
 open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 
@@ -21,21 +18,30 @@ open CSharpLanguageServer.Logging
 module Initialization =
     let private logger = LogProvider.getLoggerByName "Initialization"
 
-    let handleInitialize (setupTimer: unit -> unit)
+    let handleInitialize (lspClient: ILspClient)
+                         (setupTimer: unit -> unit)
                          (serverCapabilities: ServerCapabilities)
                          (scope: ServerRequestScope)
                          (p: InitializeParams)
             : Async<LspResult<InitializeResult>> = async {
         let serverName = "csharp-ls"
+        let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
         logger.info (
             Log.setMessage "initializing, {name} version {version}"
             >> Log.addContext "name" serverName
-            >> Log.addContext "version" (Assembly.GetExecutingAssembly().GetName().Version)
+            >> Log.addContext "version" serverVersion
         )
+
+        do! lspClient.WindowLogMessage({ Type = MessageType.Info
+                                         Message = sprintf "initializing, %s version %s" serverName serverVersion })
+
         logger.info (
             Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
             >> Log.addContext "name" serverName
         )
+
+        do! lspClient.WindowLogMessage({ Type = MessageType.Info
+                                         Message = sprintf "%s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName })
 
         let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
         let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)

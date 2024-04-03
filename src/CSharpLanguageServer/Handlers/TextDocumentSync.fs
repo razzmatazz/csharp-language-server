@@ -3,11 +3,11 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]

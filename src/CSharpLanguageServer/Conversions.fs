@@ -5,7 +5,7 @@ open System
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
-
+open FSharpPlus
 
 module Uri =
     // Unescape some necessary char before passing string to Uri.
@@ -146,6 +146,10 @@ module HierarchyItem =
           SelectionRange = location.Range
           Data = None }
 
+    let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<HierarchyItem list> =
+        wmResolveSymbolLocations symbol None
+        |> map (List.map (fromSymbolAndLocation symbol))
+
 
 module SymbolInformation =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): SymbolInformation list =
@@ -155,10 +159,10 @@ module SymbolInformation =
         |> Seq.map (fun loc ->
             { Name = name
               Kind = kind
-              Tags = None
-              Deprecated = None
               Location = Location.fromRoslynLocation loc
-              ContainerName = None } : SymbolInformation)
+              ContainerName = None
+              Deprecated = None
+              Tags = None })
         |> Seq.toList
 
 

@@ -1,33 +1,28 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open System.Reflection
+open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
-open System.IO
+open System.Reflection
 
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
-open Ionide.LanguageServerProtocol.Server
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.FindSymbols
-open Microsoft.CodeAnalysis.Text
+open Microsoft.CodeAnalysis.CodeActions
 open Microsoft.CodeAnalysis.CodeRefactorings
 open Microsoft.CodeAnalysis.CodeFixes
-open Microsoft.CodeAnalysis.CodeActions
+open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Types.LspResult
 
-open CSharpLanguageServer
-open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.State
 
 type CSharpCodeActionResolutionData =
     { TextDocumentUri: string
       Range: Range }
-
-type CodeActionData = { Url: string }
 
 [<RequireQualifiedAccess>]
 module CodeAction =
@@ -172,7 +167,7 @@ module CodeAction =
         else
             None, None
 
-    let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): Ionide.LanguageServerProtocol.Types.CodeAction =
+    let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction): CodeAction =
         let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
         { Title = ca.Title
           Kind = caKind
@@ -254,7 +249,7 @@ module CodeAction =
             tryGetDocVersionByUri
             (originatingDoc: Document)
             (ca: CodeActions.CodeAction)
-        : Async<Ionide.LanguageServerProtocol.Types.CodeAction option> = async {
+        : Async<CodeAction option> = async {
 
         let! ct = Async.CancellationToken
 
@@ -308,10 +303,8 @@ module CodeAction =
         | true, _ -> None
         | false, _ ->
             // TODO: Server can only return CodeActionOptions if literalSupport is not None
-            U2.Second
-                { CodeActionKinds = None
-                  ResolveProvider = Some true }
-            |> Some
+            { CodeActionKinds = None
+              ResolveProvider = Some true } |> U2.Second |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -325,14 +318,10 @@ module CodeAction =
                       ResolveProvider = Some true
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (logMessage: Util.AsyncLogFn)
-               (scope: ServerRequestScope)
+    let handle (wm: ServerRequestScope)
                (p: CodeActionParams)
             : AsyncLspResult<TextDocumentCodeActionResult option> = async {
-        let clientCapabilities = scope.ClientCapabilities
-
-        let docMaybe = scope.GetUserDocumentForUri p.TextDocument.Uri
-        match docMaybe with
+        match wm.GetAnyDocumentForUri p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
@@ -341,7 +330,7 @@ module CodeAction =
             let! roslynCodeActions = getRoslynCodeActions doc textSpan
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
-                clientCapabilities
+                wm.ClientCapabilities
                 |> Option.bind (fun x -> x.TextDocument)
                 |> Option.bind (fun x -> x.CodeAction)
                 |> Option.bind (fun x -> x.ResolveSupport)
@@ -356,7 +345,7 @@ module CodeAction =
                             { TextDocumentUri = p.TextDocument.Uri
                               Range = p.Range }
 
-                        logger.debug (
+                        logger.info (
                             Log.setMessage "codeaction data: {data}"
                             >> Log.addContextDestructured "data" resolutionData
                         )
@@ -367,13 +356,13 @@ module CodeAction =
                   }
 
                 | false -> async {
-                    let results = List<Ionide.LanguageServerProtocol.Types.CodeAction>()
+                    let results = List<CodeAction>()
 
                     for ca in roslynCodeActions do
                         let! maybeLspCa =
                             roslynCodeActionToResolvedLspCodeAction
-                                scope.Solution
-                                scope.OpenDocVersions.TryFind
+                                doc.Project.Solution
+                                wm.GetDocumentVersion
                                 doc
                                 ca
 
@@ -386,22 +375,18 @@ module CodeAction =
             return
                lspCodeActions
                |> Seq.sortByDescending (fun ca -> ca.IsPreferred)
-               |> Seq.map U2<Command, Ionide.LanguageServerProtocol.Types.CodeAction>.Second
+               |> Seq.map U2<Command, CodeAction>.Second
                |> Array.ofSeq
                |> Some
                |> success
     }
 
-    let resolve (logMessage: Util.AsyncLogFn)
-                (scope: ServerRequestScope)
-                (p: Ionide.LanguageServerProtocol.Types.CodeAction)
-            : AsyncLspResult<Ionide.LanguageServerProtocol.Types.CodeAction option> = async {
+    let resolve (wm: ServerRequestScope) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
         let resolutionData =
             p.Data
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let docMaybe = scope.GetUserDocumentForUri resolutionData.Value.TextDocumentUri
-        match docMaybe with
+        match wm.GetAnyDocumentForUri resolutionData.Value.TextDocumentUri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -416,8 +401,8 @@ module CodeAction =
 
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
-                                                    scope.Solution
-                                                    scope.OpenDocVersions.TryFind
+                                                    doc.Project.Solution
+                                                    wm.GetDocumentVersion
                                                     doc
 
             let! maybeLspCodeAction =

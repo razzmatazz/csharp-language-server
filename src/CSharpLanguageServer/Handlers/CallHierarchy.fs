@@ -1,13 +1,15 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
-open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
@@ -23,37 +25,43 @@ module CallHierarchy =
                   Microsoft.CodeAnalysis.SymbolKind.Event
                   Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option = Some true
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        |> Option.bind (fun x -> x.TextDocument)
+        |> Option.bind (fun x -> x.CallHierarchy)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let provider (clientCapabilities: ClientCapabilities option) : bool option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some true
 
-    let prepare (scope: ServerRequestScope) (prepareParams: CallHierarchyPrepareParams): AsyncLspResult<CallHierarchyItem[] option> = async {
-        match scope.GetUserDocumentForUri prepareParams.TextDocument.Uri with
-        | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position =
-                prepareParams.Position
-                |> Position.toLinePosition sourceText.Lines
-                |> sourceText.Lines.GetPosition
-            let symbols =
-                SymbolFinder.FindSymbolAtPositionAsync(doc, position)
-                |> Async.AwaitTask
-                |> Async.RunSynchronously
-                |> Option.ofObj
-                |> Option.filter isCallableSymbol
-                |> Option.toList
-            let! locations = scope.ResolveSymbolLocations doc.Project symbols
-            return Seq.allPairs symbols locations
-                |> Seq.map (uncurry HierarchyItem.fromSymbolAndLocation)
-                |> Seq.toArray
+    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/prepareCallHierarchy"
+                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+
+
+    let prepare (wm: ServerRequestScope) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
+        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+        | Some symbol when isCallableSymbol symbol ->
+            let! itemList = HierarchyItem.fromSymbol wm.ResolveSymbolLocations symbol
+            return
+                itemList
+                |> List.toArray
                 |> Some
                 |> success
         | _ -> return None |> success
     }
 
     let incomingCalls
-        (scope: ServerRequestScope)
-        (incomingParams: CallHierarchyIncomingCallsParams)
+        (wm: ServerRequestScope)
+        (p: CallHierarchyIncomingCallsParams)
         : AsyncLspResult<CallHierarchyIncomingCall[] option> = async {
         let toCallHierarchyIncomingCalls (info: SymbolCallerInfo) : CallHierarchyIncomingCall seq =
             let fromRanges =
@@ -65,23 +73,15 @@ module CallHierarchy =
                 { From = HierarchyItem.fromSymbolAndLocation (info.CallingSymbol) (loc |> Location.fromRoslynLocation)
                   FromRanges = fromRanges })
 
-        match scope.GetUserDocumentForUri incomingParams.Item.Uri with
+        match! wm.FindSymbol p.Item.Uri p.Item.Range.Start with
         | None -> return None |> success
-        | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position =
-                incomingParams.Item.Range.Start
-                |> Position.toLinePosition sourceText.Lines
-                |> sourceText.Lines.GetPosition
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-            let callers =
-                symbol
-                |> Option.ofObj
-                |> Option.toList
-                |> Seq.collect (fun sym -> SymbolFinder.FindCallersAsync(sym, scope.Solution) |> Async.AwaitTask |> Async.RunSynchronously)
-                |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
+        | Some symbol ->
+            let! callers = wm.FindCallers symbol
+            // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
+            // we will miss many callers. Maybe it should have some change in LSP protocol.
             return
                 callers
+                |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
                 |> Seq.collect toCallHierarchyIncomingCalls
                 |> Seq.toArray
                 |> Some
@@ -89,8 +89,8 @@ module CallHierarchy =
     }
 
     let outgoingCalls
-        (scope: ServerRequestScope)
-        (outgoingParams: CallHierarchyOutgoingCallsParams)
+        (wm: ServerRequestScope)
+        (p: CallHierarchyOutgoingCallsParams)
         : AsyncLspResult<CallHierarchyOutgoingCall[] option> = async {
         // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
         // Then how can we implement it? Parsing AST manually?
