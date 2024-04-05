@@ -45,9 +45,6 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
             return None
     }
 
-    member this.GetSymbolAtPositionOnAnyDocument uri pos =
-        this.GetSymbolAtPositionOfType AnyDocument uri pos
-
     member this.GetSymbolAtPositionOnUserDocument uri pos =
         this.GetSymbolAtPositionOfType UserDocument uri pos
 
@@ -62,7 +59,7 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member this.EmitMany es =
         for e in es do this.Emit e
 
-    member this.ResolveSymbolLocation
+    member private this.ResolveSymbolLocation
             (project: Microsoft.CodeAnalysis.Project option)
             sym
             (l: Microsoft.CodeAnalysis.Location) = async {
