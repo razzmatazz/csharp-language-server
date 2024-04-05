@@ -6,12 +6,31 @@ open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
+    let private applyLspContentChangesOnRoslynSourceText
+            (changes: TextDocumentContentChangeEvent[])
+            (initialSourceText: SourceText) =
+
+        let applyLspContentChangeOnRoslynSourceText (sourceText: SourceText) (change: TextDocumentContentChangeEvent) =
+            match change.Range with
+            | Some changeRange ->
+                let changeTextSpan =
+                    changeRange |> Range.toLinePositionSpan sourceText.Lines
+                                |> sourceText.Lines.GetTextSpan
+
+                TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
+
+            | None -> SourceText.From(change.Text)
+
+        changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
+
+
     let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
         Some
             { TextDocumentSyncOptions.Default with
