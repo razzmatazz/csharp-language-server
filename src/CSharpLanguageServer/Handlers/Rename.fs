@@ -90,9 +90,9 @@ module Rename =
     let prepare (scope: ServerRequestScope)
                 (p: PrepareRenameParams)
                 : AsyncLspResult<PrepareRenameResult option> = async {
-        match scope.GetDocumentForUriOfType UserDocument p.TextDocument.Uri with
+        match scope.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
-        | Some (doc, _) ->
+        | Some doc ->
             let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
 

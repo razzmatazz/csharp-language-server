@@ -25,10 +25,10 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
 
     member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
 
-    member this.GetUserDocumentForUri (u: string) =
+    member this.GetUserDocument (u: string) =
         this.GetDocumentForUriOfType UserDocument u |> Option.map fst
 
-    member this.GetAnyDocumentForUri (u: string) =
+    member this.GetDocument (u: string) =
         this.GetDocumentForUriOfType AnyDocument u |> Option.map fst
 
     member _.Emit ev =
@@ -105,7 +105,7 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
-        match this.GetAnyDocumentForUri uri with
+        match this.GetDocument uri with
         | None -> return None
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask

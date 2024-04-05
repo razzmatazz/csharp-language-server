@@ -316,7 +316,7 @@ module DocumentSymbol =
             |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
             |> Option.defaultValue false
 
-        match scope.GetAnyDocumentForUri p.TextDocument.Uri with
+        match scope.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask

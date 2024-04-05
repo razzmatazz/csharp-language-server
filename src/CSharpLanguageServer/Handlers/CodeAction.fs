@@ -321,7 +321,7 @@ module CodeAction =
     let handle (wm: ServerRequestScope)
                (p: CodeActionParams)
             : AsyncLspResult<TextDocumentCodeActionResult option> = async {
-        match wm.GetAnyDocumentForUri p.TextDocument.Uri with
+        match wm.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
@@ -386,7 +386,7 @@ module CodeAction =
             p.Data
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        match wm.GetAnyDocumentForUri resolutionData.Value.TextDocumentUri with
+        match wm.GetDocument resolutionData.Value.TextDocumentUri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken

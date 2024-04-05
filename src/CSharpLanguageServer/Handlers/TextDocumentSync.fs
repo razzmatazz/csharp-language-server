@@ -79,7 +79,7 @@ module TextDocumentSync =
                   (changeParams: DidChangeTextDocumentParams)
             : Async<LspResult<unit>> =
       async {
-        let docMaybe = scope.GetUserDocumentForUri changeParams.TextDocument.Uri
+        let docMaybe = scope.GetUserDocument changeParams.TextDocument.Uri
         match docMaybe with
         | Some doc ->
                 let! ct = Async.CancellationToken
@@ -119,7 +119,7 @@ module TextDocumentSync =
                 (saveParams: DidSaveTextDocumentParams)
             : Async<LspResult<unit>> =
         // we need to add this file to solution if not already
-        let doc = scope.GetAnyDocumentForUri saveParams.TextDocument.Uri
+        let doc = scope.GetDocument saveParams.TextDocument.Uri
 
         match doc with
         | Some _ ->

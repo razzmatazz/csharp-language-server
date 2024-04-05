@@ -86,7 +86,7 @@ module Completion =
             Documentation    = description |> Option.map (fun x -> Documentation.String x.Text) }
 
     let handle (scope: ServerRequestScope) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
-        let docMaybe = scope.GetUserDocumentForUri p.TextDocument.Uri
+        let docMaybe = scope.GetUserDocument p.TextDocument.Uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->

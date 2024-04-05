@@ -111,7 +111,7 @@ module SemanticTokens =
         (deltaLine, deltaChar, cLen, cToken, cModifiers)
 
     let private getSemanticTokensRange (scope: ServerRequestScope) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
-        let docMaybe = scope.GetUserDocumentForUri uri
+        let docMaybe = scope.GetUserDocument uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
