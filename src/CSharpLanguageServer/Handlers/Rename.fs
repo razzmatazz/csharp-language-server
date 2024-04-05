@@ -87,13 +87,12 @@ module Rename =
                       { PrepareProvider = Some (prepareSupport clientCapabilities)
                         DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let prepare (getDocumentForUriFromCurrentState: ServerDocumentType -> string -> Async<Document option>)
-                (_scope: ServerRequestScope)
+    let prepare (scope: ServerRequestScope)
                 (p: PrepareRenameParams)
                 : AsyncLspResult<PrepareRenameResult option> = async {
-        match! getDocumentForUriFromCurrentState UserDocument p.TextDocument.Uri with
+        match scope.GetDocumentForUriOfType UserDocument p.TextDocument.Uri with
         | None -> return None |> success
-        | Some doc ->
+        | Some (doc, _) ->
             let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
             let! docText = doc.GetTextAsync() |> Async.AwaitTask
 
@@ -152,9 +151,9 @@ module Rename =
         (scope: ServerRequestScope)
         (p: RenameParams)
         : AsyncLspResult<WorkspaceEdit option> = async {
-        match! scope.GetSymbolAtPositionOnUserDocument p.TextDocument.Uri p.Position with
+        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some (symbol, doc, _) ->
+        | Some (symbol, doc) ->
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =

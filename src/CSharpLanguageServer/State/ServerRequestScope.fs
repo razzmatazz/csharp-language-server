@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer.State
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open FSharpPlus
@@ -31,22 +30,6 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
 
     member this.GetAnyDocumentForUri (u: string) =
         this.GetDocumentForUriOfType AnyDocument u |> Option.map fst
-
-    member this.GetSymbolAtPositionOfType docType uri pos = async {
-        match this.GetDocumentForUriOfType docType uri with
-        | Some (doc, _docType) ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return if isNull symbolRef then None else Some (symbolRef, doc, position)
-
-        | None ->
-            return None
-    }
-
-    member this.GetSymbolAtPositionOnUserDocument uri pos =
-        this.GetSymbolAtPositionOfType UserDocument uri pos
 
     member _.Emit ev =
         match ev with
