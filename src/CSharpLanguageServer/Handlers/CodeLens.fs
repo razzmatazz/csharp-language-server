@@ -131,7 +131,8 @@ module CodeLens =
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
-            collector.Visit(syntaxTree.GetRoot())
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            collector.Visit(root)
 
             let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan) : CodeLens =
                 let start = nameSpan.Start |> docText.Lines.GetLinePosition

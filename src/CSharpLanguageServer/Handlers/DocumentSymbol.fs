@@ -327,7 +327,9 @@ module DocumentSymbol =
 
             let collector = DocumentSymbolCollector(docText, semanticModel)
             collector.Init(doc.Name)
-            collector.Visit(syntaxTree.GetRoot())
+
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            collector.Visit(root)
 
             return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
                    |> U2.Second
