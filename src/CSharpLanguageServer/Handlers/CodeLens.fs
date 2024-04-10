@@ -33,7 +33,6 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
 
     override __.VisitEnumMemberDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitEnumMemberDeclaration(node)
 
     override __.VisitClassDeclaration(node) =
         collect node node.Identifier.Span
@@ -53,35 +52,27 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
 
     override __.VisitDelegateDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitDelegateDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitConstructorDeclaration(node)
 
     override __.VisitDestructorDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitDestructorDeclaration(node)
 
     override __.VisitOperatorDeclaration(node) =
         collect node node.OperatorToken.Span
-        base.VisitOperatorDeclaration(node)
 
     override __.VisitIndexerDeclaration(node) =
         collect node node.ThisKeyword.Span
-        base.VisitIndexerDeclaration(node)
 
     override __.VisitConversionOperatorDeclaration(node) =
         collect node node.Type.Span
-        base.VisitConversionOperatorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitPropertyDeclaration(node)
 
     override __.VisitVariableDeclarator(node) =
         let grandparent =
@@ -91,13 +82,9 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
         // Only show field variables and ignore local variables
         if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
             collect node node.Identifier.Span
-            base.VisitVariableDeclarator(node)
-        else
-            base.VisitVariableDeclarator(node)
 
     override __.VisitEventDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitEventDeclaration(node)
 
 [<RequireQualifiedAccess>]
 module CodeLens =
