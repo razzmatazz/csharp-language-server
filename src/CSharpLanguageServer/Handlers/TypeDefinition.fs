@@ -34,8 +34,8 @@ module TypeDefinition =
                 Method = "textDocument/typeDefinition"
                 RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (wm: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
-        match! wm.FindSymbol' p.TextDocument.Uri p.Position with
+    let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
+        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
             let typeSymbol =
@@ -47,7 +47,7 @@ module TypeDefinition =
                 | _ -> []
             let! locations =
                 typeSymbol
-                |> map (flip wm.ResolveSymbolLocations (Some doc.Project))
+                |> map (flip scope.ResolveSymbolLocations (Some doc.Project))
                 |> Async.Parallel
                 |> map (Seq.collect id >> Seq.toArray)
             return
