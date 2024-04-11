@@ -82,7 +82,7 @@ type SignatureHelpRegistrationOptions =
 
 type DocumentFilter with
     static member Default: DocumentFilter =
-        { Language = Some "cs"
+        { Language = None
           Scheme = Some "file"
           Pattern = Some "**/*.cs" }
 

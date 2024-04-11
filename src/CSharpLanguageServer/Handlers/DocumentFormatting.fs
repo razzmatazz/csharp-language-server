@@ -35,7 +35,7 @@ module DocumentFormatting =
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit [] option> = async {
-        match scope.GetUserDocumentForUri p.TextDocument.Uri with
+        match scope.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let options = FormatUtil.getFormattingOptions doc p.Options

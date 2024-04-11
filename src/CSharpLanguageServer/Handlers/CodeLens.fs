@@ -133,7 +133,7 @@ module CodeLens =
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
-        let docMaybe = scope.GetAnyDocumentForUri p.TextDocument.Uri
+        let docMaybe = scope.GetDocument p.TextDocument.Uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
@@ -170,7 +170,7 @@ module CodeLens =
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
             |> Option.defaultValue CodeLensData.Default
 
-        let docMaybe = scope.GetAnyDocumentForUri lensData.DocumentUri
+        let docMaybe = scope.GetDocument lensData.DocumentUri
         let doc = docMaybe.Value
 
         let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask

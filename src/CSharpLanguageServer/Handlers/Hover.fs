@@ -34,9 +34,9 @@ module Hover =
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
-        match! scope.GetSymbolAtPositionOnAnyDocument p.TextDocument.Uri p.Position with
+        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some (symbol, doc, pos) ->
+        | Some (symbol, doc) ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
             let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel |> markdown
             let hover =

@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer.State
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open FSharpPlus
@@ -26,30 +25,11 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
 
     member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
 
-    member this.GetUserDocumentForUri (u: string) =
+    member this.GetUserDocument (u: string) =
         this.GetDocumentForUriOfType UserDocument u |> Option.map fst
 
-    member this.GetAnyDocumentForUri (u: string) =
+    member this.GetDocument (u: string) =
         this.GetDocumentForUriOfType AnyDocument u |> Option.map fst
-
-    member this.GetSymbolAtPositionOfType docType uri pos = async {
-        match this.GetDocumentForUriOfType docType uri with
-        | Some (doc, _docType) ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = sourceText.Lines.GetPosition(LinePosition(pos.Line, pos.Character))
-            let! symbolRef = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return if isNull symbolRef then None else Some (symbolRef, doc, position)
-
-        | None ->
-            return None
-    }
-
-    member this.GetSymbolAtPositionOnAnyDocument uri pos =
-        this.GetSymbolAtPositionOfType AnyDocument uri pos
-
-    member this.GetSymbolAtPositionOnUserDocument uri pos =
-        this.GetSymbolAtPositionOfType UserDocument uri pos
 
     member _.Emit ev =
         match ev with
@@ -62,7 +42,7 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member this.EmitMany es =
         for e in es do this.Emit e
 
-    member this.ResolveSymbolLocation
+    member private this.ResolveSymbolLocation
             (project: Microsoft.CodeAnalysis.Project option)
             sym
             (l: Microsoft.CodeAnalysis.Location) = async {
@@ -125,7 +105,7 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position): Async<(ISymbol * Document) option> = async {
-        match this.GetAnyDocumentForUri uri with
+        match this.GetDocument uri with
         | None -> return None
         | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask

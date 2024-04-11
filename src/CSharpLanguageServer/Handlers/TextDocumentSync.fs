@@ -6,12 +6,31 @@ open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
+    let private applyLspContentChangesOnRoslynSourceText
+            (changes: TextDocumentContentChangeEvent[])
+            (initialSourceText: SourceText) =
+
+        let applyLspContentChangeOnRoslynSourceText (sourceText: SourceText) (change: TextDocumentContentChangeEvent) =
+            match change.Range with
+            | Some changeRange ->
+                let changeTextSpan =
+                    changeRange |> Range.toLinePositionSpan sourceText.Lines
+                                |> sourceText.Lines.GetTextSpan
+
+                TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
+
+            | None -> SourceText.From(change.Text)
+
+        changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
+
+
     let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
         Some
             { TextDocumentSyncOptions.Default with
@@ -79,7 +98,7 @@ module TextDocumentSync =
                   (changeParams: DidChangeTextDocumentParams)
             : Async<LspResult<unit>> =
       async {
-        let docMaybe = scope.GetUserDocumentForUri changeParams.TextDocument.Uri
+        let docMaybe = scope.GetUserDocument changeParams.TextDocument.Uri
         match docMaybe with
         | Some doc ->
                 let! ct = Async.CancellationToken
@@ -119,7 +138,7 @@ module TextDocumentSync =
                 (saveParams: DidSaveTextDocumentParams)
             : Async<LspResult<unit>> =
         // we need to add this file to solution if not already
-        let doc = scope.GetAnyDocumentForUri saveParams.TextDocument.Uri
+        let doc = scope.GetDocument saveParams.TextDocument.Uri
 
         match doc with
         | Some _ ->

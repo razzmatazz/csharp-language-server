@@ -47,10 +47,10 @@ module CallHierarchy =
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
 
-    let prepare (wm: ServerRequestScope) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
-        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+    let prepare (scope: ServerRequestScope) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
+        match! scope.FindSymbol p.TextDocument.Uri p.Position with
         | Some symbol when isCallableSymbol symbol ->
-            let! itemList = HierarchyItem.fromSymbol wm.ResolveSymbolLocations symbol
+            let! itemList = HierarchyItem.fromSymbol scope.ResolveSymbolLocations symbol
             return
                 itemList
                 |> List.toArray
@@ -60,7 +60,7 @@ module CallHierarchy =
     }
 
     let incomingCalls
-        (wm: ServerRequestScope)
+        (scope: ServerRequestScope)
         (p: CallHierarchyIncomingCallsParams)
         : AsyncLspResult<CallHierarchyIncomingCall[] option> = async {
         let toCallHierarchyIncomingCalls (info: SymbolCallerInfo) : CallHierarchyIncomingCall seq =
@@ -73,10 +73,10 @@ module CallHierarchy =
                 { From = HierarchyItem.fromSymbolAndLocation (info.CallingSymbol) (loc |> Location.fromRoslynLocation)
                   FromRanges = fromRanges })
 
-        match! wm.FindSymbol p.Item.Uri p.Item.Range.Start with
+        match! scope.FindSymbol p.Item.Uri p.Item.Range.Start with
         | None -> return None |> success
         | Some symbol ->
-            let! callers = wm.FindCallers symbol
+            let! callers = scope.FindCallers symbol
             // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
             // we will miss many callers. Maybe it should have some change in LSP protocol.
             return
@@ -89,7 +89,7 @@ module CallHierarchy =
     }
 
     let outgoingCalls
-        (wm: ServerRequestScope)
+        (scope: ServerRequestScope)
         (p: CallHierarchyOutgoingCallsParams)
         : AsyncLspResult<CallHierarchyOutgoingCall[] option> = async {
         // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.

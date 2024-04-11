@@ -33,12 +33,12 @@ module Implementation =
                   Method = "textDocument/implementation"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (wm: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
-        match! wm.FindSymbol p.TextDocument.Uri p.Position with
+    let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
+        match! scope.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some symbol ->
-            let! impls = wm.FindImplementations symbol
-            let! locations = impls |> Seq.map (flip wm.ResolveSymbolLocations None) |> Async.Parallel
+            let! impls = scope.FindImplementations symbol
+            let! locations = impls |> Seq.map (flip scope.ResolveSymbolLocations None) |> Async.Parallel
 
             return
                 locations

@@ -218,7 +218,7 @@ module InlayHint =
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     let handle (scope: ServerRequestScope) (p: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
-        match scope.GetUserDocumentForUri p.TextDocument.Uri with
+        match scope.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask

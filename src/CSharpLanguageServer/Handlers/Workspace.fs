@@ -35,8 +35,8 @@ module Workspace =
                   RegisterOptions = { Watchers = [| fileSystemWatcher |] } |> serialize |> Some }
 
     let private tryReloadDocumentOnUri logMessage diagnosticsPost (scope: ServerRequestScope) uri = async {
-        match scope.GetDocumentForUriOfType UserDocument uri with
-        | Some (doc, _) ->
+        match scope.GetUserDocument uri with
+        | Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
@@ -62,8 +62,8 @@ module Workspace =
     }
 
     let private removeDocument diagnosticsPost (scope: ServerRequestScope) uri =
-        match scope.GetDocumentForUriOfType UserDocument uri with
-        | Some (existingDoc, _) ->
+        match scope.GetUserDocument uri with
+        | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             scope.Emit(SolutionChange updatedProject.Solution)

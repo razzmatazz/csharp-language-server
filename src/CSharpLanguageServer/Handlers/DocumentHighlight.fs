@@ -66,9 +66,9 @@ module DocumentHighlight =
                       Kind = Some DocumentHighlightKind.Read })
         }
 
-        match scope.GetDocumentForUriOfType AnyDocument p.TextDocument.Uri with
+        match scope.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
-        | Some (doc, docType) ->
+        | Some doc ->
             let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
             let position = Position.toRoslynPosition sourceText.Lines p.Position
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
