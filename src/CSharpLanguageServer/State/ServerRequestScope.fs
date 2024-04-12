@@ -108,38 +108,55 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
         match this.GetDocument uri with
         | None -> return None
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let position = Position.toRoslynPosition sourceText.Lines pos
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
             return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc)
      }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
         this.FindSymbol' uri pos |> map (Option.map fst)
 
-    member private this._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+    member private this._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
         match state.Solution with
-        | None -> async.Return []
+        | None -> return []
         | Some currentSolution ->
-            SymbolFinder.FindDerivedClassesAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindDerivedClassesAsync(symbol, currentSolution, transitive, cancellationToken=ct)
+                |> Async.AwaitTask
+    }
 
-    member private this._FindDerivedInterfaces (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> =
+    member private this._FindDerivedInterfaces (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = async {
         match state.Solution with
-        | None -> async.Return []
+        | None -> return []
         | Some currentSolution ->
-            SymbolFinder.FindDerivedInterfacesAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindDerivedInterfacesAsync(symbol, currentSolution, transitive, cancellationToken=ct)
+                |> Async.AwaitTask
+    }
 
-    member this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> =
+    member this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> = async {
         match state.Solution with
-        | None -> async.Return []
+        | None -> return []
         | Some currentSolution ->
-            SymbolFinder.FindImplementationsAsync(symbol, currentSolution) |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindImplementationsAsync(symbol, currentSolution, cancellationToken=ct)
+                |> Async.AwaitTask
+    }
 
-    member this.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> =
+    member this.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
         match state.Solution with
-        | None -> async.Return []
+        | None -> return []
         | Some currentSolution ->
-            SymbolFinder.FindImplementationsAsync(symbol, currentSolution, transitive) |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindImplementationsAsync(symbol, currentSolution, transitive, cancellationToken=ct)
+                |> Async.AwaitTask
+    }
 
     member this.FindDerivedClasses (symbol: INamedTypeSymbol): Async<INamedTypeSymbol seq> = this._FindDerivedClasses symbol true
     member this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = this._FindDerivedClasses symbol transitive
@@ -147,10 +164,15 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol true
     member this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol transitive
 
-    member this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> =
+    member this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> = async {
         match state.Solution with
-        | None -> async.Return []
-        | Some currentSolution -> SymbolFinder.FindCallersAsync(symbol, currentSolution) |> Async.AwaitTask
+        | None -> return []
+        | Some currentSolution ->
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindCallersAsync(symbol, currentSolution, cancellationToken=ct)
+                |> Async.AwaitTask
+    }
 
     member this.ResolveTypeSymbolLocations
             (project: Microsoft.CodeAnalysis.Project)
@@ -167,23 +189,28 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     }
 
     member this.FindSymbols (pattern: string option): Async<ISymbol seq> = async {
-        let findTask =
+        let findTask ct =
                 match pattern with
                 | Some pat ->
-                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember)
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember, cancellationToken=ct)
                 | None ->
-                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, konst true, SymbolFilter.TypeAndMember)
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, konst true, SymbolFilter.TypeAndMember, cancellationToken=ct)
 
         match this.State.Solution with
         | None -> return []
-        | Some solution -> return! findTask solution |> Async.AwaitTask
+        | Some solution ->
+            let! ct = Async.CancellationToken
+            return! findTask ct solution |> Async.AwaitTask
     }
 
     member this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
         match this.State.Solution with
         | None -> return []
         | Some solution ->
-            return! SymbolFinder.FindReferencesAsync(symbol, solution) |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            return!
+                SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken=ct)
+                |> Async.AwaitTask
     }
 
     member this.GetDocumentVersion (uri: DocumentUri): int option =
