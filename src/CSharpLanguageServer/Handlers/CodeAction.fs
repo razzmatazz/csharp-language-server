@@ -1,10 +1,11 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open System.IO
 open System.Collections.Generic
 open System.Collections.Immutable
+open System.IO
 open System.Reflection
+open System.Threading
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CodeActions
@@ -70,10 +71,8 @@ module CodeAction =
             (fun _ -> true)
 
     // TODO: refactor it. I think a long function in functional language is hard to read :)
-    let private getRoslynCodeActions (doc: Document) (textSpan: TextSpan)
+    let private getRoslynCodeActions (doc: Document) (textSpan: TextSpan) (ct: CancellationToken)
         : Async<CodeActions.CodeAction list> = async {
-        let! ct = Async.CancellationToken
-
         let roslynCodeActions = List<CodeActions.CodeAction>()
         let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
         let codeActionContext = CodeRefactoringContext(doc, textSpan, addCodeAction, ct)
@@ -95,7 +94,7 @@ module CodeAction =
             diag.Location.SourceSpan.IntersectsWith(textSpan)
 
         let relatedDiagnostics =
-            semanticModel.GetDiagnostics()
+            semanticModel.GetDiagnostics(cancellationToken=ct)
             |> Seq.filter isDiagnosticsOnTextSpan
             |> List.ofSeq
 
@@ -153,7 +152,7 @@ module CodeAction =
             let! value = op ()
             return Some value
         with ex ->
-            logger.info (
+            logger.warn (
                 Log.setMessage "Error in asyncMaybeOnException"
                 >> Log.addException ex
             )
@@ -184,10 +183,8 @@ module CodeAction =
             (updatedSolution: Solution)
             (tryGetDocVersionByUri: string -> int option)
             (originatingDoc: Document)
+            (ct: CancellationToken)
             : Async<TextDocumentEdit list> = async {
-
-        let! ct = Async.CancellationToken
-
         // make a list of changes
         let solutionProjectChanges = updatedSolution.GetChanges(originalSolution).GetProjectChanges()
 
@@ -248,10 +245,9 @@ module CodeAction =
             originalSolution
             tryGetDocVersionByUri
             (originatingDoc: Document)
+            (ct: CancellationToken)
             (ca: CodeActions.CodeAction)
         : Async<CodeAction option> = async {
-
-        let! ct = Async.CancellationToken
 
         let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(ct) |> Async.AwaitTask)
 
@@ -266,6 +262,7 @@ module CodeAction =
                                               op.ChangedSolution
                                               tryGetDocVersionByUri
                                               originatingDoc
+                                              ct
             let edit: WorkspaceEdit = {
                 Changes = None
                 DocumentChanges = docTextEdit |> Array.ofList |> Some
@@ -324,10 +321,11 @@ module CodeAction =
         match scope.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let textSpan = Range.toTextSpan docText.Lines p.Range
 
-            let! roslynCodeActions = getRoslynCodeActions doc textSpan
+            let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
                 scope.ClientCapabilities
@@ -345,7 +343,7 @@ module CodeAction =
                             { TextDocumentUri = p.TextDocument.Uri
                               Range = p.Range }
 
-                        logger.info (
+                        logger.trace (
                             Log.setMessage "codeaction data: {data}"
                             >> Log.addContextDestructured "data" resolutionData
                         )
@@ -364,6 +362,7 @@ module CodeAction =
                                 doc.Project.Solution
                                 scope.GetDocumentVersion
                                 doc
+                                ct
                                 ca
 
                         if maybeLspCa.IsSome then
@@ -395,7 +394,7 @@ module CodeAction =
             let textSpan = Range.toTextSpan docText.Lines resolutionData.Value.Range
 
             let! roslynCodeActions =
-                getRoslynCodeActions doc textSpan
+                getRoslynCodeActions doc textSpan ct
 
             let selectedCodeAction = roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = p.Title)
 
@@ -404,6 +403,7 @@ module CodeAction =
                                                     doc.Project.Solution
                                                     scope.GetDocumentVersion
                                                     doc
+                                                    ct
 
             let! maybeLspCodeAction =
                 match selectedCodeAction with
@@ -411,7 +411,7 @@ module CodeAction =
                     let! resolvedCA = toResolvedLspCodeAction ca
 
                     if resolvedCA.IsNone then
-                        logger.info (
+                        logger.error (
                             Log.setMessage "handleCodeActionResolve: could not resolve {action} - null"
                             >> Log.addContext "action" (string ca)
                         )
