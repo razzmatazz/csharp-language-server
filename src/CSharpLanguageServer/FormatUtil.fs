@@ -67,8 +67,9 @@ module internal FormatUtil =
         |> Seq.toArray
 
     let getChanges (doc: Document) (oldDoc: Document) : Async<TextEdit[]> = async {
-        let! changes = doc.GetTextChangesAsync oldDoc |> Async.AwaitTask
-        let! oldText = oldDoc.GetTextAsync() |> Async.AwaitTask
+        let! ct = Async.CancellationToken
+        let! changes = doc.GetTextChangesAsync(oldDoc, ct) |> Async.AwaitTask
+        let! oldText = oldDoc.GetTextAsync(ct) |> Async.AwaitTask
         return convert oldText (changes |> Seq.toArray)
     }
 
