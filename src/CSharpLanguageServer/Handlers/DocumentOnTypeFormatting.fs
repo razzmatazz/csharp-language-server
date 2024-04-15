@@ -47,18 +47,21 @@ module DocumentOnTypeFormatting =
         | None -> return None |> success
         | Some doc ->
             let options = FormatUtil.getFormattingOptions doc p.Options
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let pos = Position.toRoslynPosition sourceText.Lines p.Position
 
             match p.Ch with
             | ';'
             | '}'
             | ')' ->
-                let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
+                let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
                 match FormatUtil.findFormatTarget root pos with
                 | None -> return None |> success
                 | Some node ->
-                    let! newDoc = Formatter.FormatAsync(doc, TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End), options) |> Async.AwaitTask
+                    let! newDoc =
+                        Formatter.FormatAsync(doc, TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End), options, cancellationToken=ct)
+                        |> Async.AwaitTask
                     let! textEdits = FormatUtil.getChanges newDoc doc
                     return textEdits |> Some |> success
             | _ -> return None |> success
