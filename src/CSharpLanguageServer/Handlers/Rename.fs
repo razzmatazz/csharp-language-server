@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.Threading
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -11,7 +12,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
@@ -21,6 +21,7 @@ module Rename =
     let private logger = LogProvider.getLoggerByName "Rename"
 
     let private lspDocChangesFromSolutionDiff
+        (ct: CancellationToken)
         (originalSolution: Solution)
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
@@ -31,9 +32,9 @@ module Rename =
             (docId: DocumentId)
             : Async<TextDocumentEdit> = async {
             let originalDoc = originalSolution.GetDocument(docId)
-            let! originalDocText = originalDoc.GetTextAsync() |> Async.AwaitTask
+            let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
             let updatedDoc = updatedSolution.GetDocument(docId)
-            let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc) |> Async.AwaitTask
+            let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
             let diffEdits: TextEdit array =
                 docChanges
@@ -93,11 +94,12 @@ module Rename =
         match scope.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let! docSyntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let position = Position.toRoslynPosition docText.Lines p.Position
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
+            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
             let symbolIsFromMetadata =
                 symbolMaybe
                 |> Option.ofObj
@@ -109,7 +111,7 @@ module Rename =
 
             let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
-            let! rootNode = docSyntaxTree.GetRootAsync() |> Async.AwaitTask
+            let! rootNode = docSyntaxTree.GetRootAsync(ct) |> Async.AwaitTask
             let nodeOnPos =
                 rootNode.FindNode(textSpan, findInsideTrivia = false, getInnermostNodeForTie = true)
 
@@ -154,6 +156,7 @@ module Rename =
         match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
+            let! ct = Async.CancellationToken
             let originalSolution = doc.Project.Solution
 
             let! updatedSolution =
@@ -161,11 +164,13 @@ module Rename =
                     doc.Project.Solution,
                     symbol,
                     SymbolRenameOptions(RenameOverloads = true, RenameInStrings = true, RenameInComments = true),
-                    p.NewName
+                    p.NewName,
+                    ct
                 )
                 |> Async.AwaitTask
 
-            let! docTextEdit = lspDocChangesFromSolutionDiff originalSolution updatedSolution scope.OpenDocVersions.TryFind
+            let! docTextEdit =
+                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution scope.OpenDocVersions.TryFind
 
             let clientCapabilities =
                 scope.ClientCapabilities
@@ -175,5 +180,6 @@ module Rename =
                       Experimental = None
                       Window = None
                       General = None }
+
             return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success
     }
