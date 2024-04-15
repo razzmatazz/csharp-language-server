@@ -135,11 +135,11 @@ module DocumentSymbol =
         let pop (_node: SyntaxNode) =
             let symbolStack' =
                 match symbolStack with
-                | [] -> Exception("symbolStack is empty") |> raise
+                | [] -> failwith "symbolStack is empty"
                 | [_] -> []
                 | top :: restPastTop ->
                     match restPastTop with
-                    | [] -> Exception("restPastTop is empty") |> raise
+                    | [] -> failwith "restPastTop is empty"
                     | parent :: restPastParent ->
                         let parentWithTopAsChild =
                             let newChildren =
@@ -319,9 +319,10 @@ module DocumentSymbol =
         match scope.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-            let! docText = doc.GetTextAsync() |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollector(docText, semanticModel)
             collector.Init(doc.Name)
