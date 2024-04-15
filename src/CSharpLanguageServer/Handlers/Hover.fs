@@ -37,7 +37,8 @@ module Hover =
         match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel |> markdown
             let hover =
                 { Contents = MarkupContent content
