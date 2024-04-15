@@ -89,13 +89,14 @@ module SignatureHelp =
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
             let position = Position.toRoslynPosition sourceText.Lines p.Position
 
-            let! syntaxTree = doc.GetSyntaxTreeAsync() |> Async.AwaitTask
-            let! root = syntaxTree.GetRootAsync() |> Async.AwaitTask
+            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
             let rec findInvocationContext (node: SyntaxNode): InvocationContext option =
                 match node with

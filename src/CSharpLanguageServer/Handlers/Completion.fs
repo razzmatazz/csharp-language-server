@@ -12,7 +12,6 @@ open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
@@ -90,7 +89,8 @@ module Completion =
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let position =
                 sourceText.Lines.GetPosition(LinePosition(p.Position.Line, p.Position.Character))
@@ -98,7 +98,9 @@ module Completion =
             let completionService = CompletionService.GetService(doc)
             // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
             // `AbandonedMutexException`, `Accessibility`, ..., which are unnecessary and time-consuming.
-            let! completions = completionService.GetCompletionsAsync(doc, position) |> Async.AwaitTask
+            let! completions =
+                completionService.GetCompletionsAsync(doc, position, cancellationToken=ct)
+                |> Async.AwaitTask
 
             match Option.ofObj completions with
             | None -> return None |> success
@@ -106,7 +108,7 @@ module Completion =
                 // TODO: Move it to resolve? But it needs us to remember/cache the completions.ItemsList.
                 let! descriptions =
                     completions.ItemsList
-                    |> Seq.map (fun item -> completionService.GetDescriptionAsync(doc, item) |> Async.AwaitTask)
+                    |> Seq.map (fun item -> completionService.GetDescriptionAsync(doc, item, cancellationToken=ct) |> Async.AwaitTask)
                     |> Async.Parallel
                     |> Async.map (Seq.map Option.ofObj)
                 let items =

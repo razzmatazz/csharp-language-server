@@ -11,7 +11,6 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
@@ -43,14 +42,15 @@ module DocumentHighlight =
         | _ -> true
 
     let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
+        let! ct = Async.CancellationToken
         let filePath = Uri.toPath p.TextDocument.Uri
 
         // We only need to find references in the file (not the whole workspace), so we don't use
         // wm.FindSymbol & wm.FindReferences here.
         let getHighlights (symbol: ISymbol) (doc: Document) = async {
             let docSet = ImmutableHashSet.Create(doc)
-            let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, docSet) |> Async.AwaitTask
-            let! def = SymbolFinder.FindSourceDefinitionAsync(symbol, doc.Project.Solution) |> Async.AwaitTask
+            let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, docSet, cancellationToken=ct) |> Async.AwaitTask
+            let! def = SymbolFinder.FindSourceDefinitionAsync(symbol, doc.Project.Solution, cancellationToken=ct) |> Async.AwaitTask
 
             let locations =
                 refs
@@ -66,13 +66,9 @@ module DocumentHighlight =
                       Kind = Some DocumentHighlightKind.Read })
         }
 
-        match scope.GetDocument p.TextDocument.Uri with
+        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
-        | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
-            let position = Position.toRoslynPosition sourceText.Lines p.Position
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position) |> Async.AwaitTask
-
+        | Some (symbol, doc) ->
             match Option.ofObj symbol with
             | Some symbol when shouldHighlight symbol ->
                 let! highlights = getHighlights symbol doc

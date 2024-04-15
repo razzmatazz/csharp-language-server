@@ -221,9 +221,10 @@ module InlayHint =
         match scope.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
-            let! root = doc.GetSyntaxRootAsync() |> Async.AwaitTask
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let textSpan = Range.toTextSpan sourceText.Lines p.Range
 
             let inlayHints =

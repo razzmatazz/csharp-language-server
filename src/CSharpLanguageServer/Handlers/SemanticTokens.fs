@@ -115,12 +115,13 @@ module SemanticTokens =
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
-            let! sourceText = doc.GetTextAsync() |> Async.AwaitTask
+            let! ct = Async.CancellationToken
+            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let textSpan =
                 range
                 |> Option.map (Range.toTextSpan sourceText.Lines)
                 |> Option.defaultValue (TextSpan(0, sourceText.Length))
-            let! spans = Classifier.GetClassifiedSpansAsync(doc, textSpan) |> Async.AwaitTask
+            let! spans = Classifier.GetClassifiedSpansAsync(doc, textSpan, ct) |> Async.AwaitTask
             let tokens =
                 spans
                 |> Seq.groupBy (fun span -> span.TextSpan)
