@@ -32,16 +32,18 @@ module Initialization =
             >> Log.addContext "version" serverVersion
         )
 
-        do! lspClient.WindowLogMessage({ Type = MessageType.Info
-                                         Message = sprintf "initializing, %s version %s" serverName serverVersion })
+        do! lspClient.WindowShowMessage(
+            { Type = MessageType.Info
+              Message = sprintf "csharp-ls: initializing, version %s" serverVersion })
 
         logger.info (
             Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
             >> Log.addContext "name" serverName
         )
 
-        do! lspClient.WindowLogMessage({ Type = MessageType.Info
-                                         Message = sprintf "%s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName })
+        do! lspClient.WindowShowMessage(
+            { Type = MessageType.Info
+              Message = sprintf "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName })
 
         let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
         let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
