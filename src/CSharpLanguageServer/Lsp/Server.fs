@@ -31,15 +31,10 @@ type CSharpLspServer(
         settings: ServerSettings
     ) =
 
-    let logger = LogProvider.getLoggerByName "LSP"
-
-    let logMessage m =
-        logger.info (Log.setMessage m)
-        async.Return ()
+    let logger = LogProvider.getLoggerByName "Server"
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
-            logMessage
             { emptyServerState with Settings = settings })
 
     let getDocumentForUriFromCurrentState docType uri =
@@ -80,7 +75,7 @@ type CSharpLspServer(
 
             let! state = stateActor.PostAndAsyncReply(GetState)
 
-            let scope = ServerRequestScope(requestId, state, stateActor.Post, logMessage)
+            let scope = ServerRequestScope(requestId, state, stateActor.Post)
 
             return! handlerFn scope param
         }
@@ -205,7 +200,7 @@ type CSharpLspServer(
             p |> withReadOnlyScope Hover.handle
 
         override this.TextDocumentDidOpen(p) =
-            p |> withReadOnlyScope (TextDocumentSync.didOpen logMessage diagnostics.Post)
+            p |> withReadOnlyScope (TextDocumentSync.didOpen diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentDidChange(p) =
@@ -217,7 +212,7 @@ type CSharpLspServer(
               |> ignoreResult
 
         override this.TextDocumentDidSave(p) =
-            p |> withReadWriteScope (TextDocumentSync.didSave logMessage diagnostics.Post)
+            p |> withReadWriteScope (TextDocumentSync.didSave diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentWillSave(p) = ignoreNotification
@@ -290,7 +285,7 @@ type CSharpLspServer(
             p |> withReadOnlyScope DocumentSymbol.handle
 
         override __.WorkspaceDidChangeWatchedFiles(p) =
-            p |> withReadWriteScope (Workspace.didChangeWatchedFiles logMessage diagnostics.Post)
+            p |> withReadWriteScope (Workspace.didChangeWatchedFiles diagnostics.Post)
               |> ignoreResult
 
         override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification

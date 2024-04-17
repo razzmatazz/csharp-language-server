@@ -10,9 +10,12 @@ open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
+    let private logger = LogProvider.getLoggerByName "TextDocumentSync"
+
     let private applyLspContentChangesOnRoslynSourceText
             (changes: TextDocumentContentChangeEvent[])
             (initialSourceText: SourceText) =
@@ -40,8 +43,7 @@ module TextDocumentSync =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let didOpen (logMessage: Util.AsyncLogFn)
-                (diagnosticsPost: DiagnosticsEvent -> unit)
+    let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
                 (scope: ServerRequestScope)
                 (openParams: DidOpenTextDocumentParams)
             : Async<LspResult<unit>> =
@@ -73,7 +75,7 @@ module TextDocumentSync =
                 // ok, this document is not on solution, register a new document
                 let! newDocMaybe =
                     tryAddDocument
-                        logMessage
+                        logger
                         docFilePath
                         openParams.TextDocument.Text
                         scope.Solution
@@ -132,8 +134,7 @@ module TextDocumentSync =
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
-    let didSave (logMessage: Util.AsyncLogFn)
-                (diagnosticsPost: DiagnosticsEvent -> unit)
+    let didSave (diagnosticsPost: DiagnosticsEvent -> unit)
                 (scope: ServerRequestScope)
                 (saveParams: DidSaveTextDocumentParams)
             : Async<LspResult<unit>> =
@@ -148,7 +149,7 @@ module TextDocumentSync =
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
             let! newDocMaybe =
                 tryAddDocument
-                    logMessage
+                    logger
                     docFilePath
                     saveParams.Text.Value
                     scope.Solution

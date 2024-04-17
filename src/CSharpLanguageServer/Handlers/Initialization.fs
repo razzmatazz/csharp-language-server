@@ -24,6 +24,9 @@ module Initialization =
                          (scope: ServerRequestScope)
                          (p: InitializeParams)
             : Async<LspResult<InitializeResult>> = async {
+        // state.LspClient has not been initialized yet thus scope.WindowShowMessage will not work
+        let windowShowMessage m = lspClient.WindowShowMessage({ Type = MessageType.Info; Message = m })
+
         scope.Emit(ClientChange (Some lspClient))
 
         let serverName = "csharp-ls"
@@ -34,18 +37,16 @@ module Initialization =
             >> Log.addContext "version" serverVersion
         )
 
-        do! lspClient.WindowShowMessage(
-            { Type = MessageType.Info
-              Message = sprintf "csharp-ls: initializing, version %s" serverVersion })
+        do! windowShowMessage(
+            sprintf "csharp-ls: initializing, version %s" serverVersion)
 
         logger.info (
             Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
             >> Log.addContext "name" serverName
         )
 
-        do! lspClient.WindowShowMessage(
-            { Type = MessageType.Info
-              Message = sprintf "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName })
+        do! windowShowMessage(
+            sprintf "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName)
 
         let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
         let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)

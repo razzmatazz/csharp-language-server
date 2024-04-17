@@ -134,7 +134,14 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
-let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
+let processServerEvent logger state postMsg msg: Async<ServerState> = async {
+    let showMessage m =
+        match state.LspClient with
+        | Some lspClient -> lspClient.WindowShowMessage(
+            { Type = MessageType.Info
+              Message = sprintf "csharp-ls: %s" m })
+        | None -> async.Return ()
+
     match msg with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
@@ -257,7 +264,7 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            let! newSolution = loadSolutionOnSolutionPathOrDir logMessage state.Settings.SolutionPath state.RootPath
+            let! newSolution = loadSolutionOnSolutionPathOrDir logger showMessage state.Settings.SolutionPath state.RootPath
 
             return { state with Solution = newSolution
                                 SolutionReloadPending = None }
@@ -266,15 +273,20 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
             return state
 }
 
-let serverEventLoop (logMessage: AsyncLogFn) initialState (inbox: MailboxProcessor<ServerStateEvent>) =
+let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
+    let logger = LogProvider.getLoggerByName "serverEventLoop"
+
     let rec loop state = async {
         let! msg = inbox.Receive()
 
         try
-            let! newState = msg |> processServerEvent logMessage state inbox.Post
+            let! newState = msg |> processServerEvent logger state inbox.Post
             return! loop newState
         with ex ->
-            do! logMessage (sprintf "serverEventLoop: crashed with %s" (string ex))
+            logger.debug (
+                Log.setMessage "serverEventLoop: crashed with {exception}"
+                >> Log.addContext "exception" (string ex)
+            )
             raise ex
     }
 

@@ -6,12 +6,11 @@ open Ionide.LanguageServerProtocol.Types
 open FSharpPlus
 
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 
-type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, logMessage: AsyncLogFn) =
+type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Solution
 
     member _.RequestId = requestId
@@ -21,7 +20,12 @@ type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent, lo
     member _.OpenDocVersions = state.OpenDocVersions
     member _.DecompiledMetadata = state.DecompiledMetadata
 
-    member _.logMessage _ = logMessage
+    member _.WindowShowMessage (m: string) =
+        match state.LspClient with
+        | Some lspClient -> lspClient.WindowShowMessage(
+            { Type = MessageType.Info
+              Message = sprintf "csharp-ls: %s" m })
+        | None -> async.Return ()
 
     member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
 
