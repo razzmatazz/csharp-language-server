@@ -6,6 +6,7 @@ open System.Threading
 
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol
 
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Util
@@ -33,6 +34,7 @@ type ServerRequest = {
 and ServerState = {
     Settings: ServerSettings
     RootPath: string
+    LspClient: ILspClient option
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
@@ -75,6 +77,7 @@ let pullNextRequestMaybe requestQueue =
 
 let emptyServerState = { Settings = ServerSettings.Default
                          RootPath = Directory.GetCurrentDirectory()
+                         LspClient = None
                          ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
@@ -92,6 +95,7 @@ type ServerDocumentType =
 type ServerStateEvent =
     | SettingsChange of ServerSettings
     | RootPathChange of string
+    | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
@@ -212,6 +216,9 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
     | RootPathChange rootPath ->
         return { state with RootPath = rootPath }
+
+    | ClientChange lspClient ->
+        return { state with LspClient = lspClient }
 
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }

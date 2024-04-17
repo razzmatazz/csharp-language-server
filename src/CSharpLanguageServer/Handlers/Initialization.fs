@@ -24,6 +24,8 @@ module Initialization =
                          (scope: ServerRequestScope)
                          (p: InitializeParams)
             : Async<LspResult<InitializeResult>> = async {
+        scope.Emit(ClientChange (Some lspClient))
+
         let serverName = "csharp-ls"
         let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
         logger.info (
@@ -172,3 +174,9 @@ module Initialization =
 
             return LspResult.Ok()
         }
+
+    let handleShutdown (scope: ServerRequestScope) (_: unit) : Async<LspResult<unit>> = async {
+        scope.Emit(ClientCapabilityChange None)
+        scope.Emit(ClientChange None)
+        return LspResult.Ok()
+    }

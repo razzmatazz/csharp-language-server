@@ -197,7 +197,7 @@ type CSharpLspServer(
               |> ignoreResult
 
         override __.Shutdown() =
-            () |> async.Return
+            () |> withReadWriteScope Initialization.handleShutdown |> ignoreResult
 
         override __.Exit() = ignoreNotification
 
