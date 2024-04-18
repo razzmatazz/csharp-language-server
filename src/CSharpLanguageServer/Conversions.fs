@@ -16,7 +16,12 @@ module Uri =
 
     let toPath (uri: string) = Uri.UnescapeDataString(Uri(unescape(uri)).LocalPath)
 
-    let fromPath (path: string) = Uri(path).ToString()
+    let fromPath (path: string) =
+        let metadataPrefix = "$metadata$/"
+        if path.StartsWith(metadataPrefix) then
+            "csharp:/metadata/" + path.Substring(metadataPrefix.Length)
+        else
+            Uri(path).ToString()
 
     let toWorkspaceFolder(uri: string): WorkspaceFolder =
         { Uri = uri

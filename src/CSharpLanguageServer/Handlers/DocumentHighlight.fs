@@ -46,7 +46,7 @@ module DocumentHighlight =
         let filePath = Uri.toPath p.TextDocument.Uri
 
         // We only need to find references in the file (not the whole workspace), so we don't use
-        // wm.FindSymbol & wm.FindReferences here.
+        // context.FindSymbol & context.FindReferences here.
         let getHighlights (symbol: ISymbol) (doc: Document) = async {
             let docSet = ImmutableHashSet.Create(doc)
             let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, docSet, cancellationToken=ct) |> Async.AwaitTask
