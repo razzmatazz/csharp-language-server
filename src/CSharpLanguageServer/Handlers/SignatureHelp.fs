@@ -84,8 +84,8 @@ module SignatureHelp =
                         RetriggerCharacters = None
                         DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
-        let docMaybe = scope.GetUserDocument p.TextDocument.Uri
+    let handle (context: ServerRequestContext) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
+        let docMaybe = context.GetUserDocument p.TextDocument.Uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->

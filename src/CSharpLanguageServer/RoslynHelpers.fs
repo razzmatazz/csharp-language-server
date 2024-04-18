@@ -21,8 +21,8 @@ open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.Text
 
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Logging
 
 type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol) =
@@ -238,7 +238,7 @@ type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
-type WorkspaceServicesInterceptor (logMessage) =
+type WorkspaceServicesInterceptor () =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             invocation.Proceed()
@@ -250,19 +250,19 @@ type WorkspaceServicesInterceptor (logMessage) =
 
                     match serviceType.FullName with
                     | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
-                        let interceptor = LegacyWorkspaceOptionServiceInterceptor(logMessage)
+                        let interceptor = LegacyWorkspaceOptionServiceInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | "Microsoft.CodeAnalysis.PickMembers.IPickMembersService" ->
-                        let interceptor = PickMembersServiceInterceptor(logMessage)
+                        let interceptor = PickMembersServiceInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | "Microsoft.CodeAnalysis.ExtractClass.IExtractClassOptionsService" ->
-                        let interceptor = ExtractClassOptionsServiceInterceptor(logMessage)
+                        let interceptor = ExtractClassOptionsServiceInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
-                        let interceptor = MoveStaticMembersOptionsServiceInterceptor(logMessage)
+                        let interceptor = MoveStaticMembersOptionsServiceInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | _ ->
@@ -271,7 +271,7 @@ type WorkspaceServicesInterceptor (logMessage) =
 
                 invocation.ReturnValue <- updatedReturnValue
 
-type CSharpLspHostServices (logMessage) =
+type CSharpLspHostServices () =
     inherit HostServices()
 
     member private this.hostServices = MSBuildMefHostServices.DefaultServices
@@ -285,52 +285,62 @@ type CSharpLspHostServices (logMessage) =
             methodInfo.Invoke(this.hostServices, [| workspace |])
             |> Unchecked.unbox<HostWorkspaceServices>
         let generator = ProxyGenerator()
-        let interceptor = WorkspaceServicesInterceptor(logMessage)
+        let interceptor = WorkspaceServicesInterceptor()
         generator.CreateClassProxyWithTarget(services, interceptor)
 
-let tryLoadSolutionOnPath (logMessage: AsyncLogFn) solutionPath = async {
+let tryLoadSolutionOnPath (logger: ILog) (showMessage: string -> Async<unit>) solutionPath = async {
     try
-        do! logMessage (sprintf "loading solution \"%s\".." solutionPath)
+        do! showMessage (sprintf "loading solution \"%s\".." solutionPath)
 
-        let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices(logMessage))
+        let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
         let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
         for diag in msbuildWorkspace.Diagnostics do
-            do! logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+            logger.trace (
+                Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
+                >> Log.addContext "message" (diag.ToString())
+            )
 
-        do! logMessage (sprintf "finished loading solution \"%s\"" solutionPath)
+        do! showMessage (sprintf "finished loading solution \"%s\"" solutionPath)
 
         return Some msbuildWorkspace.CurrentSolution
     with
     | ex ->
-        do! logMessage ("solution loading has failed with error: " + ex.ToString())
+        do! showMessage ("solution loading has failed with error: " + ex.ToString())
         return None
 }
 
-let tryLoadSolutionFromProjectFiles (logMessage: AsyncLogFn) (projFiles: string list) = async {
-    let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices(logMessage))
+let tryLoadSolutionFromProjectFiles (logger: ILog) (showMessage: string -> Async<unit>) (projFiles: string list) = async {
+    let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
     msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
     for file in projFiles do
-        do! logMessage (sprintf "loading project \"%s\".." file)
+        do! showMessage (sprintf "loading project \"%s\".." file)
         try
             do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
         with ex ->
-            do! logMessage (sprintf "could not OpenProjectAsync('%s'): %s" file (ex |> string))
+            logger.error (
+                Log.setMessage "could not OpenProjectAsync('{file}'): {exception}"
+                >> Log.addContext "file" file
+                >> Log.addContext "ex" (string ex)
+            )
         ()
 
-    do! logMessage (sprintf "OK, %d project files loaded" projFiles.Length)
+    do! showMessage (sprintf "OK, %d project files loaded" projFiles.Length)
 
     for diag in msbuildWorkspace.Diagnostics do
-        do! logMessage ("msbuildWorkspace.Diagnostics: " + diag.ToString())
+        logger.trace (
+            Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
+            >> Log.addContext "message" (diag.ToString())
+        )
 
     //workspace <- Some(msbuildWorkspace :> Workspace)
     return Some msbuildWorkspace.CurrentSolution
 }
 
-let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
+let findAndLoadSolutionOnDir (logger: ILog) (showMessage: string -> Async<unit>) dir = async {
     let fileNotOnNodeModules (filename: string) =
         filename.Split(Path.DirectorySeparatorChar)
         |> Seq.contains "node_modules"
@@ -341,7 +351,7 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
         |> Seq.filter fileNotOnNodeModules
         |> Seq.toList
 
-    do! logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+    do! showMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
     let singleSolutionFound =
         match solutionFiles with
@@ -350,8 +360,8 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
 
     match singleSolutionFound with
     | None ->
-        do! logMessage ("no or multiple .sln files found on " + dir)
-        do! logMessage ("looking for .csproj/fsproj files on " + dir + "..")
+        do! showMessage ("no or multiple .sln files found on " + dir)
+        do! showMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
         let projFiles =
             let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
@@ -363,26 +373,26 @@ let findAndLoadSolutionOnDir (logMessage: AsyncLogFn) dir = async {
 
         if projFiles.Length = 0 then
             let message = "no or .csproj/.fsproj or sln files found on " + dir
-            do! logMessage message
+            do! showMessage message
             Exception message |> raise
 
-        let! solution = tryLoadSolutionFromProjectFiles logMessage projFiles
+        let! solution = tryLoadSolutionFromProjectFiles logger showMessage projFiles
         return solution
 
     | Some solutionPath ->
-        let! solution = tryLoadSolutionOnPath logMessage solutionPath
+        let! solution = tryLoadSolutionOnPath logger showMessage solutionPath
         return solution
 }
 
-let loadSolutionOnSolutionPathOrDir (logMessage: AsyncLogFn) solutionPathMaybe rootPath =
+let loadSolutionOnSolutionPathOrDir (logger: ILog) (showMessage: string -> Async<unit>) solutionPathMaybe rootPath =
     match solutionPathMaybe with
     | Some solutionPath -> async {
-        return! tryLoadSolutionOnPath logMessage solutionPath
+        return! tryLoadSolutionOnPath logger showMessage solutionPath
       }
 
     | None -> async {
-        do! logMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
-        return! findAndLoadSolutionOnDir logMessage rootPath
+        do! showMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
+        return! findAndLoadSolutionOnDir logger showMessage rootPath
       }
 
 let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =
@@ -405,7 +415,7 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
-let tryAddDocument (logMessage: AsyncLogFn)
+let tryAddDocument (logger: ILog)
                    (docFilePath: string)
                    (text: string)
                    (solution: Solution)
@@ -437,7 +447,10 @@ let tryAddDocument (logMessage: AsyncLogFn)
             Some newDoc |> async.Return
 
         | None -> async {
-            do! logMessage (sprintf "No parent project could be resolved to add file \"%s\" to workspace" docFilePath)
+            logger.trace (
+                Log.setMessage "No parent project could be resolved to add file \"{file}\" to workspace"
+                >> Log.addContext "file" docFilePath
+            )
             return None
           }
 

@@ -10,8 +10,8 @@ module Color =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (scope: ServerRequestScope) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
+    let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return
 
-    let present (scope: ServerRequestScope) (p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> =
+    let present (context: ServerRequestContext) (p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> =
         LspResult.notImplemented<ColorPresentation[]> |> async.Return

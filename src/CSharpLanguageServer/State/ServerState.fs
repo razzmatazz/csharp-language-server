@@ -6,9 +6,9 @@ open System.Threading
 
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol
 
 open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
@@ -33,6 +33,7 @@ type ServerRequest = {
 and ServerState = {
     Settings: ServerSettings
     RootPath: string
+    LspClient: ILspClient option
     ClientCapabilities: ClientCapabilities option
     Solution: Solution option
     OpenDocVersions: Map<string, int>
@@ -75,6 +76,7 @@ let pullNextRequestMaybe requestQueue =
 
 let emptyServerState = { Settings = ServerSettings.Default
                          RootPath = Directory.GetCurrentDirectory()
+                         LspClient = None
                          ClientCapabilities = None
                          Solution = None
                          OpenDocVersions = Map.empty
@@ -92,6 +94,7 @@ type ServerDocumentType =
 type ServerStateEvent =
     | SettingsChange of ServerSettings
     | RootPathChange of string
+    | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
@@ -130,7 +133,14 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
-let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerState> = async {
+let processServerEvent logger state postMsg msg: Async<ServerState> = async {
+    let showMessage m =
+        match state.LspClient with
+        | Some lspClient -> lspClient.WindowShowMessage(
+            { Type = MessageType.Info
+              Message = sprintf "csharp-ls: %s" m })
+        | None -> async.Return ()
+
     match msg with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
@@ -213,6 +223,9 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
     | RootPathChange rootPath ->
         return { state with RootPath = rootPath }
 
+    | ClientChange lspClient ->
+        return { state with LspClient = lspClient }
+
     | ClientCapabilityChange cc ->
         return { state with ClientCapabilities = cc }
 
@@ -250,7 +263,7 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            let! newSolution = loadSolutionOnSolutionPathOrDir logMessage state.Settings.SolutionPath state.RootPath
+            let! newSolution = loadSolutionOnSolutionPathOrDir logger showMessage state.Settings.SolutionPath state.RootPath
 
             return { state with Solution = newSolution
                                 SolutionReloadPending = None }
@@ -259,15 +272,20 @@ let processServerEvent (logMessage: AsyncLogFn) state postMsg msg: Async<ServerS
             return state
 }
 
-let serverEventLoop (logMessage: AsyncLogFn) initialState (inbox: MailboxProcessor<ServerStateEvent>) =
+let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
+    let logger = LogProvider.getLoggerByName "serverEventLoop"
+
     let rec loop state = async {
         let! msg = inbox.Receive()
 
         try
-            let! newState = msg |> processServerEvent logMessage state inbox.Post
+            let! newState = msg |> processServerEvent logger state inbox.Post
             return! loop newState
         with ex ->
-            do! logMessage (sprintf "serverEventLoop: crashed with %s" (string ex))
+            logger.debug (
+                Log.setMessage "serverEventLoop: crashed with {exception}"
+                >> Log.addContext "exception" (string ex)
+            )
             raise ex
     }
 

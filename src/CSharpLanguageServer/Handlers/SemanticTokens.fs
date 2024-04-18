@@ -110,8 +110,8 @@ module SemanticTokens =
                 cChar
         (deltaLine, deltaChar, cLen, cToken, cModifiers)
 
-    let private getSemanticTokensRange (scope: ServerRequestScope) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
-        let docMaybe = scope.GetUserDocument uri
+    let private getSemanticTokensRange (context: ServerRequestContext) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
+        let docMaybe = context.GetUserDocument uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
@@ -171,15 +171,15 @@ module SemanticTokens =
                         DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
-    let handleFull (scope: ServerRequestScope) (p: SemanticTokensParams): AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange scope p.TextDocument.Uri None
+    let handleFull (context: ServerRequestContext) (p: SemanticTokensParams): AsyncLspResult<SemanticTokens option> =
+        getSemanticTokensRange context p.TextDocument.Uri None
 
     let handleFullDelta
-        (scope: ServerRequestScope)
+        (context: ServerRequestContext)
         (p: SemanticTokensDeltaParams)
         : AsyncLspResult<U2<SemanticTokens, SemanticTokensDelta> option> =
         LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>
         |> async.Return
 
-    let handleRange (scope: ServerRequestScope) (p: SemanticTokensRangeParams): AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange scope p.TextDocument.Uri (Some p.Range)
+    let handleRange (context: ServerRequestContext) (p: SemanticTokensRangeParams): AsyncLspResult<SemanticTokens option> =
+        getSemanticTokensRange context p.TextDocument.Uri (Some p.Range)

@@ -10,5 +10,5 @@ module Diagnostic =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (scope: ServerRequestScope) (def: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport option> =
+    let handle (context: ServerRequestContext) (def: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport option> =
         LspResult.notImplemented<DocumentDiagnosticReport option> |> async.Return

@@ -10,5 +10,5 @@ module InlineValue =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (scope: ServerRequestScope) (p: InlineValueParams) : AsyncLspResult<InlineValue[] option> =
+    let handle (context: ServerRequestContext) (p: InlineValueParams) : AsyncLspResult<InlineValue[] option> =
         LspResult.notImplemented<InlineValue[] option> |> async.Return

@@ -11,5 +11,5 @@ module Moniker =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (scope: ServerRequestScope) (def: TextDocumentPositionParams) : AsyncLspResult<Moniker[] option> =
+    let handle (context: ServerRequestContext) (def: TextDocumentPositionParams) : AsyncLspResult<Moniker[] option> =
         notImplemented<Moniker[] option> |> async.Return

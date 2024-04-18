@@ -40,19 +40,19 @@ module TypeHierarchy =
                   Method = "textDocument/prepareTypeHierarchy"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let prepare (scope: ServerRequestScope) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        match! scope.FindSymbol p.TextDocument.Uri p.Position with
+    let prepare (context: ServerRequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
+        match! context.FindSymbol p.TextDocument.Uri p.Position with
         | Some symbol when isTypeSymbol symbol ->
-            let! itemList = HierarchyItem.fromSymbol scope.ResolveSymbolLocations symbol
+            let! itemList = HierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
             return itemList |> List.toArray |> Some |> success
         | _ -> return None |> success
     }
 
     let supertypes
-        (scope: ServerRequestScope)
-        (p: TypeHierarchySupertypesParams)
-        : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        match! scope.FindSymbol p.Item.Uri p.Item.Range.Start with
+            (context: ServerRequestContext)
+            (p: TypeHierarchySupertypesParams)
+            : AsyncLspResult<TypeHierarchyItem[] option> = async {
+        match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
         | Some symbol when isTypeSymbol symbol ->
             let typeSymbol = symbol :?> INamedTypeSymbol
             let baseType =
@@ -62,24 +62,24 @@ module TypeHierarchy =
                 |> Option.toList
             let interfaces = Seq.toList typeSymbol.Interfaces
             let supertypes = baseType @ interfaces
-            let! items = supertypes |> Seq.map (HierarchyItem.fromSymbol scope.ResolveSymbolLocations) |> Async.Parallel
+            let! items = supertypes |> Seq.map (HierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
             return items |> Seq.collect id |> Seq.toArray |> Some |> success
         | _ -> return None |> success
     }
 
-    let subtypes (scope: ServerRequestScope) (p: TypeHierarchySubtypesParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        match! scope.FindSymbol p.Item.Uri p.Item.Range.Start with
+    let subtypes (context: ServerRequestContext) (p: TypeHierarchySubtypesParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
+        match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
         | Some symbol when isTypeSymbol symbol ->
             let typeSymbol = symbol :?> INamedTypeSymbol
             // We only want immediately derived classes/interfaces/implementations here (we only need
             // subclasses not subclasses' subclasses)
             let! subtypes =
-                [ scope.FindDerivedClasses' typeSymbol false
-                  scope.FindDerivedInterfaces' typeSymbol false
-                  scope.FindImplementations' typeSymbol false ]
+                [ context.FindDerivedClasses' typeSymbol false
+                  context.FindDerivedInterfaces' typeSymbol false
+                  context.FindImplementations' typeSymbol false ]
                 |> Async.Parallel
                 |> map (Seq.collect id >> Seq.toList)
-            let! items = subtypes |> Seq.map (HierarchyItem.fromSymbol scope.ResolveSymbolLocations) |> Async.Parallel
+            let! items = subtypes |> Seq.map (HierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
             return items |> Seq.collect id |> Seq.toArray |> Some |> success
         | _ -> return None |> success
     }

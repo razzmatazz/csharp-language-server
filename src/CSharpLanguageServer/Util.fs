@@ -21,8 +21,6 @@ let makeFileUri (path: string): string =
     | true -> "file:///" + fullPath
     | false -> "file://" + fullPath
 
-type AsyncLogFn = string -> Async<unit>
-
 let unwindProtect cleanupFn op =
     async {
         try

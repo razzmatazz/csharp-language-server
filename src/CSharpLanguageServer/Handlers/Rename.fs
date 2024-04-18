@@ -88,10 +88,10 @@ module Rename =
                       { PrepareProvider = Some (prepareSupport clientCapabilities)
                         DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let prepare (scope: ServerRequestScope)
+    let prepare (context: ServerRequestContext)
                 (p: PrepareRenameParams)
                 : AsyncLspResult<PrepareRenameResult option> = async {
-        match scope.GetUserDocument p.TextDocument.Uri with
+        match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -150,10 +150,10 @@ module Rename =
     }
 
     let handle
-        (scope: ServerRequestScope)
-        (p: RenameParams)
-        : AsyncLspResult<WorkspaceEdit option> = async {
-        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
+            (context: ServerRequestContext)
+            (p: RenameParams)
+            : AsyncLspResult<WorkspaceEdit option> = async {
+        match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
             let! ct = Async.CancellationToken
@@ -170,10 +170,10 @@ module Rename =
                 |> Async.AwaitTask
 
             let! docTextEdit =
-                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution scope.OpenDocVersions.TryFind
+                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution context.OpenDocVersions.TryFind
 
             let clientCapabilities =
-                scope.ClientCapabilities
+                context.ClientCapabilities
                 |> Option.defaultValue
                     { Workspace = None
                       TextDocument = None

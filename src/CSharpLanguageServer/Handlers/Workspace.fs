@@ -11,9 +11,12 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Workspace =
+    let private logger = LogProvider.getLoggerByName "Workspace"
+
     let dynamicRegistration (clientCapabilities: ClientCapabilities option) =
         clientCapabilities
         |> Option.bind (fun x -> x.Workspace)
@@ -34,13 +37,13 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = { Watchers = [| fileSystemWatcher |] } |> serialize |> Some }
 
-    let private tryReloadDocumentOnUri logMessage diagnosticsPost (scope: ServerRequestScope) uri = async {
-        match scope.GetUserDocument uri with
+    let private tryReloadDocumentOnUri logger diagnosticsPost (context: ServerRequestContext) uri = async {
+        match context.GetUserDocument uri with
         | Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
-            scope.Emit(SolutionChange updatedDoc.Project.Solution)
+            context.Emit(SolutionChange updatedDoc.Project.Solution)
             diagnosticsPost(DocumentBacklogUpdate)
 
         | None ->
@@ -49,52 +52,51 @@ module Workspace =
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
-                let! newDocMaybe = tryAddDocument logMessage
+                let! newDocMaybe = tryAddDocument logger
                                                     docFilePath
                                                     fileText
-                                                    scope.Solution
+                                                    context.Solution
                 match newDocMaybe with
                 | Some newDoc ->
-                    scope.Emit(SolutionChange newDoc.Project.Solution)
+                    context.Emit(SolutionChange newDoc.Project.Solution)
                     diagnosticsPost(DocumentBacklogUpdate)
                 | None -> ()
             | None -> ()
     }
 
-    let private removeDocument diagnosticsPost (scope: ServerRequestScope) uri =
-        match scope.GetUserDocument uri with
+    let private removeDocument diagnosticsPost (context: ServerRequestContext) uri =
+        match context.GetUserDocument uri with
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            scope.Emit(SolutionChange updatedProject.Solution)
-            scope.Emit(OpenDocVersionRemove uri)
+            context.Emit(SolutionChange updatedProject.Solution)
+            context.Emit(OpenDocVersionRemove uri)
 
             diagnosticsPost(DocumentRemoval uri)
         | None -> ()
 
-    let didChangeWatchedFiles (logMessage: Util.AsyncLogFn)
-                              (diagnosticsPost: DiagnosticsEvent -> unit)
-                              (scope: ServerRequestScope)
+    let didChangeWatchedFiles (diagnosticsPost: DiagnosticsEvent -> unit)
+                              (context: ServerRequestContext)
                               (p: DidChangeWatchedFilesParams)
             : Async<LspResult<unit>> = async {
         for change in p.Changes do
             match Path.GetExtension(change.Uri) with
             | ".csproj" ->
-                do! logMessage "change to .csproj detected, will reload solution"
-                scope.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
+                do! context.WindowShowMessage "change to .csproj detected, will reload solution"
+                context.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
 
             | ".sln" ->
-                do! logMessage "change to .sln detected, will reload solution"
-                scope.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
+                do! context.WindowShowMessage "change to .sln detected, will reload solution"
+                context.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5)))
 
             | ".cs" ->
                 match change.Type with
                 | FileChangeType.Created ->
-                    do! tryReloadDocumentOnUri logMessage diagnosticsPost scope change.Uri
+                    do! tryReloadDocumentOnUri logger diagnosticsPost context change.Uri
                 | FileChangeType.Changed ->
-                    do! tryReloadDocumentOnUri logMessage diagnosticsPost scope change.Uri
+                    do! tryReloadDocumentOnUri logger diagnosticsPost context change.Uri
                 | FileChangeType.Deleted ->
-                    do removeDocument diagnosticsPost scope change.Uri
+                    do removeDocument diagnosticsPost context change.Uri
                 | _ -> ()
 
             | _ -> ()
@@ -102,7 +104,7 @@ module Workspace =
         return Ok()
     }
 
-    let didChangeConfiguration (scope: ServerRequestScope)
+    let didChangeConfiguration (context: ServerRequestContext)
                                (configParams: DidChangeConfigurationParams)
             : Async<LspResult<unit>> = async {
         let csharpSettings =
@@ -111,8 +113,8 @@ module Workspace =
             |> (fun x -> x.csharp)
             |> Option.defaultValue ServerSettingsCSharpDto.Default
 
-        let newServerSettings = { scope.State.Settings with SolutionPath = csharpSettings.solution }
-        scope.Emit(SettingsChange newServerSettings)
+        let newServerSettings = { context.State.Settings with SolutionPath = csharpSettings.solution }
+        context.Emit(SettingsChange newServerSettings)
 
         return Ok()
     }

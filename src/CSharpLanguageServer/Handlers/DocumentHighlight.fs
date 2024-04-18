@@ -41,12 +41,12 @@ module DocumentHighlight =
         | :? INamespaceSymbol -> false
         | _ -> true
 
-    let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
+    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
         let! ct = Async.CancellationToken
         let filePath = Uri.toPath p.TextDocument.Uri
 
         // We only need to find references in the file (not the whole workspace), so we don't use
-        // wm.FindSymbol & wm.FindReferences here.
+        // context.FindSymbol & context.FindReferences here.
         let getHighlights (symbol: ISymbol) (doc: Document) = async {
             let docSet = ImmutableHashSet.Create(doc)
             let! refs = SymbolFinder.FindReferencesAsync(symbol, doc.Project.Solution, docSet, cancellationToken=ct) |> Async.AwaitTask
@@ -66,7 +66,7 @@ module DocumentHighlight =
                       Kind = Some DocumentHighlightKind.Read })
         }
 
-        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
+        match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
             match Option.ofObj symbol with

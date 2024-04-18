@@ -27,7 +27,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State/ServerState.fs" />
-    <Compile Include="State/ServerRequestScope.fs" />
+    <Compile Include="State/ServerRequestContext.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />
     <Compile Include="Handlers/CodeAction.fs" />
