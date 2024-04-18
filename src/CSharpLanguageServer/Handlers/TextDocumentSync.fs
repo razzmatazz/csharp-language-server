@@ -44,10 +44,10 @@ module TextDocumentSync =
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
-                (scope: ServerRequestScope)
+                (context: ServerRequestContext)
                 (openParams: DidOpenTextDocumentParams)
             : Async<LspResult<unit>> =
-        match scope.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
+        match context.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
         | Some (doc, docType) ->
             match docType with
             | UserDocument ->
@@ -56,8 +56,8 @@ module TextDocumentSync =
                 // went out of sync with editor
                 let updatedDoc = SourceText.From(openParams.TextDocument.Text) |> doc.WithText
 
-                scope.Emit(OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version))
-                scope.Emit(SolutionChange updatedDoc.Project.Solution)
+                context.Emit(OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version))
+                context.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnosticsPost(
                     DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
@@ -78,11 +78,11 @@ module TextDocumentSync =
                         logger
                         docFilePath
                         openParams.TextDocument.Text
-                        scope.Solution
+                        context.Solution
 
                 match newDocMaybe with
                 | Some newDoc ->
-                    scope.Emit(SolutionChange newDoc.Project.Solution)
+                    context.Emit(SolutionChange newDoc.Project.Solution)
 
                     diagnosticsPost(
                         DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
@@ -96,11 +96,11 @@ module TextDocumentSync =
                 LspResult.Ok() |> async.Return
 
     let didChange (diagnosticsPost: DiagnosticsEvent -> unit)
-                  (scope: ServerRequestScope)
+                  (context: ServerRequestContext)
                   (changeParams: DidChangeTextDocumentParams)
             : Async<LspResult<unit>> =
       async {
-        let docMaybe = scope.GetUserDocument changeParams.TextDocument.Uri
+        let docMaybe = context.GetUserDocument changeParams.TextDocument.Uri
         match docMaybe with
         | Some doc ->
                 let! ct = Async.CancellationToken
@@ -115,8 +115,8 @@ module TextDocumentSync =
 
                 let updatedSolution = updatedDoc.Project.Solution
 
-                scope.Emit(SolutionChange updatedSolution)
-                scope.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version))
+                context.Emit(SolutionChange updatedSolution)
+                context.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version))
 
                 diagnosticsPost(
                     DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
@@ -127,19 +127,19 @@ module TextDocumentSync =
     }
 
     let didClose (diagnosticsPost: DiagnosticsEvent -> unit)
-                 (scope: ServerRequestScope)
+                 (context: ServerRequestContext)
                  (closeParams: DidCloseTextDocumentParams)
             : Async<LspResult<unit>> =
-        scope.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
+        context.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
     let didSave (diagnosticsPost: DiagnosticsEvent -> unit)
-                (scope: ServerRequestScope)
+                (context: ServerRequestContext)
                 (saveParams: DidSaveTextDocumentParams)
             : Async<LspResult<unit>> =
         // we need to add this file to solution if not already
-        let doc = scope.GetDocument saveParams.TextDocument.Uri
+        let doc = context.GetDocument saveParams.TextDocument.Uri
 
         match doc with
         | Some _ ->
@@ -152,11 +152,11 @@ module TextDocumentSync =
                     logger
                     docFilePath
                     saveParams.Text.Value
-                    scope.Solution
+                    context.Solution
 
             match newDocMaybe with
             | Some newDoc ->
-                scope.Emit(SolutionChange newDoc.Project.Solution)
+                context.Emit(SolutionChange newDoc.Project.Solution)
 
                 diagnosticsPost(
                     DocumentOpenOrChange (saveParams.TextDocument.Uri, DateTime.Now))

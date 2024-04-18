@@ -21,13 +21,13 @@ module Initialization =
     let handleInitialize (lspClient: ILspClient)
                          (setupTimer: unit -> unit)
                          (serverCapabilities: ServerCapabilities)
-                         (scope: ServerRequestScope)
+                         (context: ServerRequestContext)
                          (p: InitializeParams)
             : Async<LspResult<InitializeResult>> = async {
-        // state.LspClient has not been initialized yet thus scope.WindowShowMessage will not work
+        // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
         let windowShowMessage m = lspClient.WindowShowMessage({ Type = MessageType.Info; Message = m })
 
-        scope.Emit(ClientChange (Some lspClient))
+        context.Emit(ClientChange (Some lspClient))
 
         let serverName = "csharp-ls"
         let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
@@ -78,11 +78,11 @@ module Initialization =
             >> Log.addContext "caps" (serialize p.Capabilities)
         )
 *)
-        scope.Emit(ClientCapabilityChange p.Capabilities)
+        context.Emit(ClientCapabilityChange p.Capabilities)
 
         // TODO use p.RootUri
         let rootPath = Directory.GetCurrentDirectory()
-        scope.Emit(RootPathChange rootPath)
+        context.Emit(RootPathChange rootPath)
 
         // setup timer so actors get period ticks
         setupTimer()
@@ -98,7 +98,7 @@ module Initialization =
     let handleInitialized (lspClient: ILspClient)
                           (stateActor: MailboxProcessor<ServerStateEvent>)
                           (getRegistrations: (ClientCapabilities option) -> Registration list)
-                          (scope: ServerRequestScope)
+                          (context: ServerRequestContext)
                           (_p: InitializedParams)
             : Async<LspResult<unit>> =
         async {
@@ -106,7 +106,7 @@ module Initialization =
                 Log.setMessage "handleInitialized: \"initialized\" notification received from client"
             )
 
-            let registrationParams = { Registrations = getRegistrations scope.ClientCapabilities |> List.toArray }
+            let registrationParams = { Registrations = getRegistrations context.ClientCapabilities |> List.toArray }
 
             // TODO: Retry on error?
             try
@@ -146,7 +146,7 @@ module Initialization =
                       | Some csharpSettings ->
 
                           match csharpSettings.solution with
-                          | Some solutionPath-> Some { scope.State.Settings with SolutionPath = Some solutionPath }
+                          | Some solutionPath-> Some { context.State.Settings with SolutionPath = Some solutionPath }
                           | _ -> None
 
                       | _ -> None
@@ -156,7 +156,7 @@ module Initialization =
 
                 match newSettingsMaybe with
                 | Some newSettings ->
-                    scope.Emit(SettingsChange newSettings)
+                    context.Emit(SettingsChange newSettings)
                 | _ -> ()
             with
             | ex ->
@@ -176,8 +176,8 @@ module Initialization =
             return LspResult.Ok()
         }
 
-    let handleShutdown (scope: ServerRequestScope) (_: unit) : Async<LspResult<unit>> = async {
-        scope.Emit(ClientCapabilityChange None)
-        scope.Emit(ClientChange None)
+    let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
+        context.Emit(ClientCapabilityChange None)
+        context.Emit(ClientChange None)
         return LspResult.Ok()
     }

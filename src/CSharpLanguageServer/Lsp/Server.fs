@@ -56,9 +56,9 @@ type CSharpLspServer(
 
     let mutable workspaceFolders: WorkspaceFolder list = []
 
-    let withScope
+    let withContext
             requestType
-            (handlerFn: ServerRequestScope -> 'a -> Async<LspResult<'b>>)
+            (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>)
             param =
         let requestName = handlerFn.ToString()
 
@@ -75,9 +75,9 @@ type CSharpLspServer(
 
             let! state = stateActor.PostAndAsyncReply(GetState)
 
-            let scope = ServerRequestScope(requestId, state, stateActor.Post)
+            let context = ServerRequestContext(requestId, state, stateActor.Post)
 
-            return! handlerFn scope param
+            return! handlerFn context param
         }
 
         let wrapExceptionAsLspResult op =
@@ -98,8 +98,8 @@ type CSharpLspServer(
         |> wrapExceptionAsLspResult
         |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
 
-    let withReadOnlyScope handlerFn = withScope ReadOnly handlerFn
-    let withReadWriteScope handlerFn = withScope ReadWrite handlerFn
+    let withReadOnlyContext handlerFn = withContext ReadOnly handlerFn
+    let withReadWriteContext handlerFn = withContext ReadWrite handlerFn
 
     let ignoreResult handlerFn = async {
         let! _ = handlerFn
@@ -185,34 +185,34 @@ type CSharpLspServer(
 
         override __.Initialize(p) =
             let serverCapabilities = getServerCapabilities p
-            p |> withReadWriteScope (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
+            p |> withReadWriteContext (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
 
         override __.Initialized(p) =
-            p |> withReadWriteScope (Initialization.handleInitialized lspClient stateActor getRegistrations)
+            p |> withReadWriteContext (Initialization.handleInitialized lspClient stateActor getRegistrations)
               |> ignoreResult
 
         override __.Shutdown() =
-            () |> withReadWriteScope Initialization.handleShutdown |> ignoreResult
+            () |> withReadWriteContext Initialization.handleShutdown |> ignoreResult
 
         override __.Exit() = ignoreNotification
 
         override this.TextDocumentHover(p) =
-            p |> withReadOnlyScope Hover.handle
+            p |> withReadOnlyContext Hover.handle
 
         override this.TextDocumentDidOpen(p) =
-            p |> withReadOnlyScope (TextDocumentSync.didOpen diagnostics.Post)
+            p |> withReadOnlyContext (TextDocumentSync.didOpen diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentDidChange(p) =
-            p |> withReadWriteScope (TextDocumentSync.didChange diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didChange diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentDidClose(p) =
-            p |> withReadWriteScope (TextDocumentSync.didClose diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didClose diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentDidSave(p) =
-            p |> withReadWriteScope (TextDocumentSync.didSave diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didSave diagnostics.Post)
               |> ignoreResult
 
         override this.TextDocumentWillSave(p) = ignoreNotification
@@ -220,78 +220,78 @@ type CSharpLspServer(
         override this.TextDocumentWillSaveWaitUntil(p) = notImplemented
 
         override this.TextDocumentCompletion(p) =
-            p |> withReadOnlyScope Completion.handle
+            p |> withReadOnlyContext Completion.handle
 
         override this.CompletionItemResolve(p) = notImplemented
 
         override this.TextDocumentPrepareRename(p) =
-            p |> withReadOnlyScope Rename.prepare
+            p |> withReadOnlyContext Rename.prepare
 
         override this.TextDocumentRename(p) =
-            p |> withReadOnlyScope Rename.handle
+            p |> withReadOnlyContext Rename.handle
 
         override this.TextDocumentDefinition(p) =
-            p |> withReadOnlyScope Definition.handle
+            p |> withReadOnlyContext Definition.handle
 
         override this.TextDocumentReferences(p) =
-            p |> withReadOnlyScope References.handle
+            p |> withReadOnlyContext References.handle
 
         override this.TextDocumentDocumentHighlight(p) =
-            p |> withReadOnlyScope DocumentHighlight.handle
+            p |> withReadOnlyContext DocumentHighlight.handle
 
         override this.TextDocumentDocumentLink(p) =
-            p |> withReadOnlyScope DocumentLink.handle
+            p |> withReadOnlyContext DocumentLink.handle
 
         override this.DocumentLinkResolve(p) =
-            p |> withReadOnlyScope DocumentLink.resolve
+            p |> withReadOnlyContext DocumentLink.resolve
 
         override this.TextDocumentTypeDefinition(p) =
-            p |> withReadOnlyScope TypeDefinition.handle
+            p |> withReadOnlyContext TypeDefinition.handle
 
         override this.TextDocumentImplementation(p) =
-            p |> withReadOnlyScope Implementation.handle
+            p |> withReadOnlyContext Implementation.handle
 
         override this.TextDocumentCodeAction(p) =
-            p |> withReadOnlyScope CodeAction.handle
+            p |> withReadOnlyContext CodeAction.handle
 
         override this.CodeActionResolve(p) =
-            p |> withReadOnlyScope CodeAction.resolve
+            p |> withReadOnlyContext CodeAction.resolve
 
         override this.TextDocumentCodeLens(p) =
-            p |> withReadOnlyScope CodeLens.handle
+            p |> withReadOnlyContext CodeLens.handle
 
         override this.CodeLensResolve(p) =
-            p |> withReadOnlyScope CodeLens.resolve
+            p |> withReadOnlyContext CodeLens.resolve
 
         override this.TextDocumentSignatureHelp(p) =
-            p |> withReadOnlyScope SignatureHelp.handle
+            p |> withReadOnlyContext SignatureHelp.handle
 
         override this.TextDocumentDocumentColor(p) =
-            p |> withReadOnlyScope Color.handle
+            p |> withReadOnlyContext Color.handle
 
         override this.TextDocumentColorPresentation(p) =
-            p |> withReadOnlyScope Color.present
+            p |> withReadOnlyContext Color.present
 
         override this.TextDocumentFormatting(p) =
-            p |> withReadOnlyScope DocumentFormatting.handle
+            p |> withReadOnlyContext DocumentFormatting.handle
 
         override this.TextDocumentRangeFormatting(p) =
-            p |> withReadOnlyScope DocumentRangeFormatting.handle
+            p |> withReadOnlyContext DocumentRangeFormatting.handle
 
         override this.TextDocumentOnTypeFormatting(p) =
-            p |> withReadOnlyScope DocumentOnTypeFormatting.handle
+            p |> withReadOnlyContext DocumentOnTypeFormatting.handle
 
         override this.TextDocumentDocumentSymbol(p) =
-            p |> withReadOnlyScope DocumentSymbol.handle
+            p |> withReadOnlyContext DocumentSymbol.handle
 
         override __.WorkspaceDidChangeWatchedFiles(p) =
-            p |> withReadWriteScope (Workspace.didChangeWatchedFiles diagnostics.Post)
+            p |> withReadWriteContext (Workspace.didChangeWatchedFiles diagnostics.Post)
               |> ignoreResult
 
         override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification
 
         override __.WorkspaceDidChangeConfiguration(p) =
-            p |> withReadWriteScope Workspace.didChangeConfiguration
+            p |> withReadWriteContext Workspace.didChangeConfiguration
               |> ignoreResult
 
         override __.WorkspaceWillCreateFiles(p) = notImplemented
@@ -307,72 +307,72 @@ type CSharpLspServer(
         override __.WorkspaceDidDeleteFiles(p) = ignoreNotification
 
         override this.WorkspaceSymbol(p) =
-            p |> withReadOnlyScope WorkspaceSymbol.handle
+            p |> withReadOnlyContext WorkspaceSymbol.handle
 
         override this.WorkspaceExecuteCommand(p) =
-            p |> withReadOnlyScope ExecuteCommand.handle
+            p |> withReadOnlyContext ExecuteCommand.handle
 
         override this.TextDocumentFoldingRange(p) =
-            p |> withReadOnlyScope FoldingRange.handle
+            p |> withReadOnlyContext FoldingRange.handle
 
         override this.TextDocumentSelectionRange(p) =
-            p |> withReadOnlyScope SelectionRange.handle
+            p |> withReadOnlyContext SelectionRange.handle
 
         override this.TextDocumentSemanticTokensFull(p) =
-            p |> withReadOnlyScope SemanticTokens.handleFull
+            p |> withReadOnlyContext SemanticTokens.handleFull
 
         override this.TextDocumentSemanticTokensFullDelta(p) =
-            p |> withReadOnlyScope SemanticTokens.handleFullDelta
+            p |> withReadOnlyContext SemanticTokens.handleFullDelta
 
         override this.TextDocumentSemanticTokensRange(p) =
-            p |> withReadOnlyScope SemanticTokens.handleRange
+            p |> withReadOnlyContext SemanticTokens.handleRange
 
         override this.TextDocumentInlayHint(p) =
-            p |> withReadOnlyScope InlayHint.handle
+            p |> withReadOnlyContext InlayHint.handle
 
         override this.InlayHintResolve(p) =
-            p |> withReadOnlyScope InlayHint.resolve
+            p |> withReadOnlyContext InlayHint.resolve
 
         override __.WorkDoneProgressCancel(p) = ignoreNotification
 
         override this.TextDocumentInlineValue(p) = notImplemented
 
         override this.TextDocumentPrepareCallHierarchy(p) =
-            p |> withReadOnlyScope CallHierarchy.prepare
+            p |> withReadOnlyContext CallHierarchy.prepare
 
         override this.CallHierarchyIncomingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.incomingCalls
+            p |> withReadOnlyContext CallHierarchy.incomingCalls
 
         override this.CallHierarchyOutgoingCalls(p) =
-            p |> withReadOnlyScope CallHierarchy.outgoingCalls
+            p |> withReadOnlyContext CallHierarchy.outgoingCalls
 
         override this.TextDocumentPrepareTypeHierarchy(p) =
-            p |> withReadOnlyScope TypeHierarchy.prepare
+            p |> withReadOnlyContext TypeHierarchy.prepare
 
         override this.TypeHierarchySupertypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.supertypes
+            p |> withReadOnlyContext TypeHierarchy.supertypes
 
         override this.TypeHierarchySubtypes(p) =
-            p |> withReadOnlyScope TypeHierarchy.subtypes
+            p |> withReadOnlyContext TypeHierarchy.subtypes
 
         override this.TextDocumentDeclaration(p) =
-            p |> withReadOnlyScope Declaration.handle
+            p |> withReadOnlyContext Declaration.handle
 
         override this.WorkspaceDiagnostic(p) = notImplemented
 
         override this.WorkspaceSymbolResolve(p) =
-            p |> withReadOnlyScope WorkspaceSymbol.resolve
+            p |> withReadOnlyContext WorkspaceSymbol.resolve
 
         override this.TextDocumentDiagnostic(p) = notImplemented
 
         override this.TextDocumentLinkedEditingRange(p) =
-            p |> withReadOnlyScope LinkedEditingRange.handle
+            p |> withReadOnlyContext LinkedEditingRange.handle
 
         override this.TextDocumentMoniker(p) =
-            p |> withReadOnlyScope Moniker.handle
+            p |> withReadOnlyContext Moniker.handle
 
         override this.CSharpMetadata(p) =
-            p |> withReadOnlyScope CSharpMetadata.handle
+            p |> withReadOnlyContext CSharpMetadata.handle
 
 module Server =
     let logger = LogProvider.getLoggerByName "LSP"

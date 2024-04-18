@@ -84,8 +84,8 @@ module Completion =
             // TODO: Change description to MarkupContent instead of plain text?
             Documentation    = description |> Option.map (fun x -> Documentation.String x.Text) }
 
-    let handle (scope: ServerRequestScope) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
-        let docMaybe = scope.GetUserDocument p.TextDocument.Uri
+    let handle (context: ServerRequestContext) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
+        let docMaybe = context.GetUserDocument p.TextDocument.Uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
@@ -122,5 +122,5 @@ module Completion =
                 return completionList |> Some |> success
     }
 
-    let resolve (scope: ServerRequestScope) (p: CompletionItem) : AsyncLspResult<CompletionItem> =
+    let resolve (context: ServerRequestContext) (p: CompletionItem) : AsyncLspResult<CompletionItem> =
         LspResult.notImplemented<CompletionItem> |> async.Return

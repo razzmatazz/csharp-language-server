@@ -33,13 +33,13 @@ module WorkspaceSymbol =
                   Method = "workspace/symbol"
                   RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
+    let handle (context: ServerRequestContext) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
         let pattern =
             if String.IsNullOrEmpty(p.Query) then
                 None
             else
                 Some p.Query
-        let! symbols = scope.FindSymbols pattern
+        let! symbols = context.FindSymbols pattern
         return
             symbols
             |> Seq.map (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
@@ -52,5 +52,5 @@ module WorkspaceSymbol =
             |> success
     }
 
-    let resolve (scope: ServerRequestScope) (p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
+    let resolve (context: ServerRequestContext) (p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
         LspResult.notImplemented<WorkspaceSymbol> |> async.Return

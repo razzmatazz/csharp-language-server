@@ -33,11 +33,11 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
-        match! scope.FindSymbol p.TextDocument.Uri p.Position with
+    let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+        match! context.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some symbol ->
-            let! refs = scope.FindReferences symbol
+            let! refs = context.FindReferences symbol
             // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
             return
                 refs

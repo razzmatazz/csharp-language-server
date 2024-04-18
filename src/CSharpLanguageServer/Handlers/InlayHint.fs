@@ -217,8 +217,8 @@ module InlayHint =
                     { ResolveProvider = Some false
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
-        match scope.GetUserDocument p.TextDocument.Uri with
+    let handle (context: ServerRequestContext) (p: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
+        match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -235,5 +235,5 @@ module InlayHint =
             return inlayHints |> Seq.toArray |> Some |> success
     }
 
-    let resolve (scope: ServerRequestScope) (p: InlayHint) : AsyncLspResult<InlayHint> =
+    let resolve (context: ServerRequestContext) (p: InlayHint) : AsyncLspResult<InlayHint> =
         LspResult.notImplemented<InlayHint> |> async.Return

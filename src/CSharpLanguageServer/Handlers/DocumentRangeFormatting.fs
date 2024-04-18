@@ -36,8 +36,8 @@ module DocumentRangeFormatting =
                   Method = "textDocument/rangeFormatting"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        match scope.GetUserDocument p.TextDocument.Uri with
+    let handle (context: ServerRequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+        match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken

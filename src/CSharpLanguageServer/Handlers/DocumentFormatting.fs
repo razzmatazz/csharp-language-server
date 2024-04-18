@@ -34,8 +34,8 @@ module DocumentFormatting =
                   Method = "textDocument/formatting"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit [] option> = async {
-        match scope.GetUserDocument p.TextDocument.Uri with
+    let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit [] option> = async {
+        match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken

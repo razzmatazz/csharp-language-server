@@ -315,10 +315,10 @@ module CodeAction =
                       ResolveProvider = Some true
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope)
+    let handle (context: ServerRequestContext)
                (p: CodeActionParams)
             : AsyncLspResult<TextDocumentCodeActionResult option> = async {
-        match scope.GetDocument p.TextDocument.Uri with
+        match context.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -328,7 +328,7 @@ module CodeAction =
             let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
-                scope.ClientCapabilities
+                context.ClientCapabilities
                 |> Option.bind (fun x -> x.TextDocument)
                 |> Option.bind (fun x -> x.CodeAction)
                 |> Option.bind (fun x -> x.ResolveSupport)
@@ -360,7 +360,7 @@ module CodeAction =
                         let! maybeLspCa =
                             roslynCodeActionToResolvedLspCodeAction
                                 doc.Project.Solution
-                                scope.GetDocumentVersion
+                                context.GetDocumentVersion
                                 doc
                                 ct
                                 ca
@@ -380,12 +380,12 @@ module CodeAction =
                |> success
     }
 
-    let resolve (scope: ServerRequestScope) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
+    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
         let resolutionData =
             p.Data
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        match scope.GetDocument resolutionData.Value.TextDocumentUri with
+        match context.GetDocument resolutionData.Value.TextDocumentUri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -401,7 +401,7 @@ module CodeAction =
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
                                                     doc.Project.Solution
-                                                    scope.GetDocumentVersion
+                                                    context.GetDocumentVersion
                                                     doc
                                                     ct
 

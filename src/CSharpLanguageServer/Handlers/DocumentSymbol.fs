@@ -305,18 +305,17 @@ module DocumentSymbol =
                     { Label = None
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle
-        (scope: ServerRequestScope)
-        (p: DocumentSymbolParams)
-        : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
+    let handle (context: ServerRequestContext)
+               (p: DocumentSymbolParams)
+            : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
         let canEmitDocSymbolHierarchy =
-            scope.ClientCapabilities
+            context.ClientCapabilities
             |> Option.bind (fun cc -> cc.TextDocument)
             |> Option.bind (fun cc -> cc.DocumentSymbol)
             |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
             |> Option.defaultValue false
 
-        match scope.GetDocument p.TextDocument.Uri with
+        match context.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken

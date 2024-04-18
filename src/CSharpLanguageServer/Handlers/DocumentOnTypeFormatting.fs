@@ -42,8 +42,8 @@ module DocumentOnTypeFormatting =
                       MoreTriggerCharacter = Some([| '}'; ')' |])
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        match scope.GetUserDocument p.TextDocument.Uri with
+    let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+        match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let options = FormatUtil.getFormattingOptions doc p.Options

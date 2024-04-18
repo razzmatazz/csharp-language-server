@@ -11,5 +11,5 @@ module ExecuteCommand =
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (scope: ServerRequestScope) (p: ExecuteCommandParams) : AsyncLspResult<LSPAny> =
+    let handle (context: ServerRequestContext) (p: ExecuteCommandParams) : AsyncLspResult<LSPAny> =
         notImplemented<LSPAny> |> async.Return

@@ -33,8 +33,8 @@ module Hover =
                   Method = "textDocument/hover"
                   RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
-        match! scope.FindSymbol' p.TextDocument.Uri p.Position with
+    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
+        match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some (symbol, doc) ->
             let! ct = Async.CancellationToken

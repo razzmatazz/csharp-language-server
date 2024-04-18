@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 
-type ServerRequestScope (requestId: int, state: ServerState, emitServerEvent) =
+type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Solution
 
     member _.RequestId = requestId

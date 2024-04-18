@@ -131,8 +131,8 @@ module CodeLens =
                     { ResolveProvider = Some true
                       DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
 
-    let handle (scope: ServerRequestScope) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
-        let docMaybe = scope.GetDocument p.TextDocument.Uri
+    let handle (context: ServerRequestContext) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
+        let docMaybe = context.GetDocument p.TextDocument.Uri
         match docMaybe with
         | None -> return None |> success
         | Some doc ->
@@ -160,7 +160,7 @@ module CodeLens =
             return codeLens |> Array.ofSeq |> Some |> success
     }
 
-    let resolve (scope: ServerRequestScope)
+    let resolve (context: ServerRequestContext)
                 (p: CodeLens)
             : AsyncLspResult<CodeLens> = async {
         let lensData =
@@ -168,10 +168,10 @@ module CodeLens =
             |> Option.map (fun t -> t.ToObject<CodeLensData>())
             |> Option.defaultValue CodeLensData.Default
 
-        match! scope.FindSymbol lensData.DocumentUri lensData.Position with
+        match! context.FindSymbol lensData.DocumentUri lensData.Position with
         | None -> return p |> success
         | Some symbol ->
-            let! refs = scope.FindReferences symbol
+            let! refs = context.FindReferences symbol
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
             // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
             let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0

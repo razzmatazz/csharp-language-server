@@ -9,7 +9,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 
 open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
