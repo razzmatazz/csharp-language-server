@@ -14,8 +14,6 @@
     <PackageTags>csharp;lsp;roslyn</PackageTags>
     <PackageProjectUrl>https://github.com/razzmatazz/csharp-language-server</PackageProjectUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-    <PackageReadmeFile>..\..\README.md</PackageReadmeFile>
-    <ChangelogFile>..\..\CHANGELOG.md</ChangelogFile>
   </PropertyGroup>
 
   <ItemGroup>
