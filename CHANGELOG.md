@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.12.0] - 2024-04-22 / Valkininkai
 * Update Roslyn 4.7.0->4.9.2 to support C# 12
-  - PR by @arussellk: https://github.com/razzmatazz/csharp-language-server/pucl/141
+  - PR by @arussellk: https://github.com/razzmatazz/csharp-language-server/pull/141
 * Register server capabilities with the client lazily to improve startup performance
   - PR by @tcx4c70: https://github.com/razzmatazz/csharp-language-server/pull/102
 * Rework logging to be based on Serilog
