@@ -343,10 +343,13 @@ module CodeAction =
                             { TextDocumentUri = p.TextDocument.Uri
                               Range = p.Range }
 
+                        (*
                         logger.trace (
                             Log.setMessage "codeaction data: {data}"
                             >> Log.addContextDestructured "data" resolutionData
                         )
+                        *)
+
                         let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
                         { lspCa with Data = resolutionData |> serialize |> Some }
 
