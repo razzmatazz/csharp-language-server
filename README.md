@@ -24,7 +24,7 @@ See [csharp-ls nuget page](https://www.nuget.org/packages/csharp-ls/)
 
 - `csharp.solution` - solution to load, optional
 
-# Clients/Editor plugins
+# Clients
 
 `csharp-ls` implements the standard LSP protocol to interact with your editor.
 However there are some features that need a non-standard implementation and this
@@ -51,7 +51,7 @@ See [vscode-csharp-ls](https://marketplace.visualstudio.com/items?itemName=stati
 ## On Linux/macOS
 
 ```
-$ (cd src && dotnet build)
+$ dotnet build
 ```
 
 # Features
