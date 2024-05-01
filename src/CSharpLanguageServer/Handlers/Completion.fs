@@ -73,7 +73,8 @@ module Completion =
     // TODO: Change parameters to snippets like clangd
     let private makeLspCompletionItem
         (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
-        (description: Microsoft.CodeAnalysis.Completion.CompletionDescription option) =
+//        (description: Microsoft.CodeAnalysis.Completion.CompletionDescription option) =
+        =
         { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
             SortText         = item.SortText |> Option.ofString
@@ -82,7 +83,8 @@ module Completion =
             TextEditText     = item.DisplayTextPrefix |> Option.ofObj
             InsertTextFormat = Some InsertTextFormat.PlainText
             // TODO: Change description to MarkupContent instead of plain text?
-            Documentation    = description |> Option.map (fun x -> Documentation.String x.Text) }
+//          Documentation    = description |> Option.map (fun x -> Documentation.String x.Text)
+        }
 
     let handle (context: ServerRequestContext) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
         let docMaybe = context.GetUserDocument p.TextDocument.Uri
@@ -105,7 +107,7 @@ module Completion =
             match Option.ofObj completions with
             | None -> return None |> success
             | Some completions ->
-                // TODO: Move it to resolve? But it needs us to remember/cache the completions.ItemsList.
+                (* TODO: Move it to resolve? But it needs us to remember/cache the completions.ItemsList.
                 let! descriptions =
                     completions.ItemsList
                     |> Seq.map (fun item -> completionService.GetDescriptionAsync(doc, item, cancellationToken=ct) |> Async.AwaitTask)
@@ -115,6 +117,12 @@ module Completion =
                     Seq.zip completions.ItemsList descriptions
                     |> Seq.map (uncurry makeLspCompletionItem)
                     |> Array.ofSeq
+                *)
+                let items =
+                    completions.ItemsList
+                    |> Seq.map makeLspCompletionItem
+                    |> Array.ofSeq
+
                 let completionList =
                     { IsIncomplete = false
                       Items = items
