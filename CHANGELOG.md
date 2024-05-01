@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Update Ionide.LanguageServerProtocol dependency to v0.5.0
+
 ## [0.12.0] - 2024-04-22 / Valkininkai
 * Update Roslyn 4.7.0->4.9.2 to support C# 12
   - PR by @arussellk: https://github.com/razzmatazz/csharp-language-server/pull/141
