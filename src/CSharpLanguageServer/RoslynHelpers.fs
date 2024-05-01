@@ -239,6 +239,8 @@ type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
                 NotImplementedException(string invocation.Method) |> raise
 
 type WorkspaceServicesInterceptor () =
+    let logger = LogProvider.getLoggerByName "WorkspaceServicesInterceptor"
+
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             invocation.Proceed()
@@ -266,7 +268,10 @@ type WorkspaceServicesInterceptor () =
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | _ ->
-                        //logMessage (sprintf "WorkspaceServicesInterceptor: GetService(%s) resulted in null!" serviceType.FullName)
+                        logger.debug (
+                            Log.setMessage "GetService failed for {serviceType}"
+                            >> Log.addContext "serviceType" (serviceType.FullName)
+                        )
                         null
 
                 invocation.ReturnValue <- updatedReturnValue
