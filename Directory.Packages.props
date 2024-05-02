@@ -7,7 +7,8 @@
 
   <PropertyGroup>
     <RoslynPackageVersion>4.9.2</RoslynPackageVersion>
-    <MSBuildPackageVersion>17.7.2</MSBuildPackageVersion>
+    <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
+    <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,9 +21,9 @@
     <PackageVersion Include="ICSharpCode.Decompiler" Version="8.1.1.7464" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.5.0" />
-    <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
-    <PackageVersion Include="Microsoft.Build.Locator" Version="1.6.10" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
+    <PackageVersion Include="Microsoft.Build.Locator" Version="$(MSBuildLocatorPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Features" Version="$(RoslynPackageVersion)" />
