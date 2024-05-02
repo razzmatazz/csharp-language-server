@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Update Ionide.LanguageServerProtocol dependency to v0.5.0
 * Fix performance issue in completion handler introduced in 0.12.0
   - Reported by @DanielViberg in https://github.com/razzmatazz/csharp-language-server/issues/151, bisected by @DmitryHudrich
+* Fix "Extract interface.." code action
+  - Reported by @JorgeHerreraU in https://github.com/razzmatazz/csharp-language-server/issues/152
 
 ## [0.12.0] - 2024-04-22 / Valkininkai
 * Update Roslyn 4.7.0->4.9.2 to support C# 12
