@@ -210,6 +210,53 @@ type ExtractClassOptionsServiceInterceptor (_logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
+type ExtractInterfaceOptionsServiceInterceptor (logMessage) =
+    interface IInterceptor with
+
+        member __.Intercept(invocation: IInvocation) =
+            match invocation.Method.Name with
+            | "GetExtractInterfaceOptionsAsync" ->
+                let argExtractableMembers = invocation.Arguments[2] :?> List<ISymbol>
+                let argDefaultInterfaceName = invocation.Arguments[3] :?> string
+
+                let isCancelled = false
+                let fileName = sprintf "%s.cs" argDefaultInterfaceName
+
+                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
+
+                let extractInterfaceOptionsResultType =
+                    featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult")
+
+                let locationEnumType = extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
+                let location = Enum.Parse(locationEnumType, "NewFile") // or "SameFile"
+
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
+                let cleanCodeGenOptionsProvType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider")
+
+                let generator = ProxyGenerator()
+                let interceptor = CleanCodeGenerationOptionsProviderInterceptor(logMessage)
+                let cleanCodeGenerationOptionsProvider =
+                     generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)
+
+                let extractInterfaceOptionsResultValue =
+                    Activator.CreateInstance(
+                        extractInterfaceOptionsResultType,
+                        false, // isCancelled
+                        argExtractableMembers.ToImmutableArray(),
+                        argDefaultInterfaceName,
+                        fileName,
+                        location,
+                        cleanCodeGenerationOptionsProvider)
+
+                let fromResultMethod = typeof<Task>.GetMethod("FromResult")
+                let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractInterfaceOptionsResultType |])
+
+                invocation.ReturnValue <-
+                    typedFromResultMethod.Invoke(null, [| extractInterfaceOptionsResultValue |])
+
+            | _ ->
+                NotImplementedException(string invocation.Method.Name) |> raise
+
 type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
     interface IInterceptor with
        member __.Intercept(invocation: IInvocation) =
@@ -261,6 +308,10 @@ type WorkspaceServicesInterceptor () =
 
                     | "Microsoft.CodeAnalysis.ExtractClass.IExtractClassOptionsService" ->
                         let interceptor = ExtractClassOptionsServiceInterceptor()
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | "Microsoft.CodeAnalysis.ExtractInterface.IExtractInterfaceOptionsService" ->
+                        let interceptor = ExtractInterfaceOptionsServiceInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
