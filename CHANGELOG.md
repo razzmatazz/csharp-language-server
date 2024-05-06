@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @DanielViberg in https://github.com/razzmatazz/csharp-language-server/issues/151, bisected by @DmitryHudrich
 * Fix "Extract interface.." code action
   - Reported by @JorgeHerreraU in https://github.com/razzmatazz/csharp-language-server/issues/152
-* Bump MSBuild dependency versions
+* Bump MSBuild, Argu and ICSharpCode.Decompiler dependency versions
 * Bump Roslyn dependency 4.9.2->4.10.0-3.final
 
 ## [0.12.0] - 2024-04-22 / Valkininkai

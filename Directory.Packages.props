@@ -12,13 +12,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageVersion Include="Argu" Version="6.1.1" />
+    <PackageVersion Include="Argu" Version="6.2.3" />
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
     <PackageVersion Include="coverlet.collector" Version="3.0.3" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.1.1" />
     <PackageVersion Include="Expecto" Version="9.0.4" />
     <PackageVersion Include="FSharpPlus" Version="1.4.1" />
-    <PackageVersion Include="ICSharpCode.Decompiler" Version="8.1.1.7464" />
+    <PackageVersion Include="ICSharpCode.Decompiler" Version="8.2.0.7535" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.5.0" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
