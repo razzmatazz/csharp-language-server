@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RoslynPackageVersion>4.9.2</RoslynPackageVersion>
+    <RoslynPackageVersion>4.10.0-3.final</RoslynPackageVersion>
     <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
     <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
   </PropertyGroup>
