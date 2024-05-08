@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @JorgeHerreraU in https://github.com/razzmatazz/csharp-language-server/issues/152
 * Bump MSBuild, Argu and ICSharpCode.Decompiler dependency versions
 
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.12.0...0.13.0
+
 ## [0.12.0] - 2024-04-22 / Valkininkai
 * Update Roslyn 4.7.0->4.9.2 to support C# 12
   - PR by @arussellk: https://github.com/razzmatazz/csharp-language-server/pull/141
