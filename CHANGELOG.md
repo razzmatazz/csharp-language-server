@@ -10,7 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix "Extract interface.." code action
   - Reported by @JorgeHerreraU in https://github.com/razzmatazz/csharp-language-server/issues/152
 * Bump MSBuild, Argu and ICSharpCode.Decompiler dependency versions
-* Bump Roslyn dependency 4.9.2->4.10.0-3.final
 
 ## [0.12.0] - 2024-04-22 / Valkininkai
 * Update Roslyn 4.7.0->4.9.2 to support C# 12
