@@ -13,6 +13,7 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -94,8 +95,7 @@ module Completion =
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let position =
-                sourceText.Lines.GetPosition(LinePosition(p.Position.Line, p.Position.Character))
+            let position = Position.toRoslynPosition sourceText.Lines p.Position
 
             let completionService = CompletionService.GetService(doc)
             // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
