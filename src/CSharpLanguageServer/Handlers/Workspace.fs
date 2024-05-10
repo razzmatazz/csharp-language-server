@@ -29,13 +29,16 @@ module Workspace =
         | false -> None
         | true ->
             let fileSystemWatcher =
-                // TODO: Change it to U2 after Ionide.LanguageServerProtocol release a new version.
                 { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
                   Kind = Some (WatchKind.Create ||| WatchKind.Change ||| WatchKind.Delete) }
+
+            let registerOptions: DidChangeWatchedFilesRegistrationOptions =
+                { Watchers = [| fileSystemWatcher |] }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "workspace/didChangeWatchedFiles"
-                  RegisterOptions = { Watchers = [| fileSystemWatcher |] } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let private tryReloadDocumentOnUri logger diagnosticsPost (context: ServerRequestContext) uri = async {
         match context.GetUserDocument uri with

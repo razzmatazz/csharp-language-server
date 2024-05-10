@@ -28,10 +28,13 @@ module Implementation =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: ImplementationRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/implementation"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with

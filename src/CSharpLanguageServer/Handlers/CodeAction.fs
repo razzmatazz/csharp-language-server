@@ -307,13 +307,14 @@ module CodeAction =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: CodeActionRegistrationOptions =
+                    { CodeActionKinds = None
+                      ResolveProvider = Some true
+                      DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/codeAction"
-                  RegisterOptions =
-                    { CodeActionKinds = None
-                      ResolveProvider = Some true
-                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext)
                (p: CodeActionParams)

@@ -160,15 +160,16 @@ module SemanticTokens =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/semanticTokens"
-                  RegisterOptions =
+            let registerOptions: SemanticTokensRegistrationOptions =
                       { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
                                    TokenModifiers = semanticTokenModifiers |> Seq.toArray }
                         Range = Some true
                         Full = true |> First |> Some
-                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                        DocumentSelector = Some defaultDocumentSelector }
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/semanticTokens"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
     let handleFull (context: ServerRequestContext) (p: SemanticTokensParams): AsyncLspResult<SemanticTokens option> =

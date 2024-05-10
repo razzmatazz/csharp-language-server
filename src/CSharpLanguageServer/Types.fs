@@ -34,51 +34,49 @@ type ICSharpLspClient =
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
 
-type TextDocumentRegistrationOptions = { DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type CallHierarchyRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type CodeActionRegistrationOptions =
-    { CodeActionKinds: CodeActionKind [] option
-      ResolveProvider: bool option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type ReferenceRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type CodeLensRegistrationOptions =
-    { ResolveProvider: bool option
-      DocumentSelector: DocumentSelector option}
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type TypeDefinitionRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type CompletionRegistrationOptions =
-    { TriggerCharacters: char [] option
-      AllCommitCharacters: char [] option
-      ResolveProvider: bool option
-      // CompletionItem: CompletionItemOption option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type DocumentFormattingRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type DocumentOnTypeFormattingRegistrationOptions =
-    { FirstTriggerCharacter: char
-      MoreTriggerCharacter: char [] option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type TypeHierarchyRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type DocumentSymbolRegistrationOptions =
-    { Label: string option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type DefinitionRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type InlayHintRegistrationOptions =
-    { ResolveProvider: bool option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type ImplementationRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type RenameRegistrationOptions =
-    { PrepareProvider: bool option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type DocumentRangeFormattingRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type SemanticTokensRegistrationOptions =
-    { Legend: SemanticTokensLegend
-      Range: bool option
-      Full: U2<bool, SemanticTokenFullOptions> option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type DocumentHighlightRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
 
-type SignatureHelpRegistrationOptions =
-    { TriggerCharacters: char [] option
-      RetriggerCharacters: char [] option
-      DocumentSelector: DocumentSelector option }
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type HoverRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
+
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type WorkspaceSymbolRegistrationOptions =
+    { ResolveProvider: bool option }
 
 type DocumentFilter with
     static member Default: DocumentFilter =

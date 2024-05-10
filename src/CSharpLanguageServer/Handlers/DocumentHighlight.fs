@@ -31,10 +31,13 @@ module DocumentHighlight =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: DocumentHighlightRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/documentHighlight"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let private shouldHighlight (symbol: ISymbol) =
         match symbol with

@@ -14,6 +14,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -37,17 +38,17 @@ module Completion =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/completion"
-                  RegisterOptions =
-                    { ResolveProvider = None
+            let registerOptions: CompletionRegistrationOptions =
+                    { DocumentSelector = Some defaultDocumentSelector
+                      ResolveProvider = None
                       TriggerCharacters = Some ([| '.'; '''; |])
                       AllCommitCharacters = None
                       CompletionItem = None
                     }
-                    |> serialize
-                    |> Some }
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/completion"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let private roslynTagToLspCompletion tag =
         match tag with

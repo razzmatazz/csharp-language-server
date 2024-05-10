@@ -76,13 +76,14 @@ module SignatureHelp =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: SignatureHelpRegistrationOptions =
+                { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
+                  RetriggerCharacters = None
+                  DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/signatureHelp"
-                  RegisterOptions =
-                      { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
-                        RetriggerCharacters = None
-                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
         let docMaybe = context.GetUserDocument p.TextDocument.Uri

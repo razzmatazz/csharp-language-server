@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
@@ -28,10 +29,13 @@ module WorkspaceSymbol =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: WorkspaceSymbolRegistrationOptions =
+                { ResolveProvider = Some true }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "workspace/symbol"
-                  RegisterOptions = { ResolveProvider = Some true } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
         let pattern =

@@ -41,11 +41,12 @@ module CallHierarchy =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: CallHierarchyRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/prepareCallHierarchy"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
-
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: ServerRequestContext) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with

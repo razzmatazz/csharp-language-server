@@ -35,10 +35,12 @@ module TypeHierarchy =
         match dynamicRegistration clientCapabilities with
         | true -> None
         | false ->
+            let registerOptions: TypeHierarchyRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/prepareTypeHierarchy"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: ServerRequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with

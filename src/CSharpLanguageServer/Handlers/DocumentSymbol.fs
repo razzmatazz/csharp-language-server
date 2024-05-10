@@ -298,12 +298,14 @@ module DocumentSymbol =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: DocumentSymbolRegistrationOptions =
+                { Label = None
+                  DocumentSelector = Some defaultDocumentSelector }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/documentSymbol"
-                  RegisterOptions =
-                    { Label = None
-                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext)
                (p: DocumentSymbolParams)

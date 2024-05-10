@@ -29,10 +29,12 @@ module DocumentFormatting =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: DocumentFormattingRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/formatting"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit [] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with

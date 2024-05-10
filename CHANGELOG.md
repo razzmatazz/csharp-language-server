@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Bump Ionide.LanguageServerProtocol to 0.5.1, fix some of the types used for dynamic registration
+
 ## [0.13.0] - 2024-05-08 / Baltoji Vokė
 * Bump Ionide.LanguageServerProtocol dependency to v0.5.0
 * Fix performance issue in completion handler introduced in 0.12.0

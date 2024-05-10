@@ -31,10 +31,13 @@ module DocumentRangeFormatting =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: DocumentRangeFormattingRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/rangeFormatting"
-                  RegisterOptions = { DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with

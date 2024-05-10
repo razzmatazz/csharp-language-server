@@ -34,13 +34,14 @@ module DocumentOnTypeFormatting =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: DocumentOnTypeFormattingRegistrationOptions =
+                { FirstTriggerCharacter = ';'
+                  MoreTriggerCharacter = Some([| '}'; ')' |])
+                  DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/onTypeFormatting"
-                  RegisterOptions =
-                    { FirstTriggerCharacter = ';'
-                      MoreTriggerCharacter = Some([| '}'; ')' |])
-                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with

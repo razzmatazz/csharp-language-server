@@ -210,12 +210,13 @@ module InlayHint =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: InlayHintRegistrationOptions =
+                { ResolveProvider = Some false
+                  DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/inlayHint"
-                  RegisterOptions =
-                    { ResolveProvider = Some false
-                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with

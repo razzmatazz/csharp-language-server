@@ -81,12 +81,14 @@ module Rename =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: RenameRegistrationOptions = {
+                PrepareProvider = Some (prepareSupport clientCapabilities)
+                DocumentSelector = Some defaultDocumentSelector
+            }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/rename"
-                  RegisterOptions =
-                      { PrepareProvider = Some (prepareSupport clientCapabilities)
-                        DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: ServerRequestContext)
                 (p: PrepareRenameParams)

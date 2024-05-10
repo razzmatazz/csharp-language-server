@@ -124,12 +124,14 @@ module CodeLens =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
+            let registerOptions: CodeLensRegistrationOptions =
+                { ResolveProvider = Some true
+                  DocumentSelector = Some defaultDocumentSelector }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/codeLens"
-                  RegisterOptions =
-                    { ResolveProvider = Some true
-                      DocumentSelector = Some defaultDocumentSelector } |> serialize |> Some }
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
         let docMaybe = context.GetDocument p.TextDocument.Uri
