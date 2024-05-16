@@ -33,7 +33,6 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
 
     override __.VisitEnumMemberDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitEnumMemberDeclaration(node)
 
     override __.VisitClassDeclaration(node) =
         collect node node.Identifier.Span
@@ -53,35 +52,27 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
 
     override __.VisitDelegateDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitDelegateDeclaration(node)
 
     override __.VisitConstructorDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitConstructorDeclaration(node)
 
     override __.VisitDestructorDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitDestructorDeclaration(node)
 
     override __.VisitOperatorDeclaration(node) =
         collect node node.OperatorToken.Span
-        base.VisitOperatorDeclaration(node)
 
     override __.VisitIndexerDeclaration(node) =
         collect node node.ThisKeyword.Span
-        base.VisitIndexerDeclaration(node)
 
     override __.VisitConversionOperatorDeclaration(node) =
         collect node node.Type.Span
-        base.VisitConversionOperatorDeclaration(node)
 
     override __.VisitMethodDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitMethodDeclaration(node)
 
     override __.VisitPropertyDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitPropertyDeclaration(node)
 
     override __.VisitVariableDeclarator(node) =
         let grandparent =
@@ -91,13 +82,9 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
         // Only show field variables and ignore local variables
         if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
             collect node node.Identifier.Span
-            base.VisitVariableDeclarator(node)
-        else
-            base.VisitVariableDeclarator(node)
 
     override __.VisitEventDeclaration(node) =
         collect node node.Identifier.Span
-        base.VisitEventDeclaration(node)
 
 [<RequireQualifiedAccess>]
 module CodeLens =
@@ -144,7 +131,8 @@ module CodeLens =
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
-            collector.Visit(syntaxTree.GetRoot())
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            collector.Visit(root)
 
             let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan) : CodeLens =
                 let start = nameSpan.Start |> docText.Lines.GetLinePosition
@@ -176,14 +164,22 @@ module CodeLens =
             let! refs = context.FindReferences symbol
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
             // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
-            let refNum = refs |> Seq.map (fun r -> r.Locations |> Seq.length) |> Seq.fold (+) 0
+            let refNum =
+                refs
+                |> Seq.collect (fun r -> r.Locations)
+                |> Seq.distinctBy (fun l -> (l.Location.SourceTree.FilePath, l.Location.SourceSpan))
+                |> Seq.length
+
             let title = sprintf "%d Reference(s)" refNum
 
+            let arg: ReferenceParams =
+                { TextDocument = { Uri = lensData.DocumentUri }
+                  Position = lensData.Position
+                  Context = { IncludeDeclaration = true } }
             let command =
                 { Title = title
-                  Command = "csharp.showReferences"
-                  // TODO: we really want to pass some more info to the client
-                  Arguments = None }
+                  Command = "textDocument/references"
+                  Arguments = Some [| arg |> serialize |] }
 
             return { p with Command = Some command } |> success
     }

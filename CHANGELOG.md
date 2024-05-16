@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Stop collecting symbols in method body
+  - By Adam Tao @tcx4c70
+* Fix TypeHierarchy registration
+  - By Adam Tao @tcx4c70
+* Fix wrong references number
+  - By Adam Tao @tcx4c70
+* Add progress reporting when loading a solution/project
+  - By Adam Tao @tcx4c70
+* More refactoring and fixes from rework branch:
+  - By Adam Tao @tcx4c70, from https://github.com/tcx4c70/csharp-language-server/commits/rework/
 * Bump Ionide.LanguageServerProtocol to 0.5.1, fix some of the types used for dynamic registration
 
 ## [0.13.0] - 2024-05-08 / Baltoji Vokė

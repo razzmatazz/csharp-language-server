@@ -39,11 +39,11 @@ module References =
         | None -> return None |> success
         | Some symbol ->
             let! refs = context.FindReferences symbol
-            // FIXME: refs is wrong. There are lots of false positive even if we add Seq.distinct before Seq.toArray
             return
                 refs
                 |> Seq.collect (fun r -> r.Locations)
                 |> Seq.map (fun rl -> Location.fromRoslynLocation rl.Location)
+                |> Seq.distinct
                 |> Seq.toArray
                 |> Some
                 |> success

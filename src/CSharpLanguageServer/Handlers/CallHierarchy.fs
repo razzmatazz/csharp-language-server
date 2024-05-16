@@ -84,6 +84,7 @@ module CallHierarchy =
                 callers
                 |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
                 |> Seq.collect toCallHierarchyIncomingCalls
+                |> Seq.distinct
                 |> Seq.toArray
                 |> Some
                 |> success

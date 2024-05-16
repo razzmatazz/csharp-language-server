@@ -263,7 +263,13 @@ let processServerEvent logger state postMsg msg: Async<ServerState> = async {
 
         match solutionReloadTime < DateTime.Now with
         | true ->
-            let! newSolution = loadSolutionOnSolutionPathOrDir logger showMessage state.Settings.SolutionPath state.RootPath
+            let! newSolution =
+                loadSolutionOnSolutionPathOrDir
+                    state.LspClient.Value
+                    logger
+                    showMessage
+                    state.Settings.SolutionPath
+                    state.RootPath
 
             return { state with Solution = newSolution
                                 SolutionReloadPending = None }

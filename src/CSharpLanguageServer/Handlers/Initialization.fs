@@ -3,6 +3,7 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.IO
 open System.Reflection
+open System.Diagnostics
 
 open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
@@ -87,10 +88,13 @@ module Initialization =
         // setup timer so actors get period ticks
         setupTimer()
 
-        // TODO: Report server info to client (name, version)
         let initializeResult =
             { InitializeResult.Default with
-                Capabilities = serverCapabilities }
+                    Capabilities = serverCapabilities
+                    ServerInfo =
+                      Some
+                        { Name = Process.GetCurrentProcess().ProcessName
+                          Version = Some (Assembly.GetExecutingAssembly().GetName().Version.ToString()) }}
 
         return initializeResult |> LspResult.success
     }

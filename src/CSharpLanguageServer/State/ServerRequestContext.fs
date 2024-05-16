@@ -78,7 +78,8 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
             let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym)
-            collector.Visit(syntaxTree.GetRoot())
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            collector.Visit(root)
 
             let fallbackLocationInMetadata = {
                 Uri = uri
