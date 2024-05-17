@@ -23,6 +23,7 @@
     <Compile Include="Util.fs" />
     <Compile Include="Conversions.fs" />
     <Compile Include="FormatUtil.fs" />
+    <Compile Include="LruCache.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="ProgressReporter.fs" />
     <Compile Include="RoslynHelpers.fs" />

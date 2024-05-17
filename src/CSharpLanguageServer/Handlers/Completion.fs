@@ -3,12 +3,9 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open FSharpPlus
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open Microsoft.CodeAnalysis.Completion
-open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
@@ -40,11 +37,12 @@ module Completion =
         | true ->
             let registerOptions: CompletionRegistrationOptions =
                     { DocumentSelector = Some defaultDocumentSelector
-                      ResolveProvider = None
+                      ResolveProvider = Some true
                       TriggerCharacters = Some ([| '.'; '''; |])
                       AllCommitCharacters = None
                       CompletionItem = None
                     }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/completion"
@@ -75,22 +73,20 @@ module Completion =
     // TODO: Change parameters to snippets like clangd
     let private makeLspCompletionItem
         (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
-//        (description: Microsoft.CodeAnalysis.Completion.CompletionDescription option) =
-        =
-        { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
+        (cacheKey: uint64) =
+        { CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
             SortText         = item.SortText |> Option.ofString
             FilterText       = item.FilterText |> Option.ofString
             Detail           = item.InlineDescription |> Option.ofString
             TextEditText     = item.DisplayTextPrefix |> Option.ofObj
             InsertTextFormat = Some InsertTextFormat.PlainText
-            // TODO: Change description to MarkupContent instead of plain text?
-//          Documentation    = description |> Option.map (fun x -> Documentation.String x.Text)
-        }
+            Data             = cacheKey |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: Types.CompletionParams): AsyncLspResult<Types.CompletionList option> = async {
-        let docMaybe = context.GetUserDocument p.TextDocument.Uri
-        match docMaybe with
+    let private cache = new LruCache<(Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionList)>(5)
+
+    let handle (context: ServerRequestContext) (p: CompletionParams) : AsyncLspResult<CompletionList option> = async {
+        match context.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -98,38 +94,44 @@ module Completion =
 
             let position = Position.toRoslynPosition sourceText.Lines p.Position
 
-            let completionService = CompletionService.GetService(doc)
+            let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
             // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
             // `AbandonedMutexException`, `Accessibility`, ..., which are unnecessary and time-consuming.
-            let! completions =
-                completionService.GetCompletionsAsync(doc, position, cancellationToken=ct)
-                |> Async.AwaitTask
+            let! completions = completionService.GetCompletionsAsync(doc, position, cancellationToken=ct) |> Async.AwaitTask
 
             match Option.ofObj completions with
             | None -> return None |> success
             | Some completions ->
-                (* TODO: Move it to resolve? But it needs us to remember/cache the completions.ItemsList.
-                let! descriptions =
-                    completions.ItemsList
-                    |> Seq.map (fun item -> completionService.GetDescriptionAsync(doc, item, cancellationToken=ct) |> Async.AwaitTask)
-                    |> Async.Parallel
-                    |> Async.map (Seq.map Option.ofObj)
-                let items =
-                    Seq.zip completions.ItemsList descriptions
-                    |> Seq.map (uncurry makeLspCompletionItem)
-                    |> Array.ofSeq
-                *)
+                let key = cache.add((doc, completions))
                 let items =
                     completions.ItemsList
-                    |> Seq.map makeLspCompletionItem
+                    |> Seq.map (flip makeLspCompletionItem key)
                     |> Array.ofSeq
-
                 let completionList =
-                    { IsIncomplete = false
+                    { IsIncomplete = true
                       Items = items
                       ItemDefaults = None }
                 return completionList |> Some |> success
     }
 
-    let resolve (context: ServerRequestContext) (p: CompletionItem) : AsyncLspResult<CompletionItem> =
-        LspResult.notImplemented<CompletionItem> |> async.Return
+    let resolve (context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+        match
+            item.Data
+            |> Option.bind deserialize
+            |> Option.bind cache.get
+            |> Option.bind (fun (doc, cachedItems) ->
+                cachedItems.ItemsList
+                |> Seq.tryFind (fun x -> x.DisplayText = item.Label && (item.SortText.IsNone || x.SortText = item.SortText.Value))
+                |> Option.map (fun x -> (doc, x)))
+        with
+        | None -> return item |> success
+        | Some (doc, cachedItem) ->
+            let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+            let! ct = Async.CancellationToken
+            let! description =
+                completionService.GetDescriptionAsync(doc, cachedItem, ct)
+                |> map Option.ofObj
+                |> Async.AwaitTask
+            // TODO: make the doc as a markdown string instead of a plain text
+            return { item with Documentation = description |> map (fun x -> Documentation.String x.Text) } |> success
+    }

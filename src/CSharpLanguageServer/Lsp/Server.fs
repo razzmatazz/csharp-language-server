@@ -222,7 +222,8 @@ type CSharpLspServer(
         override this.TextDocumentCompletion(p) =
             p |> withReadOnlyContext Completion.handle
 
-        override this.CompletionItemResolve(p) = notImplemented
+        override this.CompletionItemResolve(p) =
+            p |> withReadOnlyContext Completion.resolve
 
         override this.TextDocumentPrepareRename(p) =
             p |> withReadOnlyContext Rename.prepare
