@@ -196,3 +196,15 @@ module Diagnostic =
           // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
           Tags = None
           Data = None }
+
+
+module CompletionContext =
+    let toCompletionTrigger (context: CompletionContext option): Completion.CompletionTrigger =
+        context
+        |> Option.bind (fun ctx ->
+            match ctx.TriggerKind with
+            | CompletionTriggerKind.Invoked
+            | CompletionTriggerKind.TriggerForIncompleteCompletions -> Some Completion.CompletionTrigger.Invoke
+            | CompletionTriggerKind.TriggerCharacter -> Option.map Completion.CompletionTrigger.CreateInsertionTrigger ctx.TriggerCharacter
+            | _ -> None)
+        |> Option.defaultValue (Completion.CompletionTrigger.Invoke)

@@ -95,23 +95,29 @@ module Completion =
             let position = Position.toRoslynPosition sourceText.Lines p.Position
 
             let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
-            // TODO: Avoid unnecessary GetCompletionsAsync. For example, for the first time, we will always get
-            // `AbandonedMutexException`, `Accessibility`, ..., which are unnecessary and time-consuming.
-            let! completions = completionService.GetCompletionsAsync(doc, position, cancellationToken=ct) |> Async.AwaitTask
+            let completionTrigger = CompletionContext.toCompletionTrigger p.Context
+            let shouldTriggerCompletion =
+                p.Context |> Option.exists (fun x -> x.TriggerKind = CompletionTriggerKind.TriggerForIncompleteCompletions) ||
+                completionService.ShouldTriggerCompletion(sourceText, position, completionTrigger)
+            let! completions =
+                if shouldTriggerCompletion then
+                    completionService.GetCompletionsAsync(doc, position, completionTrigger, cancellationToken=ct) |> Async.AwaitTask
+                else
+                    async.Return null
 
-            match Option.ofObj completions with
-            | None -> return None |> success
-            | Some completions ->
-                let key = cache.add((doc, completions))
-                let items =
-                    completions.ItemsList
-                    |> Seq.map (flip makeLspCompletionItem key)
-                    |> Array.ofSeq
-                let completionList =
+            return
+                completions
+                |> Option.ofObj
+                |> map (fun completions ->
+                    let key = cache.add((doc, completions))
+                    let items =
+                        completions.ItemsList
+                        |> Seq.map (flip makeLspCompletionItem key)
+                        |> Array.ofSeq
                     { IsIncomplete = true
                       Items = items
-                      ItemDefaults = None }
-                return completionList |> Some |> success
+                      ItemDefaults = None })
+                |> success
     }
 
     let resolve (context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
