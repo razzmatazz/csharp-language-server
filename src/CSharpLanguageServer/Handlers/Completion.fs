@@ -139,5 +139,5 @@ module Completion =
                 |> map Option.ofObj
                 |> Async.AwaitTask
             // TODO: make the doc as a markdown string instead of a plain text
-            return { item with Documentation = description |> map (fun x -> Documentation.String x.Text) } |> success
+            return { item with Documentation = description |> map Documentation.fromCompletionDescription } |> success
     }
