@@ -133,7 +133,7 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
-let processServerEvent logger state postMsg msg: Async<ServerState> = async {
+let processServerEvent (logger: ILog) state postMsg msg : Async<ServerState> = async {
     let showMessage m =
         match state.LspClient with
         | Some lspClient -> lspClient.WindowShowMessage(
@@ -187,7 +187,12 @@ let processServerEvent logger state postMsg msg: Async<ServerState> = async {
 
             postMsg ProcessRequestQueue
             return newState
-        | None -> return state
+        | None ->
+            logger.debug (
+                Log.setMessage "serverEventLoop/FinishRequest#{requestId}: request not found in state.RunningRequests"
+                >> Log.addContext "requestId" (requestId |> string)
+            )
+            return state
 
     | ProcessRequestQueue ->
         let runningRWRequestMaybe =
