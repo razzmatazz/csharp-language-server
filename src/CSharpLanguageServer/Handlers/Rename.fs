@@ -167,7 +167,7 @@ module Rename =
                 Renamer.RenameSymbolAsync(
                     doc.Project.Solution,
                     symbol,
-                    SymbolRenameOptions(RenameOverloads = true, RenameInStrings = true, RenameInComments = true),
+                    SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
                     p.NewName,
                     ct
                 )
