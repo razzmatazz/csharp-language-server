@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Register TextDocumentSync lazily
+  - By Adam Tao @tcx4c70
 * Support completionItem/resolve method to speed up completion;
   - By Adam Tao @tcx4c70
 * Do not rename symbol in strings or comments, restore file rename

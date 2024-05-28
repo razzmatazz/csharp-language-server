@@ -35,6 +35,18 @@ type ICSharpLspClient =
     abstract member Capabilities: ClientCapabilities option with get, set
 
 /// TODO: to be moved to Ionide.LanguageServerProtocol
+type TextDocumentRegistrationOptions =
+    { DocumentSelector: DocumentSelector option }
+
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type TextDocumentChangeRegistrationOptions =
+    { DocumentSelector: DocumentSelector option; SyncKind: TextDocumentSyncKind }
+
+/// TODO: to be moved to Ionide.LanguageServerProtocol
+type TextDocumentSaveRegistrationOptions =
+    { DocumentSelector: DocumentSelector option; IncludeText: bool option }
+
+/// TODO: to be moved to Ionide.LanguageServerProtocol
 type CallHierarchyRegistrationOptions =
     { DocumentSelector: DocumentSelector option }
 

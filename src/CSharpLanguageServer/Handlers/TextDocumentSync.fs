@@ -1,7 +1,9 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open FSharpPlus
 
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis.Text
 
@@ -9,6 +11,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 
@@ -33,15 +36,76 @@ module TextDocumentSync =
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
+        clientCapabilities
+        >>= fun x -> x.TextDocument
+        >>= fun x -> x.Synchronization
+        >>= fun x -> x.DynamicRegistration
+        |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
-        Some
-            { TextDocumentSyncOptions.Default with
-                OpenClose = Some true
-                Save = Some { IncludeText = Some true }
-                Change = Some TextDocumentSyncKind.Incremental }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { TextDocumentSyncOptions.Default with
+                    OpenClose = Some true
+                    Save = Some { IncludeText = Some true }
+                    Change = Some TextDocumentSyncKind.Incremental }
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let didOpenRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions = {
+                DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/didOpen"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+
+    let didChangeRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  SyncKind = TextDocumentSyncKind.Incremental }
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/didChange"
+                  RegisterOptions = registerOptions|> serialize |> Some }
+
+    let didSaveRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  IncludeText = Some true }
+
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/didSave"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let didCloseRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions = {
+                DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "textDocument/didClose"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let willSaveRegistration (clientCapabilities: ClientCapabilities option) : Registration option = None
+
+    let willSaveWaitUntilRegistration (clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
                 (context: ServerRequestContext)
@@ -133,6 +197,14 @@ module TextDocumentSync =
         context.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
+
+    let willSave (context: ServerRequestContext) (p: WillSaveTextDocumentParams): Async<LspResult<unit>> = async {
+        return Result.Ok ()
+    }
+
+    let willSaveWaitUntil (context: ServerRequestContext) (p: WillSaveTextDocumentParams): AsyncLspResult<TextEdit [] option> = async {
+        return LspResult.notImplemented<TextEdit [] option>
+    }
 
     let didSave (diagnosticsPost: DiagnosticsEvent -> unit)
                 (context: ServerRequestContext)

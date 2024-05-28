@@ -135,7 +135,12 @@ type CSharpLspServer(
               SelectionRange.registration
               SemanticTokens.registration
               SignatureHelp.registration
-              TextDocumentSync.registration
+              TextDocumentSync.didOpenRegistration
+              TextDocumentSync.didChangeRegistration
+              TextDocumentSync.didSaveRegistration
+              TextDocumentSync.didCloseRegistration
+              TextDocumentSync.willSaveRegistration
+              TextDocumentSync.willSaveWaitUntilRegistration
               TypeDefinition.registration
               TypeHierarchy.registration
               Workspace.registration
@@ -211,13 +216,16 @@ type CSharpLspServer(
             p |> withReadWriteContext (TextDocumentSync.didClose diagnostics.Post)
               |> ignoreResult
 
+        override this.TextDocumentWillSave(p) =
+            p |> withReadWriteContext TextDocumentSync.willSave
+              |> ignoreResult
+
+        override this.TextDocumentWillSaveWaitUntil(p) =
+            p |> withReadWriteContext TextDocumentSync.willSaveWaitUntil
+
         override this.TextDocumentDidSave(p) =
             p |> withReadWriteContext (TextDocumentSync.didSave diagnostics.Post)
               |> ignoreResult
-
-        override this.TextDocumentWillSave(p) = ignoreNotification
-
-        override this.TextDocumentWillSaveWaitUntil(p) = notImplemented
 
         override this.TextDocumentCompletion(p) =
             p |> withReadOnlyContext Completion.handle
