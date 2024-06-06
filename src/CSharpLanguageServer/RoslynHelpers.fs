@@ -391,9 +391,9 @@ let tryLoadSolutionFromProjectFiles
 
         let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
-
         for file in projs do
-            do! showMessage (sprintf "loading project \"%s\".." file)
+            if projs.Length < 10 then
+              do! showMessage (sprintf "loading project \"%s\".." file)
             try
                 do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
             with ex ->
@@ -402,10 +402,11 @@ let tryLoadSolutionFromProjectFiles
                     >> Log.addContext "file" file
                     >> Log.addContext "ex" (string ex)
                 )
-
+            let projectFile = new FileInfo(file)
+            let projName = projectFile.Name
             let loaded = Interlocked.Increment(loadedProj)
             let percent = 100 * loaded / projs.Length |> uint
-            do! progress.Report(false, $"{loaded}/{projs.Length}", percent)
+            do! progress.Report(false, $"{projName} {loaded}/{projs.Length}", percent)
 
         for diag in msbuildWorkspace.Diagnostics do
             logger.trace (
