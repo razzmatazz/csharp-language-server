@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Reduce noise when loading >10 project files, include currently loading project in progress bar.
+  - By @BrianCArnold in https://github.com/razzmatazz/csharp-language-server/pull/162
 * Register TextDocumentSync lazily
   - By Adam Tao @tcx4c70
 * Support completionItem/resolve method to speed up completion;
