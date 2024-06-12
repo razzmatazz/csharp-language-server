@@ -52,7 +52,7 @@ type CSharpLspServer(
             System.Threading.TimerCallback(
                 fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)
                          do stateActor.Post(PeriodicTimerTick)),
-            null, dueTime=1000, period=250))
+            null, dueTime=100, period=250))
 
     let mutable workspaceFolders: WorkspaceFolder list = []
 
