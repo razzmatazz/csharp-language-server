@@ -414,7 +414,7 @@ let tryLoadSolutionFromProjectFiles
                 >> Log.addContext "message" (diag.ToString())
             )
 
-        do! progress.End (sprintf "OK, %d project files loaded" projs.Length)
+        do! progress.End (sprintf "OK, %d project file(s) loaded" projs.Length)
 
         //workspace <- Some(msbuildWorkspace :> Workspace)
         return Some msbuildWorkspace.CurrentSolution

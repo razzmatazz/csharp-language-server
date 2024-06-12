@@ -1,3 +1,5 @@
+module CSharpLanguageServer.Tests.DocumentationTests
+
 open System
 
 open NUnit.Framework
