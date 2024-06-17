@@ -22,22 +22,23 @@ module DocumentOnTypeFormatting =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : DocumentOnTypeFormattingOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : DocumentOnTypeFormattingOptions option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
         | false ->
             Some
-                { FirstTriggerCharacter = ';'
-                  MoreTriggerCharacter = Some([| '}'; ')' |]) }
+                { FirstTriggerCharacter = ";"
+                  MoreTriggerCharacter = Some([| "}"; ")" |]) }
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
             let registerOptions: DocumentOnTypeFormattingRegistrationOptions =
-                { FirstTriggerCharacter = ';'
-                  MoreTriggerCharacter = Some([| '}'; ')' |])
-                  DocumentSelector = Some defaultDocumentSelector }
+                { FirstTriggerCharacter = ";"
+                  MoreTriggerCharacter = Some([| "}"; ")" |])
+                  DocumentSelector = Some defaultDocumentSelector
+                }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/onTypeFormatting"
@@ -53,9 +54,9 @@ module DocumentOnTypeFormatting =
             let pos = Position.toRoslynPosition sourceText.Lines p.Position
 
             match p.Ch with
-            | ';'
-            | '}'
-            | ')' ->
+            | ";"
+            | "}"
+            | ")" ->
                 let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
                 match FormatUtil.findFormatTarget root pos with
                 | None -> return None |> success

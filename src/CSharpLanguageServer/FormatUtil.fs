@@ -14,11 +14,11 @@ module internal FormatUtil =
             { NewText = newText
               Range =
                 { Start =
-                    { Line = linePosition.Start.Line
-                      Character = linePosition.Start.Character }
+                    { Line = uint32 linePosition.Start.Line
+                      Character = uint32 linePosition.Start.Character }
                   End =
-                    { Line = linePosition.End.Line
-                      Character = linePosition.End.Character } } }
+                    { Line = uint32 linePosition.End.Line
+                      Character = uint32 linePosition.End.Character } } }
 
         let defaultTextEdit (oldText: SourceText, change: TextChange) : TextEdit =
             let linePosition = oldText.Lines.GetLinePositionSpan change.Span
@@ -75,7 +75,7 @@ module internal FormatUtil =
 
     let getFormattingOptions (doc: Document) (formattingOptions: FormattingOptions) : OptionSet =
         doc.Project.Solution.Options
-        |> fun o -> o.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, formattingOptions.TabSize)
+        |> fun o -> o.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, int formattingOptions.TabSize)
         |> fun o -> o.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
         |> match formattingOptions.InsertFinalNewline with
            | Some insertFinalNewline ->

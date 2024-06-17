@@ -6,9 +6,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module Declaration =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+    let provider (_cc: ClientCapabilities option) : bool option = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (_cc: ClientCapabilities option) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> =
-        LspResult.notImplemented<GotoResult option> |> async.Return
+    let handle (_context: ServerRequestContext) (_p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> =
+        LspResult.notImplemented<Declaration option> |> async.Return

@@ -158,8 +158,8 @@ module DocumentSymbol =
             symbolStack <- symbolStack'
 
         member __.Init(moduleName: string) =
-            let emptyRange = { Start={ Line=0; Character=0 }
-                               End={ Line=0; Character=0 } }
+            let emptyRange = { Start={ Line=0u; Character=0u }
+                               End={ Line=0u; Character=0u } }
 
             let root: DocumentSymbol = {
                 Name           = moduleName
@@ -289,10 +289,10 @@ module DocumentSymbol =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, DocumentSymbolOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> true |> U2.First |> Some
+        | false -> true |> U2.C1 |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -300,6 +300,7 @@ module DocumentSymbol =
         | true ->
             let registerOptions: DocumentSymbolRegistrationOptions =
                 { Label = None
+                  WorkDoneProgress = None
                   DocumentSelector = Some defaultDocumentSelector }
 
             Some
@@ -332,7 +333,7 @@ module DocumentSymbol =
             collector.Visit(root)
 
             return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
-                   |> U2.Second
+                   |> U2.C2
                    |> Some
                    |> success
     }

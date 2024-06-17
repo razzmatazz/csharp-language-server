@@ -93,7 +93,7 @@ module CodeLens =
           Position: Position }
         static member Default =
             { DocumentUri = ""
-              Position = { Line = 0; Character = 0 } }
+              Position = { Line = 0u; Character = 0u } }
 
     let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
         clientCapabilities
@@ -102,10 +102,11 @@ module CodeLens =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : CodeLensOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : CodeLensOptions option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> Some { ResolveProvider = Some true }
+        | false -> Some { ResolveProvider = Some true
+                          WorkDoneProgress = None }
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -113,6 +114,7 @@ module CodeLens =
         | true ->
             let registerOptions: CodeLensRegistrationOptions =
                 { ResolveProvider = Some true
+                  WorkDoneProgress = None
                   DocumentSelector = Some defaultDocumentSelector }
 
             Some
@@ -175,6 +177,8 @@ module CodeLens =
             let arg: ReferenceParams =
                 { TextDocument = { Uri = lensData.DocumentUri }
                   Position = lensData.Position
+                  WorkDoneToken = None
+                  PartialResultToken = None
                   Context = { IncludeDeclaration = true } }
             let command =
                 { Title = title

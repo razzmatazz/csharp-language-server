@@ -3,14 +3,13 @@ namespace CSharpLanguageServer
 open System
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Client
 
 type ProgressReporter(client: ILspClient) =
     let mutable canReport = false
 
     let mutable endSent = false
 
-    member val Token = ProgressToken.Second(Guid.NewGuid().ToString())
+    member val Token = ProgressToken.C2 (Guid.NewGuid().ToString())
 
     member this.Begin(title, ?cancellable, ?message, ?percentage) = async {
         match! client.WorkDoneProgressCreate this.Token with

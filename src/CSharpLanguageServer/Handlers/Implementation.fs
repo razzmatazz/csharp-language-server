@@ -19,24 +19,26 @@ module Implementation =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U3<bool,ImplementationOptions,ImplementationRegistrationOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> Some true
+        | false -> Some (U3.C1 true)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
             let registerOptions: ImplementationRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector }
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
 
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/implementation"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<GotoResult option> = async {
+    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some symbol ->
@@ -46,7 +48,7 @@ module Implementation =
             return
                 locations
                 |> Array.collect List.toArray
-                |> GotoResult.Multiple
+                |> Declaration.C2
                 |> Some
                 |> success
     }

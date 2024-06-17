@@ -83,7 +83,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
 
             let fallbackLocationInMetadata = {
                 Uri = uri
-                Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 1 } } }
+                Range = { Start = { Line = 0u; Character = 0u }; End = { Line = 0u; Character = 1u } } }
 
             return
                 match collector.GetLocations() with
@@ -123,7 +123,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
     member this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
         this.FindSymbol' uri pos |> map (Option.map fst)
 
-    member private this._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
+    member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
         match state.Solution with
         | None -> return []
         | Some currentSolution ->
@@ -133,7 +133,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                 |> Async.AwaitTask
     }
 
-    member private this._FindDerivedInterfaces (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = async {
+    member private __._FindDerivedInterfaces (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = async {
         match state.Solution with
         | None -> return []
         | Some currentSolution ->
@@ -143,7 +143,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                 |> Async.AwaitTask
     }
 
-    member this.FindImplementations (symbol: ISymbol): Async<ISymbol seq> = async {
+    member __.FindImplementations (symbol: ISymbol): Async<ISymbol seq> = async {
         match state.Solution with
         | None -> return []
         | Some currentSolution ->
@@ -153,7 +153,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                 |> Async.AwaitTask
     }
 
-    member this.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
+    member __.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
         match state.Solution with
         | None -> return []
         | Some currentSolution ->
@@ -169,7 +169,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
     member this.FindDerivedInterfaces (symbol: INamedTypeSymbol):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol true
     member this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool):  Async<INamedTypeSymbol seq> = this._FindDerivedInterfaces symbol transitive
 
-    member this.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> = async {
+    member __.FindCallers (symbol: ISymbol): Async<SymbolCallerInfo seq> = async {
         match state.Solution with
         | None -> return []
         | Some currentSolution ->

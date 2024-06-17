@@ -24,15 +24,16 @@ module TextDocumentSync =
             (initialSourceText: SourceText) =
 
         let applyLspContentChangeOnRoslynSourceText (sourceText: SourceText) (change: TextDocumentContentChangeEvent) =
-            match change.Range with
-            | Some changeRange ->
+            match change with
+            | U2.C1 change ->
                 let changeTextSpan =
-                    changeRange |> Range.toLinePositionSpan sourceText.Lines
-                                |> sourceText.Lines.GetTextSpan
+                    change.Range
+                    |> Range.toLinePositionSpan sourceText.Lines
+                    |> sourceText.Lines.GetTextSpan
 
                 TextChange(changeTextSpan, change.Text) |> sourceText.WithChanges
-
-            | None -> SourceText.From(change.Text)
+            | U2.C2 changeWoRange ->
+                SourceText.From(changeWoRange.Text)
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
@@ -43,14 +44,14 @@ module TextDocumentSync =
         >>= fun x -> x.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : TextDocumentSyncOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
         | false ->
             Some
                 { TextDocumentSyncOptions.Default with
                     OpenClose = Some true
-                    Save = Some { IncludeText = Some true }
+                    Save = Some (U2.C2 { IncludeText = Some true })
                     Change = Some TextDocumentSyncKind.Incremental }
 
     let didOpenRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
@@ -103,9 +104,9 @@ module TextDocumentSync =
                   Method = "textDocument/didClose"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let willSaveRegistration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let willSaveWaitUntilRegistration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
 
     let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
                 (context: ServerRequestContext)
@@ -198,11 +199,11 @@ module TextDocumentSync =
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
-    let willSave (context: ServerRequestContext) (p: WillSaveTextDocumentParams): Async<LspResult<unit>> = async {
+    let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams): Async<LspResult<unit>> = async {
         return Result.Ok ()
     }
 
-    let willSaveWaitUntil (context: ServerRequestContext) (p: WillSaveTextDocumentParams): AsyncLspResult<TextEdit [] option> = async {
+    let willSaveWaitUntil (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams): AsyncLspResult<TextEdit [] option> = async {
         return LspResult.notImplemented<TextEdit [] option>
     }
 

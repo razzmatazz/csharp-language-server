@@ -93,7 +93,7 @@ module InlayHint =
             miscellaneousOptions = (SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral ||| SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier ||| SymbolDisplayMiscellaneousOptions.UseSpecialTypes))
         let toTypeInlayHint (pos: int) (ty: ITypeSymbol): InlayHint =
             { Position = pos |> lines.GetLinePosition |> Position.fromLinePosition
-              Label = InlayHintLabel.String (": " + SymbolName.fromSymbol typeDisplayStyle ty)
+              Label = U2.C1 (": " + SymbolName.fromSymbol typeDisplayStyle ty)
               Kind = Some InlayHintKind.Type
               TextEdits = None
               Tooltip = None
@@ -113,7 +113,7 @@ module InlayHint =
             | _ -> Some par
         let toParameterInlayHint (pos: int) (par: IParameterSymbol): InlayHint =
             { Position = pos |> lines.GetLinePosition |> Position.fromLinePosition
-              Label = InlayHintLabel.String (par.Name + ":")
+              Label = U2.C1 (par.Name + ":")
               Kind = Some InlayHintKind.Parameter
               TextEdits = None
               Tooltip = None
@@ -201,10 +201,16 @@ module InlayHint =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : InlayHintOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U3<bool, InlayHintOptions, InlayHintRegistrationOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> Some { ResolveProvider = Some false }
+        | false ->
+            let inlayHintOptions: InlayHintOptions =
+                { ResolveProvider = Some false
+                  WorkDoneProgress = None
+                }
+
+            Some (U3.C2 inlayHintOptions)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -212,7 +218,9 @@ module InlayHint =
         | true ->
             let registerOptions: InlayHintRegistrationOptions =
                 { ResolveProvider = Some false
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/inlayHint"
@@ -236,5 +244,5 @@ module InlayHint =
             return inlayHints |> Seq.toArray |> Some |> success
     }
 
-    let resolve (context: ServerRequestContext) (p: InlayHint) : AsyncLspResult<InlayHint> =
+    let resolve (_context: ServerRequestContext) (_p: InlayHint) : AsyncLspResult<InlayHint> =
         LspResult.notImplemented<InlayHint> |> async.Return

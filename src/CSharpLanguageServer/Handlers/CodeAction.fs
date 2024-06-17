@@ -197,7 +197,7 @@ module CodeAction =
             let! newDocText = newDoc.GetTextAsync(ct) |> Async.AwaitTask
 
             let edit: TextEdit =
-                { Range = { Start = { Line=0; Character=0 }; End = { Line=0; Character=0 } }
+                { Range = { Start = { Line=0u; Character=0u }; End = { Line=0u; Character=0u } }
                   NewText = newDocText.ToString() }
 
             let newDocFilePathMaybe =
@@ -216,7 +216,7 @@ module CodeAction =
                 let textEditDocument = { Uri = newDocFilePath |> Path.toUri
                                          Version = newDocFilePath |> Path.toUri |> tryGetDocVersionByUri }
 
-                docTextEdits.Add({ TextDocument = textEditDocument; Edits = [| edit |] })
+                docTextEdits.Add({ TextDocument = textEditDocument; Edits = [| U2.C1 edit |] })
             | None -> ()
 
         let changedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetChangedDocuments())
@@ -227,10 +227,11 @@ module CodeAction =
             let updatedDoc = updatedSolution.GetDocument(docId)
             let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
-            let diffEdits: TextEdit array =
+            let diffEdits: U2<TextEdit,AnnotatedTextEdit> array =
                 docChanges
                 |> Seq.sortBy (fun c -> c.Span.Start)
                 |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
+                |> Seq.map U2.C1
                 |> Array.ofSeq
 
             let textEditDocument = { Uri = originalDoc.FilePath |> Path.toUri
@@ -265,7 +266,8 @@ module CodeAction =
                                               ct
             let edit: WorkspaceEdit = {
                 Changes = None
-                DocumentChanges = docTextEdit |> Array.ofList |> Some
+                DocumentChanges = docTextEdit |> Seq.map U4.C1 |> Array.ofSeq |> Some
+                ChangeAnnotations = None
             }
 
             let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
@@ -295,13 +297,16 @@ module CodeAction =
         |> Option.bind (fun x -> x.CodeAction)
         |> Option.bind (fun x -> x.CodeActionLiteralSupport)
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, CodeActionOptions> option =
-        match dynamicRegistration clientCapabilities, literalSupport clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, CodeActionOptions> option =
+        match dynamicRegistration (Some clientCapabilities), literalSupport (Some clientCapabilities) with
         | true, _ -> None
         | false, _ ->
             // TODO: Server can only return CodeActionOptions if literalSupport is not None
             { CodeActionKinds = None
-              ResolveProvider = Some true } |> U2.Second |> Some
+              ResolveProvider = Some true
+              WorkDoneProgress = None }
+            |> U2.C2
+            |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -310,6 +315,7 @@ module CodeAction =
             let registerOptions: CodeActionRegistrationOptions =
                     { CodeActionKinds = None
                       ResolveProvider = Some true
+                      WorkDoneProgress = None
                       DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
@@ -378,7 +384,7 @@ module CodeAction =
             return
                lspCodeActions
                |> Seq.sortByDescending (fun ca -> ca.IsPreferred)
-               |> Seq.map U2<Command, CodeAction>.Second
+               |> Seq.map U2<Command, CodeAction>.C2
                |> Array.ofSeq
                |> Some
                |> success

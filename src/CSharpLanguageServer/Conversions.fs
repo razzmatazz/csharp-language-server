@@ -39,15 +39,13 @@ module Path =
 
 module Position =
     let fromLinePosition (pos: LinePosition): Position =
-        { Line = pos.Line ; Character = pos.Character }
+        { Line = uint32 pos.Line ; Character = uint32 pos.Character }
 
     let toLinePosition (lines: TextLineCollection) (pos: Position): LinePosition =
-        if pos.Line < 0 then
-            LinePosition(0, 0)
-        else if pos.Line >= lines.Count then
+        if (int pos.Line) >= lines.Count then
             LinePosition(lines.Count - 1, lines[lines.Count - 1].EndIncludingLineBreak - lines[lines.Count - 1].Start)
         else
-            LinePosition(pos.Line, pos.Character)
+            LinePosition(int pos.Line, int pos.Character)
 
     let toRoslynPosition (lines: TextLineCollection) = toLinePosition lines >> lines.GetPosition
 
@@ -74,7 +72,7 @@ module Location =
               Range = loc.GetLineSpan().Span |> Range.fromLinePositionSpan }
         else
             { Uri = ""
-              Range = { Start = { Line = 0; Character = 0 }; End = { Line = 0; Character = 0 } } }
+              Range = { Start = { Line = 0u; Character = 0u }; End = { Line = 0u; Character = 0u } } }
 
 
 module TextEdit =
@@ -120,7 +118,7 @@ module SymbolName =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): string = symbol.ToDisplayString(format)
 
 
-module HierarchyItem =
+module CallHierarchyItem =
     let private displayStyle =
         SymbolDisplayFormat(
             typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
@@ -135,7 +133,7 @@ module HierarchyItem =
             miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes
         )
 
-    let fromSymbolAndLocation (symbol: ISymbol) (location: Location): HierarchyItem =
+    let fromSymbolAndLocation (symbol: ISymbol) (location: Location): CallHierarchyItem =
         let kind = SymbolKind.fromSymbol symbol
         let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
         let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
@@ -152,10 +150,45 @@ module HierarchyItem =
           SelectionRange = location.Range
           Data = None }
 
-    let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<HierarchyItem list> =
+    let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<CallHierarchyItem list> =
         wmResolveSymbolLocations symbol None
         |> map (List.map (fromSymbolAndLocation symbol))
 
+module TypeHierarchyItem =
+    let private displayStyle =
+        SymbolDisplayFormat(
+            typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            memberOptions =
+                (SymbolDisplayMemberOptions.IncludeParameters
+                 ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+            parameterOptions =
+                (SymbolDisplayParameterOptions.IncludeParamsRefOut
+                 ||| SymbolDisplayParameterOptions.IncludeExtensionThis
+                 ||| SymbolDisplayParameterOptions.IncludeType),
+            miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+        )
+
+    let fromSymbolAndLocation (symbol: ISymbol) (location: Location): TypeHierarchyItem =
+        let kind = SymbolKind.fromSymbol symbol
+        let containingType = (symbol.ContainingType :> ISymbol) |> Option.ofObj
+        let containingNamespace = (symbol.ContainingNamespace :> ISymbol) |> Option.ofObj
+
+        { Name = symbol.ToDisplayString(displayStyle)
+          Kind = kind
+          Tags = None
+          Detail =
+            containingType
+            |> Option.orElse containingNamespace
+            |> Option.map (fun sym -> sym.ToDisplayString())
+          Uri = location.Uri
+          Range = location.Range
+          SelectionRange = location.Range
+          Data = None }
+
+    let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<TypeHierarchyItem list> =
+        wmResolveSymbolLocations symbol None
+        |> map (List.map (fromSymbolAndLocation symbol))
 
 module SymbolInformation =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): SymbolInformation list =
@@ -186,11 +219,10 @@ module Diagnostic =
         let diagnosticCodeUrl =
             diagnostic.Id.ToLowerInvariant()
             |> sprintf "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-messages/%s"
-            |> Uri
         { Range = diagnostic.Location.GetLineSpan().Span |> Range.fromLinePositionSpan
           Severity = Some (diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
-          Code = Some diagnostic.Id
-          CodeDescription = Some { Href = Some diagnosticCodeUrl }
+          Code = Some (U2.C2 diagnostic.Id)
+          CodeDescription = Some { Href = diagnosticCodeUrl |> URI }
           Source = Some "lsp"
           Message = diagnostic.GetMessage()
           RelatedInformation = None
@@ -205,8 +237,12 @@ module CompletionContext =
         |> Option.bind (fun ctx ->
             match ctx.TriggerKind with
             | CompletionTriggerKind.Invoked
-            | CompletionTriggerKind.TriggerForIncompleteCompletions -> Some Completion.CompletionTrigger.Invoke
-            | CompletionTriggerKind.TriggerCharacter -> Option.map Completion.CompletionTrigger.CreateInsertionTrigger ctx.TriggerCharacter
+            | CompletionTriggerKind.TriggerForIncompleteCompletions ->
+                Some Completion.CompletionTrigger.Invoke
+            | CompletionTriggerKind.TriggerCharacter ->
+                ctx.TriggerCharacter
+                |> Option.map Seq.head
+                |> Option.map Completion.CompletionTrigger.CreateInsertionTrigger
             | _ -> None)
         |> Option.defaultValue (Completion.CompletionTrigger.Invoke)
 
@@ -225,8 +261,8 @@ module CompletionDescription =
             | _                  -> taggedText.Text)
         |> String.concat ""
 
-    let toDocumentation (description: CompletionDescription) : Documentation =
-        Documentation.Markup { Kind = MarkupKind.Markdown; Value = toMarkdownString description }
+    let toDocumentation (description: CompletionDescription) : MarkupContent =
+        { Kind = MarkupKind.Markdown; Value = toMarkdownString description }
 
 
 module Documentation =

@@ -20,17 +20,19 @@ module WorkspaceSymbol =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : U2<bool, WorkspaceSymbolOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> true |> U2.First |> Some
+        | false -> U2.C1 true |> Some
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
             let registerOptions: WorkspaceSymbolRegistrationOptions =
-                { ResolveProvider = Some true }
+                { ResolveProvider = Some true
+                  WorkDoneProgress = None
+                }
 
             Some
                 { Id = Guid.NewGuid().ToString()
@@ -51,10 +53,10 @@ module WorkspaceSymbol =
             // TODO: make 100 configurable?
             |> Seq.truncate 100
             |> Seq.toArray
-            |> U2.First
+            |> U2.C1
             |> Some
             |> success
     }
 
-    let resolve (context: ServerRequestContext) (p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
+    let resolve (_context: ServerRequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
         LspResult.notImplemented<WorkspaceSymbol> |> async.Return
