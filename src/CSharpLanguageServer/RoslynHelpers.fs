@@ -25,7 +25,6 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Types
 
 type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol) =
@@ -288,6 +287,22 @@ type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
 
+type RemoteHostClientProviderInterceptor (_logMessage) =
+    interface IInterceptor with
+       member __.Intercept(invocation: IInvocation) =
+
+            match invocation.Method.Name with
+            | "TryGetRemoteHostClientAsync" ->
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
+                let remoteHostClientType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.Remote.RemoteHostClient")
+                let methodInfo = typeof<Task>.GetMethod("FromResult", BindingFlags.Static ||| BindingFlags.Public)
+                let genericMethod = methodInfo.MakeGenericMethod(remoteHostClientType)
+                let nullResultTask = genericMethod.Invoke(null, [| null |])
+                invocation.ReturnValue <- nullResultTask
+
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
+
 type WorkspaceServicesInterceptor () =
     let logger = LogProvider.getLoggerByName "WorkspaceServicesInterceptor"
 
@@ -319,6 +334,10 @@ type WorkspaceServicesInterceptor () =
 
                     | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
                         let interceptor = MoveStaticMembersOptionsServiceInterceptor()
+                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+
+                    | "Microsoft.CodeAnalysis.Remote.IRemoteHostClientProvider" ->
+                        let interceptor = RemoteHostClientProviderInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
                     | _ ->
