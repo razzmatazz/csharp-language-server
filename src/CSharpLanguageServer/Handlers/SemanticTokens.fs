@@ -147,14 +147,19 @@ module SemanticTokens =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : SemanticTokensOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U2<SemanticTokensOptions, SemanticTokensRegistrationOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
         | false ->
-            Some { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
-                              TokenModifiers = semanticTokenModifiers |> Seq.toArray }
-                   Range = Some true
-                   Full = true |> First |> Some }
+            let semanticTokensOptions: SemanticTokensOptions =
+                { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
+                             TokenModifiers = semanticTokenModifiers |> Seq.toArray }
+                  Range = Some (U2.C1 true)
+                  Full = Some (U2.C1 true)
+                  WorkDoneProgress = None
+                }
+
+            Some (U2.C1 semanticTokensOptions)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -163,8 +168,10 @@ module SemanticTokens =
             let registerOptions: SemanticTokensRegistrationOptions =
                       { Legend = { TokenTypes = semanticTokenTypes |> Seq.toArray
                                    TokenModifiers = semanticTokenModifiers |> Seq.toArray }
-                        Range = Some true
-                        Full = true |> First |> Some
+                        Range = Some (U2.C1 true)
+                        Full = Some (U2.C1 true)
+                        Id = None
+                        WorkDoneProgress = None
                         DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
@@ -176,8 +183,8 @@ module SemanticTokens =
         getSemanticTokensRange context p.TextDocument.Uri None
 
     let handleFullDelta
-        (context: ServerRequestContext)
-        (p: SemanticTokensDeltaParams)
+        (_context: ServerRequestContext)
+        (_p: SemanticTokensDeltaParams)
         : AsyncLspResult<U2<SemanticTokens, SemanticTokensDelta> option> =
         LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>
         |> async.Return

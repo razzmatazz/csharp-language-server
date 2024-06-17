@@ -21,14 +21,14 @@ module SignatureInformation =
         let parameters =
             m.Parameters
             |> Seq.map (fun p ->
-                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p |> U2.First
+                { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat p |> U2.C1
                   Documentation = None })
             |> Array.ofSeq
 
         let documentation =
-            Documentation.Markup
-                { Kind = MarkupKind.Markdown
-                  Value = DocumentationUtil.markdownDocForSymbol m }
+            { Kind = MarkupKind.Markdown
+              Value = DocumentationUtil.markdownDocForSymbol m }
+            |> U2.C2
 
         { Label           = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
           Documentation   = Some documentation
@@ -64,12 +64,13 @@ module SignatureHelp =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : SignatureHelpOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : SignatureHelpOptions option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
         | false ->
             Some
-                { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
+                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
+                  WorkDoneProgress = None
                   RetriggerCharacters = None }
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
@@ -77,8 +78,9 @@ module SignatureHelp =
         | false -> None
         | true ->
             let registerOptions: SignatureHelpRegistrationOptions =
-                { TriggerCharacters = Some([| '('; ','; '<'; '{'; '[' |])
+                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
                   RetriggerCharacters = None
+                  WorkDoneProgress = None
                   DocumentSelector = Some defaultDocumentSelector }
             Some
                 { Id = Guid.NewGuid().ToString()
@@ -151,7 +153,7 @@ module SignatureHelp =
 
                 let signatureHelpResult =
                     { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq
-                      ActiveSignature = matchingMethodMaybe |> Option.map (fun m -> List.findIndex ((=) m) methodGroup)
+                      ActiveSignature = matchingMethodMaybe |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
                       ActiveParameter = activeParameterMaybe }
 
                 return Some signatureHelpResult |> success

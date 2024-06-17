@@ -7,9 +7,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module ExecuteCommand =
-    let provider (clientCapabilities: ClientCapabilities option) : ExecuteCommandOptions option = None
+    let provider (_clientCapabilities: ClientCapabilities) : ExecuteCommandOptions option = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (_clientCapabilities: ClientCapabilities option) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: ExecuteCommandParams) : AsyncLspResult<LSPAny> =
+    let handle (_context: ServerRequestContext) (_p: ExecuteCommandParams) : AsyncLspResult<LSPAny> =
         notImplemented<LSPAny> |> async.Return

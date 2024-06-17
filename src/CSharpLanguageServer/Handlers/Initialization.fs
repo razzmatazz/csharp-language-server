@@ -79,7 +79,7 @@ module Initialization =
             >> Log.addContext "caps" (serialize p.Capabilities)
         )
 *)
-        context.Emit(ClientCapabilityChange p.Capabilities)
+        context.Emit(ClientCapabilityChange (Some p.Capabilities))
 
         // TODO use p.RootUri
         let rootPath = Directory.GetCurrentDirectory()
@@ -103,7 +103,7 @@ module Initialization =
                           (stateActor: MailboxProcessor<ServerStateEvent>)
                           (getRegistrations: (ClientCapabilities option) -> Registration list)
                           (context: ServerRequestContext)
-                          (_p: InitializedParams)
+                          (_p: unit)
             : Async<LspResult<unit>> =
         async {
             logger.trace (
@@ -134,7 +134,7 @@ module Initialization =
             try
                 let! workspaceCSharpConfig =
                     lspClient.WorkspaceConfiguration(
-                        { items=[| { Section=Some "csharp"; ScopeUri=None } |] })
+                        { Items=[| { Section=Some "csharp"; ScopeUri=None } |] })
 
                 let csharpConfigTokensMaybe =
                     match workspaceCSharpConfig with

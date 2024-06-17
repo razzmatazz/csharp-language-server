@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Bump Ionide.LanguageServerProtocol to 0.6.0, fix some of the types used for dynamic registration
 * Reduce noise when loading >10 project files, include currently loading project in progress bar.
   - By @BrianCArnold in https://github.com/razzmatazz/csharp-language-server/pull/162
 * Register TextDocumentSync lazily
@@ -22,7 +23,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By Adam Tao @tcx4c70
 * More refactoring and fixes from rework branch:
   - By Adam Tao @tcx4c70, from https://github.com/tcx4c70/csharp-language-server/commits/rework/
-* Bump Ionide.LanguageServerProtocol to 0.5.1, fix some of the types used for dynamic registration
 
 ## [0.13.0] - 2024-05-08 / Baltoji Vokė
 * Bump Ionide.LanguageServerProtocol dependency to v0.5.0

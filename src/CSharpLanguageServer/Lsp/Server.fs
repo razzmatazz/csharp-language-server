@@ -153,7 +153,7 @@ type CSharpLspServer(
     let getServerCapabilities
         (lspClient: InitializeParams) =
                 { ServerCapabilities.Default with
-                    TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities
+                    TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities |> Option.map U2.C1
                     CompletionProvider = Completion.provider lspClient.Capabilities
                     HoverProvider = Hover.provider lspClient.Capabilities
                     SignatureHelpProvider = SignatureHelp.provider lspClient.Capabilities
@@ -192,9 +192,9 @@ type CSharpLspServer(
             let serverCapabilities = getServerCapabilities p
             p |> withReadWriteContext (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
 
-        override __.Initialized(p) =
-            p |> withReadWriteContext (Initialization.handleInitialized lspClient stateActor getRegistrations)
-              |> ignoreResult
+        override __.Initialized() =
+            () |> withReadWriteContext (Initialization.handleInitialized lspClient stateActor getRegistrations)
+               |> ignoreResult
 
         override __.Shutdown() =
             () |> withReadWriteContext Initialization.handleShutdown |> ignoreResult

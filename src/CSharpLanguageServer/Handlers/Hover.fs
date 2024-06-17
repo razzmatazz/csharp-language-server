@@ -19,17 +19,19 @@ module Hover =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false -> Some true
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, HoverOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
+        | true -> Some (U2.C1 false)
+        | false -> Some (U2.C1 true)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
             let registerOptions: HoverRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector }
+                { DocumentSelector = Some defaultDocumentSelector
+                  WorkDoneProgress = None
+                }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/hover"
@@ -41,9 +43,9 @@ module Hover =
         | Some (symbol, doc) ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel |> markdown
+            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel
             let hover =
-                { Contents = MarkupContent content
+                { Contents = { Kind = MarkupKind.Markdown; Value = content } |> U3.C1
                   // TODO: Support range
                   Range = None }
             return hover |> Some |> success

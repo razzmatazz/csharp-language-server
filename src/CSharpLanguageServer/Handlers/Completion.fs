@@ -22,13 +22,14 @@ module Completion =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : CompletionOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : CompletionOptions option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
         | false ->
             Some { ResolveProvider = None
-                   TriggerCharacters = Some ([| '.'; '''; |])
+                   TriggerCharacters = Some ([| "."; "'"; |])
                    AllCommitCharacters = None
+                   WorkDoneProgress = None
                    CompletionItem = None }
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
@@ -38,9 +39,10 @@ module Completion =
             let registerOptions: CompletionRegistrationOptions =
                     { DocumentSelector = Some defaultDocumentSelector
                       ResolveProvider = Some true
-                      TriggerCharacters = Some ([| '.'; '''; |])
+                      TriggerCharacters = Some ([| "."; "'"; |])
                       AllCommitCharacters = None
                       CompletionItem = None
+                      WorkDoneProgress = None
                     }
 
             Some
@@ -108,7 +110,7 @@ module Completion =
             return
                 completions
                 |> Option.ofObj
-                |> map (fun completions ->
+                |> Option.map (fun completions ->
                     let key = cache.add((doc, completions))
                     let items =
                         completions.ItemsList
@@ -120,7 +122,7 @@ module Completion =
                 |> success
     }
 
-    let resolve (context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+    let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
         match
             item.Data
             |> Option.bind deserialize
@@ -139,5 +141,6 @@ module Completion =
                 |> map Option.ofObj
                 |> Async.AwaitTask
             // TODO: make the doc as a markdown string instead of a plain text
-            return { item with Documentation = description |> map Documentation.fromCompletionDescription } |> success
+            let itemDocumentation = description |> map Documentation.fromCompletionDescription
+            return { item with Documentation = itemDocumentation |> Option.map U2.C2 } |> success
     }

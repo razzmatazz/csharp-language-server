@@ -37,10 +37,11 @@ module Rename =
             let updatedDoc = updatedSolution.GetDocument(docId)
             let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
-            let diffEdits: TextEdit array =
+            let diffEdits: U2<TextEdit, AnnotatedTextEdit> array =
                 docChanges
                 |> Seq.sortBy (fun c -> c.Span.Start)
                 |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
+                |> Seq.map U2.C1
                 |> Array.ofSeq
 
             let uri = originalDoc.FilePath |> Path.toUri
@@ -73,11 +74,11 @@ module Rename =
         |> Option.bind (fun x -> x.PrepareSupport)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option): U2<bool, RenameOptions> option =
-        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities): U2<bool, RenameOptions> option =
+        match dynamicRegistration (Some clientCapabilities), prepareSupport (Some clientCapabilities) with
         | true, _ -> None
-        | false, true -> Some (Second { PrepareProvider = Some true })
-        | false, false -> Some (First true)
+        | false, true -> Some (U2.C2 { PrepareProvider = Some true; WorkDoneProgress = None })
+        | false, false -> Some (U2.C1 true)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -86,6 +87,7 @@ module Rename =
             let registerOptions: RenameRegistrationOptions = {
                 PrepareProvider = Some (prepareSupport clientCapabilities)
                 DocumentSelector = Some defaultDocumentSelector
+                WorkDoneProgress = None
             }
             Some
                 { Id = Guid.NewGuid().ToString()
@@ -145,9 +147,7 @@ module Rename =
 
                     let text = docText.ToString(span)
 
-                    { Range = range; Placeholder = text }
-                    |> PrepareRenameResult.RangeWithPlaceholder
-                    |> Some
+                    { Range = range; Placeholder = text } |> U3.C2 |> Some
                 | _, _ -> None
 
             return rangeWithPlaceholderMaybe |> success
@@ -183,6 +183,7 @@ module Rename =
                       TextDocument = None
                       Experimental = None
                       Window = None
+                      NotebookDocument = None
                       General = None }
 
             return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success

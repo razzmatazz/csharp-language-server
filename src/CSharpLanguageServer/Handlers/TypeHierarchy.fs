@@ -26,17 +26,19 @@ module TypeHierarchy =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U3<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> Some true
+        | false -> Some (U3.C1 true)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
             let registerOptions: TypeHierarchyRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector }
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/prepareTypeHierarchy"
@@ -45,7 +47,7 @@ module TypeHierarchy =
     let prepare (context: ServerRequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
         | Some symbol when isTypeSymbol symbol ->
-            let! itemList = HierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
+            let! itemList = TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
             return itemList |> List.toArray |> Some |> success
         | _ -> return None |> success
     }
@@ -64,7 +66,7 @@ module TypeHierarchy =
                 |> Option.toList
             let interfaces = Seq.toList typeSymbol.Interfaces
             let supertypes = baseType @ interfaces
-            let! items = supertypes |> Seq.map (HierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
+            let! items = supertypes |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
             return items |> Seq.collect id |> Seq.toArray |> Some |> success
         | _ -> return None |> success
     }
@@ -81,7 +83,7 @@ module TypeHierarchy =
                   context.FindImplementations' typeSymbol false ]
                 |> Async.Parallel
                 |> map (Seq.collect id >> Seq.toList)
-            let! items = subtypes |> Seq.map (HierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
+            let! items = subtypes |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
             return items |> Seq.collect id |> Seq.toArray |> Some |> success
         | _ -> return None |> success
     }

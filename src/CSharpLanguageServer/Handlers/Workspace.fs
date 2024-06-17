@@ -29,7 +29,7 @@ module Workspace =
         | false -> None
         | true ->
             let fileSystemWatcher =
-                { GlobPattern = U2.First "**/*.{cs,csproj,sln}"
+                { GlobPattern = U2.C1 "**/*.{cs,csproj,sln}"
                   Kind = Some (WatchKind.Create ||| WatchKind.Change ||| WatchKind.Delete) }
 
             let registerOptions: DidChangeWatchedFilesRegistrationOptions =

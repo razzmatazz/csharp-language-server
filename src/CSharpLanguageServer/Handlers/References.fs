@@ -19,16 +19,21 @@ module References =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities option) : bool option =
-        match dynamicRegistration clientCapabilities with
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, ReferenceOptions> option =
+        match dynamicRegistration (Some clientCapabilities) with
         | true -> None
-        | false -> Some true
+        | false -> Some (U2.C1 true)
 
     let registration (clientCapabilities: ClientCapabilities option) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
-            let registerOptions: ReferenceRegistrationOptions = { DocumentSelector = Some defaultDocumentSelector }
+            let registerOptions: ReferenceRegistrationOptions =
+                {
+                    DocumentSelector = Some defaultDocumentSelector
+                    WorkDoneProgress = None
+                }
+
             Some
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/references"
