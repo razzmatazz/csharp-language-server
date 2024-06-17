@@ -134,13 +134,6 @@ let getDocumentForUriOfType state docType (u: string) =
     | None -> None
 
 let processServerEvent (logger: ILog) state postMsg msg : Async<ServerState> = async {
-    let showMessage m =
-        match state.LspClient with
-        | Some lspClient -> lspClient.WindowShowMessage(
-            { Type = MessageType.Info
-              Message = sprintf "csharp-ls: %s" m })
-        | None -> async.Return ()
-
     match msg with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
@@ -272,7 +265,6 @@ let processServerEvent (logger: ILog) state postMsg msg : Async<ServerState> = a
                 loadSolutionOnSolutionPathOrDir
                     state.LspClient.Value
                     logger
-                    showMessage
                     state.Settings.SolutionPath
                     state.RootPath
 

@@ -350,7 +350,6 @@ type CSharpLspHostServices () =
 let tryLoadSolutionOnPath
         (lspClient: ILspClient)
         (logger: ILog)
-        (showMessage: string -> Async<unit>)
         solutionPath =
     let progress = ProgressReporter(lspClient)
 
@@ -423,7 +422,6 @@ let tryLoadSolutionFromProjectFiles
 let findAndLoadSolutionOnDir
         (lspClient: ILspClient)
         (logger: ILog)
-        (showMessage: string -> Async<unit>)
         dir =
     async {
         let fileNotOnNodeModules (filename: string) =
@@ -435,6 +433,12 @@ let findAndLoadSolutionOnDir
             Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
             |> Seq.filter fileNotOnNodeModules
             |> Seq.toList
+
+        let showMessage m =
+            lspClient.WindowShowMessage({
+                Type = MessageType.Info
+                Message = sprintf "csharp-ls: %s" m
+            })
 
         do! showMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
@@ -464,23 +468,27 @@ let findAndLoadSolutionOnDir
             return! tryLoadSolutionFromProjectFiles lspClient logger showMessage projFiles
 
         | Some solutionPath ->
-            return! tryLoadSolutionOnPath lspClient logger showMessage solutionPath
+            return! tryLoadSolutionOnPath lspClient logger solutionPath
     }
 
 let loadSolutionOnSolutionPathOrDir
         (lspClient: ILspClient)
         (logger: ILog)
-        (showMessage: string -> Async<unit>)
         solutionPathMaybe
         rootPath =
     match solutionPathMaybe with
     | Some solutionPath -> async {
-        return! tryLoadSolutionOnPath lspClient logger showMessage solutionPath
+        return! tryLoadSolutionOnPath lspClient logger solutionPath
       }
 
     | None -> async {
-        do! showMessage (sprintf "attempting to find and load solution based on root path (\"%s\").." rootPath)
-        return! findAndLoadSolutionOnDir lspClient logger showMessage rootPath
+        let logMessage: ShowMessageParams = {
+            Type = MessageType.Info
+            Message = sprintf "csharp-ls: attempting to find and load solution based on root path (\"%s\").." rootPath
+        }
+
+        do! lspClient.WindowShowMessage(logMessage)
+        return! findAndLoadSolutionOnDir lspClient logger rootPath
       }
 
 let getContainingTypeOrThis (symbol: ISymbol): INamedTypeSymbol =
