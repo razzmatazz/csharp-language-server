@@ -340,6 +340,12 @@ type WorkspaceServicesInterceptor () =
                         let interceptor = RemoteHostClientProviderInterceptor()
                         generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
+                    | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryCollectorWorkspaceService"
+                    | "Microsoft.CodeAnalysis.CodeRefactorings.PullMemberUp.Dialog.IPullMemberUpOptionsService"
+                    | "Microsoft.CodeAnalysis.Packaging.IPackageInstallerService" ->
+                        // supress "GetService failed" messages for these services
+                        null
+
                     | _ ->
                         logger.debug (
                             Log.setMessage "GetService failed for {serviceType}"
