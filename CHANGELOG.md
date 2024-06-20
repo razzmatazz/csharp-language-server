@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Speed up completion by not showing name suggestions or items from unimported namespaces
+  - https://github.com/razzmatazz/csharp-language-server/pull/168
 * Bump Ionide.LanguageServerProtocol to 0.6.0, fix some of the types used for dynamic registration
 * Reduce noise when loading >10 project files, include currently loading project in progress bar.
   - By @BrianCArnold in https://github.com/razzmatazz/csharp-language-server/pull/162

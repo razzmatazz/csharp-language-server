@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.Reflection
 
 open FSharpPlus
 open Ionide.LanguageServerProtocol.Server
@@ -12,9 +13,57 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Completion =
+    let private logger = LogProvider.getLoggerByName "Completion"
+
+    let emptyRoslynOptionSet: Microsoft.CodeAnalysis.Options.OptionSet =
+        let osType = typeof<Microsoft.CodeAnalysis.Options.OptionSet>
+        let osEmptyOptionSetField = osType.GetField("Empty", BindingFlags.Static|||BindingFlags.NonPublic)
+        osEmptyOptionSetField.GetValue(null) :?> Microsoft.CodeAnalysis.Options.OptionSet
+
+    /// the type reflects on internal class Microsoft.CodeAnalysis.Completion.CompletionOptions
+    /// see https://github.com/dotnet/roslyn/blob/main/src/Features/Core/Portable/Completion/CompletionOptions.cs
+    type RoslynCompletionOptions =
+        {
+            Object: obj
+            CompletionOptionsType: Type
+        }
+        with
+            member rco.WithBool(optionName: string, optionValue: bool) =
+                let cloneCompletionOptionsMI = rco.CompletionOptionsType.GetMethod("<Clone>$")
+                let updatedCompletionOptions = cloneCompletionOptionsMI.Invoke(rco.Object, null)
+                let newCo = rco.CompletionOptionsType.GetProperty(optionName)
+                newCo.SetValue(updatedCompletionOptions, optionValue)
+                { rco with Object = updatedCompletionOptions }
+
+            static member Default() =
+                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
+                let coType = featuresAssembly.GetType("Microsoft.CodeAnalysis.Completion.CompletionOptions")
+                let defaultCo: obj = coType.GetField("Default").GetValue()
+                { Object = defaultCo; CompletionOptionsType = coType }
+
+    type RoslynCompletionServiceWrapper(service: Microsoft.CodeAnalysis.Completion.CompletionService) =
+        member __.GetCompletionsAsync(doc, position, completionOptions, completionTrigger, ct) : Async<Microsoft.CodeAnalysis.Completion.CompletionList> =
+            let completionServiceType = service.GetType()
+
+            let getCompletionsAsync7MI =
+                completionServiceType.GetMethods(BindingFlags.Instance|||BindingFlags.NonPublic)
+                |> Seq.filter (fun mi -> mi.Name = "GetCompletionsAsync" && mi.GetParameters().Length = 7)
+                |> Seq.head
+
+            let parameters: obj array = [| doc; position; completionOptions.Object; emptyRoslynOptionSet; completionTrigger; null; ct |]
+
+            let result = getCompletionsAsync7MI.Invoke(service, parameters)
+
+            (result :?> System.Threading.Tasks.Task<Microsoft.CodeAnalysis.Completion.CompletionList>)
+            |> Async.AwaitTask
+
+        member __.ShouldTriggerCompletion(sourceText, position, completionTrigger) =
+            service.ShouldTriggerCompletion(sourceText, position, completionTrigger)
+
     let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
         clientCapabilities
         |> Option.bind (fun x -> x.TextDocument)
@@ -76,7 +125,7 @@ module Completion =
     let private makeLspCompletionItem
         (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
         (cacheKey: uint64) =
-        { CompletionItem.Create(item.DisplayText) with
+        { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
             Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
             SortText         = item.SortText |> Option.ofString
             FilterText       = item.FilterText |> Option.ofString
@@ -87,7 +136,7 @@ module Completion =
 
     let private cache = new LruCache<(Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionList)>(5)
 
-    let handle (context: ServerRequestContext) (p: CompletionParams) : AsyncLspResult<CompletionList option> = async {
+    let handle (context: ServerRequestContext) (p: CompletionParams) : AsyncLspResult<Ionide.LanguageServerProtocol.Types.CompletionList option> = async {
         match context.GetDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
@@ -96,20 +145,29 @@ module Completion =
 
             let position = Position.toRoslynPosition sourceText.Lines p.Position
 
-            let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+            let completionService =
+                Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+                |> RoslynCompletionServiceWrapper
+
+            let completionOptions =
+                RoslynCompletionOptions.Default()
+                |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
+                |> _.WithBool("ShowNameSuggestions", false)
+
             let completionTrigger = CompletionContext.toCompletionTrigger p.Context
             let shouldTriggerCompletion =
                 p.Context |> Option.exists (fun x -> x.TriggerKind = CompletionTriggerKind.TriggerForIncompleteCompletions) ||
                 completionService.ShouldTriggerCompletion(sourceText, position, completionTrigger)
+
             let! completions =
                 if shouldTriggerCompletion then
-                    completionService.GetCompletionsAsync(doc, position, completionTrigger, cancellationToken=ct) |> Async.AwaitTask
+                    completionService.GetCompletionsAsync(doc, position, completionOptions, completionTrigger, ct)
+                    |> Async.map Option.ofObj
                 else
-                    async.Return null
+                    async.Return Option.None
 
             return
                 completions
-                |> Option.ofObj
                 |> Option.map (fun completions ->
                     let key = cache.add((doc, completions))
                     let items =
