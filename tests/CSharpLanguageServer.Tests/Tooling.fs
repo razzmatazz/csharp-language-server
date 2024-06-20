@@ -6,6 +6,7 @@ open System.IO
 open System.Diagnostics
 open System.Text
 open System.Threading.Tasks
+open System.Threading
 
 open NUnit.Framework
 open Newtonsoft.Json.Linq
@@ -432,6 +433,26 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
         client.PostAndReply(fun rc -> InitializeRequest rc)
         logMessage "Initialize" "OK, InitializeRequest complete"
 
+    member __.WaitForProgressEnd(message: string) =
+        let timeoutMS = 10 * 1000
+        let start = DateTime.Now
+
+        let progressEndMatch m =
+            m.Source = Server
+            && (m.Message.["method"] |> string) = "$/progress"
+            && (m.Message.["params"].["value"].["kind"] |> string) = "end"
+            && (m.Message.["params"].["value"].["message"] |> string) = message
+
+        let mutable haveProgressEnd = false
+        while (not haveProgressEnd) do
+            let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
+            haveProgressEnd <- rpcLog |> Seq.exists progressEndMatch
+
+            if (DateTime.Now - start).TotalMilliseconds > timeoutMS then
+               failwith (sprintf "WaitForProgressEnd: no $/progress[end] received in %dms"
+                                 timeoutMS)
+            Thread.Sleep(25)
+
     member __.Shutdown () =
         client.Post(ShutdownRequest)
         client.Post(ExitRequest)
@@ -448,6 +469,13 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists (fun m -> m.Source = Server && (string m.Message["method"]) = rpcMethod)
 
+    member __.ServerDidRespondTo (rpcMethod: string) =
+        let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
+        let invocation = rpcLog |> Seq.find (fun m -> m.Source = Client && (string m.Message["method"]) = rpcMethod)
+        rpcLog
+        |> Seq.exists (fun m -> m.Source = Client
+                                && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
+                                && (m.Message.["method"] |> string) = rpcMethod)
 
 let startAndMountServer (projectFiles: Map<string, string>) (enableLogging: bool) =
     let initialState = { ClientState.Default with LoggingEnabled = enableLogging }

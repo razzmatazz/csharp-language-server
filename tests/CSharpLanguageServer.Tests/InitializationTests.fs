@@ -28,5 +28,6 @@ let testServerRegistersCapabilitiesWithTheClient () =
     use client = startAndMountServer projectFiles false
     client.Start()
     client.Initialize()
-    client.DumpRpcLog()
-    Assert.IsTrue(client.ServerDidInvoke("client/registerCapability"))
+    client.WaitForProgressEnd("OK, 1 project file(s) loaded")
+    Assert.IsTrue(client.ServerDidRespondTo("initialize"))
+    Assert.IsTrue(client.ServerDidRespondTo("initialized"))

@@ -410,7 +410,7 @@ let tryLoadSolutionFromProjectFiles
     let progress = ProgressReporter(lspClient)
 
     async {
-        do! progress.Begin($"Loading {projs.Length} projects...", false, $"0/{projs.Length}", 0u)
+        do! progress.Begin($"Loading {projs.Length} project(s)...", false, $"0/{projs.Length}", 0u)
         let loadedProj = ref 0
 
         let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
