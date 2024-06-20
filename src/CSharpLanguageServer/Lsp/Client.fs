@@ -45,3 +45,13 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
     override __.WorkDoneProgressCreate(token) =
         let param: WorkDoneProgressCreateParams = { Token = token }
         sendServerRequest.Send "window/workDoneProgress/create" (box param)
+
+    override __.Progress(token, data) =
+        let jtokenFromObject (obj: 'a) =
+            Newtonsoft.Json.Linq.JToken.FromObject(obj, Ionide.LanguageServerProtocol.Server.jsonRpcFormatter.JsonSerializer)
+
+        let progress: ProgressParams =
+            { Token = token
+              Value = jtokenFromObject data }
+
+        sendServerNotification "$/progress" (box progress) |> Async.Ignore
