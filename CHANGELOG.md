@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.14.0] - 2024-06-23 / Palanga
 * Speed up completion by not showing name suggestions or items from unimported namespaces
   - https://github.com/razzmatazz/csharp-language-server/pull/168
 * Bump Ionide.LanguageServerProtocol to 0.6.0, fix some of the types used for dynamic registration
@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By Adam Tao @tcx4c70
 * More refactoring and fixes from rework branch:
   - By Adam Tao @tcx4c70, from https://github.com/tcx4c70/csharp-language-server/commits/rework/
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.13.0...0.14.0
 
 ## [0.13.0] - 2024-05-08 / Baltoji Vokė
 * Bump Ionide.LanguageServerProtocol dependency to v0.5.0
