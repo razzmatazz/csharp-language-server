@@ -44,3 +44,13 @@ let defaultDocumentSelector: DocumentSelector =
     [|
         defaultDocumentFilter |> U2.C1
     |]
+
+let emptyClientCapabilities: ClientCapabilities =
+    {
+        Workspace = None
+        TextDocument = None
+        NotebookDocument = None
+        Window = None
+        General = None
+        Experimental = None
+    }

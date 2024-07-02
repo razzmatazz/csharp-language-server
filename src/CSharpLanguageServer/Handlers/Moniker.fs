@@ -7,9 +7,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module Moniker =
-    let provider (clientCapabilities: ClientCapabilities option) = None
+    let provider (_cc: ClientCapabilities) = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (def: TextDocumentPositionParams) : AsyncLspResult<Moniker[] option> =
+    let handle (_context: ServerRequestContext) (_p: TextDocumentPositionParams) : AsyncLspResult<Moniker[] option> =
         notImplemented<Moniker[] option> |> async.Return
