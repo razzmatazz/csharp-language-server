@@ -72,7 +72,7 @@ module Workspace =
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             context.Emit(SolutionChange updatedProject.Solution)
-            context.Emit(OpenDocVersionRemove uri)
+            context.Emit(OpenDocRemove uri)
 
             diagnosticsPost(DocumentRemoval uri)
         | None -> ()

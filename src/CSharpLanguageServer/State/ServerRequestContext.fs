@@ -17,7 +17,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities
     member _.Solution = solutionMaybe.Value
-    member _.OpenDocVersions = state.OpenDocVersions
+    member _.OpenDocs = state.OpenDocs
     member _.DecompiledMetadata = state.DecompiledMetadata
 
     member _.WindowShowMessage (m: string) =
@@ -219,4 +219,6 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
     }
 
     member this.GetDocumentVersion (uri: DocumentUri): int option =
-        Uri.unescape uri |> this.OpenDocVersions.TryFind
+        Uri.unescape uri
+        |> this.OpenDocs.TryFind
+        |> Option.map _.Version

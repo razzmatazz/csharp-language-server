@@ -120,7 +120,7 @@ module TextDocumentSync =
                 // went out of sync with editor
                 let updatedDoc = SourceText.From(openParams.TextDocument.Text) |> doc.WithText
 
-                context.Emit(OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version))
+                context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                 context.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnosticsPost(
@@ -136,7 +136,7 @@ module TextDocumentSync =
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
-                // ok, this document is not on solution, register a new document
+                // ok, this document is not in solution, register a new document
                 let! newDocMaybe =
                     tryAddDocument
                         logger
@@ -146,6 +146,7 @@ module TextDocumentSync =
 
                 match newDocMaybe with
                 | Some newDoc ->
+                    context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                     context.Emit(SolutionChange newDoc.Project.Solution)
 
                     diagnosticsPost(
@@ -180,7 +181,7 @@ module TextDocumentSync =
                 let updatedSolution = updatedDoc.Project.Solution
 
                 context.Emit(SolutionChange updatedSolution)
-                context.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version))
+                context.Emit(OpenDocAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version, DateTime.Now))
 
                 diagnosticsPost(
                     DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
@@ -194,7 +195,7 @@ module TextDocumentSync =
                  (context: ServerRequestContext)
                  (closeParams: DidCloseTextDocumentParams)
             : Async<LspResult<unit>> =
-        context.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
+        context.Emit(OpenDocRemove closeParams.TextDocument.Uri)
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
@@ -228,6 +229,7 @@ module TextDocumentSync =
 
             match newDocMaybe with
             | Some newDoc ->
+                context.Emit(OpenDocTouch (saveParams.TextDocument.Uri, DateTime.Now))
                 context.Emit(SolutionChange newDoc.Project.Solution)
 
                 diagnosticsPost(

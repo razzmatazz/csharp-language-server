@@ -21,6 +21,12 @@ type DecompiledMetadataDocument = {
 
 type ServerRequestType = ReadOnly | ReadWrite
 
+type ServerOpenDocInfo =
+    {
+        Version: int
+        Touched: DateTime
+    }
+
 type ServerRequest = {
     Id: int
     Name: string
@@ -36,7 +42,7 @@ and ServerState = {
     LspClient: ILspClient option
     ClientCapabilities: ClientCapabilities
     Solution: Solution option
-    OpenDocVersions: Map<string, int>
+    OpenDocs: Map<string, ServerOpenDocInfo>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     LastRequestId: int
     RunningRequests: Map<int, ServerRequest>
@@ -79,7 +85,7 @@ let emptyServerState = { Settings = ServerSettings.Default
                          LspClient = None
                          ClientCapabilities = emptyClientCapabilities
                          Solution = None
-                         OpenDocVersions = Map.empty
+                         OpenDocs = Map.empty
                          DecompiledMetadata = Map.empty
                          LastRequestId = 0
                          RunningRequests = Map.empty
@@ -98,8 +104,9 @@ type ServerStateEvent =
     | ClientCapabilityChange of ClientCapabilities option
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
-    | OpenDocVersionAdd of string * int
-    | OpenDocVersionRemove of string
+    | OpenDocAdd of string * int * DateTime
+    | OpenDocRemove of string
+    | OpenDocTouch of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
     | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
@@ -234,13 +241,25 @@ let processServerEvent (logger: ILog) state postMsg msg : Async<ServerState> = a
         let newDecompiledMd = Map.add uri md state.DecompiledMetadata
         return { state with DecompiledMetadata = newDecompiledMd }
 
-    | OpenDocVersionAdd (doc, ver) ->
-        let newOpenDocVersions = Map.add doc ver state.OpenDocVersions
-        return { state with OpenDocVersions = newOpenDocVersions }
+    | OpenDocAdd (doc, ver, timestamp) ->
+        let openDocInfo = { Version = ver
+                            Touched = timestamp }
+        let newOpenDocs = state.OpenDocs |> Map.add doc openDocInfo
+        return { state with OpenDocs = newOpenDocs }
 
-    | OpenDocVersionRemove uri ->
-        let newOpenDocVersions = state.OpenDocVersions |> Map.remove uri
-        return { state with OpenDocVersions = newOpenDocVersions }
+    | OpenDocRemove uri ->
+        let newOpenDocVersions = state.OpenDocs |> Map.remove uri
+        return { state with OpenDocs = newOpenDocVersions }
+
+    | OpenDocTouch (uri, timestamp) ->
+        let openDocInfo = state.OpenDocs |> Map.tryFind uri
+        match openDocInfo with
+        | None ->
+            return state
+        | Some openDocInfo ->
+            let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
+            let newOpenDocVersions = state.OpenDocs |> Map.add uri updatedOpenDocInfo
+            return { state with OpenDocs = newOpenDocVersions }
 
     | SolutionReloadRequest reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
