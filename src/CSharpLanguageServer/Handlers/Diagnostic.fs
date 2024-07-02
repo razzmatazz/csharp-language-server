@@ -8,7 +8,7 @@ open CSharpLanguageServer.State
 module Diagnostic =
     let provider (clientCapabilities: ClientCapabilities) = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
 
     let handle (context: ServerRequestContext) (def: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> =
         LspResult.notImplemented<DocumentDiagnosticReport> |> async.Return

@@ -17,14 +17,13 @@ open CSharpLanguageServer.Logging
 module Workspace =
     let private logger = LogProvider.getLoggerByName "Workspace"
 
-    let dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.Workspace)
+    let dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.Workspace
         |> Option.bind (fun x -> x.DidChangeWatchedFiles)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let registration (clientCapabilities: ClientCapabilities option): Registration option =
+    let registration (clientCapabilities: ClientCapabilities): Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->

@@ -37,15 +37,14 @@ module TextDocumentSync =
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        >>= fun x -> x.TextDocument
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         >>= fun x -> x.Synchronization
         >>= fun x -> x.DynamicRegistration
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false ->
             Some
@@ -54,7 +53,7 @@ module TextDocumentSync =
                     Save = Some (U2.C2 { IncludeText = Some true })
                     Change = Some TextDocumentSyncKind.Incremental }
 
-    let didOpenRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didOpenRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -67,7 +66,7 @@ module TextDocumentSync =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
 
-    let didChangeRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didChangeRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -79,7 +78,7 @@ module TextDocumentSync =
                   Method = "textDocument/didChange"
                   RegisterOptions = registerOptions|> serialize |> Some }
 
-    let didSaveRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didSaveRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -92,7 +91,7 @@ module TextDocumentSync =
                   Method = "textDocument/didSave"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let didCloseRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didCloseRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -104,9 +103,9 @@ module TextDocumentSync =
                   Method = "textDocument/didClose"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let willSaveRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
-    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
     let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
                 (context: ServerRequestContext)

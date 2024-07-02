@@ -106,7 +106,7 @@ type CSharpLspServer(
         return ()
     }
 
-    let getRegistrations (clientCapabilities: ClientCapabilities option): Registration list =
+    let getRegistrations (clientCapabilities: ClientCapabilities): Registration list =
         let registrationBuilders =
             [ CallHierarchy.registration
               CodeAction.registration

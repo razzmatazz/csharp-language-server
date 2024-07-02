@@ -7,9 +7,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module FoldingRange =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+    let provider (_c: ClientCapabilities) : bool option = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (_c: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: FoldingRangeParams) : AsyncLspResult<FoldingRange list option> =
+    let handle (_c: ServerRequestContext) (_p: FoldingRangeParams) : AsyncLspResult<FoldingRange list option> =
         notImplemented<FoldingRange list option> |> async.Return
