@@ -13,19 +13,18 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) : bool =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) : bool =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.TypeDefinition)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U3<bool,TypeDefinitionOptions,TypeDefinitionRegistrationOptions> option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false -> Some (U3.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->

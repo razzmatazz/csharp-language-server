@@ -6,9 +6,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module Color =
-    let provider (clientCapabilities: ClientCapabilities option)  = None
+    let provider (clientCapabilities: ClientCapabilities)  = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
 
     let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return

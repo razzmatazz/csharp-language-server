@@ -140,15 +140,14 @@ module SemanticTokens =
             return Some response |> success
     }
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.SemanticTokens)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U2<SemanticTokensOptions, SemanticTokensRegistrationOptions> option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false ->
             let semanticTokensOptions: SemanticTokensOptions =
@@ -161,7 +160,7 @@ module SemanticTokens =
 
             Some (U2.C1 semanticTokensOptions)
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->

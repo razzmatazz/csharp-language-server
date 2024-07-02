@@ -6,9 +6,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module DocumentLink =
-    let provider (clientCapabilities: ClientCapabilities option) : DocumentLinkOptions option = None
+    let provider (clientCapabilities: ClientCapabilities) : DocumentLinkOptions option = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
 
     let handle (context: ServerRequestContext) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> =
         LspResult.notImplemented<DocumentLink[] option> |> async.Return

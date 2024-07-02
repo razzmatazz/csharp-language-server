@@ -284,21 +284,19 @@ module CodeAction =
             }
     }
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.CodeAction)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let private literalSupport (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private literalSupport (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.CodeAction)
         |> Option.bind (fun x -> x.CodeActionLiteralSupport)
 
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, CodeActionOptions> option =
-        match dynamicRegistration (Some clientCapabilities), literalSupport (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities, literalSupport clientCapabilities with
         | true, _ -> None
         | false, _ ->
             // TODO: Server can only return CodeActionOptions if literalSupport is not None
@@ -308,7 +306,7 @@ module CodeAction =
             |> U2.C2
             |> Some
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -335,8 +333,7 @@ module CodeAction =
             let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
 
             let clientSupportsCodeActionEditResolveWithEditAndData =
-                context.ClientCapabilities
-                |> Option.bind (fun x -> x.TextDocument)
+                context.ClientCapabilities.TextDocument
                 |> Option.bind (fun x -> x.CodeAction)
                 |> Option.bind (fun x -> x.ResolveSupport)
                 |> Option.map (fun resolveSupport -> resolveSupport.Properties |> Array.contains "edit")

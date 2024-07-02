@@ -19,19 +19,18 @@ module TypeHierarchy =
         | :? INamedTypeSymbol -> true
         | _ -> false
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.TypeHierarchy)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U3<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions> option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false -> Some (U3.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->

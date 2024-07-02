@@ -6,9 +6,9 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module SelectionRange =
-    let provider (clientCapabilities: ClientCapabilities option) : bool option = None
+    let provider (_cc: ClientCapabilities) : bool option = None
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option = None
+    let registration (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: SelectionRangeParams) : AsyncLspResult<SelectionRange list option> =
+    let handle (_ctx: ServerRequestContext) (_p: SelectionRangeParams) : AsyncLspResult<SelectionRange list option> =
         LspResult.notImplemented<SelectionRange list option> |> async.Return

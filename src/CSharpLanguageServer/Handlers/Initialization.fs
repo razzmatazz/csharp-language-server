@@ -101,7 +101,7 @@ module Initialization =
 
     let handleInitialized (lspClient: ILspClient)
                           (stateActor: MailboxProcessor<ServerStateEvent>)
-                          (getRegistrations: (ClientCapabilities option) -> Registration list)
+                          (getRegistrations: ClientCapabilities -> Registration list)
                           (context: ServerRequestContext)
                           (_p: unit)
             : Async<LspResult<unit>> =

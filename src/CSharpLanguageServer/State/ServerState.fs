@@ -34,7 +34,7 @@ and ServerState = {
     Settings: ServerSettings
     RootPath: string
     LspClient: ILspClient option
-    ClientCapabilities: ClientCapabilities option
+    ClientCapabilities: ClientCapabilities
     Solution: Solution option
     OpenDocVersions: Map<string, int>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
@@ -77,7 +77,7 @@ let pullNextRequestMaybe requestQueue =
 let emptyServerState = { Settings = ServerSettings.Default
                          RootPath = Directory.GetCurrentDirectory()
                          LspClient = None
-                         ClientCapabilities = None
+                         ClientCapabilities = emptyClientCapabilities
                          Solution = None
                          OpenDocVersions = Map.empty
                          DecompiledMetadata = Map.empty
@@ -225,7 +225,7 @@ let processServerEvent (logger: ILog) state postMsg msg : Async<ServerState> = a
         return { state with LspClient = lspClient }
 
     | ClientCapabilityChange cc ->
-        return { state with ClientCapabilities = cc }
+        return { state with ClientCapabilities = cc |> Option.defaultValue emptyClientCapabilities }
 
     | SolutionChange s ->
         return { state with Solution = Some s }
