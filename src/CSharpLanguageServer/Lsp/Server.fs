@@ -182,7 +182,7 @@ type CSharpLspServer(
                     TypeHierarchyProvider = TypeHierarchy.provider lspClient.Capabilities
                     // InlineValueProvider = InlineValue.provider lspClient.Capabilities
                     InlayHintProvider = InlayHint.provider lspClient.Capabilities
-                    // DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
+                    DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
                     WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
 
     interface ICSharpLspServer with
@@ -372,7 +372,8 @@ type CSharpLspServer(
         override this.WorkspaceSymbolResolve(p) =
             p |> withReadOnlyContext WorkspaceSymbol.resolve
 
-        override this.TextDocumentDiagnostic(p) = notImplemented
+        override this.TextDocumentDiagnostic(p) =
+            p |> withReadOnlyContext Diagnostic.handle
 
         override this.TextDocumentLinkedEditingRange(p) =
             p |> withReadOnlyContext LinkedEditingRange.handle
