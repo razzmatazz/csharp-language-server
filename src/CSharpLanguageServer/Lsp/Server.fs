@@ -40,18 +40,12 @@ type CSharpLspServer(
     let getDocumentForUriFromCurrentState docType uri =
         stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
 
-    let diagnostics = MailboxProcessor.Start(
-        diagnosticsEventLoop
-            lspClient
-            getDocumentForUriFromCurrentState)
-
     let mutable timer: System.Threading.Timer option = None
 
     let setupTimer () =
         timer <- Some (new System.Threading.Timer(
             System.Threading.TimerCallback(
-                fun _ -> do diagnostics.Post(ProcessPendingDiagnostics)
-                         do stateActor.Post(PeriodicTimerTick)),
+                fun _ -> do stateActor.Post(PeriodicTimerTick)),
             null, dueTime=100, period=250))
 
     let mutable workspaceFolders: WorkspaceFolder list = []
@@ -205,15 +199,15 @@ type CSharpLspServer(
             p |> withReadOnlyContext Hover.handle
 
         override this.TextDocumentDidOpen(p) =
-            p |> withReadOnlyContext (TextDocumentSync.didOpen diagnostics.Post)
+            p |> withReadOnlyContext (TextDocumentSync.didOpen)
               |> ignoreResult
 
         override this.TextDocumentDidChange(p) =
-            p |> withReadWriteContext (TextDocumentSync.didChange diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didChange)
               |> ignoreResult
 
         override this.TextDocumentDidClose(p) =
-            p |> withReadWriteContext (TextDocumentSync.didClose diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didClose)
               |> ignoreResult
 
         override this.TextDocumentWillSave(p) =
@@ -224,7 +218,7 @@ type CSharpLspServer(
             p |> withReadWriteContext TextDocumentSync.willSaveWaitUntil
 
         override this.TextDocumentDidSave(p) =
-            p |> withReadWriteContext (TextDocumentSync.didSave diagnostics.Post)
+            p |> withReadWriteContext (TextDocumentSync.didSave)
               |> ignoreResult
 
         override this.TextDocumentCompletion(p) =
@@ -294,10 +288,10 @@ type CSharpLspServer(
             p |> withReadOnlyContext DocumentSymbol.handle
 
         override __.WorkspaceDidChangeWatchedFiles(p) =
-            p |> withReadWriteContext (Workspace.didChangeWatchedFiles diagnostics.Post)
+            p |> withReadWriteContext Workspace.didChangeWatchedFiles
               |> ignoreResult
 
-        override __.WorkspaceDidChangeWorkspaceFolders(p) = ignoreNotification
+        override __.WorkspaceDidChangeWorkspaceFolders(_p) = ignoreNotification
 
         override __.WorkspaceDidChangeConfiguration(p) =
             p |> withReadWriteContext Workspace.didChangeConfiguration

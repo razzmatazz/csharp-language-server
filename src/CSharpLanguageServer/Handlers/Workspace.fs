@@ -39,14 +39,13 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let private tryReloadDocumentOnUri logger diagnosticsPost (context: ServerRequestContext) uri = async {
+    let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
         match context.GetUserDocument uri with
         | Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
             context.Emit(SolutionChange updatedDoc.Project.Solution)
-            diagnosticsPost(DocumentBacklogUpdate)
 
         | None ->
             let docFilePathMaybe = uri |> Util.tryParseFileUri
@@ -61,24 +60,20 @@ module Workspace =
                 match newDocMaybe with
                 | Some newDoc ->
                     context.Emit(SolutionChange newDoc.Project.Solution)
-                    diagnosticsPost(DocumentBacklogUpdate)
                 | None -> ()
             | None -> ()
     }
 
-    let private removeDocument diagnosticsPost (context: ServerRequestContext) uri =
+    let private removeDocument (context: ServerRequestContext) uri =
         match context.GetUserDocument uri with
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             context.Emit(SolutionChange updatedProject.Solution)
             context.Emit(OpenDocRemove uri)
-
-            diagnosticsPost(DocumentRemoval uri)
         | None -> ()
 
-    let didChangeWatchedFiles (diagnosticsPost: DiagnosticsEvent -> unit)
-                              (context: ServerRequestContext)
+    let didChangeWatchedFiles (context: ServerRequestContext)
                               (p: DidChangeWatchedFilesParams)
             : Async<LspResult<unit>> = async {
         for change in p.Changes do
@@ -94,11 +89,11 @@ module Workspace =
             | ".cs" ->
                 match change.Type with
                 | FileChangeType.Created ->
-                    do! tryReloadDocumentOnUri logger diagnosticsPost context change.Uri
+                    do! tryReloadDocumentOnUri logger context change.Uri
                 | FileChangeType.Changed ->
-                    do! tryReloadDocumentOnUri logger diagnosticsPost context change.Uri
+                    do! tryReloadDocumentOnUri logger context change.Uri
                 | FileChangeType.Deleted ->
-                    do removeDocument diagnosticsPost context change.Uri
+                    do removeDocument context change.Uri
                 | _ -> ()
 
             | _ -> ()

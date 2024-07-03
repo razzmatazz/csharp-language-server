@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Implement pull diagnostics for better performance;
+  - https://github.com/razzmatazz/csharp-language-server/pull/174
+
 ## [0.14.0] - 2024-06-23 / Palanga
 * Speed up completion by not showing name suggestions or items from unimported namespaces
   - https://github.com/razzmatazz/csharp-language-server/pull/168
