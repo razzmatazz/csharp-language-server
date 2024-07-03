@@ -107,8 +107,7 @@ module TextDocumentSync =
 
     let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
-    let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
-                (context: ServerRequestContext)
+    let didOpen (context: ServerRequestContext)
                 (openParams: DidOpenTextDocumentParams)
             : Async<LspResult<unit>> =
         match context.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
@@ -122,9 +121,6 @@ module TextDocumentSync =
 
                 context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                 context.Emit(SolutionChange updatedDoc.Project.Solution)
-
-                diagnosticsPost(
-                    DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
 
                 LspResult.Ok() |> async.Return
 
@@ -149,9 +145,6 @@ module TextDocumentSync =
                     context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                     context.Emit(SolutionChange newDoc.Project.Solution)
 
-                    diagnosticsPost(
-                        DocumentOpenOrChange (openParams.TextDocument.Uri, DateTime.Now))
-
                 | None -> ()
 
                 return LspResult.Ok()
@@ -160,13 +153,13 @@ module TextDocumentSync =
             | None ->
                 LspResult.Ok() |> async.Return
 
-    let didChange (diagnosticsPost: DiagnosticsEvent -> unit)
-                  (context: ServerRequestContext)
+    let didChange (context: ServerRequestContext)
                   (changeParams: DidChangeTextDocumentParams)
             : Async<LspResult<unit>> =
       async {
         let docMaybe = context.GetUserDocument changeParams.TextDocument.Uri
         match docMaybe with
+        | None -> ()
         | Some doc ->
                 let! ct = Async.CancellationToken
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -183,20 +176,13 @@ module TextDocumentSync =
                 context.Emit(SolutionChange updatedSolution)
                 context.Emit(OpenDocAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version, DateTime.Now))
 
-                diagnosticsPost(
-                    DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
-
-        | None -> ()
-
         return Result.Ok()
     }
 
-    let didClose (diagnosticsPost: DiagnosticsEvent -> unit)
-                 (context: ServerRequestContext)
+    let didClose (context: ServerRequestContext)
                  (closeParams: DidCloseTextDocumentParams)
             : Async<LspResult<unit>> =
         context.Emit(OpenDocRemove closeParams.TextDocument.Uri)
-        diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams): Async<LspResult<unit>> = async {
@@ -207,8 +193,7 @@ module TextDocumentSync =
         return LspResult.notImplemented<TextEdit [] option>
     }
 
-    let didSave (diagnosticsPost: DiagnosticsEvent -> unit)
-                (context: ServerRequestContext)
+    let didSave (context: ServerRequestContext)
                 (saveParams: DidSaveTextDocumentParams)
             : Async<LspResult<unit>> =
         // we need to add this file to solution if not already
@@ -231,9 +216,6 @@ module TextDocumentSync =
             | Some newDoc ->
                 context.Emit(OpenDocTouch (saveParams.TextDocument.Uri, DateTime.Now))
                 context.Emit(SolutionChange newDoc.Project.Solution)
-
-                diagnosticsPost(
-                    DocumentOpenOrChange (saveParams.TextDocument.Uri, DateTime.Now))
 
             | None -> ()
 
