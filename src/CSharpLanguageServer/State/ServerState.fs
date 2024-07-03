@@ -313,12 +313,16 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
                 | [] -> (None, [])
                 | uri :: remainder -> (Some uri, remainder)
 
-            match nextDocUri with
-            | None ->
-                // backlog is empty, nothing to do
-                return state
+            // push diagnostic is enabled only if pull diagnostics is
+            // not reported to be supported by the client
+            let diagnosticPullSupported =
+                state.ClientCapabilities.TextDocument
+                |> Option.map _.Diagnostic
+                |> Option.map (fun _ -> true)
+                |> Option.defaultValue false
 
-            | Some docUri ->
+            match diagnosticPullSupported, nextDocUri with
+            | false, Some docUri ->
                 let newState = { state with PushDiagnosticsDocumentBacklog = newBacklog }
 
                 let docAndTypeMaybe = docUri |> getDocumentForUriOfType state ServerDocumentType.AnyDocument
@@ -355,6 +359,10 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
                     let newState = { newState with PushDiagnosticsCurrentDocTask = Some (docUri, newTask)  }
 
                     return newState
+
+            | _, _->
+                // backlog is empty or pull diagnostics is enabled instead,--nothing to do
+                return state
 
     | PushDiagnosticsDocumentDiagnosticsResolution result ->
         // enqueue processing for the next doc on the queue (if any)
