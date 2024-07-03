@@ -105,7 +105,7 @@ type ServerStateEvent =
     | SettingsChange of ServerSettings
     | RootPathChange of string
     | ClientChange of ILspClient option
-    | ClientCapabilityChange of ClientCapabilities option
+    | ClientCapabilityChange of ClientCapabilities
     | SolutionChange of Solution
     | DecompiledMetadataAdd of string * DecompiledMetadataDocument
     | OpenDocAdd of string * int * DateTime
@@ -239,7 +239,7 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
         return { state with LspClient = lspClient }
 
     | ClientCapabilityChange cc ->
-        return { state with ClientCapabilities = cc |> Option.defaultValue emptyClientCapabilities }
+        return { state with ClientCapabilities = cc }
 
     | SolutionChange s ->
         postSelf PushDiagnosticsDocumentBacklogUpdate

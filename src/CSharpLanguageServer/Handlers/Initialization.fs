@@ -79,7 +79,7 @@ module Initialization =
             >> Log.addContext "caps" (serialize p.Capabilities)
         )
 *)
-        context.Emit(ClientCapabilityChange (Some p.Capabilities))
+        context.Emit(ClientCapabilityChange p.Capabilities)
 
         // TODO use p.RootUri
         let rootPath = Directory.GetCurrentDirectory()
@@ -181,7 +181,7 @@ module Initialization =
         }
 
     let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
-        context.Emit(ClientCapabilityChange None)
+        context.Emit(ClientCapabilityChange emptyClientCapabilities)
         context.Emit(ClientChange None)
         return LspResult.Ok()
     }
