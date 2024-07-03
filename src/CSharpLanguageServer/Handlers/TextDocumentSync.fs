@@ -37,15 +37,14 @@ module TextDocumentSync =
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        >>= fun x -> x.TextDocument
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         >>= fun x -> x.Synchronization
         >>= fun x -> x.DynamicRegistration
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false ->
             Some
@@ -54,7 +53,7 @@ module TextDocumentSync =
                     Save = Some (U2.C2 { IncludeText = Some true })
                     Change = Some TextDocumentSyncKind.Incremental }
 
-    let didOpenRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didOpenRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -67,7 +66,7 @@ module TextDocumentSync =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
 
-    let didChangeRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didChangeRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -79,7 +78,7 @@ module TextDocumentSync =
                   Method = "textDocument/didChange"
                   RegisterOptions = registerOptions|> serialize |> Some }
 
-    let didSaveRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didSaveRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -92,7 +91,7 @@ module TextDocumentSync =
                   Method = "textDocument/didSave"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let didCloseRegistration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let didCloseRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -104,9 +103,9 @@ module TextDocumentSync =
                   Method = "textDocument/didClose"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let willSaveRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
-    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities option) : Registration option = None
+    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
     let didOpen (diagnosticsPost: DiagnosticsEvent -> unit)
                 (context: ServerRequestContext)
@@ -121,7 +120,7 @@ module TextDocumentSync =
                 // went out of sync with editor
                 let updatedDoc = SourceText.From(openParams.TextDocument.Text) |> doc.WithText
 
-                context.Emit(OpenDocVersionAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version))
+                context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                 context.Emit(SolutionChange updatedDoc.Project.Solution)
 
                 diagnosticsPost(
@@ -137,7 +136,7 @@ module TextDocumentSync =
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
-                // ok, this document is not on solution, register a new document
+                // ok, this document is not in solution, register a new document
                 let! newDocMaybe =
                     tryAddDocument
                         logger
@@ -147,6 +146,7 @@ module TextDocumentSync =
 
                 match newDocMaybe with
                 | Some newDoc ->
+                    context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                     context.Emit(SolutionChange newDoc.Project.Solution)
 
                     diagnosticsPost(
@@ -181,7 +181,7 @@ module TextDocumentSync =
                 let updatedSolution = updatedDoc.Project.Solution
 
                 context.Emit(SolutionChange updatedSolution)
-                context.Emit(OpenDocVersionAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version))
+                context.Emit(OpenDocAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version, DateTime.Now))
 
                 diagnosticsPost(
                     DocumentOpenOrChange (changeParams.TextDocument.Uri, DateTime.Now))
@@ -195,7 +195,7 @@ module TextDocumentSync =
                  (context: ServerRequestContext)
                  (closeParams: DidCloseTextDocumentParams)
             : Async<LspResult<unit>> =
-        context.Emit(OpenDocVersionRemove closeParams.TextDocument.Uri)
+        context.Emit(OpenDocRemove closeParams.TextDocument.Uri)
         diagnosticsPost(DocumentClose closeParams.TextDocument.Uri)
         LspResult.Ok() |> async.Return
 
@@ -229,6 +229,7 @@ module TextDocumentSync =
 
             match newDocMaybe with
             | Some newDoc ->
+                context.Emit(OpenDocTouch (saveParams.TextDocument.Uri, DateTime.Now))
                 context.Emit(SolutionChange newDoc.Project.Solution)
 
                 diagnosticsPost(

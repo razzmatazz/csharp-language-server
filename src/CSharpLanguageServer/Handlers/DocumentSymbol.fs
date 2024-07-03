@@ -282,19 +282,18 @@ module DocumentSymbol =
             base.VisitEventDeclaration(node)
             pop node
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.DocumentSymbol)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
-        match dynamicRegistration (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities with
         | true -> None
         | false -> true |> U2.C1 |> Some
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -312,8 +311,7 @@ module DocumentSymbol =
                (p: DocumentSymbolParams)
             : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
         let canEmitDocSymbolHierarchy =
-            context.ClientCapabilities
-            |> Option.bind (fun cc -> cc.TextDocument)
+            context.ClientCapabilities.TextDocument
             |> Option.bind (fun cc -> cc.DocumentSymbol)
             |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
             |> Option.defaultValue false

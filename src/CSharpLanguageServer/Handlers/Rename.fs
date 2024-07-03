@@ -60,27 +60,25 @@ module Rename =
         |> Async.Parallel
         |> map (Seq.distinct >> Array.ofSeq)
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.Rename)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let private prepareSupport (clientCapabilities: ClientCapabilities option) =
-        clientCapabilities
-        |> Option.bind (fun x -> x.TextDocument)
+    let private prepareSupport (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.Rename)
         |> Option.bind (fun x -> x.PrepareSupport)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities): U2<bool, RenameOptions> option =
-        match dynamicRegistration (Some clientCapabilities), prepareSupport (Some clientCapabilities) with
+        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
         | true, _ -> None
         | false, true -> Some (U2.C2 { PrepareProvider = Some true; WorkDoneProgress = None })
         | false, false -> Some (U2.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
@@ -174,17 +172,11 @@ module Rename =
                 |> Async.AwaitTask
 
             let! docTextEdit =
-                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution context.OpenDocVersions.TryFind
+                lspDocChangesFromSolutionDiff
+                    ct
+                    originalSolution
+                    updatedSolution
+                    (fun uri -> context.OpenDocs.TryFind uri |> Option.map _.Version)
 
-            let clientCapabilities =
-                context.ClientCapabilities
-                |> Option.defaultValue
-                    { Workspace = None
-                      TextDocument = None
-                      Experimental = None
-                      Window = None
-                      NotebookDocument = None
-                      General = None }
-
-            return WorkspaceEdit.Create(docTextEdit, clientCapabilities) |> Some |> success
+            return WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities) |> Some |> success
     }
