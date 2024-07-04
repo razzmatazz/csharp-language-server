@@ -318,7 +318,7 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
             let diagnosticPullSupported =
                 state.ClientCapabilities.TextDocument
                 |> Option.map _.Diagnostic
-                |> Option.map (fun _ -> true)
+                |> Option.map _.IsSome
                 |> Option.defaultValue false
 
             match diagnosticPullSupported, nextDocUri with
