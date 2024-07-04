@@ -93,7 +93,7 @@ module Initialization =
                     Capabilities = serverCapabilities
                     ServerInfo =
                       Some
-                        { Name = Process.GetCurrentProcess().ProcessName
+                        { Name = "csharp-ls"
                           Version = Some (Assembly.GetExecutingAssembly().GetName().Version.ToString()) }}
 
         return initializeResult |> LspResult.success
