@@ -96,10 +96,12 @@ let emptyServerState = { Settings = ServerSettings.Default
                          PushDiagnosticsDocumentBacklog = []
                          PushDiagnosticsCurrentDocTask = None }
 
+
 type ServerDocumentType =
      | UserDocument // user Document from solution, on disk
      | DecompiledDocument // Document decompiled from metadata, readonly
      | AnyDocument
+
 
 type ServerStateEvent =
     | SettingsChange of ServerSettings
@@ -121,6 +123,7 @@ type ServerStateEvent =
     | PushDiagnosticsProcessPendingDocuments
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PeriodicTimerTick
+
 
 let getDocumentForUriOfType state docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
@@ -335,7 +338,7 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
                     )
                     return newState
 
-                | Some (doc, docType) ->
+                | Some (doc, _docType) ->
                     let resolveDocumentDiagnostics (): Task = task {
                         let! semanticModelMaybe = doc.GetSemanticModelAsync()
                         match semanticModelMaybe |> Option.ofObj with

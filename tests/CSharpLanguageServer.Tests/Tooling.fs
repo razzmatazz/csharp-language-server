@@ -7,110 +7,32 @@ open System.Diagnostics
 open System.Text
 open System.Threading.Tasks
 open System.Threading
+open System.Runtime.InteropServices
 
 open NUnit.Framework
 open Newtonsoft.Json.Linq
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Server
 
 
-let writeProjectDir (fileMap: Map<string, string>) : string =
-    let tempDir = Path.Combine(
-        Path.GetTempPath(),
-        "CSharpLanguageServer.Tests." + System.DateTime.Now.Ticks.ToString())
+let emptyClientCapabilities: ClientCapabilities = {
+    Workspace = None
+    TextDocument = None
+    NotebookDocument = None
+    Window = None
+    General = None
+    Experimental = None
+}
 
-    Directory.CreateDirectory(tempDir) |> ignore
+type ClientProfile = {
+    LoggingEnabled: bool
+    ClientCapabilities: ClientCapabilities
+}
 
-    for kv in fileMap do
-        let filename = Path.Combine(tempDir, kv.Key)
-
-        if filename.Contains("/") then
-            let parts = kv.Key.Split("/")
-            if parts.Length > 2 then
-               failwith "more than 1 subdir is not supported"
-
-            let fileDir = Path.Combine(tempDir, parts[0])
-
-            if not (Directory.Exists(fileDir)) then
-                Directory.CreateDirectory(fileDir) |> ignore
-
-        use fileStream = File.Create(filename)
-        fileStream.Write(Encoding.UTF8.GetBytes(kv.Value))
-
-    tempDir
-
-
-let rec deleteDirectory (path: string) =
-    if Directory.Exists(path) then
-        Directory.GetFileSystemEntries(path)
-        |> Array.iter (fun item ->
-            if File.Exists(item) then
-                File.Delete(item)
-            else
-                deleteDirectory item)
-        Directory.Delete(path)
-
-
-type ClientServerRpcCallInfo =
-    {
-        Method: string
-        RpcCallMsg: JObject
-    }
-
-
-type RpcEndpoint = Server | Client
-
-type RpcMessageLogEntry =
-    {
-        Source: RpcEndpoint
-        TimestampMS: int
-        Message: JObject
-    }
-
-type ClientState =
-    {
-        LoggingEnabled: bool
-        ProjectDir: string option
-        InitializeReplyChannel: AsyncReplyChannel<unit> option
-        ProcessStartInfo: ProcessStartInfo option
-        ServerProcess: Process option
-        ServerStderrLineReadTask: Task
-        ServerStdoutJsonRpcMessageRead: Task
-        NextRpcCallId: int
-        OutstandingServerRpcCalls: Map<int, ClientServerRpcCallInfo>
-        SetupTimestamp: DateTime
-        RpcLog: RpcMessageLogEntry list
-    }
-    static member Default = {
-        LoggingEnabled = false
-        ProjectDir = None
-        InitializeReplyChannel = None
-        ProcessStartInfo = None
-        ServerProcess = None
-        ServerStderrLineReadTask = Task.CompletedTask
-        ServerStdoutJsonRpcMessageRead = Task.CompletedTask
-        NextRpcCallId = 1
-        OutstandingServerRpcCalls = Map.empty
-        SetupTimestamp = DateTime.MinValue
-        RpcLog = []
-    }
-
-
-type ClientEvent =
-    | Setup
-    | ServerStartRequest of Map<string, string>
-    | ServerStopRequest of AsyncReplyChannel<unit>
-    | InitializeRequest of AsyncReplyChannel<unit>
-    | ShutdownRequest
-    | ExitRequest
-    | ServerStderrLineRead of string option
-    | RpcMessageReceived of Result<JObject option, Exception>
-    | SendServerRpcCall of string * JObject
-    | ServerRpcCallResult of JObject
-    | ClientRpcCall of JValue * string * JObject
-    | SendClientRpcCallResult of JToken * JToken
-    | SendRpcMessage of JObject
-    | EmitLogMessage of DateTime * string * string
-    | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
-
+let defaultClientProfile = {
+    LoggingEnabled = false
+    ClientCapabilities = emptyClientCapabilities
+}
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)
@@ -147,22 +69,92 @@ let makeServerProcessInfo projectTempDir =
     processStartInfo
 
 
+type ClientServerRpcRequestInfo =
+    {
+        Method: string
+        RpcRequestMsg: JObject
+        ResultReplyChannel: option<AsyncReplyChannel<JObject>>
+    }
+
+type RpcEndpoint = Server | Client
+
+type RpcMessageLogEntry =
+    {
+        Source: RpcEndpoint
+        TimestampMS: int
+        Message: JObject
+    }
+
+type ClientState =
+    {
+        ClientProfile: ClientProfile
+        LoggingEnabled: bool
+        ProjectDir: string option
+        ProcessStartInfo: ProcessStartInfo option
+        ServerProcess: Process option
+        ServerStderrLineReadTask: Task
+        ServerStdoutJsonRpcMessageRead: Task
+        NextRpcRequestId: int
+        OutstandingServerRpcReqs: Map<int, ClientServerRpcRequestInfo>
+        SetupTimestamp: DateTime
+        RpcLog: RpcMessageLogEntry list
+        ServerInfo: InitializeResultServerInfo option
+        ServerCapabilities: ServerCapabilities option
+        PushDiagnostics: Map<string, int option * Diagnostic[]>
+    }
+
+let defaultClientState = {
+    ClientProfile = { LoggingEnabled = false; ClientCapabilities = emptyClientCapabilities }
+    LoggingEnabled = false
+    ProjectDir = None
+    ProcessStartInfo = None
+    ServerProcess = None
+    ServerStderrLineReadTask = Task.CompletedTask
+    ServerStdoutJsonRpcMessageRead = Task.CompletedTask
+    NextRpcRequestId = 1
+    OutstandingServerRpcReqs = Map.empty
+    SetupTimestamp = DateTime.MinValue
+    RpcLog = []
+    ServerInfo = None
+    ServerCapabilities = None
+    PushDiagnostics = Map.empty
+}
+
+type ClientEvent =
+    | SetupWithProfile of ClientProfile
+    | UpdateState of (ClientState -> ClientState)
+    | ServerStartRequest of string * AsyncReplyChannel<ClientState>
+    | ServerStopRequest of AsyncReplyChannel<unit>
+    | GetState of AsyncReplyChannel<ClientState>
+    | ServerStderrLineRead of string option
+    | RpcMessageReceived of Result<JObject option, Exception>
+    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<JObject>>
+    | ServerRpcCallResult of JObject
+    | SendServerRpcNotification of string * JToken
+    | ClientRpcCall of JValue * string * JObject
+    | SendClientRpcCallResult of JToken * JToken
+    | SendRpcMessage of JObject
+    | EmitLogMessage of DateTime * string * string
+    | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
+
 let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : Async<ClientState> = async {
 
     let logMessage logger msg =
         post (EmitLogMessage (DateTime.Now, logger, msg))
 
     match msg with
-    | Setup ->
-        return { state with SetupTimestamp = DateTime.Now }
+    | SetupWithProfile clientProfile ->
+        return { state with SetupTimestamp = DateTime.Now
+                            ClientProfile = clientProfile }
 
-    | ServerStartRequest fileMap ->
-        let projectTempDir = writeProjectDir fileMap
-        let processStartInfo = makeServerProcessInfo projectTempDir
+    | UpdateState stateUpdateFn ->
+        return stateUpdateFn(state)
+
+    | ServerStartRequest (projectDir, rc) ->
+        let processStartInfo = makeServerProcessInfo projectDir
 
         let p = new Process()
         p.StartInfo <- processStartInfo
-
         logMessage "ServerStartRequest" "StartServer: p.Start().."
         let startResult = p.Start()
         logMessage "ServerStartRequest" (String.Format("StartServer: p.Start(): {0}, {1}", startResult, p.Id))
@@ -170,9 +162,13 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         post (RpcMessageReceived (Ok None))
         post (ServerStderrLineRead None)
 
-        return { state with ProjectDir = Some projectTempDir
-                            ProcessStartInfo = Some processStartInfo
-                            ServerProcess = Some p }
+        let newState = { state with ProjectDir = Some projectDir
+                                    ProcessStartInfo = Some processStartInfo
+                                    ServerProcess = Some p }
+
+        rc.Reply(newState)
+
+        return newState
 
     | ServerStopRequest rc ->
         let p = state.ServerProcess.Value
@@ -182,37 +178,14 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         p.WaitForExit()
         logMessage "StopServer" "p.WaitForExit(): OK"
 
-        deleteDirectory state.ProjectDir.Value
-
         logMessage "StopServer" (sprintf "exit code=%d" p.ExitCode)
 
         rc.Reply(())
 
         return state
 
-    | InitializeRequest rc ->
-        logMessage "InitializeRequest" "sending 'initialize'.."
-
-        let initParams = JObject()
-        initParams["processId"] <- int (System.Diagnostics.Process.GetCurrentProcess().Id)
-        initParams["rootUri"] <- (sprintf "file://%s" state.ProjectDir.Value)
-        initParams["capabilities"] <- JObject()
-        initParams["trace"] <- JValue "off"
-
-        post (SendServerRpcCall ("initialize", initParams))
-
-        return { state with InitializeReplyChannel = Some rc }
-
-    | ShutdownRequest ->
-        logMessage "ShutdownRequest" "sending 'shutdown'.."
-        let initParams = JObject()
-        post (SendServerRpcCall ("shutdown", initParams))
-        return state
-
-    | ExitRequest ->
-        logMessage "ExitRequest" "sending 'exit'.."
-        let initParams = JObject()
-        post (SendServerRpcCall ("exit", initParams))
+    | GetState rc ->
+        rc.Reply(state)
         return state
 
     | ServerStderrLineRead line ->
@@ -308,59 +281,77 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                                 RpcLog = newRpcLog }
 
     | ClientRpcCall (id, m, p) ->
-        match m with
-        | "window/showMessage" ->
-            logMessage "windows/showMessage" (String.Format("[{0}] \"{1}\"", p["type"], p["message"]))
-        | "$/progress" ->
-            logMessage "$/progress" (String.Format("({0}) \"{1}\"", p["value"]["kind"], p["value"]["message"]))
-        | "client/registerCapability" ->
-            logMessage "ClientRpcCall" (String.Format("client/registerCapability: registrations={0}", p["registrations"]))
-            post (SendClientRpcCallResult (id, null))
-        | "workspace/configuration" ->
-            logMessage "ClientRpcCall" (String.Format("workspace/configuration: params={0}", p))
-            post (SendClientRpcCallResult (id, new JArray()))
-        | "window/workDoneProgress/create" ->
-            logMessage "ClientRpcCall" (String.Format("window/workDoneProgress/create: params={0}", p))
-            post (SendClientRpcCallResult (id, null))
-        | _ ->
-            logMessage "ClientRpcCall" (String.Format("ClientRpcCall: unhandled method call: \"{0}\"", m))
+        let newState =
+            match m with
+            | "window/showMessage" ->
+                let p = p |> deserialize<ShowMessageParams>
+                logMessage "windows/showMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
+                state
+            | "$/progress" ->
+                logMessage "$/progress" (String.Format("({0}) \"{1}\"", p["value"]["kind"], p["value"]["message"]))
+                state
+            | "client/registerCapability" ->
+                logMessage "ClientRpcCall" (String.Format("client/registerCapability: registrations={0}", p["registrations"]))
+                post (SendClientRpcCallResult (id, null))
+                state
+            | "workspace/configuration" ->
+                logMessage "ClientRpcCall" (String.Format("workspace/configuration: params={0}", p))
+                post (SendClientRpcCallResult (id, new JArray()))
+                state
+            | "window/workDoneProgress/create" ->
+                logMessage "ClientRpcCall" (String.Format("window/workDoneProgress/create: params={0}", p))
+                post (SendClientRpcCallResult (id, null))
+                state
+            | "textDocument/publishDiagnostics" ->
+                logMessage "ClientRpcCall" (sprintf "textDocument/publishDiagnostics: %s" (string p))
+                let p = p |> deserialize<PublishDiagnosticsParams>
+                let newPushDiagnostics = state.PushDiagnostics |> Map.add p.Uri (p.Version, p.Diagnostics)
+                { state with PushDiagnostics = newPushDiagnostics }
+            | _ ->
+                logMessage "ClientRpcCall" (String.Format("ClientRpcCall: unhandled method call: \"{0}\"", m))
+                state
 
-        return state
+        return newState
 
-    | SendServerRpcCall (m, p) ->
-        let rpcCallId = state.NextRpcCallId
+    | SendServerRpcRequest (m, p, rc) ->
+        let rpcRequestId = state.NextRpcRequestId
         let msg = JObject()
         msg["jsonrpc"] <- JValue "2.0"
-        msg["id"] <- JValue rpcCallId
+        msg["id"] <- JValue rpcRequestId
         msg["method"] <- JValue m
         msg["params"] <- p
 
         post (SendRpcMessage msg)
 
-        let newOutstandingServerRpcCalls =
-            state.OutstandingServerRpcCalls
-            |> Map.add rpcCallId { Method = m; RpcCallMsg = msg }
+        let newOutstandingServerRpcReqs =
+            state.OutstandingServerRpcReqs
+            |> Map.add rpcRequestId { Method = m; RpcRequestMsg = msg; ResultReplyChannel = rc }
 
-        return { state with OutstandingServerRpcCalls = newOutstandingServerRpcCalls
-                            NextRpcCallId = state.NextRpcCallId + 1 }
+        return { state with OutstandingServerRpcReqs = newOutstandingServerRpcReqs
+                            NextRpcRequestId = state.NextRpcRequestId + 1 }
 
     | ServerRpcCallResult result ->
         let rpcCallId = int result["id"]
-        let rpcCall = state.OutstandingServerRpcCalls |> Map.find rpcCallId
+        let rpcRequest = state.OutstandingServerRpcReqs |> Map.find rpcCallId
 
-        let newOutstandingServerRpcCalls =
-            state.OutstandingServerRpcCalls |> Map.remove rpcCallId
+        let newOutstandingServerRpcReqs =
+            state.OutstandingServerRpcReqs |> Map.remove rpcCallId
 
-        // hack
-        match rpcCall.Method with
-        | "initialize" ->
-            let initializedParams = JObject()
-            post (SendServerRpcCall ("initialized", initializedParams))
-        | "initialized" ->
-            state.InitializeReplyChannel.Value.Reply()
-        | _ -> ()
+        match rpcRequest.ResultReplyChannel with
+        | Some rc ->
+            rc.Reply(result["result"].ToObject())
+        | None -> ()
 
-        return { state with OutstandingServerRpcCalls = newOutstandingServerRpcCalls }
+        return { state with OutstandingServerRpcReqs = newOutstandingServerRpcReqs }
+
+    | SendServerRpcNotification (m, p) ->
+        let msg = JObject()
+        msg["jsonrpc"] <- JValue "2.0"
+        msg["method"] <- JValue m
+        msg["params"] <- p
+
+        post (SendRpcMessage msg)
+        return state
 
     | SendClientRpcCallResult (id, result) ->
         let msg = JObject()
@@ -414,7 +405,61 @@ let clientEventLoop (initialState: ClientState) (inbox: MailboxProcessor<ClientE
     }
 
 
+let writeProjectDir (fileMap: Map<string, string>) : string =
+    let tempDir = Path.Combine(
+        Path.GetTempPath(),
+        "CSharpLanguageServer.Tests." + System.DateTime.Now.Ticks.ToString())
+
+    // a hack for macOS
+    let tempDir =
+        match RuntimeInformation.IsOSPlatform(OSPlatform.OSX), tempDir.StartsWith("/private") with
+        | true, false -> "/private" + tempDir
+        | _ -> tempDir
+
+    Directory.CreateDirectory(tempDir) |> ignore
+
+    for kv in fileMap do
+        let filename = Path.Combine(tempDir, kv.Key)
+
+        if filename.Contains("/") then
+            let parts = kv.Key.Split("/")
+            if parts.Length > 2 then
+               failwith "more than 1 subdir is not supported"
+
+            let fileDir = Path.Combine(tempDir, parts[0])
+
+            if not (Directory.Exists(fileDir)) then
+                Directory.CreateDirectory(fileDir) |> ignore
+
+        use fileStream = File.Create(filename)
+        fileStream.Write(Encoding.UTF8.GetBytes(kv.Value))
+
+    tempDir
+
+
+let rec deleteDirectory (path: string) =
+    if Directory.Exists(path) then
+        Directory.GetFileSystemEntries(path)
+        |> Array.iter (fun item ->
+            if File.Exists(item) then
+                File.Delete(item)
+            else
+                deleteDirectory item)
+        Directory.Delete(path)
+
+
+type FileController (_client: MailboxProcessor<ClientEvent>, filename: string, uri: string) =
+    member __.Filename = filename
+    member __.Uri = uri
+
+    interface IDisposable with
+        member __.Dispose() =
+            ()
+
+
 type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<string, string>) =
+    let mutable projectDir: string option = None
+
     let logMessage m msg =
         client.Post (EmitLogMessage (DateTime.Now, (sprintf "ClientActorController.%s" m), msg))
 
@@ -424,14 +469,47 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
             client.PostAndReply(fun rc -> ServerStopRequest rc)
             logMessage "Dispose" "OK, ServerStopRequest has finished"
 
-    member __.Start () =
-        logMessage "Start" "sending ServerStartRequest"
-        client.Post(ServerStartRequest projectFiles)
+            match projectDir with
+            | Some projectDir ->
+                logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
+                deleteDirectory projectDir
+            | _ -> ()
 
-    member __.Initialize () =
-        logMessage "Initialize" "sending InitializeRequest.."
-        client.PostAndReply(fun rc -> InitializeRequest rc)
-        logMessage "Initialize" "OK, InitializeRequest complete"
+    member this.StartAndWaitForSolutionLoad() =
+        projectDir <- Some (writeProjectDir projectFiles)
+
+        let log = logMessage "StartInitializeAndWaitForSolutionLoad"
+
+        log "sending ServerStartRequest"
+        let state = client.PostAndReply(fun rc -> ServerStartRequest (projectDir.Value, rc))
+
+        let initializeParams: InitializeParams =
+            {
+                RootPath = None
+                ProcessId = (System.Diagnostics.Process.GetCurrentProcess().Id) |> int |> Some
+                RootUri = (sprintf "file://%s" projectDir.Value) |> Some
+                Capabilities = state.ClientProfile.ClientCapabilities
+                WorkDoneToken = None
+                ClientInfo = None
+                Locale = None
+                InitializationOptions = None
+                Trace = None
+                WorkspaceFolders = None
+            }
+
+        let initializeResult =
+            client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("initialize", serialize initializeParams, Some rc))
+            |> deserialize<InitializeResult>
+
+        client.Post(UpdateState (fun s -> { s with ServerInfo = initializeResult.ServerInfo
+                                                   ServerCapabilities = Some initializeResult.Capabilities }))
+
+        log "OK, 'initialize' request complete"
+
+        let _ = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
+        log "OK, 'initialized' request complete"
+
+        this.WaitForProgressEnd("OK, 1 project file(s) loaded")
 
     member __.WaitForProgressEnd(message: string) =
         let timeoutMS = 10 * 1000
@@ -454,11 +532,14 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
             Thread.Sleep(25)
 
     member __.Shutdown () =
-        client.Post(ShutdownRequest)
-        client.Post(ExitRequest)
+        let _ = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("shutdown", JObject(), Some rc))
+        client.Post(SendServerRpcRequest ("exit", JObject(), None))
 
     member __.Stop () =
         client.PostAndReply(fun rc -> ServerStopRequest rc)
+
+    member __.GetState () =
+        client.PostAndReply(fun rc -> GetState rc)
 
     member __.DumpRpcLog () =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
@@ -477,8 +558,29 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
                                 && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
                                 && (m.Message.["method"] |> string) = rpcMethod)
 
-let startAndMountServer (projectFiles: Map<string, string>) (enableLogging: bool) =
-    let initialState = { ClientState.Default with LoggingEnabled = enableLogging }
+    member __.Open(filename: string): FileController =
+        let uri = "file://" + projectDir.Value + "/" + filename
+
+        let fileText =
+            Path.Combine(projectDir.Value, filename)
+            |> File.ReadAllBytes
+            |> Encoding.UTF8.GetString
+
+        let textDocument = { Uri = uri
+                             LanguageId = "csharp"
+                             Version = 1
+                             Text = fileText }
+
+        let didOpenParams: DidOpenTextDocumentParams =
+            { TextDocument = textDocument }
+
+        client.Post(SendServerRpcNotification ("textDocument/didOpen", serialize didOpenParams))
+
+        new FileController(client, filename, uri)
+
+
+let setupServerClient (clientProfile: ClientProfile) (projectFiles: Map<string, string>) =
+    let initialState = { defaultClientState with LoggingEnabled = clientProfile.LoggingEnabled }
     let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
-    clientActor.Post(Setup)
+    clientActor.Post(SetupWithProfile clientProfile)
     new ClientController (clientActor, projectFiles)
