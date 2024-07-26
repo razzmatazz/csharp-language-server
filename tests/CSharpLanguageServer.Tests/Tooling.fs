@@ -448,13 +448,36 @@ let rec deleteDirectory (path: string) =
         Directory.Delete(path)
 
 
-type FileController (_client: MailboxProcessor<ClientEvent>, filename: string, uri: string) =
+type FileController (client: MailboxProcessor<ClientEvent>, filename: string, uri: string, fileText: string) =
     member __.Filename = filename
     member __.Uri = uri
+    member __.FileText = fileText
 
     interface IDisposable with
         member __.Dispose() =
+            let didCloseParams: DidCloseTextDocumentParams =
+                { TextDocument = { Uri = uri } }
+
+            client.Post(SendServerRpcNotification ("textDocument/didClose", serialize didCloseParams))
             ()
+
+    member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
+        let requestJObject = request |> serialize
+        let responseJObject = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
+        responseJObject |> deserialize<'Response>
+
+    member __.DidChange(text: string) =
+        let didChangeParams: DidChangeTextDocumentParams =
+            {
+                TextDocument = { Uri = uri; Version = 2 }
+                ContentChanges =
+                    [|
+                        { Text = text } |> U2.C2
+                     |]
+            }
+
+        client.Post(SendServerRpcNotification ("textDocument/didChange", serialize didChangeParams))
+        ()
 
 
 type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<string, string>) =
@@ -576,7 +599,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
 
         client.Post(SendServerRpcNotification ("textDocument/didOpen", serialize didOpenParams))
 
-        new FileController(client, filename, uri)
+        new FileController(client, filename, uri, fileText)
 
 
 let setupServerClient (clientProfile: ClientProfile) (projectFiles: Map<string, string>) =
