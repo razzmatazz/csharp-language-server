@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RoslynPackageVersion>4.9.2</RoslynPackageVersion>
-    <MSBuildPackageVersion>17.9.5</MSBuildPackageVersion>
+    <RoslynPackageVersion>4.10.0</RoslynPackageVersion>
+    <MSBuildPackageVersion>17.10.4</MSBuildPackageVersion>
     <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
   </PropertyGroup>
 

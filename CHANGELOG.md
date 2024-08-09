@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Upgrade Roslyn to 4.10.0:
+  - https://github.com/razzmatazz/csharp-language-server/pull/182
 * Implement pull diagnostics for better performance;
   - https://github.com/razzmatazz/csharp-language-server/pull/174
 
