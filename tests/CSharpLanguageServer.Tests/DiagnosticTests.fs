@@ -85,11 +85,10 @@ let testPullDiagnosticsWork () =
           Identifier = None
           PreviousResultId = None }
 
-    let report0: DocumentDiagnosticReport = classFile.Request("textDocument/diagnostic", diagnosticParams)
+    let report0: DocumentDiagnosticReport option = classFile.Request("textDocument/diagnostic", diagnosticParams)
 
     match report0 with
-    | U2.C2 _ -> failwith "U2.C1 is expected"
-    | U2.C1 report ->
+    | Some (U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
         Assert.AreEqual(None, report.ResultId)
         Assert.AreEqual(3, report.Items.Length)
@@ -110,18 +109,19 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(
         "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
         diagnostic2.Message)
+    | _ -> failwith "U2.C1 is expected"
 
     //
     // now try to do the same but with file fixed to contain no content (and thus no diagnostics)
     //
     classFile.DidChange("")
 
-    let report1: DocumentDiagnosticReport = classFile.Request("textDocument/diagnostic", diagnosticParams)
+    let report1: DocumentDiagnosticReport option = classFile.Request("textDocument/diagnostic", diagnosticParams)
 
     match report1 with
-    | U2.C2 _ -> failwith "U2.C1 is expected"
-    | U2.C1 report ->
+    | Some (U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
         Assert.AreEqual(None, report.ResultId)
         Assert.AreEqual(0, report.Items.Length)
+    | _ -> failwith "U2.C1 is expected"
     ()

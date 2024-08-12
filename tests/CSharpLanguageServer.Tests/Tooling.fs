@@ -73,7 +73,7 @@ type ClientServerRpcRequestInfo =
     {
         Method: string
         RpcRequestMsg: JObject
-        ResultReplyChannel: option<AsyncReplyChannel<JObject>>
+        ResultReplyChannel: option<AsyncReplyChannel<JObject option>>
     }
 
 type RpcEndpoint = Server | Client
@@ -128,7 +128,7 @@ type ClientEvent =
     | GetState of AsyncReplyChannel<ClientState>
     | ServerStderrLineRead of string option
     | RpcMessageReceived of Result<JObject option, Exception>
-    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<JObject>>
+    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<JObject option>>
     | ServerRpcCallResult of JObject
     | SendServerRpcNotification of string * JToken
     | ClientRpcCall of JValue * string * JObject
@@ -339,7 +339,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
         match rpcRequest.ResultReplyChannel with
         | Some rc ->
-            rc.Reply(result["result"].ToObject())
+            rc.Reply(result["result"].ToObject() |> Option.ofObj)
         | None -> ()
 
         return { state with OutstandingServerRpcReqs = newOutstandingServerRpcReqs }
@@ -461,10 +461,10 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
             client.Post(SendServerRpcNotification ("textDocument/didClose", serialize didCloseParams))
             ()
 
-    member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
+    member __.Request<'Request, 'Response>(method: string, request: 'Request): option<'Response> =
         let requestJObject = request |> serialize
-        let responseJObject = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
-        responseJObject |> deserialize<'Response>
+        let responseJObject = client.PostAndReply<JObject option>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
+        responseJObject |> Option.map deserialize<'Response>
 
     member __.DidChange(text: string) =
         let didChangeParams: DidChangeTextDocumentParams =
@@ -521,7 +521,8 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
             }
 
         let initializeResult =
-            client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("initialize", serialize initializeParams, Some rc))
+            client.PostAndReply<JObject option>(fun rc -> SendServerRpcRequest ("initialize", serialize initializeParams, Some rc))
+            |> _.Value
             |> deserialize<InitializeResult>
 
         client.Post(UpdateState (fun s -> { s with ServerInfo = initializeResult.ServerInfo
@@ -529,7 +530,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
 
         log "OK, 'initialize' request complete"
 
-        let _ = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
+        let _ = client.PostAndReply<JObject option>(fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
         log "OK, 'initialized' request complete"
 
         this.WaitForProgressEnd("OK, 1 project file(s) loaded")
@@ -555,7 +556,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
             Thread.Sleep(25)
 
     member __.Shutdown () =
-        let _ = client.PostAndReply<JObject>(fun rc -> SendServerRpcRequest ("shutdown", JObject(), Some rc))
+        let _ = client.PostAndReply<JObject option>(fun rc -> SendServerRpcRequest ("shutdown", JObject(), Some rc))
         client.Post(SendServerRpcRequest ("exit", JObject(), None))
 
     member __.Stop () =
