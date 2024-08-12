@@ -11,6 +11,7 @@
     <Compile Include="DocumentationTests.fs" />
     <Compile Include="InitializationTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
+    <Compile Include="HoverTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
