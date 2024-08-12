@@ -607,3 +607,11 @@ let setupServerClient (clientProfile: ClientProfile) (projectFiles: Map<string, 
     let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
     clientActor.Post(SetupWithProfile clientProfile)
     new ClientController (clientActor, projectFiles)
+
+let dotnet8PExeProjectCsproj = """<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net8.0</TargetFramework>
+    </PropertyGroup>
+</Project>
+"""

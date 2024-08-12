@@ -1,4 +1,4 @@
-module CSharpLanguageServer.Tests.Diagnostics
+module CSharpLanguageServer.Tests.DiagnosticTests
 
 open System.Threading
 
@@ -11,29 +11,17 @@ open CSharpLanguageServer.Tests.Tooling
 let testPushDiagnosticsWork () =
     let projectFiles =
         Map.ofList [
-          ("Project/Project.csproj",
-           """<Project Sdk="Microsoft.NET.Sdk">
-                <PropertyGroup>
-                  <OutputType>Exe</OutputType>
-                  <TargetFramework>net8.0</TargetFramework>
-                </PropertyGroup>
-              </Project>
-           """);
-          ("Project/Class.cs",
-           """XXX"""
-          )
+            ("Project/Project.csproj", dotnet8PExeProjectCsproj)
+            ("Project/Class.cs", """XXX""")
         ]
 
-    use client = setupServerClient
-                     { defaultClientProfile with LoggingEnabled = false }
-                     projectFiles
-
+    use client = setupServerClient defaultClientProfile projectFiles
     client.StartAndWaitForSolutionLoad()
 
     //
     // open Class.cs file and wait for diagnostics to be pushed
     //
-    let classFile = client.Open("Project/Class.cs")
+    use classFile = client.Open("Project/Class.cs")
 
     Thread.Sleep(4000)
 
@@ -78,29 +66,17 @@ let testPushDiagnosticsWork () =
 let testPullDiagnosticsWork () =
     let projectFiles =
         Map.ofList [
-          ("Project/Project.csproj",
-           """<Project Sdk="Microsoft.NET.Sdk">
-                <PropertyGroup>
-                  <OutputType>Exe</OutputType>
-                  <TargetFramework>net8.0</TargetFramework>
-                </PropertyGroup>
-              </Project>
-           """);
-          ("Project/Class.cs",
-           """XXX"""
-          )
+          ("Project/Project.csproj", dotnet8PExeProjectCsproj)
+          ("Project/Class.cs", """XXX""" )
         ]
 
-    use client = setupServerClient
-                     { defaultClientProfile with LoggingEnabled = false }
-                     projectFiles
-
+    use client = setupServerClient defaultClientProfile projectFiles
     client.StartAndWaitForSolutionLoad()
 
     //
     // open Class.cs file and pull diagnostics
     //
-    let classFile = client.Open("Project/Class.cs")
+    use classFile = client.Open("Project/Class.cs")
 
     let diagnosticParams: DocumentDiagnosticParams =
         { WorkDoneToken = None

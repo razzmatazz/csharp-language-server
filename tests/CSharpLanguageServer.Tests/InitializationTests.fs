@@ -9,27 +9,11 @@ open Ionide.LanguageServerProtocol.Types
 let testServerRegistersCapabilitiesWithTheClient () =
     let projectFiles =
         Map.ofList [
-          ("Project/Project.csproj",
-           """<Project Sdk="Microsoft.NET.Sdk">
-                <PropertyGroup>
-                  <OutputType>Exe</OutputType>
-                  <TargetFramework>net8.0</TargetFramework>
-                </PropertyGroup>
-              </Project>
-           """);
-          ("Project/Class.cs",
-           """using System;
-              class Class
-              {
-              }
-           """
-          )
+          ("Project/Project.csproj", dotnet8PExeProjectCsproj)
+          ("Project/Class.cs", """class Class {}""")
         ]
 
-    use client = setupServerClient
-                     { defaultClientProfile with LoggingEnabled = false }
-                     projectFiles
-
+    use client = setupServerClient defaultClientProfile projectFiles
     client.StartAndWaitForSolutionLoad()
 
     let serverInfo = client.GetState().ServerInfo.Value
