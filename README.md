@@ -54,34 +54,6 @@ See [vscode-csharp-ls](https://marketplace.visualstudio.com/items?itemName=stati
 $ dotnet build
 ```
 
-# Features
-- symbol rename;
-- code refactorings from roslyn;
-- go-to-definition;
-- find references;
-- document/workspace symbol search;
-- `textDocument/documentHighlight` support:
-  - highlighting other symbol references in the document on hover;
-- `codeAction/resolve` support for better performance when invoking code actions;
-- semantic token support (thanks to @tcx4c70);
-- inlay hint support (thanks to @tcx4c70);
-- go-to-definition in metadata support (needs integration from your LSP client).
-
-# TODO list
- - check we're not doing lense stuff or other funny things on metadata code (emacs-lsp/lsp-mode issue?);
- - find-refs is blocking r/w operations, request scheduling needs smarter refactoring;
-   - should we cancel existing ones? -- where cancellable? how to know?
- - support for pull diagnostics (lsp 3.17);
- - go-to-def in metadata does not work for Attribute as those have Attribute suffix;
- - progress support;
- - properly escape docxml text, e.g. backquote is a special character in markdown;
- - selection range provider
- - ability to run tests / test browser support like fsac has?
- - razorls integration (server-side)
- - analyzer support
- - code generator support
- - vscode plugin
-
 # FAQ
 
 ## decompile for your editor , with the example of neovim
