@@ -8,10 +8,11 @@
 
   <ItemGroup>
     <Compile Include="Tooling.fs" />
-    <Compile Include="DocumentationTests.fs" />
-    <Compile Include="InitializationTests.fs" />
+    <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
+    <Compile Include="DocumentationTests.fs" />
     <Compile Include="HoverTests.fs" />
+    <Compile Include="InitializationTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
