@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RoslynPackageVersion>4.10.0</RoslynPackageVersion>
-    <MSBuildPackageVersion>17.10.4</MSBuildPackageVersion>
+    <RoslynPackageVersion>4.11.0</RoslynPackageVersion>
+    <MSBuildPackageVersion>17.11.4</MSBuildPackageVersion>
     <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
   </PropertyGroup>
 
@@ -15,8 +15,7 @@
     <PackageVersion Include="Argu" Version="6.2.3" />
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
     <PackageVersion Include="coverlet.collector" Version="3.0.3" />
-    <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.1.1" />
-    <PackageVersion Include="Expecto" Version="10.1.0" />
+    <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.4" />
     <PackageVersion Include="FSharpPlus" Version="1.6.1" />
     <PackageVersion Include="ICSharpCode.Decompiler" Version="8.2.0.7535" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
@@ -31,10 +30,10 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.6.3" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageVersion Include="NUnit" Version="3.13.2" />
-    <PackageVersion Include="NUnit3TestAdapter" Version="4.0.0" />
+    <PackageVersion Include="NUnit" Version="3.14.0" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Include="Serilog" Version="3.1.1" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
