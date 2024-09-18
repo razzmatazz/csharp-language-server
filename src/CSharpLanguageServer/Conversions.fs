@@ -22,7 +22,7 @@ module Uri =
         if path.StartsWith(metadataPrefix) then
             "csharp:/metadata/" + path.Substring(metadataPrefix.Length)
         else
-            Uri(path).ToString()
+            Uri(path, UriKind.RelativeOrAbsolute).ToString()
 
     let toWorkspaceFolder(uri: string): WorkspaceFolder =
         { Uri = uri
