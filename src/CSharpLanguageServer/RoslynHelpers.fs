@@ -378,27 +378,41 @@ let tryLoadSolutionOnPath
         solutionPath =
     let progress = ProgressReporter(lspClient)
 
+    let showMessage m =
+        lspClient.WindowShowMessage({
+            Type = MessageType.Info
+            Message = sprintf "csharp-ls: %s" m
+        })
+
     async {
         try
-            do! progress.Begin(sprintf "Loading solution \"%s\"..." solutionPath)
+            let beginMessage = sprintf "Loading solution \"%s\"..." solutionPath
+            do! progress.Begin(beginMessage)
+            do! showMessage beginMessage
 
             let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
-            let! _ = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
+            let! solution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
             for diag in msbuildWorkspace.Diagnostics do
-                logger.trace (
+                logger.info (
                     Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
                     >> Log.addContext "message" (diag.ToString())
                 )
 
-            do! progress.End (sprintf "finished loading solution \"%s\"" solutionPath)
+                do! showMessage (sprintf "msbuildWorkspace.Diagnostics: %s" (diag.ToString()))
 
-            return Some msbuildWorkspace.CurrentSolution
+            let endMessage = sprintf "Finished loading solution \"%s\"" solutionPath
+            do! progress.End endMessage
+            do! showMessage endMessage
+
+            return Some solution
         with
         | ex ->
-            do! progress.End ("solution loading has failed with error: " + ex.ToString())
+            let errorMessage = sprintf "Solution \"%s\" could not be loaded: %s" solutionPath (ex.ToString())
+            do! progress.End errorMessage
+            do! showMessage errorMessage
             return None
     }
 
