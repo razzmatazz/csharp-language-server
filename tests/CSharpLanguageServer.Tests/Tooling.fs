@@ -182,7 +182,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
         rc.Reply(())
 
-        return state
+        return { state with ServerProcess = None }
 
     | GetState rc ->
         rc.Reply(state)
@@ -203,7 +203,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return { state with ServerStderrLineReadTask = nextStdErrLineReadTask }
 
     | RpcMessageReceived result ->
-        let readJsonRpcHeader (stdout: Stream) =
+        let tryReadJsonRpcHeader (stdout: Stream) =
             let headerBytes = List<byte>()
 
             let terminatorReached () =
@@ -213,45 +213,61 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                     && headerBytes[headerBytes.Count - 2] = (byte '\r')
                     && headerBytes[headerBytes.Count - 1] = (byte '\n')
 
-            while not (terminatorReached()) do
+            let mutable eof = false
+            while (not eof && not (terminatorReached())) do
                 let b: int = stdout.ReadByte()
                 if b < 0 then
-                   let failureMessage = (sprintf "readJsonRpcHeader: EOF, b=%d; bytes=%d; \"%s\"" (int b) (headerBytes.Count) (headerBytes.ToArray() |> Encoding.UTF8.GetString))
-                   failwith failureMessage
+                   eof <- true
                 else
                    headerBytes.Add(byte b)
                 ()
 
-            let headers =
-                Encoding.UTF8.GetString(headerBytes.ToArray())
-                |> _.Split("\r\n")
-                |> Seq.filter (fun s -> s.Length > 0)
-                |> Seq.map (_.Split(":"))
+            match eof with
+            | true ->
+                None
 
-            let contentLength =
-                headers
-                |> Seq.filter (fun a -> a[0].ToLower().Trim() = "content-length")
-                |> Seq.map (fun a -> a[1] |> Int32.Parse)
-                |> Seq.head
+            | false ->
+                let headers =
+                    Encoding.UTF8.GetString(headerBytes.ToArray())
+                    |> _.Split("\r\n")
+                    |> Seq.filter (fun s -> s.Length > 0)
+                    |> Seq.map (_.Split(":"))
 
-            {| ContentLength = contentLength; ContentType = None |}
+                let contentLength =
+                    headers
+                    |> Seq.filter (fun a -> a[0].ToLower().Trim() = "content-length")
+                    |> Seq.map (fun a -> a[1] |> Int32.Parse)
+                    |> Seq.head
+
+                Some {| ContentLength = contentLength; ContentType = None |}
 
         let readNextJsonRpcMessage () =
-            try
-                let stdout = state.ServerProcess.Value.StandardOutput.BaseStream
-                if not stdout.CanRead then
-                    failwith "stdout.CanRead = false"
-                let header = readJsonRpcHeader stdout
-                let content: byte[] = Array.zeroCreate header.ContentLength
-                let bytesRead = stdout.Read(content)
-                if bytesRead <> header.ContentLength then
-                    failwith "readNextJsonRpcMessage: could not read full content"
+            match state.ServerProcess with
+            | None ->
+                logMessage "RpcMessageReceived" "no state.ServerProcess, will not read next rpc message"
+                ()
 
-                let msg = Encoding.UTF8.GetString(content) |> JObject.Parse
+            | Some serverProcess ->
+                try
+                    let stdout = serverProcess.StandardOutput.BaseStream
+                    if not stdout.CanRead then
+                        failwith "stdout.CanRead = false"
+                    let headerMaybe = tryReadJsonRpcHeader stdout
+                    match headerMaybe with
+                    | None ->
+                        logMessage "RpcMessageReceived" "readNextJsonRpcMessage: EOF received when reading header"
+                        ()
+                    | Some header ->
+                        let content: byte[] = Array.zeroCreate header.ContentLength
+                        let bytesRead = stdout.Read(content)
+                        if bytesRead <> header.ContentLength then
+                            failwith "readNextJsonRpcMessage: could not read full content"
 
-                post (RpcMessageReceived (Ok (Some msg)))
-            with ex ->
-                post (RpcMessageReceived (Error ex))
+                        let msg = Encoding.UTF8.GetString(content) |> JObject.Parse
+
+                        post (RpcMessageReceived (Ok (Some msg)))
+                with ex ->
+                    post (RpcMessageReceived (Error ex))
 
         match result with
         | Error e ->
@@ -365,14 +381,20 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
     | SendRpcMessage rpcMsg ->
         let rpcMsgJson = (string rpcMsg)
 
-        let serverStdin = state.ServerProcess.Value.StandardInput
-        let formattedMessage = String.Format("Content-Length: {0}\r\n\r\n{1}", rpcMsgJson.Length, rpcMsgJson)
-        serverStdin.Write(formattedMessage)
-        serverStdin.Flush()
+        match state.ServerProcess with
+        | None ->
+            logMessage "SendRpcMessage" (sprintf "dropping rpcMsg as there is no state.ServerProcess: %s " rpcMsgJson)
+            return state
 
-        let newRpcLog = state.RpcLog @ [{ Source = Client; TimestampMS = 0; Message = rpcMsg }]
+        | Some serverProcess ->
+            let serverStdin = serverProcess.StandardInput
+            let formattedMessage = String.Format("Content-Length: {0}\r\n\r\n{1}", rpcMsgJson.Length, rpcMsgJson)
+            serverStdin.Write(formattedMessage)
+            serverStdin.Flush()
 
-        return { state with RpcLog = newRpcLog }
+            let newRpcLog = state.RpcLog @ [{ Source = Client; TimestampMS = 0; Message = rpcMsg }]
+
+            return { state with RpcLog = newRpcLog }
 
     | EmitLogMessage (timestamp, logger, msg) ->
         let offsetMs = int (timestamp - state.SetupTimestamp).TotalMilliseconds
