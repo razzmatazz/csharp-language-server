@@ -353,6 +353,8 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         let newOutstandingServerRpcReqs =
             state.OutstandingServerRpcReqs |> Map.remove rpcCallId
 
+        logMessage "ServerRpcCallResult" (string result)
+
         match rpcRequest.ResultReplyChannel with
         | Some rc ->
             rc.Reply(result["result"])
@@ -485,7 +487,12 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
         let requestJObject = request |> serialize
+        Console.Error.WriteLine("Request")
         let responseJToken = client.PostAndReply<JToken>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
+        if (responseJToken = null) then
+            Console.Error.WriteLine("Request: responseJToken=null")
+        else
+            Console.Error.WriteLine("Request: responseJToken={0}", responseJToken)
         responseJToken |> deserialize<'Response>
 
     member __.DidChange(text: string) =

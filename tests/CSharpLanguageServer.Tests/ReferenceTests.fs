@@ -45,7 +45,7 @@ let testReferenceWorks() =
 
     let expectedLocations: Location array =
         [|
-            { Uri = classFile.Uri
+            { Uri = classFile.Uri.Substring(7)
               Range = {
                   Start = { Line = 8u; Character = 8u }
                   End = { Line = 8u; Character = 15u }
@@ -122,7 +122,7 @@ public class IndexModel : PageModel
           ("Project/Pages/_ViewImports.cshtml", viewImportsCshtmlContents)
         ]
 
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true } projectFiles
     client.StartAndWaitForSolutionLoad()
 
     use indexCshtmlCsFile = client.Open("Project/Pages/Index.cshtml.cs")
@@ -144,7 +144,7 @@ public class IndexModel : PageModel
 
     let expectedLocations: Location array =
         [|
-            { Uri = indexCshtmlCsContents.Uri
+            { Uri = indexCshtmlCsFile.Uri.Substring(7)
               Range = {
                   Start = { Line = 8u; Character = 8u }
                   End = { Line = 8u; Character = 15u }
