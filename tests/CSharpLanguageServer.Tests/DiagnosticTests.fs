@@ -15,7 +15,7 @@ let testPushDiagnosticsWork () =
             ("Project/Class.cs", """XXX""")
         ]
 
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true } projectFiles
     client.StartAndWaitForSolutionLoad()
 
     //

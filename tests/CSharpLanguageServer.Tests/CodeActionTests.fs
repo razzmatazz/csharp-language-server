@@ -20,7 +20,7 @@ let testCodeActionOnMethodNameWorks() =
           ("Project/Class.cs", classCsContents)
         ]
 
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true } projectFiles
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
