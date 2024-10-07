@@ -182,8 +182,8 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         // System.IO.IOException : The process cannot access the file '...\Project\Project.csproj' because it is being used by another process.
         match System.Environment.OSVersion.Platform with
         | PlatformID.Win32NT ->
-            logMessage "StopServer" "give it 100ms to stop (on Windows)"
-            Thread.Sleep(100)
+            logMessage "StopServer" "give it 1000ms to stop (on Windows)"
+            Thread.Sleep(1000)
         | _ -> ()
 
         logMessage "StopServer" (sprintf "exit code=%d" p.ExitCode)
