@@ -319,7 +319,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 post (SendClientRpcCallResult (id, null))
                 state
             | "textDocument/publishDiagnostics" ->
-                logMessage "ClientRpcCall" (sprintf "textDocument/publishDiagnostics: %s" (string p))
+                // logMessage "ClientRpcCall" (sprintf "textDocument/publishDiagnostics: %s" (string p))
                 let p = p |> deserialize<PublishDiagnosticsParams>
                 let newPushDiagnostics = state.PushDiagnostics |> Map.add p.Uri (p.Version, p.Diagnostics)
                 { state with PushDiagnostics = newPushDiagnostics }
