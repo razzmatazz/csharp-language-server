@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, windows-latest, windows-latest, ubuntu-24.04]
+        os: [windows-latest, windows-latest, windows-latest, windows-latest, windows-latest, ubuntu-24.04]
         dotnet: [8.0.303]
       fail-fast: false
 
