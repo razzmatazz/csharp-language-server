@@ -31,7 +31,7 @@ type ClientProfile = {
 }
 
 let defaultClientProfile = {
-    LoggingEnabled = false
+    LoggingEnabled = true
     ClientCapabilities = emptyClientCapabilities
 }
 
