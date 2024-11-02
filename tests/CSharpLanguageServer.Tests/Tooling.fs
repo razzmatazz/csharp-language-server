@@ -173,13 +173,13 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
     | ServerStopRequest rc ->
         let p = state.ServerProcess.Value
-        logMessage "StopServer" "p.Kill().."
+        logMessage "StopServer" (sprintf "p.Kill(%d).." p.Id)
         p.Kill()
         logMessage "StopServer" "p.WaitForExit().."
         p.WaitForExit()
         logMessage "StopServer" "p.WaitForExit(): OK"
 
-        logMessage "StopServer" (sprintf "exit code=%d" p.ExitCode)
+        logMessage "StopServer" (sprintf "pid=%d; exit code=%d" p.Id p.ExitCode)
 
         rc.Reply(())
 
