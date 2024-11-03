@@ -3,7 +3,6 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.Reflection
 
-open FSharpPlus
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
@@ -195,9 +194,9 @@ module Completion =
             let! ct = Async.CancellationToken
             let! description =
                 completionService.GetDescriptionAsync(doc, cachedItem, ct)
-                |> map Option.ofObj
                 |> Async.AwaitTask
+                |> Async.map Option.ofObj
             // TODO: make the doc as a markdown string instead of a plain text
-            let itemDocumentation = description |> map Documentation.fromCompletionDescription
+            let itemDocumentation = description |> Option.map Documentation.fromCompletionDescription
             return { item with Documentation = itemDocumentation |> Option.map U2.C2 } |> success
     }

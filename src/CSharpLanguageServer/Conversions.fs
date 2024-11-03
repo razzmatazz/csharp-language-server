@@ -6,7 +6,8 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
-open FSharpPlus
+
+open CSharpLanguageServer.Util
 
 module Uri =
     // Unescape some necessary char before passing string to Uri.
@@ -152,7 +153,7 @@ module CallHierarchyItem =
 
     let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<CallHierarchyItem list> =
         wmResolveSymbolLocations symbol None
-        |> map (List.map (fromSymbolAndLocation symbol))
+        |> Async.map (List.map (fromSymbolAndLocation symbol))
 
 module TypeHierarchyItem =
     let private displayStyle =
@@ -188,7 +189,7 @@ module TypeHierarchyItem =
 
     let fromSymbol (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>) (symbol: ISymbol): Async<TypeHierarchyItem list> =
         wmResolveSymbolLocations symbol None
-        |> map (List.map (fromSymbolAndLocation symbol))
+        |> Async.map (List.map (fromSymbolAndLocation symbol))
 
 module SymbolInformation =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): SymbolInformation list =

@@ -5,10 +5,10 @@ open System
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open FSharpPlus
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Implementation =

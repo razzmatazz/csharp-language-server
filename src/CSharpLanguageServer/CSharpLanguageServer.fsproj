@@ -76,7 +76,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharpPlus" />
     <PackageReference Include="Argu" />
     <PackageReference Include="Castle.Core" />
     <PackageReference Include="ICSharpCode.Decompiler" />
