@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open FSharpPlus
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -39,8 +38,8 @@ module TextDocumentSync =
 
     let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
-        >>= fun x -> x.Synchronization
-        >>= fun x -> x.DynamicRegistration
+        |> Option.bind (fun x -> x.Synchronization)
+        |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =

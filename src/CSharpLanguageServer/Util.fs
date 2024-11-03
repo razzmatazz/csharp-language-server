@@ -58,3 +58,11 @@ module Option =
         match String.IsNullOrWhiteSpace(value) with
         | true -> None
         | false -> Some value
+
+module Async =
+    let map f computation =
+        async.Bind(computation, f >> async.Return)
+
+module Map =
+    let union map1 map2 =
+        Map.fold (fun acc key value -> Map.add key value acc) map1 map2

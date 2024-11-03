@@ -6,11 +6,11 @@ open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open FSharpPlus
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module TypeHierarchy =
@@ -81,7 +81,7 @@ module TypeHierarchy =
                   context.FindDerivedInterfaces' typeSymbol false
                   context.FindImplementations' typeSymbol false ]
                 |> Async.Parallel
-                |> map (Seq.collect id >> Seq.toList)
+                |> Async.map (Seq.collect id >> Seq.toList)
             let! items = subtypes |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
             return items |> Seq.collect id |> Seq.toArray |> Some |> success
         | _ -> return None |> success

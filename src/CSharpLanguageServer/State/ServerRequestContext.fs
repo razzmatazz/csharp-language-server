@@ -3,12 +3,12 @@ namespace CSharpLanguageServer.State
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
-open FSharpPlus
 
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Util
 
 type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Solution
@@ -121,7 +121,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
      }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position): Async<ISymbol option> =
-        this.FindSymbol' uri pos |> map (Option.map fst)
+        this.FindSymbol' uri pos |> Async.map (Option.map fst)
 
     member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool): Async<INamedTypeSymbol seq> = async {
         match state.Solution with
@@ -199,7 +199,8 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                 | Some pat ->
                     fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsWithPatternAsync(sln, pat, SymbolFilter.TypeAndMember, cancellationToken=ct)
                 | None ->
-                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, konst true, SymbolFilter.TypeAndMember, cancellationToken=ct)
+                    let true' = System.Func<string, bool>(fun _ -> true)
+                    fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, true', SymbolFilter.TypeAndMember, cancellationToken=ct)
 
         match this.State.Solution with
         | None -> return []

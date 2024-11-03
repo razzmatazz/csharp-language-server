@@ -2,7 +2,6 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
-open FSharpPlus
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -10,6 +9,7 @@ open Ionide.LanguageServerProtocol.Types.LspResult
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
@@ -50,9 +50,9 @@ module TypeDefinition =
                 | _ -> []
             let! locations =
                 typeSymbol
-                |> map (flip context.ResolveSymbolLocations (Some doc.Project))
+                |> Seq.map (flip context.ResolveSymbolLocations (Some doc.Project))
                 |> Async.Parallel
-                |> map (Seq.collect id >> Seq.toArray)
+                |> Async.map (Seq.collect id >> Seq.toArray)
             return
                 locations
                 |> Declaration.C2

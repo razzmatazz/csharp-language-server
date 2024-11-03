@@ -16,7 +16,6 @@
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
     <PackageVersion Include="coverlet.collector" Version="3.0.3" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.4" />
-    <PackageVersion Include="FSharpPlus" Version="1.6.1" />
     <PackageVersion Include="ICSharpCode.Decompiler" Version="8.2.0.7535" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.6.0" />

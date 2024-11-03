@@ -8,7 +8,6 @@ open Microsoft.CodeAnalysis.CSharp.Syntax
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Types.LspResult
-open FSharpPlus
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State

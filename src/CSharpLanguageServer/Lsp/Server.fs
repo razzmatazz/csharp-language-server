@@ -7,7 +7,6 @@ open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open StreamJsonRpc
-open FSharpPlus
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
@@ -395,7 +394,7 @@ module Server =
             | _ -> None
 
         { new JsonRpc(handler) with
-            member this.IsFatalException(ex: Exception) =
+            member _.IsFatalException(ex: Exception) =
                 match ex with
                 | HandleableException -> false
                 | _ -> true }
