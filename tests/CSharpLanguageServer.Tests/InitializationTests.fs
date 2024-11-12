@@ -7,13 +7,8 @@ open Ionide.LanguageServerProtocol.Types
 
 [<TestCase>]
 let testServerRegistersCapabilitiesWithTheClient () =
-    let projectFiles =
-        Map.ofList [
-          ("Project/Project.csproj", dotnet8PExeProjectCsproj)
-          ("Project/Class.cs", """class Class {}""")
-        ]
-
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testServerRegistersCapabilitiesWithTheClient"
     client.StartAndWaitForSolutionLoad()
 
     let serverInfo = client.GetState().ServerInfo.Value

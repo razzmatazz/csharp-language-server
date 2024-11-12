@@ -9,13 +9,8 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testPushDiagnosticsWork () =
-    let projectFiles =
-        Map.ofList [
-            ("Project/Project.csproj", dotnet8PExeProjectCsproj)
-            ("Project/Class.cs", """XXX""")
-        ]
-
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testPushDiagnosticsWork"
     client.StartAndWaitForSolutionLoad()
 
     //
@@ -64,13 +59,8 @@ let testPushDiagnosticsWork () =
 
 [<TestCase>]
 let testPullDiagnosticsWork () =
-    let projectFiles =
-        Map.ofList [
-          ("Project/Project.csproj", dotnet8PExeProjectCsproj)
-          ("Project/Class.cs", """XXX""" )
-        ]
-
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testPullDiagnosticsWork"
     client.StartAndWaitForSolutionLoad()
 
     //
