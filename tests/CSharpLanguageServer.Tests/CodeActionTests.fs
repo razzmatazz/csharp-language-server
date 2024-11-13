@@ -7,20 +7,8 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testCodeActionOnMethodNameWorks() =
-    let classCsContents = """class Class
-{
-    public void Method(string arg)
-    {
-    }
-}
-"""
-    let projectFiles =
-        Map.ofList [
-          ("Project/Project.csproj", dotnet8PExeProjectCsproj)
-          ("Project/Class.cs", classCsContents)
-        ]
-
-    use client = setupServerClient defaultClientProfile projectFiles
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testCodeActionOnMethodNameWorks"
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")

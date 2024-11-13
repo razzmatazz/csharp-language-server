@@ -8,6 +8,7 @@ open System.Text
 open System.Threading.Tasks
 open System.Threading
 open System.Runtime.InteropServices
+open System.Reflection
 
 open NUnit.Framework
 open Newtonsoft.Json.Linq
@@ -427,36 +428,38 @@ let clientEventLoop (initialState: ClientState) (inbox: MailboxProcessor<ClientE
     }
 
 
-let writeProjectDir (fileMap: Map<string, string>) : string =
+let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
+    if not sourceTestDir.Exists then
+        failwith (sprintf "%s does not exist!" (sourceTestDir.ToString()))
+
     let tempDir = Path.Combine(
         Path.GetTempPath(),
         "CSharpLanguageServer.Tests." + System.DateTime.Now.Ticks.ToString())
 
     // a hack for macOS
-    let tempDir =
+    let tempTestDirName =
         match RuntimeInformation.IsOSPlatform(OSPlatform.OSX), tempDir.StartsWith("/private") with
         | true, false -> "/private" + tempDir
         | _ -> tempDir
 
-    Directory.CreateDirectory(tempDir) |> ignore
+    let tempTestDir = new DirectoryInfo(tempTestDirName)
+    tempTestDir.Create()
 
-    for kv in fileMap do
-        let filename = Path.Combine(tempDir, kv.Key)
+    let rec copyDirWithFilter (sourceDir: DirectoryInfo) (targetDir: DirectoryInfo) : DirectoryInfo =
+        for file in sourceDir.GetFiles() do
+            if file.Extension = ".cs" || file.Extension = ".csproj" || file.Extension = ".sln" then
+                let targetFilename = Path.Combine(targetDir.ToString(), file.Name)
+                file.CopyTo(targetFilename) |> ignore
 
-        if filename.Contains("/") then
-            let parts = kv.Key.Split("/")
-            if parts.Length > 2 then
-               failwith "more than 1 subdir is not supported"
+        for sourceSubdir in sourceDir.GetDirectories() do
+            if sourceSubdir.Name <> "bin" && sourceSubdir.Name <> "obj" then
+                let targetSubdir = DirectoryInfo(Path.Combine(targetDir.ToString(), sourceSubdir.Name))
+                targetSubdir.Create()
+                copyDirWithFilter sourceSubdir targetSubdir |> ignore
 
-            let fileDir = Path.Combine(tempDir, parts[0])
+        targetDir
 
-            if not (Directory.Exists(fileDir)) then
-                Directory.CreateDirectory(fileDir) |> ignore
-
-        use fileStream = File.Create(filename)
-        fileStream.Write(Encoding.UTF8.GetBytes(kv.Value))
-
-    tempDir
+    copyDirWithFilter sourceTestDir tempTestDir |> string
 
 
 let rec deleteDirectory (path: string) =
@@ -502,17 +505,19 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
         ()
 
 
-type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<string, string>) =
+type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo) =
     let mutable projectDir: string option = None
+    let mutable solutionLoaded: bool = false
 
     let logMessage m msg =
         client.Post (EmitLogMessage (DateTime.Now, (sprintf "ClientActorController.%s" m), msg))
 
     interface IDisposable with
         member __.Dispose() =
-            logMessage "Dispose" "sending ServerStopRequest.."
-            client.PostAndReply(fun rc -> ServerStopRequest rc)
-            logMessage "Dispose" "OK, ServerStopRequest has finished"
+            if solutionLoaded then
+                logMessage "Dispose" "sending ServerStopRequest.."
+                client.PostAndReply(fun rc -> ServerStopRequest rc)
+                logMessage "Dispose" "OK, ServerStopRequest has finished"
 
             match projectDir with
             | Some projectDir ->
@@ -521,9 +526,13 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
             | _ -> ()
 
     member this.StartAndWaitForSolutionLoad() =
-        projectDir <- Some (writeProjectDir projectFiles)
+        if solutionLoaded then
+            failwith "Solution has already been loaded for this ClientController!"
+
+        solutionLoaded <- true
 
         let log = logMessage "StartInitializeAndWaitForSolutionLoad"
+        projectDir <- Some (prepareTempTestDirFrom testDataDir)
 
         log "sending ServerStartRequest"
         let state = client.PostAndReply(fun rc -> ServerStartRequest (projectDir.Value, rc))
@@ -624,16 +633,11 @@ type ClientController (client: MailboxProcessor<ClientEvent>, projectFiles: Map<
         new FileController(client, filename, uri, fileText)
 
 
-let setupServerClient (clientProfile: ClientProfile) (projectFiles: Map<string, string>) =
+let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
     let initialState = { defaultClientState with LoggingEnabled = clientProfile.LoggingEnabled }
     let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
     clientActor.Post(SetupWithProfile clientProfile)
-    new ClientController (clientActor, projectFiles)
 
-let dotnet8PExeProjectCsproj = """<Project Sdk="Microsoft.NET.Sdk">
-    <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>net8.0</TargetFramework>
-    </PropertyGroup>
-</Project>
-"""
+    let testAssemblyLocationDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+    let actualTestDataDirName = DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", testDataDirName))
+    new ClientController (clientActor, actualTestDataDirName)
