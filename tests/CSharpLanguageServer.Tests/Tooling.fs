@@ -613,7 +613,10 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
                                 && (m.Message.["method"] |> string) = rpcMethod)
 
     member __.Open(filename: string): FileController =
-        let uri = "file://" + projectDir.Value + "/" + filename
+        let uri =
+            match System.Environment.OSVersion.Platform with
+            | PlatformID.Win32NT -> ("file:///" + projectDir.Value + "/" + filename).Replace("\\", "/")
+            | _ -> "file://" + projectDir.Value + "/" + filename
 
         let fileText =
             Path.Combine(projectDir.Value, filename)
