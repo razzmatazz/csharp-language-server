@@ -42,11 +42,11 @@ module References =
         match! context.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> success
         | Some symbol ->
-            let! refs = context.FindReferences symbol
+            let! locations = context.FindReferences symbol p.Context.IncludeDeclaration
+
             return
-                refs
-                |> Seq.collect (fun r -> r.Locations)
-                |> Seq.map (fun rl -> Location.fromRoslynLocation rl.Location)
+                locations
+                |> Seq.map Location.fromRoslynLocation
                 |> Seq.distinct
                 |> Seq.toArray
                 |> Some
