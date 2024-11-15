@@ -41,7 +41,7 @@ module DocumentFormatting =
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
-            let options = FormatUtil.getFormattingOptions doc p.Options
+            let! options = doc.GetOptionsAsync() |> Async.AwaitTask
             let! newDoc = Formatter.FormatAsync(doc, options, cancellationToken=ct) |> Async.AwaitTask
             let! textEdits = FormatUtil.getChanges newDoc doc
             return textEdits |> Some |> success
