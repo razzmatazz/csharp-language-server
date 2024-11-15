@@ -162,13 +162,12 @@ module CodeLens =
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
         | None -> return p |> success
         | Some symbol ->
-            let! refs = context.FindReferences symbol
+            let! locations = context.FindReferences symbol false
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
-            // (l.Location.SourceTree.FilePath, l.Location.SourceSpan)
+            // (l.SourceTree.FilePath, l.SourceSpan)
             let refNum =
-                refs
-                |> Seq.collect (fun r -> r.Locations)
-                |> Seq.distinctBy (fun l -> (l.Location.SourceTree.FilePath, l.Location.SourceSpan))
+                locations
+                |> Seq.distinctBy (fun l -> (l.SourceTree.FilePath, l.SourceSpan))
                 |> Seq.length
 
             let title = sprintf "%d Reference(s)" refNum

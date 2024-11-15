@@ -193,7 +193,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
         return aggregatedLspLocations
     }
 
-    member this.FindSymbols (pattern: string option): Async<ISymbol seq> = async {
+    member this.FindSymbols (pattern: string option): Async<Microsoft.CodeAnalysis.ISymbol seq> = async {
         let findTask ct =
                 match pattern with
                 | Some pat ->
@@ -209,14 +209,24 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
             return! findTask ct solution |> Async.AwaitTask
     }
 
-    member this.FindReferences (symbol: ISymbol): Async<ReferencedSymbol seq> = async {
+    member this.FindReferences (symbol: ISymbol) (withDefinition: bool): Async<Microsoft.CodeAnalysis.Location seq> = async {
         match this.State.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken
-            return!
+
+            let locationsFromReferencedSym (r: ReferencedSymbol) =
+                let locations = r.Locations |> Seq.map (fun rl -> rl.Location)
+
+                match withDefinition with
+                | true -> locations |> Seq.append r.Definition.Locations
+                | false -> locations
+
+            let! refs =
                 SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken=ct)
                 |> Async.AwaitTask
+
+            return refs |> Seq.collect locationsFromReferencedSym
     }
 
     member this.GetDocumentVersion (uri: DocumentUri): int option =
