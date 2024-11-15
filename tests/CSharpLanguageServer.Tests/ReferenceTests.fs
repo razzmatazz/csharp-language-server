@@ -41,7 +41,7 @@ let testReferenceWorks() =
 
     let expectedLocations1: Location array =
         [|
-            { Uri = classFile.Uri.Substring(7)
+            { Uri = classFile.Uri
               Range = {
                   Start = { Line = 8u; Character = 8u }
                   End = { Line = 8u; Character = 15u }
@@ -67,14 +67,14 @@ let testReferenceWorks() =
 
     let expectedLocations2: Location array =
         [|
-            { Uri = classFile.Uri.Substring(7)
+            { Uri = classFile.Uri
               Range = {
                   Start = { Line = 2u; Character = 16u }
                   End = { Line = 2u; Character = 23u }
               }
             }
 
-            { Uri = classFile.Uri.Substring(7)
+            { Uri = classFile.Uri
               Range = {
                   Start = { Line = 8u; Character = 8u }
                   End = { Line = 8u; Character = 15u }
