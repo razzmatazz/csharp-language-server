@@ -523,6 +523,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             match projectDir with
             | Some projectDir ->
                 logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
+                Thread.Sleep(1000)
                 try
                     deleteDirectory projectDir
                 with
