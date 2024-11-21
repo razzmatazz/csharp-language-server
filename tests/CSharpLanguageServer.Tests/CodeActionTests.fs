@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testCodeActionOnMethodNameWorks() =
-    use client = setupServerClient defaultClientProfile
+    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true }
                                    "TestData/testCodeActionOnMethodNameWorks"
     client.StartAndWaitForSolutionLoad()
 
