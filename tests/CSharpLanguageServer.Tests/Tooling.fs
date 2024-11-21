@@ -530,7 +530,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
                     let processList = Process.GetProcesses()
                     for p in processList do
                         Console.WriteLine($"Process Name: {p.ProcessName}, ID: {p.Id}");
-                    ()
+                    reraise()
             | _ -> ()
 
     member this.StartAndWaitForSolutionLoad() =
