@@ -14,6 +14,7 @@ open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
+open System
 
 
 let emptyClientCapabilities: ClientCapabilities = {
@@ -522,7 +523,14 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             match projectDir with
             | Some projectDir ->
                 logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
-                deleteDirectory projectDir
+                try
+                    deleteDirectory projectDir
+                with
+                | :? System.Exception as ex ->
+                    let processList = Process.GetProcesses()
+                    for p in processList do
+                        Console.WriteLine($"Process Name: {p.ProcessName}, ID: {p.Id}");
+                    ()
             | _ -> ()
 
     member this.StartAndWaitForSolutionLoad() =
