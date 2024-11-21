@@ -4,11 +4,11 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open System
 
 [<TestCase>]
 let testDefinitionWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testDefinitionWorks"
+    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true }
+                                   "TestData/testDefinitionWorks"
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
