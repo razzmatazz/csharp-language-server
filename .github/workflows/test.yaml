@@ -24,6 +24,9 @@ jobs:
         with:
           dotnet-version: ${{ matrix.dotnet }}
 
+      - run: tests\CSharpLanguageServer.Tests\TestData\handle64.exe -accepteula
+        if: ${{ matrix.os == 'windows-latest' }}
+
       - name: Restore tools
         run: dotnet tool restore
 
