@@ -519,8 +519,17 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
                 client.PostAndReply(fun rc -> ServerStopRequest rc)
                 logMessage "Dispose" "OK, ServerStopRequest has finished"
 
-            match projectDir with
-            | Some projectDir ->
+            // We don't care about cleanup when running under GitHub Actions C/I,
+            // also Windows version of C/I would fail from time to time due to
+            // another process locking the files on the temporary dir for some reason.
+            let runningInGithubActions =
+                System.Environment.GetEnvironmentVariable("GITHUB_ACTIONS")
+                |> Option.ofObj
+                |> Option.map (fun v -> v = "true")
+                |> Option.defaultValue false
+
+            match projectDir, runningInGithubActions with
+            | Some projectDir, false ->
                 logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
                 deleteDirectory projectDir
             | _ -> ()
