@@ -517,7 +517,7 @@ let printProcessWithFileOpen filePath handleExePath =
     | true ->
             let startInfo = ProcessStartInfo()
             startInfo.FileName <- handleExePath
-            startInfo.Arguments <- filePath
+            startInfo.Arguments <- (sprintf "-accepteula %s" filePath)
             startInfo.RedirectStandardOutput <- true
             startInfo.UseShellExecute <- false
             startInfo.CreateNoWindow <- true
