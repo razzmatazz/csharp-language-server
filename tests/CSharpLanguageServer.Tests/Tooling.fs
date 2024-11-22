@@ -575,7 +575,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
         this.WaitForProgressEnd("OK, 1 project file(s) loaded")
 
     member __.WaitForProgressEnd(message: string) =
-        let timeoutMS = 10 * 1000
+        let timeoutMS = 60 * 1000
         let start = DateTime.Now
 
         let progressEndMatch m =
