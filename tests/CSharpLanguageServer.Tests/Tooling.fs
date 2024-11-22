@@ -521,6 +521,8 @@ let printProcessWithFileOpen (projectDir: string) filePath handleExePath =
 
     match RuntimeInformation.IsOSPlatform(OSPlatform.Windows) with
     | true ->
+        Console.WriteLine("current process ID={0}", Process.GetCurrentProcess().Id)
+
         let startInfo = ProcessStartInfo()
         startInfo.FileName <- handleExePath
         startInfo.Arguments <- filePath
