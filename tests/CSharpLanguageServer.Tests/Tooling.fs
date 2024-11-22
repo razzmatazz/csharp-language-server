@@ -506,7 +506,8 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
         ()
 
 
-let printProcessWithFileOpen projectDir filePath handleExePath =
+let printProcessWithFileOpen (projectDir: string) filePath handleExePath =
+    Console.WriteLine("== {0} ==", projectDir)
     let d = DirectoryInfo(projectDir)
     let files = d.GetFiles(projectDir)
     for file in files do
