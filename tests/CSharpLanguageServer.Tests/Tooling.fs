@@ -506,7 +506,12 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
         ()
 
 
-let printProcessWithFileOpen filePath handleExePath =
+let printProcessWithFileOpen projectDir filePath handleExePath =
+    let d = DirectoryInfo(projectDir)
+    let files = d.GetFiles(sprintf "%s/*" projectDir)
+    for file in files do
+        Console.WriteLine("- {0}", file.Name)
+
     if not (File.Exists(filePath)) then
        failwith (sprintf "no such file %s exists" filePath)
 
@@ -515,24 +520,25 @@ let printProcessWithFileOpen filePath handleExePath =
 
     match RuntimeInformation.IsOSPlatform(OSPlatform.Windows) with
     | true ->
-            let startInfo = ProcessStartInfo()
-            startInfo.FileName <- handleExePath
-            startInfo.Arguments <- (sprintf "-accepteula %s" filePath)
-            startInfo.RedirectStandardOutput <- true
-            startInfo.UseShellExecute <- false
-            startInfo.CreateNoWindow <- true
+        let startInfo = ProcessStartInfo()
+        startInfo.FileName <- handleExePath
+        startInfo.Arguments <- filePath
+        startInfo.RedirectStandardOutput <- true
+        startInfo.UseShellExecute <- false
+        startInfo.CreateNoWindow <- true
 
-            let p = new Process()
-            p.StartInfo <- startInfo
-            p.Start() |> ignore
+        let p = new Process()
+        p.StartInfo <- startInfo
+        p.Start() |> ignore
 
-            let output = p.StandardOutput.ReadToEnd()
-            p.WaitForExit()
+        let output = p.StandardOutput.ReadToEnd()
+        p.WaitForExit()
 
-            Console.WriteLine("Processes with file open:");
-            Console.WriteLine(output);
+        Console.WriteLine("Processes with file open:");
+        Console.WriteLine(output);
 
-    | false -> ()
+    | false ->
+        ()
 
 type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo) =
     let mutable projectDir: string option = None
@@ -555,8 +561,10 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
                     deleteDirectory projectDir
                 with
                 | :? System.Exception as ex ->
-                    printProcessWithFileOpen (sprintf "%s/%s" projectDir "Project/Project.csproj")
-                                             ((testDataDir |> string) + "/../handle64.exe")
+                    printProcessWithFileOpen
+                        projectDir
+                        (sprintf "%s/%s" projectDir "Project/Project.csproj")
+                        ((testDataDir |> string) + "/../handle64.exe")
                     reraise()
             | _ -> ()
 
