@@ -509,7 +509,7 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
 let printProcessWithFileOpen (projectDir: string) filePath handleExePath =
     Console.WriteLine("== {0} ==", projectDir)
     let d = DirectoryInfo(projectDir)
-    let files = d.GetFiles(projectDir)
+    let files = d.GetFiles("*")
     for file in files do
         Console.WriteLine("- {0}", file.Name)
 
