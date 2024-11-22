@@ -506,6 +506,34 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
         ()
 
 
+let printProcessWithFileOpen filePath handleExePath =
+    if not (File.Exists(filePath)) then
+       failwith (sprintf "no such file %s exists" filePath)
+
+    if not (File.Exists(handleExePath)) then
+       failwith (sprintf "no such file %s exists" handleExePath)
+
+    match RuntimeInformation.IsOSPlatform(OSPlatform.Windows) with
+    | true ->
+            let startInfo = ProcessStartInfo()
+            startInfo.FileName <- handleExePath
+            startInfo.Arguments <- filePath
+            startInfo.RedirectStandardOutput <- true
+            startInfo.UseShellExecute <- false
+            startInfo.CreateNoWindow <- true
+
+            let p = new Process()
+            p.StartInfo <- startInfo
+            p.Start() |> ignore
+
+            let output = p.StandardOutput.ReadToEnd()
+            p.WaitForExit()
+
+            Console.WriteLine("Processes with file open:");
+            Console.WriteLine(output);
+
+    | false -> ()
+
 type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo) =
     let mutable projectDir: string option = None
     let mutable solutionLoaded: bool = false
@@ -523,14 +551,12 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             match projectDir with
             | Some projectDir ->
                 logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
-                Thread.Sleep(1000)
                 try
                     deleteDirectory projectDir
                 with
                 | :? System.Exception as ex ->
-                    let processList = Process.GetProcesses()
-                    for p in processList do
-                        Console.WriteLine($"Process Name: {p.ProcessName}, ID: {p.Id}");
+                    printProcessWithFileOpen (sprintf "%s/%s" projectDir "Project/Project.csproj")
+                                             ((testDataDir |> string) + "/../handle64.exe")
                     reraise()
             | _ -> ()
 
