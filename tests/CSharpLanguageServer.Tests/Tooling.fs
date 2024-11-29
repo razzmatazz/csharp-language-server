@@ -445,14 +445,20 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
     let tempTestDir = new DirectoryInfo(tempTestDirName)
     tempTestDir.Create()
 
+    let fileExtFilter ext =
+        ext = ".cs" || ext = ".csproj" || ext = ".sln" || ext = ".cshtml"
+
+    let dirFilter sourceSubdirName =
+        sourceSubdirName <> "bin" && sourceSubdirName <> "obj"
+
     let rec copyDirWithFilter (sourceDir: DirectoryInfo) (targetDir: DirectoryInfo) : DirectoryInfo =
         for file in sourceDir.GetFiles() do
-            if file.Extension = ".cs" || file.Extension = ".csproj" || file.Extension = ".sln" then
+            if fileExtFilter file.Extension then
                 let targetFilename = Path.Combine(targetDir.ToString(), file.Name)
                 file.CopyTo(targetFilename) |> ignore
 
         for sourceSubdir in sourceDir.GetDirectories() do
-            if sourceSubdir.Name <> "bin" && sourceSubdir.Name <> "obj" then
+            if dirFilter sourceSubdir.Name then
                 let targetSubdir = DirectoryInfo(Path.Combine(targetDir.ToString(), sourceSubdir.Name))
                 targetSubdir.Create()
                 copyDirWithFilter sourceSubdir targetSubdir |> ignore
