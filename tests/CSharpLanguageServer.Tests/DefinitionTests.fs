@@ -21,7 +21,7 @@ let testDefinitionWorks () =
         }
 
     let declaration0: Declaration option =
-        classFile.Request("textDocument/definition", definitionParams0)
+        client.Request("textDocument/definition", definitionParams0)
 
     Assert.IsTrue(declaration0.IsNone)
 
@@ -33,7 +33,7 @@ let testDefinitionWorks () =
         }
 
     let declaration1: Declaration option =
-        classFile.Request("textDocument/definition", definitionParams1)
+        client.Request("textDocument/definition", definitionParams1)
 
     match declaration1.Value with
     | U2.C1 _ -> failwith "Location[] was expected"
@@ -66,7 +66,7 @@ let testDefinitionWorksInAspNetProject () =
         }
 
     let definition0: Declaration option =
-        testControllerCsFile.Request("textDocument/definition", definitionParams0)
+        client.Request("textDocument/definition", definitionParams0)
 
     let expectedLocations0: Location array =
         [|

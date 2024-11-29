@@ -22,7 +22,9 @@ let testHoverWorks() =
           WorkDoneToken = None
         }
 
-    let hover0: Hover option = classFile.Request("textDocument/hover", hover0Params)
+    let hover0: Hover option =
+        client.Request("textDocument/hover", hover0Params)
+
     Assert.IsTrue(hover0.IsSome)
 
     match hover0 with
@@ -46,5 +48,7 @@ let testHoverWorks() =
           WorkDoneToken = None
         }
 
-    let hover1: Hover option = classFile.Request("textDocument/hover", hover1Params)
+    let hover1: Hover option =
+        client.Request("textDocument/hover", hover1Params)
+
     Assert.IsTrue(hover1.IsNone)

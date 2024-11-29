@@ -75,7 +75,8 @@ let testPullDiagnosticsWork () =
           Identifier = None
           PreviousResultId = None }
 
-    let report0: DocumentDiagnosticReport option = classFile.Request("textDocument/diagnostic", diagnosticParams)
+    let report0: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report0 with
     | Some (U2.C1 report) ->
@@ -106,7 +107,8 @@ let testPullDiagnosticsWork () =
     //
     classFile.DidChange("")
 
-    let report1: DocumentDiagnosticReport option = classFile.Request("textDocument/diagnostic", diagnosticParams)
+    let report1: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report1 with
     | Some (U2.C1 report) ->
