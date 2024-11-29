@@ -97,6 +97,8 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
     client.StartAndWaitForSolutionLoad()
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
+    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
+    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
@@ -111,9 +113,6 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
 
     Assert.IsTrue(locations0.IsSome)
     Assert.AreEqual(2, locations0.Value.Length)
-
-    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
-    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
     let expectedLocations0: Location array =
       [|
