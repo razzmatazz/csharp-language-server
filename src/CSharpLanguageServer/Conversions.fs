@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Conversions
 
 open System
+open System.IO
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Completion
@@ -67,13 +68,25 @@ module Range =
 
 
 module Location =
-    let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location): Location =
-        if loc.IsInSource then
-            { Uri = loc.SourceTree.FilePath |> Path.toUri
-              Range = loc.GetLineSpan().Span |> Range.fromLinePositionSpan }
-        else
-            { Uri = ""
-              Range = { Start = { Line = 0u; Character = 0u }; End = { Line = 0u; Character = 0u } } }
+    let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location): option<Location> =
+        let toLspLocation (path: string) span: Location =
+            { Uri = path |> Path.toUri
+              Range = span |> Range.fromLinePositionSpan }
+
+        match loc.Kind with
+        | LocationKind.SourceFile ->
+            let mappedLoc = loc.GetMappedLineSpan()
+
+            if mappedLoc.IsValid && File.Exists(mappedLoc.Path) then
+                toLspLocation mappedLoc.Path mappedLoc.Span
+                |> Some
+            elif File.Exists(loc.SourceTree.FilePath) then
+                toLspLocation loc.SourceTree.FilePath (loc.GetLineSpan().Span)
+                |> Some
+            else
+                None
+
+        | _ -> None
 
 
 module TextEdit =
@@ -193,16 +206,19 @@ module TypeHierarchyItem =
 
 module SymbolInformation =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol): SymbolInformation list =
-        let name = SymbolName.fromSymbol format symbol
-        let kind = SymbolKind.fromSymbol symbol
-        symbol.Locations
-        |> Seq.map (fun loc ->
-            { Name = name
-              Kind = kind
-              Location = Location.fromRoslynLocation loc
+        let toSymbolInformation loc =
+            { Name = SymbolName.fromSymbol format symbol
+              Kind = SymbolKind.fromSymbol symbol
+              Location = loc
               ContainerName = None
               Deprecated = None
-              Tags = None })
+              Tags = None }
+
+        symbol.Locations
+        |> Seq.map Location.fromRoslynLocation
+        |> Seq.filter _.IsSome
+        |> Seq.map _.Value
+        |> Seq.map toSymbolInformation
         |> Seq.toList
 
 

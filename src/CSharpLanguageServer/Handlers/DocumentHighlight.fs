@@ -60,13 +60,16 @@ module DocumentHighlight =
                 refs
                 |> Seq.collect (fun r -> r.Locations)
                 |> Seq.map (fun rl -> rl.Location)
-                |> Seq.filter (fun l -> l.IsInSource && l.SourceTree.FilePath = filePath)
+                |> Seq.filter (fun l -> l.IsInSource && l.GetMappedLineSpan().Path = filePath)
                 |> Seq.append (def |> Option.ofObj |> Option.toList |> Seq.collect (fun sym -> sym.Locations))
 
             return
                 locations
+                |> Seq.map Location.fromRoslynLocation
+                |> Seq.filter _.IsSome
+                |> Seq.map _.Value
                 |> Seq.map (fun l ->
-                    { Range = (Location.fromRoslynLocation l).Range
+                    { Range = l.Range
                       Kind = Some DocumentHighlightKind.Read })
         }
 

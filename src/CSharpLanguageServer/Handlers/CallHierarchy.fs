@@ -71,9 +71,13 @@ module CallHierarchy =
                 info.Locations
                 |> Seq.map (fun l -> l.GetLineSpan().Span |> Range.fromLinePositionSpan)
                 |> Seq.toArray
+
             info.CallingSymbol.Locations
+            |> Seq.map Location.fromRoslynLocation
+            |> Seq.filter _.IsSome
+            |> Seq.map _.Value
             |> Seq.map (fun loc ->
-                { From = CallHierarchyItem.fromSymbolAndLocation (info.CallingSymbol) (loc |> Location.fromRoslynLocation)
+                { From = CallHierarchyItem.fromSymbolAndLocation (info.CallingSymbol) loc
                   FromRanges = fromRanges })
 
         match! context.FindSymbol p.Item.Uri p.Item.Range.Start with

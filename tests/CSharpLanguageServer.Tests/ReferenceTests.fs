@@ -92,7 +92,7 @@ let testReferenceWorks() =
 
 [<TestCase>]
 let testReferenceWorksToAspNetRazorPageReferencedValue() =
-    use client = setupServerClient { defaultClientProfile with LoggingEnabled = true }
+    use client = setupServerClient defaultClientProfile
                                    "TestData/testReferenceWorksToAspNetRazorPageReferencedValue"
     client.StartAndWaitForSolutionLoad()
 
@@ -110,15 +110,21 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
       testIndexViewModelCsFile.Request("textDocument/references", referenceParams0)
 
     Assert.IsTrue(locations0.IsSome)
-    Assert.AreEqual(1, locations0.Value.Length)
+    Assert.AreEqual(2, locations0.Value.Length)
 
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
+    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
     let expectedLocations0: Location array =
       [|
         { Uri = testControllerCsFile.Uri
           Range = { Start = { Line = 11u; Character = 12u }
                     End = { Line = 11u; Character = 18u } }
+        }
+
+        { Uri = viewsTestIndexCshtmlFile.Uri
+          Range = { Start = { Line = 1u; Character = 7u }
+                    End = { Line = 1u; Character = 13u } }
         }
        |]
 
@@ -139,10 +145,15 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
       testIndexViewModelCsFile.Request("textDocument/references", referenceParams1)
 
     Assert.IsTrue(locations1.IsSome)
-    Assert.AreEqual(4, locations1.Value.Length)
+    Assert.AreEqual(5, locations1.Value.Length)
 
     let expectedLocations1: Location array =
       [|
+        { Uri = viewsTestIndexCshtmlFile.Uri
+          Range = { Start = { Line = 1u; Character = 7u }
+                    End = { Line = 1u; Character = 13u } }
+        }
+
         { Uri = testIndexViewModelCsFile.Uri
           Range = { Start = { Line = 3u; Character = 19u }
                     End = { Line = 3u; Character = 25u } }

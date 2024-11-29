@@ -47,6 +47,8 @@ module References =
             return
                 locations
                 |> Seq.map Location.fromRoslynLocation
+                |> Seq.filter _.IsSome
+                |> Seq.map _.Value
                 |> Seq.distinct
                 |> Seq.toArray
                 |> Some
