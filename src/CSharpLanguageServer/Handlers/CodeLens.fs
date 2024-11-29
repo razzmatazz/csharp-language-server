@@ -167,7 +167,7 @@ module CodeLens =
             // (l.SourceTree.FilePath, l.SourceSpan)
             let refNum =
                 locations
-                |> Seq.distinctBy (fun l -> (l.SourceTree.FilePath, l.SourceSpan))
+                |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
                 |> Seq.length
 
             let title = sprintf "%d Reference(s)" refNum

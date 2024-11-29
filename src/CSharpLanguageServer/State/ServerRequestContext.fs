@@ -91,7 +91,10 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                 | ls -> ls
 
         | false, true, _ ->
-            return [Location.fromRoslynLocation l]
+            return
+                match (Location.fromRoslynLocation l) with
+                | Some loc -> [loc]
+                | None -> []
 
         | _, _, _ ->
             return []

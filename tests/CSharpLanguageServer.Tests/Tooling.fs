@@ -74,7 +74,7 @@ type ClientServerRpcRequestInfo =
     {
         Method: string
         RpcRequestMsg: JObject
-        ResultReplyChannel: option<AsyncReplyChannel<JToken>>
+        ResultReplyChannel: option<AsyncReplyChannel<Result<JToken,JToken>>>
     }
 
 type RpcEndpoint = Server | Client
@@ -129,8 +129,8 @@ type ClientEvent =
     | GetState of AsyncReplyChannel<ClientState>
     | ServerStderrLineRead of string option
     | RpcMessageReceived of Result<JObject option, Exception>
-    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<JToken>>
-    | ServerRpcCallResult of JObject
+    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<Result<JToken, JToken>>>
+    | ServerRpcCallResultOrError of JObject
     | SendServerRpcNotification of string * JToken
     | ClientRpcCall of JValue * string * JObject
     | SendClientRpcCallResult of JToken * JToken
@@ -278,8 +278,8 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         | Ok rpcMsgMaybe ->
             match rpcMsgMaybe with
             | Some rpcMsg ->
-                if rpcMsg.ContainsKey("result") then
-                    post (ServerRpcCallResult rpcMsg)
+                if rpcMsg.ContainsKey("result") || rpcMsg.ContainsKey("error") then
+                    post (ServerRpcCallResultOrError rpcMsg)
                 else if rpcMsg.ContainsKey("method") then
                     post (ClientRpcCall (rpcMsg["id"] :?> JValue, string rpcMsg["method"], rpcMsg["params"] :?> JObject))
                 else
@@ -347,16 +347,24 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return { state with OutstandingServerRpcReqs = newOutstandingServerRpcReqs
                             NextRpcRequestId = state.NextRpcRequestId + 1 }
 
-    | ServerRpcCallResult result ->
-        let rpcCallId = int result["id"]
+    | ServerRpcCallResultOrError rpcMsg ->
+        let rpcCallId = int rpcMsg["id"]
         let rpcRequest = state.OutstandingServerRpcReqs |> Map.find rpcCallId
 
         let newOutstandingServerRpcReqs =
             state.OutstandingServerRpcReqs |> Map.remove rpcCallId
 
+        let resultOrError: Result<JToken,JToken> =
+            if rpcMsg.ContainsKey("result") then
+                Ok (rpcMsg["result"])
+            elif rpcMsg.ContainsKey("error") then
+                Error (rpcMsg["error"])
+            else
+               failwithf "unknown result rpcMsg: %s" (string rpcMsg)
+
         match rpcRequest.ResultReplyChannel with
         | Some rc ->
-            rc.Reply(result["result"])
+            rc.Reply(resultOrError)
         | None -> ()
 
         return { state with OutstandingServerRpcReqs = newOutstandingServerRpcReqs }
@@ -445,14 +453,20 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
     let tempTestDir = new DirectoryInfo(tempTestDirName)
     tempTestDir.Create()
 
+    let fileExtFilter ext =
+        ext = ".cs" || ext = ".csproj" || ext = ".sln" || ext = ".cshtml"
+
+    let dirFilter sourceSubdirName =
+        sourceSubdirName <> "bin" && sourceSubdirName <> "obj"
+
     let rec copyDirWithFilter (sourceDir: DirectoryInfo) (targetDir: DirectoryInfo) : DirectoryInfo =
         for file in sourceDir.GetFiles() do
-            if file.Extension = ".cs" || file.Extension = ".csproj" || file.Extension = ".sln" then
+            if fileExtFilter file.Extension then
                 let targetFilename = Path.Combine(targetDir.ToString(), file.Name)
                 file.CopyTo(targetFilename) |> ignore
 
         for sourceSubdir in sourceDir.GetDirectories() do
-            if sourceSubdir.Name <> "bin" && sourceSubdir.Name <> "obj" then
+            if dirFilter sourceSubdir.Name then
                 let targetSubdir = DirectoryInfo(Path.Combine(targetDir.ToString(), sourceSubdir.Name))
                 targetSubdir.Create()
                 copyDirWithFilter sourceSubdir targetSubdir |> ignore
@@ -488,8 +502,13 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
         let requestJObject = request |> serialize
-        let responseJToken = client.PostAndReply<JToken>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
-        responseJToken |> deserialize<'Response>
+        let responseJToken = client.PostAndReply<Result<JToken, JToken>>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
+        match responseJToken with
+        | Ok resultJToken ->
+            resultJToken |> deserialize<'Response>
+        | Error errorJToken ->
+            failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
+
 
     member __.DidChange(text: string) =
         let didChangeParams: DidChangeTextDocumentParams =
@@ -561,15 +580,20 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             }
 
         let initializeResult =
-            client.PostAndReply<JToken>(fun rc -> SendServerRpcRequest ("initialize", serialize initializeParams, Some rc))
-            |> deserialize<InitializeResult>
+            let initResponse = client.PostAndReply<Result<JToken, JToken>>(
+                fun rc -> SendServerRpcRequest ("initialize", serialize initializeParams, Some rc))
+
+            match initResponse with
+            | Ok result -> deserialize<InitializeResult> result
+            | Error error -> failwithf "initialize has failed with %s" (string error)
 
         client.Post(UpdateState (fun s -> { s with ServerInfo = initializeResult.ServerInfo
                                                    ServerCapabilities = Some initializeResult.Capabilities }))
 
         log "OK, 'initialize' request complete"
 
-        let _ = client.PostAndReply<JToken>(fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
+        let _ = client.PostAndReply<Result<JToken, JToken>>(
+            fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
         log "OK, 'initialized' request complete"
 
         this.WaitForProgressEnd("OK, 1 project file(s) loaded")
@@ -595,7 +619,8 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             Thread.Sleep(25)
 
     member __.Shutdown () =
-        let _ = client.PostAndReply<JToken>(fun rc -> SendServerRpcRequest ("shutdown", JObject(), Some rc))
+        let _ = client.PostAndReply<Result<JToken, JToken>>(
+            fun rc -> SendServerRpcRequest ("shutdown", JObject(), Some rc))
         client.Post(SendServerRpcRequest ("exit", JObject(), None))
 
     member __.Stop () =
