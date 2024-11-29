@@ -9,12 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By @granitrocky in https://github.com/razzmatazz/csharp-language-server/pull/189
 * Make sure textDocument/findReferences respects Context.IncludeDeclaration
   - https://github.com/razzmatazz/csharp-language-server/pull/199
+* Fix an issue where server would file on projects using code generators (like Asp.Net razor) on some of the endpoints:
+  - https://github.com/razzmatazz/csharp-language-server/pull/190
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.15.0...0.16.0
 
 ## [0.15.0] - 2024-08-15 / Šventoji
 * Upgrade Roslyn to 4.10.0:
   - https://github.com/razzmatazz/csharp-language-server/pull/182
 * Implement pull diagnostics for better performance;
   - https://github.com/razzmatazz/csharp-language-server/pull/174
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.14.0...0.15.0
 
 ## [0.14.0] - 2024-06-23 / Palanga
 * Speed up completion by not showing name suggestions or items from unimported namespaces
