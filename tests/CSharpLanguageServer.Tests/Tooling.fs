@@ -500,16 +500,6 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
             client.Post(SendServerRpcNotification ("textDocument/didClose", serialize didCloseParams))
             ()
 
-    member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
-        let requestJObject = request |> serialize
-        let responseJToken = client.PostAndReply<Result<JToken, JToken>>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
-        match responseJToken with
-        | Ok resultJToken ->
-            resultJToken |> deserialize<'Response>
-        | Error errorJToken ->
-            failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
-
-
     member __.DidChange(text: string) =
         let didChangeParams: DidChangeTextDocumentParams =
             {
@@ -645,6 +635,15 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
         |> Seq.exists (fun m -> m.Source = Client
                                 && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
                                 && (m.Message.["method"] |> string) = rpcMethod)
+
+    member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
+        let requestJObject = request |> serialize
+        let responseJToken = client.PostAndReply<Result<JToken, JToken>>(fun rc -> SendServerRpcRequest (method, requestJObject, Some rc))
+        match responseJToken with
+        | Ok resultJToken ->
+            resultJToken |> deserialize<'Response>
+        | Error errorJToken ->
+            failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string): FileController =
         let uri =

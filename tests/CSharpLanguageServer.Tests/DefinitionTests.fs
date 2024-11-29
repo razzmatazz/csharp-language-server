@@ -4,11 +4,11 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open System
 
 [<TestCase>]
 let testDefinitionWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testDefinitionWorks"
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testDefinitionWorks"
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
@@ -20,7 +20,9 @@ let testDefinitionWorks () =
           PartialResultToken = None
         }
 
-    let declaration0: Declaration option = classFile.Request("textDocument/definition", definitionParams0)
+    let declaration0: Declaration option =
+        client.Request("textDocument/definition", definitionParams0)
+
     Assert.IsTrue(declaration0.IsNone)
 
     let definitionParams1: DefinitionParams =
@@ -30,7 +32,8 @@ let testDefinitionWorks () =
           PartialResultToken = None
         }
 
-    let declaration1: Declaration option = classFile.Request("textDocument/definition", definitionParams1)
+    let declaration1: Declaration option =
+        client.Request("textDocument/definition", definitionParams1)
 
     match declaration1.Value with
     | U2.C1 _ -> failwith "Location[] was expected"
@@ -45,32 +48,35 @@ let testDefinitionWorks () =
 
         Assert.AreEqual(expectedLocations1, declaration1Locations)
 
+
 [<TestCase>]
 let testDefinitionWorksInAspNetProject () =
     use client = setupServerClient defaultClientProfile
                                    "TestData/testDefinitionWorksInAspNetProject"
     client.StartAndWaitForSolutionLoad()
 
-    use indexCsHtmlCs = client.Open("Project/Pages/Index.cshtml.cs")
+    use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
+    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
 
-    let definitionParams1: DefinitionParams =
-        { TextDocument = { Uri = indexCsHtmlCs.Uri }
-          Position = { Line = 7u; Character = 8u }
+    let definitionParams0: DefinitionParams =
+        { TextDocument = { Uri = testControllerCsFile.Uri }
+          Position = { Line = 11u; Character = 12u }
           WorkDoneToken = None
           PartialResultToken = None
         }
 
-    let declaration1: Declaration option = indexCsHtmlCs.Request("textDocument/definition", definitionParams1)
+    let definition0: Declaration option =
+        client.Request("textDocument/definition", definitionParams0)
 
-    match declaration1.Value with
-    | U2.C1 _ -> failwith "Location[] was expected"
-    | U2.C2 declaration1Locations ->
-        let expectedLocations1: Location array =
-            [|
-              { Uri = indexCsHtmlCs.Uri
-                Range = { Start = { Line = 4u; Character = 19u }
-                          End = { Line = 4u; Character = 24u } }
-              }
-            |]
+    let expectedLocations0: Location array =
+        [|
+            { Uri = testIndexViewModelCsFile.Uri
+              Range = { Start = { Line = 3u; Character = 19u }
+                        End = { Line = 3u; Character = 25u } }
+            }
+        |]
 
-        Assert.AreEqual(expectedLocations1, declaration1Locations)
+    match definition0 with
+    | Some (U2.C2 definition0Locations) ->
+        Assert.AreEqual(expectedLocations0, definition0Locations)
+    | _ -> failwithf "Some Location[] was expected but %s received" (string definition0)

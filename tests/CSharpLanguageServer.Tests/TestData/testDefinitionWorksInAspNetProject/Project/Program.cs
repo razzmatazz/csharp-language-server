@@ -1,7 +1,20 @@
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddRazorPages();
+using Microsoft.AspNetCore;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 
-var app = builder.Build();
-app.UseRouting();
-app.MapRazorPages();
-app.Run();
+namespace Project;
+
+public class Program
+{
+    public static async Task Main(string[] args)
+    {
+        await BuildWebHost(args).RunAsync();
+    }
+
+    public static IWebHost BuildWebHost(string[] args)
+    {
+        var builder = WebHost.CreateDefaultBuilder(args);
+        builder = builder.UseKestrel().UseStartup<Startup>();
+        return builder.Build();
+    }
+}

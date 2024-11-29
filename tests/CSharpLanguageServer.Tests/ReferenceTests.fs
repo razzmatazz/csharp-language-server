@@ -25,7 +25,7 @@ let testReferenceWorks() =
         }
 
     let locations0: Location[] option =
-      classFile.Request("textDocument/references", referenceParams0)
+        client.Request("textDocument/references", referenceParams0)
 
     Assert.IsTrue(locations0.IsNone)
 
@@ -41,7 +41,7 @@ let testReferenceWorks() =
         }
 
     let locations1: Location[] option =
-      classFile.Request("textDocument/references", referenceParams1)
+        client.Request("textDocument/references", referenceParams1)
 
     let expectedLocations1: Location array =
         [|
@@ -68,7 +68,7 @@ let testReferenceWorks() =
         }
 
     let locations2: Location[] option =
-      classFile.Request("textDocument/references", referenceParams2)
+        client.Request("textDocument/references", referenceParams2)
 
     let expectedLocations2: Location array =
         [|
@@ -97,6 +97,8 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
     client.StartAndWaitForSolutionLoad()
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
+    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
+    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
@@ -107,13 +109,10 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
         }
 
     let locations0: Location[] option =
-      testIndexViewModelCsFile.Request("textDocument/references", referenceParams0)
+        client.Request("textDocument/references", referenceParams0)
 
     Assert.IsTrue(locations0.IsSome)
     Assert.AreEqual(2, locations0.Value.Length)
-
-    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
-    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
     let expectedLocations0: Location array =
       [|
@@ -142,7 +141,7 @@ let testReferenceWorksToAspNetRazorPageReferencedValue() =
         }
 
     let locations1: Location[] option =
-      testIndexViewModelCsFile.Request("textDocument/references", referenceParams1)
+        client.Request("textDocument/references", referenceParams1)
 
     Assert.IsTrue(locations1.IsSome)
     Assert.AreEqual(5, locations1.Value.Length)

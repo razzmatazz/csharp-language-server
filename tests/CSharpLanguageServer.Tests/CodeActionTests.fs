@@ -26,7 +26,9 @@ let testCodeActionOnMethodNameWorks() =
           PartialResultToken = None
         }
 
-    let caResult0 : TextDocumentCodeActionResult option = classFile.Request("textDocument/codeAction", caParams0)
+    let caResult0 : TextDocumentCodeActionResult option =
+      client.Request("textDocument/codeAction", caParams0)
+
     Assert.IsTrue(caResult0.IsSome)
 
     match caResult0 with
