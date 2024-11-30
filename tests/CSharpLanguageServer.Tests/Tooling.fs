@@ -52,7 +52,7 @@ let makeServerProcessInfo projectTempDir =
         Path.Combine(baseDir, "src", "CSharpLanguageServer", "bin", buildMode, tfm, "CSharpLanguageServer")
 
     let serverFileName =
-        match System.Environment.OSVersion.Platform with
+        match Environment.OSVersion.Platform with
         | PlatformID.Win32NT -> baseServerFileName + ".exe"
         | _ -> baseServerFileName
 
@@ -453,15 +453,20 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
     let tempTestDir = new DirectoryInfo(tempTestDirName)
     tempTestDir.Create()
 
-    let fileExtFilter ext =
-        ext = ".cs" || ext = ".csproj" || ext = ".sln" || ext = ".cshtml"
+    let fileFilter (file: FileInfo) =
+        file.Name = ".editorconfig"
+            || file.Extension = ".cs"
+            || file.Extension = ".csproj"
+            || file.Extension = ".sln"
+            || file.Extension = ".cshtml"
+            || file.Extension = ".txt"
 
     let dirFilter sourceSubdirName =
         sourceSubdirName <> "bin" && sourceSubdirName <> "obj"
 
     let rec copyDirWithFilter (sourceDir: DirectoryInfo) (targetDir: DirectoryInfo) : DirectoryInfo =
         for file in sourceDir.GetFiles() do
-            if fileExtFilter file.Extension then
+            if fileFilter file then
                 let targetFilename = Path.Combine(targetDir.ToString(), file.Name)
                 file.CopyTo(targetFilename) |> ignore
 
@@ -487,23 +492,47 @@ let rec deleteDirectory (path: string) =
         Directory.Delete(path)
 
 
-type FileController (client: MailboxProcessor<ClientEvent>, filename: string, uri: string, fileText: string) =
-    member __.Filename = filename
-    member __.Uri = uri
-    member __.FileText = fileText
+type FileController (client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
+    let mutable fileContents: option<string> = None
+
+    member __.FileName = filename
+
+    member __.Uri =
+        match Environment.OSVersion.Platform with
+        | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
+        | _ -> "file://" + projectDir + "/" + filename
+
 
     interface IDisposable with
-        member __.Dispose() =
+        member this.Dispose() =
             let didCloseParams: DidCloseTextDocumentParams =
-                { TextDocument = { Uri = uri } }
+                { TextDocument = { Uri = this.Uri } }
 
             client.Post(SendServerRpcNotification ("textDocument/didClose", serialize didCloseParams))
             ()
 
-    member __.DidChange(text: string) =
+    member this.Open () =
+        let fileText =
+            Path.Combine(projectDir, filename)
+            |> File.ReadAllBytes
+            |> Encoding.UTF8.GetString
+
+        fileContents <- Some fileText
+
+        let textDocument = { Uri = this.Uri
+                             LanguageId = "csharp"
+                             Version = 1
+                             Text = fileText }
+
+        let didOpenParams: DidOpenTextDocumentParams =
+            { TextDocument = textDocument }
+
+        client.Post(SendServerRpcNotification ("textDocument/didOpen", serialize didOpenParams))
+
+    member this.DidChange(text: string) =
         let didChangeParams: DidChangeTextDocumentParams =
             {
-                TextDocument = { Uri = uri; Version = 2 }
+                TextDocument = { Uri = this.Uri; Version = 2 }
                 ContentChanges =
                     [|
                         { Text = text } |> U2.C2
@@ -511,7 +540,24 @@ type FileController (client: MailboxProcessor<ClientEvent>, filename: string, ur
             }
 
         client.Post(SendServerRpcNotification ("textDocument/didChange", serialize didChangeParams))
-        ()
+
+    member __.GetFileContentsWithTextEditsApplied (tes: TextEdit[]) =
+        let indexOfPos (c: string) (pos: Position) : int =
+            let lines = c.Split([|'\n'|], StringSplitOptions.None)
+
+            let lineOffset = lines
+                             |> Seq.take (int pos.Line)
+                             |> Seq.sumBy (fun l -> l.Length + 1)
+
+            lineOffset + (int pos.Character)
+
+        let applyTextEdit (c: string) (te: TextEdit) =
+            c.Substring(0, indexOfPos c te.Range.Start)
+                + te.NewText.Replace("\\n", "\n")
+                + c.Substring(indexOfPos c te.Range.End)
+
+        tes |> Array.rev
+            |> Array.fold applyTextEdit fileContents.Value
 
 
 type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo) =
@@ -543,6 +589,9 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
                 deleteDirectory projectDir
             | _ -> ()
 
+    member __.ProjectDir: string =
+        projectDir.Value
+
     member this.StartAndWaitForSolutionLoad() =
         if solutionLoaded then
             failwith "Solution has already been loaded for this ClientController!"
@@ -558,7 +607,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
         let initializeParams: InitializeParams =
             {
                 RootPath = None
-                ProcessId = (System.Diagnostics.Process.GetCurrentProcess().Id) |> int |> Some
+                ProcessId = (Process.GetCurrentProcess().Id) |> int |> Some
                 RootUri = (sprintf "file://%s" projectDir.Value) |> Some
                 Capabilities = state.ClientProfile.ClientCapabilities
                 WorkDoneToken = None
@@ -646,28 +695,9 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string): FileController =
-        let uri =
-            match System.Environment.OSVersion.Platform with
-            | PlatformID.Win32NT -> ("file:///" + projectDir.Value + "/" + filename).Replace("\\", "/")
-            | _ -> "file://" + projectDir.Value + "/" + filename
-
-        let fileText =
-            Path.Combine(projectDir.Value, filename)
-            |> File.ReadAllBytes
-            |> Encoding.UTF8.GetString
-
-        let textDocument = { Uri = uri
-                             LanguageId = "csharp"
-                             Version = 1
-                             Text = fileText }
-
-        let didOpenParams: DidOpenTextDocumentParams =
-            { TextDocument = textDocument }
-
-        client.Post(SendServerRpcNotification ("textDocument/didOpen", serialize didOpenParams))
-
-        new FileController(client, filename, uri, fileText)
-
+        let file = new FileController(client, projectDir.Value, filename)
+        file.Open()
+        file
 
 let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
     let initialState = { defaultClientState with LoggingEnabled = clientProfile.LoggingEnabled }

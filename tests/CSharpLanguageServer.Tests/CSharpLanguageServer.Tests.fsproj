@@ -15,6 +15,7 @@
     <Compile Include="InitializationTests.fs" />
     <Compile Include="ReferenceTests.fs" />
     <Compile Include="DefinitionTests.fs" />
+    <Compile Include="DocumentFormattingTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
