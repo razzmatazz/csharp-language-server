@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RoslynPackageVersion>4.11.0</RoslynPackageVersion>
-    <MSBuildPackageVersion>17.11.4</MSBuildPackageVersion>
+    <RoslynPackageVersion>4.12.0</RoslynPackageVersion>
+    <MSBuildPackageVersion>17.12.6</MSBuildPackageVersion>
     <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
   </PropertyGroup>
 
@@ -29,7 +29,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageVersion Include="NUnit" Version="3.14.0" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
