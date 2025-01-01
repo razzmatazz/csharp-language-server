@@ -37,9 +37,15 @@ module Hover =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
+        let logMessage = context.WindowShowMessage
+
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None ->
+            do! logMessage "no symbol here!"
+            return None |> success
+
         | Some (symbol, doc) ->
+            do! logMessage (sprintf "have symbol %s in doc %s" (string symbol) (string doc))
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
             let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel

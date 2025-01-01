@@ -1,9 +1,12 @@
 namespace CSharpLanguageServer
 
 open System
+open System.Linq
 open System.Xml.Linq
+open System.Reflection
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp.Syntax
 
 open CSharpLanguageServer.Conversions
 
@@ -179,6 +182,24 @@ module DocumentationUtil =
             |> Option.map (fun a -> a.Name)
             |> Option.defaultValue ""
 
+        match sym with
+        | :? IRangeVariableSymbol as rangeVarSym ->
+            let underlyingSymList = rangeVarSym.GetType().GetMember("_underlying", BindingFlags.Instance|||BindingFlags.NonPublic)
+            let underlyingSymType = underlyingSymList.Single() :?> FieldInfo |> _.FieldType
+
+            (sprintf "rangeVarSym.Type=%s; underlyingSym=%s" (rangeVarSym.GetType() |> string)
+                                                             (underlyingSymType |> string))
+
+            //(sprintf "syntax=%s; type=%s" (syntax |> string) (syntax.GetType() |> string))
+            (*
+            let typeInfo = semanticModel.GetTypeInfo(syntax)
+            (sprintf "typeInfo=%s; typeInfo.Type=\"%s\"" (typeInfo |> string) (typeInfo.Type |> string))
+            let typeName = typeInfo.Type.ToDisplayString()
+            "o"
+            (sprintf "kind=%s, symbolName=%s, symAssemblyName=%s; typeName=%s" (string sym.Kind) symbolName symAssemblyName typeName)
+            *)
+        | _ -> "x"
+(*
         let symbolInfoLines =
             match symbolName, symAssemblyName with
             | "", "" -> []
@@ -202,3 +223,4 @@ module DocumentationUtil =
         )
         |> Seq.append symbolInfoLines
         |> (fun ss -> String.Join("\n", ss))
+*)
