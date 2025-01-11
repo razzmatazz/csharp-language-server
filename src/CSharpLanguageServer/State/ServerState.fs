@@ -440,5 +440,11 @@ type ServerSettingsDto = {
      csharp: ServerSettingsCSharpDto option
 }
 and ServerSettingsCSharpDto =
-  { solution: string option }
-  static member Default = { solution = None }
+    {
+        solution: string option
+        applyFormattingOptions: bool
+    }
+    static member Default = {
+        solution = None
+        applyFormattingOptions = false
+    }

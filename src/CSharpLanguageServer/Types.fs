@@ -5,11 +5,14 @@ open Ionide.LanguageServerProtocol.Types
 
 type ServerSettings =
     { SolutionPath: string option
-      LogLevel: string }
-
+      LogLevel: string
+      ApplyFormattingOptions: bool
+    }
     static member Default: ServerSettings =
         { SolutionPath = None
-          LogLevel = "log" }
+          LogLevel = "log"
+          ApplyFormattingOptions = false
+        }
 
 type CSharpMetadataInformation =
     { ProjectName: string

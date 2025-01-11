@@ -45,7 +45,7 @@ module DocumentRangeFormatting =
         | None -> return None |> success
         | Some doc ->
             let! ct = Async.CancellationToken
-            let options = FormatUtil.getFormattingOptions doc p.Options
+            let! options = FormatUtil.getFormattingOptions context.State.Settings doc p.Options
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let startPos = Position.toRoslynPosition sourceText.Lines p.Range.Start
             let endPos = Position.toRoslynPosition sourceText.Lines p.Range.End

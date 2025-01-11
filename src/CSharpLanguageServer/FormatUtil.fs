@@ -8,6 +8,8 @@ open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
 
+open CSharpLanguageServer.Types
+
 module internal FormatUtil =
     let processChange (oldText: SourceText) (change: TextChange) : TextEdit =
         let mapToTextEdit (linePosition: LinePositionSpan, newText: string) : TextEdit =
@@ -73,18 +75,26 @@ module internal FormatUtil =
         return convert oldText (changes |> Seq.toArray)
     }
 
-    let getFormattingOptions (doc: Document) (formattingOptions: FormattingOptions) : OptionSet =
-        doc.Project.Solution.Options
-        |> fun o -> o.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, int formattingOptions.TabSize)
-        |> fun o -> o.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
-        |> match formattingOptions.InsertFinalNewline with
-           | Some insertFinalNewline ->
-               fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
-           | None -> id
-        |> match formattingOptions.TrimFinalNewlines with
-           | Some trimFinalNewlines ->
-               fun o -> o.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
-           | None -> id
+    let getFormattingOptions (settings: ServerSettings) (doc: Document) (formattingOptions: FormattingOptions) : Async<OptionSet> = async {
+        let! docOptions = doc.GetOptionsAsync() |> Async.AwaitTask
+
+        return
+            match settings.ApplyFormattingOptions with
+            | false ->
+                docOptions
+            | true ->
+                docOptions
+                |> _.WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, int formattingOptions.TabSize)
+                |> _.WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, not formattingOptions.InsertSpaces)
+                |> match formattingOptions.InsertFinalNewline with
+                   | Some insertFinalNewline ->
+                       _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
+                   | None -> id
+                |> match formattingOptions.TrimFinalNewlines with
+                   | Some trimFinalNewlines ->
+                       _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
+                   | None -> id
+    }
 
     let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
         if token.IsKind(SyntaxKind.EndOfFileToken) then

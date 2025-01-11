@@ -47,7 +47,7 @@ module DocumentOnTypeFormatting =
         match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> success
         | Some doc ->
-            let options = FormatUtil.getFormattingOptions doc p.Options
+            let! options = FormatUtil.getFormattingOptions context.State.Settings doc p.Options
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let pos = Position.toRoslynPosition sourceText.Lines p.Position

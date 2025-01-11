@@ -12,6 +12,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Workspace =
@@ -104,13 +105,19 @@ module Workspace =
     let didChangeConfiguration (context: ServerRequestContext)
                                (configParams: DidChangeConfigurationParams)
             : Async<LspResult<unit>> = async {
+
         let csharpSettings =
             configParams.Settings
             |> deserialize<ServerSettingsDto>
             |> (fun x -> x.csharp)
             |> Option.defaultValue ServerSettingsCSharpDto.Default
 
-        let newServerSettings = { context.State.Settings with SolutionPath = csharpSettings.solution }
+        let newServerSettings = {
+            context.State.Settings with
+                SolutionPath = csharpSettings.solution
+                ApplyFormattingOptions = csharpSettings.applyFormattingOptions
+        }
+
         context.Emit(SettingsChange newServerSettings)
 
         return Ok()
