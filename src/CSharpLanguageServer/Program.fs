@@ -50,9 +50,10 @@ let entry args =
 
         Log.Logger <- logConfig.CreateLogger()
 
-        let settings: ServerSettings = {
-            SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
-            LogLevel = logLevelArg
+        let settings = {
+            ServerSettings.Default with
+                SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
+                LogLevel = logLevelArg
         }
 
         Server.start settings
