@@ -378,6 +378,12 @@ let tryLoadSolutionOnPath
         solutionPath =
     let progress = ProgressReporter(lspClient)
 
+    let logMessage m =
+        lspClient.WindowLogMessage({
+            Type = MessageType.Info
+            Message = sprintf "csharp-ls: %s" m
+        })
+
     let showMessage m =
         lspClient.WindowShowMessage({
             Type = MessageType.Info
@@ -388,7 +394,7 @@ let tryLoadSolutionOnPath
         try
             let beginMessage = sprintf "Loading solution \"%s\"..." solutionPath
             do! progress.Begin(beginMessage)
-            do! showMessage beginMessage
+            do! logMessage beginMessage
 
             let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -401,11 +407,11 @@ let tryLoadSolutionOnPath
                     >> Log.addContext "message" (diag.ToString())
                 )
 
-                do! showMessage (sprintf "msbuildWorkspace.Diagnostics: %s" (diag.ToString()))
+                do! logMessage (sprintf "msbuildWorkspace.Diagnostics: %s" (diag.ToString()))
 
             let endMessage = sprintf "Finished loading solution \"%s\"" solutionPath
             do! progress.End endMessage
-            do! showMessage endMessage
+            do! logMessage endMessage
 
             return Some solution
         with
@@ -419,7 +425,7 @@ let tryLoadSolutionOnPath
 let tryLoadSolutionFromProjectFiles
         (lspClient: ILspClient)
         (logger: ILog)
-        (showMessage: string -> Async<unit>)
+        (logMessage: string -> Async<unit>)
         (projs: string list) =
     let progress = ProgressReporter(lspClient)
 
@@ -431,7 +437,7 @@ let tryLoadSolutionFromProjectFiles
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
         for file in projs do
             if projs.Length < 10 then
-              do! showMessage (sprintf "loading project \"%s\".." file)
+              do! logMessage (sprintf "loading project \"%s\".." file)
             try
                 do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
             with ex ->
@@ -473,13 +479,13 @@ let findAndLoadSolutionOnDir
             |> Seq.filter fileNotOnNodeModules
             |> Seq.toList
 
-        let showMessage m =
-            lspClient.WindowShowMessage({
+        let logMessage m =
+            lspClient.WindowLogMessage({
                 Type = MessageType.Info
                 Message = sprintf "csharp-ls: %s" m
             })
 
-        do! showMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
+        do! logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
         let singleSolutionFound =
             match solutionFiles with
@@ -488,8 +494,8 @@ let findAndLoadSolutionOnDir
 
         match singleSolutionFound with
         | None ->
-            do! showMessage ("no or multiple .sln files found on " + dir)
-            do! showMessage ("looking for .csproj/fsproj files on " + dir + "..")
+            do! logMessage ("no or multiple .sln files found on " + dir)
+            do! logMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
             let projFiles =
                 let csprojFiles = Directory.GetFiles(dir, "*.csproj", SearchOption.AllDirectories)
@@ -501,10 +507,10 @@ let findAndLoadSolutionOnDir
 
             if projFiles.Length = 0 then
                 let message = "no or .csproj/.fsproj or sln files found on " + dir
-                do! showMessage message
+                do! logMessage message
                 Exception message |> raise
 
-            return! tryLoadSolutionFromProjectFiles lspClient logger showMessage projFiles
+            return! tryLoadSolutionFromProjectFiles lspClient logger logMessage projFiles
 
         | Some solutionPath ->
             return! tryLoadSolutionOnPath lspClient logger solutionPath
@@ -521,12 +527,12 @@ let loadSolutionOnSolutionPathOrDir
       }
 
     | None -> async {
-        let logMessage: ShowMessageParams = {
+        let logMessage: LogMessageParams = {
             Type = MessageType.Info
             Message = sprintf "csharp-ls: attempting to find and load solution based on root path (\"%s\").." rootPath
         }
 
-        do! lspClient.WindowShowMessage(logMessage)
+        do! lspClient.WindowLogMessage(logMessage)
         return! findAndLoadSolutionOnDir lspClient logger rootPath
       }
 

@@ -26,7 +26,7 @@ module Initialization =
                          (p: InitializeParams)
             : Async<LspResult<InitializeResult>> = async {
         // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
-        let windowShowMessage m = lspClient.WindowShowMessage({ Type = MessageType.Info; Message = m })
+        let windowShowMessage m = lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
 
         context.Emit(ClientChange (Some lspClient))
 
