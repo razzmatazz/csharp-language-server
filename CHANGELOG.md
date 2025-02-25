@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Reduce startup notifications by using "window/logMessage"
+  - By @nikolightsaber in https://github.com/razzmatazz/csharp-language-server/pull/217
 * Make sure `.editorconfig` settings are respected, add `csharp.applyFormattingOptions` override (defaults to false):
   - By @DmitryHudrich in https://github.com/razzmatazz/csharp-language-server/pull/204
 
