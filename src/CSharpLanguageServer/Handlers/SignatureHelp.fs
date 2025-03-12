@@ -7,7 +7,7 @@ open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
@@ -88,7 +88,7 @@ module SignatureHelp =
     let handle (context: ServerRequestContext) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
         let docMaybe = context.GetUserDocument p.TextDocument.Uri
         match docMaybe with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -132,7 +132,7 @@ module SignatureHelp =
                     |> Option.bind (fun node -> findInvocationContext node.Parent)
 
             match root.FindToken(position).Parent |> findInvocationContext with
-            | None -> return None |> success
+            | None -> return None |> LspResult.success
             | Some invocation ->
                 let methodGroup =
                     semanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>()
@@ -154,5 +154,5 @@ module SignatureHelp =
                       ActiveSignature = matchingMethodMaybe |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
                       ActiveParameter = activeParameterMaybe }
 
-                return Some signatureHelpResult |> success
+                return Some signatureHelpResult |> LspResult.success
     }

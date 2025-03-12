@@ -8,7 +8,7 @@ open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.State
@@ -124,7 +124,8 @@ module CodeLens =
     let handle (context: ServerRequestContext) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
         let docMaybe = context.GetDocument p.TextDocument.Uri
         match docMaybe with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -148,7 +149,7 @@ module CodeLens =
 
             let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
 
-            return codeLens |> Array.ofSeq |> Some |> success
+            return codeLens |> Array.ofSeq |> Some |> LspResult.success
     }
 
     let resolve (context: ServerRequestContext)
@@ -160,7 +161,8 @@ module CodeLens =
             |> Option.defaultValue CodeLensData.Default
 
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
-        | None -> return p |> success
+        | None ->
+            return p |> LspResult.success
         | Some symbol ->
             let! locations = context.FindReferences symbol false
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
@@ -183,5 +185,5 @@ module CodeLens =
                   Command = "textDocument/references"
                   Arguments = Some [| arg |> serialize |] }
 
-            return { p with Command = Some command } |> success
+            return { p with Command = Some command } |> LspResult.success
     }

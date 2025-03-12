@@ -6,6 +6,7 @@ open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 open StreamJsonRpc
 
 open CSharpLanguageServer.Types
@@ -190,7 +191,8 @@ type CSharpLspServer(
                |> ignoreResult
 
         override __.Shutdown() =
-            () |> withReadWriteContext Initialization.handleShutdown |> ignoreResult
+            () |> withReadWriteContext Initialization.handleShutdown
+               |> ignoreResult
 
         override __.Exit() = ignoreNotification
 
@@ -335,7 +337,8 @@ type CSharpLspServer(
         override this.InlayHintResolve(p) =
             p |> withReadOnlyContext InlayHint.resolve
 
-        override __.WorkDoneProgressCancel(p) = ignoreNotification
+        override __.WindowWorkDoneProgressCancel (arg: WorkDoneProgressCancelParams): Async<unit> =
+            raise (NotImplementedException())(p) = ignoreNotification
 
         override this.TextDocumentInlineValue(p) = notImplemented
 
@@ -424,7 +427,7 @@ module Server =
         let serverCreator client =
             new CSharpLspServer(client, settings) :> ICSharpLspServer
 
-        let clientCreator = CSharpLspClient
+        let clientCreator = new CSharpLspClient
 
         Ionide.LanguageServerProtocol.Server.start
             requestHandlings
