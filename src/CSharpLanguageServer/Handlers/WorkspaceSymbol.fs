@@ -5,7 +5,7 @@ open System
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
@@ -53,7 +53,7 @@ module WorkspaceSymbol =
             |> Seq.toArray
             |> U2.C1
             |> Some
-            |> success
+            |> LspResult.success
     }
 
     let resolve (_context: ServerRequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =

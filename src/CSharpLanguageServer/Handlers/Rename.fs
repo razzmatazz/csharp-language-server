@@ -9,7 +9,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Rename
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
@@ -96,7 +96,8 @@ module Rename =
                 (p: PrepareRenameParams)
                 : AsyncLspResult<PrepareRenameResult option> = async {
         match context.GetUserDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
@@ -148,7 +149,7 @@ module Rename =
                     { Range = range; Placeholder = text } |> U3.C2 |> Some
                 | _, _ -> None
 
-            return rangeWithPlaceholderMaybe |> success
+            return rangeWithPlaceholderMaybe |> LspResult.success
     }
 
     let handle
@@ -156,7 +157,8 @@ module Rename =
             (p: RenameParams)
             : AsyncLspResult<WorkspaceEdit option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some (symbol, doc) ->
             let! ct = Async.CancellationToken
             let originalSolution = doc.Project.Solution
@@ -178,5 +180,5 @@ module Rename =
                     updatedSolution
                     (fun uri -> context.OpenDocs.TryFind uri |> Option.map _.Version)
 
-            return WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities) |> Some |> success
+            return WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities) |> Some |> LspResult.success
     }

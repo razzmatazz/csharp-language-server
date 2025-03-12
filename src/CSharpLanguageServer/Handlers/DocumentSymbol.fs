@@ -8,7 +8,7 @@ open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
@@ -317,7 +317,7 @@ module DocumentSymbol =
             |> Option.defaultValue false
 
         match context.GetDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -333,5 +333,5 @@ module DocumentSymbol =
             return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
                    |> U2.C2
                    |> Some
-                   |> success
+                   |> LspResult.success
     }

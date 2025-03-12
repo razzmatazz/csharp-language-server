@@ -2,6 +2,7 @@ module CSharpLanguageServer.Types
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 
 type ServerSettings =
     { SolutionPath: string option

@@ -6,6 +6,7 @@ open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 open StreamJsonRpc
 
 open CSharpLanguageServer.Types

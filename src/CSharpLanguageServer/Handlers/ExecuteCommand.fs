@@ -1,7 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 
@@ -12,4 +12,4 @@ module ExecuteCommand =
     let registration (_cc: ClientCapabilities) : Registration option = None
 
     let handle (_context: ServerRequestContext) (_p: ExecuteCommandParams) : AsyncLspResult<LSPAny> =
-        notImplemented<LSPAny> |> async.Return
+        LspResult.notImplemented<LSPAny> |> async.Return

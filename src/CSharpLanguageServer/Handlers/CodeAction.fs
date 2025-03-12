@@ -14,7 +14,7 @@ open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
@@ -324,7 +324,7 @@ module CodeAction =
                (p: CodeActionParams)
             : AsyncLspResult<TextDocumentCodeActionResult option> = async {
         match context.GetDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -384,7 +384,7 @@ module CodeAction =
                |> Seq.map U2<Command, CodeAction>.C2
                |> Array.ofSeq
                |> Some
-               |> success
+               |> LspResult.success
     }
 
     let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
@@ -393,7 +393,8 @@ module CodeAction =
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
         match context.GetDocument resolutionData.Value.TextDocumentUri with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -427,5 +428,5 @@ module CodeAction =
                   }
                 | None -> async { return None }
 
-            return maybeLspCodeAction |> success
+            return maybeLspCodeAction |> LspResult.success
     }

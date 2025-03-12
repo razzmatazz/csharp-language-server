@@ -11,8 +11,8 @@ type ProgressReporter(client: ILspClient) =
 
     member val Token = ProgressToken.C2 (Guid.NewGuid().ToString())
 
-    member this.Begin(title, ?cancellable, ?message, ?percentage) = async {
-        match! client.WorkDoneProgressCreate this.Token with
+    member _.Begin(title, ?cancellable, ?message, ?percentage) = async {
+        match! client.WindowWorkDoneProgressCreate this.Token with
         | Error _ ->
             canReport <- false
         | Ok() ->
@@ -26,7 +26,7 @@ type ProgressReporter(client: ILspClient) =
             do! client.Progress(this.Token, param)
     }
 
-    member this.Report(?cancellable, ?message, ?percentage) = async {
+    member _.Report(?cancellable, ?message, ?percentage) = async {
         if canReport && not endSent then
             let param = WorkDoneProgressReport.Create(
                 ?cancellable = cancellable,
@@ -36,7 +36,7 @@ type ProgressReporter(client: ILspClient) =
             do! client.Progress(this.Token, param)
     }
 
-    member this.End(?message) = async {
+    member _.End(?message) = async {
         if canReport && not endSent then
             endSent <- true
             let param = WorkDoneProgressEnd.Create(

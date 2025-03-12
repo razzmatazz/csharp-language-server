@@ -4,6 +4,7 @@ open System
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State

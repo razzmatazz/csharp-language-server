@@ -5,7 +5,7 @@ open System
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
@@ -47,8 +47,9 @@ module TypeHierarchy =
         match! context.FindSymbol p.TextDocument.Uri p.Position with
         | Some symbol when isTypeSymbol symbol ->
             let! itemList = TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
-            return itemList |> List.toArray |> Some |> success
-        | _ -> return None |> success
+            return itemList |> List.toArray |> Some |> LspResult.success
+        | _ ->
+            return None |> LspResult.success
     }
 
     let supertypes
@@ -66,8 +67,8 @@ module TypeHierarchy =
             let interfaces = Seq.toList typeSymbol.Interfaces
             let supertypes = baseType @ interfaces
             let! items = supertypes |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
-            return items |> Seq.collect id |> Seq.toArray |> Some |> success
-        | _ -> return None |> success
+            return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
+        | _ -> return None |> LspResult.success
     }
 
     let subtypes (context: ServerRequestContext) (p: TypeHierarchySubtypesParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
@@ -83,6 +84,7 @@ module TypeHierarchy =
                 |> Async.Parallel
                 |> Async.map (Seq.collect id >> Seq.toList)
             let! items = subtypes |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations) |> Async.Parallel
-            return items |> Seq.collect id |> Seq.toArray |> Some |> success
-        | _ -> return None |> success
+            return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
+        | _ ->
+            return None |> LspResult.success
     }

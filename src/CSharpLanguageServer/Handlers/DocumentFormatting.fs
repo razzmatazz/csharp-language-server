@@ -5,7 +5,7 @@ open System
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
@@ -38,11 +38,11 @@ module DocumentFormatting =
 
     let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit [] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! options = FormatUtil.getFormattingOptions context.State.Settings doc p.Options
             let! newDoc = Formatter.FormatAsync(doc, options, cancellationToken=ct) |> Async.AwaitTask
             let! textEdits = FormatUtil.getChanges newDoc doc
-            return textEdits |> Some |> success
+            return textEdits |> Some |> LspResult.success
     }
