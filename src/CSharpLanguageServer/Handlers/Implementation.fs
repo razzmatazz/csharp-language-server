@@ -37,7 +37,7 @@ module Implementation =
                   Method = "textDocument/implementation"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> = async {
+    let handle (context: ServerRequestContext) (p: ImplementationParams) : Async<LspResult<U2<Definition, DefinitionLink array> option>> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
         | None -> return None |> LspResult.success
         | Some symbol ->

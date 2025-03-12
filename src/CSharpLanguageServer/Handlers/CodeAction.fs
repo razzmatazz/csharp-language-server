@@ -387,7 +387,7 @@ module CodeAction =
                |> LspResult.success
     }
 
-    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
+    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
         let resolutionData =
             p.Data
             |> Option.map deserialize<CSharpCodeActionResolutionData>

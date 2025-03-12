@@ -45,7 +45,7 @@ module DocumentHighlight =
         | :? INamespaceSymbol -> false
         | _ -> true
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
+    let handle (context: ServerRequestContext) (p: DocumentHighlightParams) : AsyncLspResult<DocumentHighlight[] option> = async {
         let! ct = Async.CancellationToken
         let filePath = Uri.toPath p.TextDocument.Uri
 

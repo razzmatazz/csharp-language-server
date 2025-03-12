@@ -11,5 +11,5 @@ module LinkedEditingRange =
 
     let registration (clientCapabilities: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (def: TextDocumentPositionParams) : AsyncLspResult<LinkedEditingRanges option> =
+    let handle (context: ServerRequestContext) (def: LinkedEditingRangeParams) : AsyncLspResult<LinkedEditingRanges option> =
         LspResult.notImplemented<LinkedEditingRanges option> |> async.Return

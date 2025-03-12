@@ -34,7 +34,7 @@ module Definition =
                   Method = "textDocument/definition"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> = async {
+    let handle (context: ServerRequestContext) (p: DefinitionParams) : Async<LspResult<U2<Definition, DefinitionLink array> option>> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None ->
             return None |> LspResult.success
@@ -43,7 +43,7 @@ module Definition =
             return
                 locations
                 |> Array.ofList
-                |> Declaration.C2
+                |> Definition.C2
                 |> Some
                 |> LspResult.success
     }

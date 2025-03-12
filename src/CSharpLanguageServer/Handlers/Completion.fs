@@ -134,7 +134,7 @@ module Completion =
 
     let private cache = new LruCache<(Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionList)>(5)
 
-    let handle (context: ServerRequestContext) (p: CompletionParams) : AsyncLspResult<Ionide.LanguageServerProtocol.Types.CompletionList option> = async {
+    let handle (context: ServerRequestContext) (p: CompletionParams) : Async<LspResult<U2<CompletionItem array, CompletionList> option>> = async {
         match context.GetDocument p.TextDocument.Uri with
         | None ->
             return None |> LspResult.success
