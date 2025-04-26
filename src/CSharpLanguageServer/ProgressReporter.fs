@@ -2,6 +2,7 @@ namespace CSharpLanguageServer
 
 open System
 open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
 type ProgressReporter(client: ILspClient) =
@@ -12,7 +13,9 @@ type ProgressReporter(client: ILspClient) =
     member val Token = ProgressToken.C2 (Guid.NewGuid().ToString())
 
     member this.Begin(title, ?cancellable, ?message, ?percentage) = async {
-        match! client.WorkDoneProgressCreate this.Token with
+        let! progressCreateResult = client.WindowWorkDoneProgressCreate({ Token = this.Token })
+
+        match progressCreateResult with
         | Error _ ->
             canReport <- false
         | Ok() ->
@@ -23,7 +26,7 @@ type ProgressReporter(client: ILspClient) =
                 ?message = message,
                 ?percentage = percentage
             )
-            do! client.Progress(this.Token, param)
+            do! client.Progress({ Token = this.Token; Value = serialize param })
     }
 
     member this.Report(?cancellable, ?message, ?percentage) = async {
@@ -33,7 +36,7 @@ type ProgressReporter(client: ILspClient) =
                 ?message = message,
                 ?percentage = percentage
             )
-            do! client.Progress(this.Token, param)
+            do! client.Progress({ Token = this.Token; Value = serialize param })
     }
 
     member this.End(?message) = async {
@@ -42,5 +45,5 @@ type ProgressReporter(client: ILspClient) =
             let param = WorkDoneProgressEnd.Create(
                 ?message = message
             )
-            do! client.Progress(this.Token, param)
+            do! client.Progress({ Token = this.Token; Value = serialize param })
     }

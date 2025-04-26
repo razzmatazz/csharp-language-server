@@ -3,12 +3,12 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.IO
 open System.Reflection
-open System.Diagnostics
 
 open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
@@ -177,11 +177,11 @@ module Initialization =
             logger.trace(
                 Log.setMessage "handleInitialized: OK")
 
-            return LspResult.Ok()
+            return Ok()
         }
 
     let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
         context.Emit(ClientCapabilityChange emptyClientCapabilities)
         context.Emit(ClientChange None)
-        return LspResult.Ok()
+        return Ok()
     }

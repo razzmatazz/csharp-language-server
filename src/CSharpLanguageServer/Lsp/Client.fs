@@ -2,7 +2,6 @@ namespace CSharpLanguageServer.Lsp
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
-open Ionide.LanguageServerProtocol.Types
 
 type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
     inherit LspClient()
@@ -37,21 +36,13 @@ type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServe
         sendServerRequest.Send "workspace/applyEdit" (box p)
 
     override __.WorkspaceSemanticTokensRefresh() =
-        sendServerNotification "workspace/semanticTokens/refresh" () |> Async.Ignore
+        sendServerNotification "workspace/semanticTokens/refresh" ()
 
     override __.TextDocumentPublishDiagnostics(p) =
         sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
 
-    override __.WorkDoneProgressCreate(token) =
-        let param: WorkDoneProgressCreateParams = { Token = token }
-        sendServerRequest.Send "window/workDoneProgress/create" (box param)
+    override __.WindowWorkDoneProgressCreate(createParams) =
+        sendServerRequest.Send "window/workDoneProgress/create" (box createParams)
 
-    override __.Progress(token, data) =
-        let jtokenFromObject (obj: 'a) =
-            Newtonsoft.Json.Linq.JToken.FromObject(obj, Ionide.LanguageServerProtocol.Server.jsonRpcFormatter.JsonSerializer)
-
-        let progress: ProgressParams =
-            { Token = token
-              Value = jtokenFromObject data }
-
-        sendServerNotification "$/progress" (box progress) |> Async.Ignore
+    override __.Progress(progressParams) =
+        sendServerNotification "$/progress" (box progressParams) |> Async.Ignore

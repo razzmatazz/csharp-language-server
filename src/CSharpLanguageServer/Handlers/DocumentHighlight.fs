@@ -7,7 +7,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
@@ -45,7 +45,7 @@ module DocumentHighlight =
         | :? INamespaceSymbol -> false
         | _ -> true
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<DocumentHighlight[] option> = async {
+    let handle (context: ServerRequestContext) (p: DocumentHighlightParams) : AsyncLspResult<DocumentHighlight[] option> = async {
         let! ct = Async.CancellationToken
         let filePath = Uri.toPath p.TextDocument.Uri
 
@@ -74,11 +74,11 @@ module DocumentHighlight =
         }
 
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some (symbol, doc) ->
             match Option.ofObj symbol with
             | Some symbol when shouldHighlight symbol ->
                 let! highlights = getHighlights symbol doc
-                return highlights |> Seq.toArray |> Some |> success
-            | _ -> return None |> success
+                return highlights |> Seq.toArray |> Some |> LspResult.success
+            | _ -> return None |> LspResult.success
     }

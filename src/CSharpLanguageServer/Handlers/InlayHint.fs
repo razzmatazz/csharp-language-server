@@ -9,7 +9,7 @@ open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
@@ -227,7 +227,7 @@ module InlayHint =
 
     let handle (context: ServerRequestContext) (p: InlayHintParams): AsyncLspResult<InlayHint [] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -240,7 +240,7 @@ module InlayHint =
                 |> Seq.map (toInlayHint semanticModel sourceText.Lines)
                 |> Seq.filter Option.isSome
                 |> Seq.map Option.get
-            return inlayHints |> Seq.toArray |> Some |> success
+            return inlayHints |> Seq.toArray |> Some |> LspResult.success
     }
 
     let resolve (_context: ServerRequestContext) (_p: InlayHint) : AsyncLspResult<InlayHint> =

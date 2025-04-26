@@ -5,7 +5,7 @@ open System.Reflection
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
@@ -16,7 +16,7 @@ open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Completion =
-    let private logger = LogProvider.getLoggerByName "Completion"
+    let private _logger = LogProvider.getLoggerByName "Completion"
 
     let emptyRoslynOptionSet: Microsoft.CodeAnalysis.Options.OptionSet =
         let osType = typeof<Microsoft.CodeAnalysis.Options.OptionSet>
@@ -134,9 +134,10 @@ module Completion =
 
     let private cache = new LruCache<(Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionList)>(5)
 
-    let handle (context: ServerRequestContext) (p: CompletionParams) : AsyncLspResult<Ionide.LanguageServerProtocol.Types.CompletionList option> = async {
+    let handle (context: ServerRequestContext) (p: CompletionParams) : Async<LspResult<U2<CompletionItem array, CompletionList> option>> = async {
         match context.GetDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -162,7 +163,7 @@ module Completion =
                     completionService.GetCompletionsAsync(doc, position, completionOptions, completionTrigger, ct)
                     |> Async.map Option.ofObj
                 else
-                    async.Return Option.None
+                    async.Return None
 
             return
                 completions
@@ -175,7 +176,8 @@ module Completion =
                     { IsIncomplete = true
                       Items = items
                       ItemDefaults = None })
-                |> success
+                |> Option.map U2.C2
+                |> LspResult.success
     }
 
     let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
@@ -188,7 +190,6 @@ module Completion =
                 |> Seq.tryFind (fun x -> x.DisplayText = item.Label && (item.SortText.IsNone || x.SortText = item.SortText.Value))
                 |> Option.map (fun x -> (doc, x)))
         with
-        | None -> return item |> success
         | Some (doc, cachedItem) ->
             let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
             let! ct = Async.CancellationToken
@@ -198,5 +199,8 @@ module Completion =
                 |> Async.map Option.ofObj
             // TODO: make the doc as a markdown string instead of a plain text
             let itemDocumentation = description |> Option.map Documentation.fromCompletionDescription
-            return { item with Documentation = itemDocumentation |> Option.map U2.C2 } |> success
+            return { item with Documentation = itemDocumentation |> Option.map U2.C2 }
+                   |> LspResult.success
+        | None ->
+            return item |> LspResult.success
     }
