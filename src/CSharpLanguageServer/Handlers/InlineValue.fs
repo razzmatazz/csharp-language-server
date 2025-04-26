@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 

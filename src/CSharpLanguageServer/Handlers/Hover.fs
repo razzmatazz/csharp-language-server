@@ -4,7 +4,7 @@ open System
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Types
@@ -36,9 +36,10 @@ module Hover =
                   Method = "textDocument/hover"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Hover option> = async {
+    let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some (symbol, doc) ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -47,5 +48,5 @@ module Hover =
                 { Contents = { Kind = MarkupKind.Markdown; Value = content } |> U3.C1
                   // TODO: Support range
                   Range = None }
-            return hover |> Some |> success
+            return hover |> Some |> LspResult.success
     }

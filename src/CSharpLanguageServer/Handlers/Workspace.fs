@@ -4,6 +4,7 @@ open System
 open System.IO
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 open Microsoft.CodeAnalysis.Text
 

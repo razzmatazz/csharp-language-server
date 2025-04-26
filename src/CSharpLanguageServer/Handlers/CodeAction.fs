@@ -14,7 +14,7 @@ open Microsoft.CodeAnalysis.CodeFixes
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
@@ -324,7 +324,7 @@ module CodeAction =
                (p: CodeActionParams)
             : AsyncLspResult<TextDocumentCodeActionResult option> = async {
         match context.GetDocument p.TextDocument.Uri with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -384,16 +384,17 @@ module CodeAction =
                |> Seq.map U2<Command, CodeAction>.C2
                |> Array.ofSeq
                |> Some
-               |> success
+               |> LspResult.success
     }
 
-    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction option> = async {
+    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
         let resolutionData =
             p.Data
             |> Option.map deserialize<CSharpCodeActionResolutionData>
 
         match context.GetDocument resolutionData.Value.TextDocumentUri with
-        | None -> return None |> success
+        | None ->
+            return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
         | Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -412,7 +413,7 @@ module CodeAction =
                                                     doc
                                                     ct
 
-            let! maybeLspCodeAction =
+            let! lspCodeAction =
                 match selectedCodeAction with
                 | Some ca -> async {
                     let! resolvedCA = toResolvedLspCodeAction ca
@@ -423,9 +424,10 @@ module CodeAction =
                             >> Log.addContext "action" (string ca)
                         )
 
-                    return resolvedCA
+                    return resolvedCA.Value
                   }
-                | None -> async { return None }
+                | None ->
+                    raise (Exception("no CodeAction resolved"))
 
-            return maybeLspCodeAction |> success
+            return lspCodeAction |> LspResult.success
     }

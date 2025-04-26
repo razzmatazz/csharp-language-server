@@ -5,7 +5,7 @@ open System
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
@@ -37,9 +37,10 @@ module TypeDefinition =
                 Method = "textDocument/typeDefinition"
                 RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> = async {
+    let handle (context: ServerRequestContext) (p: TypeDefinitionParams) : Async<LspResult<U2<Definition, DefinitionLink array> option>> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some (symbol, doc) ->
             let typeSymbol =
                 match symbol with
@@ -56,6 +57,7 @@ module TypeDefinition =
             return
                 locations
                 |> Declaration.C2
+                |> U2.C1
                 |> Some
-                |> success
+                |> LspResult.success
     }
