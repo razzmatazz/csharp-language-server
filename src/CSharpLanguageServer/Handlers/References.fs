@@ -4,7 +4,7 @@ open System
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
@@ -40,7 +40,7 @@ module References =
 
     let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some symbol ->
             let! locations = context.FindReferences symbol p.Context.IncludeDeclaration
 
@@ -52,5 +52,5 @@ module References =
                 |> Seq.distinct
                 |> Seq.toArray
                 |> Some
-                |> success
+                |> LspResult.success
     }

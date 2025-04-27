@@ -4,7 +4,7 @@ open System
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
@@ -34,15 +34,17 @@ module Definition =
                   Method = "textDocument/definition"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: TextDocumentPositionParams) : AsyncLspResult<Declaration option> = async {
+    let handle (context: ServerRequestContext) (p: DefinitionParams) : Async<LspResult<U2<Definition, DefinitionLink array> option>> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some (symbol, doc) ->
             let! locations = context.ResolveSymbolLocations symbol (Some doc.Project)
             return
                 locations
                 |> Array.ofList
-                |> Declaration.C2
+                |> Definition.C2
+                |> U2.C1
                 |> Some
-                |> success
+                |> LspResult.success
     }

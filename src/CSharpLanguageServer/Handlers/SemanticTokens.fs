@@ -5,7 +5,7 @@ open System.Collections.Generic
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.CodeAnalysis.Classification
 open Microsoft.CodeAnalysis.Text
 
@@ -113,7 +113,8 @@ module SemanticTokens =
     let private getSemanticTokensRange (context: ServerRequestContext) (uri: string) (range: Range option): AsyncLspResult<SemanticTokens option> = async {
         let docMaybe = context.GetUserDocument uri
         match docMaybe with
-        | None -> return None |> success
+        | None ->
+            return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -137,7 +138,7 @@ module SemanticTokens =
                     |> Seq.concat
                     |> Seq.toArray
                   ResultId = None } // TODO: add a result id after we support delta semantic tokens
-            return Some response |> success
+            return Some response |> LspResult.success
     }
 
     let private dynamicRegistration (clientCapabilities: ClientCapabilities) =

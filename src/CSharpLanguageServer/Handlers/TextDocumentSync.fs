@@ -2,9 +2,10 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.CodeAnalysis.Text
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
@@ -121,10 +122,10 @@ module TextDocumentSync =
                 context.Emit(OpenDocAdd (openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
                 context.Emit(SolutionChange updatedDoc.Project.Solution)
 
-                LspResult.Ok() |> async.Return
+                Ok() |> async.Return
 
             | _ ->
-                LspResult.Ok() |> async.Return
+                Ok() |> async.Return
 
         | None ->
             let docFilePathMaybe = Util.tryParseFileUri openParams.TextDocument.Uri
@@ -146,11 +147,11 @@ module TextDocumentSync =
 
                 | None -> ()
 
-                return LspResult.Ok()
+                return Ok()
               }
 
             | None ->
-                LspResult.Ok() |> async.Return
+                Ok() |> async.Return
 
     let didChange (context: ServerRequestContext)
                   (changeParams: DidChangeTextDocumentParams)
@@ -175,17 +176,17 @@ module TextDocumentSync =
                 context.Emit(SolutionChange updatedSolution)
                 context.Emit(OpenDocAdd (changeParams.TextDocument.Uri, changeParams.TextDocument.Version, DateTime.Now))
 
-        return Result.Ok()
+        return Ok()
     }
 
     let didClose (context: ServerRequestContext)
                  (closeParams: DidCloseTextDocumentParams)
             : Async<LspResult<unit>> =
         context.Emit(OpenDocRemove closeParams.TextDocument.Uri)
-        LspResult.Ok() |> async.Return
+        Ok() |> async.Return
 
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams): Async<LspResult<unit>> = async {
-        return Result.Ok ()
+        return Ok ()
     }
 
     let willSaveWaitUntil (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams): AsyncLspResult<TextEdit [] option> = async {
@@ -200,7 +201,7 @@ module TextDocumentSync =
 
         match doc with
         | Some _ ->
-            LspResult.Ok() |> async.Return
+            Ok() |> async.Return
 
         | None -> async {
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
@@ -218,5 +219,5 @@ module TextDocumentSync =
 
             | None -> ()
 
-            return LspResult.Ok()
+            return Ok()
           }

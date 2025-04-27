@@ -89,8 +89,8 @@ let testReferenceWorks() =
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
-
 [<TestCase>]
+[<Ignore("flakyness; see https://github.com/razzmatazz/csharp-language-server/pull/223")>]
 let testReferenceWorksToAspNetRazorPageReferencedValue() =
     use client = setupServerClient defaultClientProfile
                                    "TestData/testReferenceWorksToAspNetRazorPageReferencedValue"

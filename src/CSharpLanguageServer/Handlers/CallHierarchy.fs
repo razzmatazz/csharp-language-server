@@ -6,7 +6,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Types.LspResult
+open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
@@ -58,8 +58,8 @@ module CallHierarchy =
                 itemList
                 |> List.toArray
                 |> Some
-                |> success
-        | _ -> return None |> success
+                |> LspResult.success
+        | _ -> return None |> LspResult.success
     }
 
     let incomingCalls
@@ -81,7 +81,7 @@ module CallHierarchy =
                   FromRanges = fromRanges })
 
         match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-        | None -> return None |> success
+        | None -> return None |> LspResult.success
         | Some symbol ->
             let! callers = context.FindCallers symbol
             // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
@@ -93,7 +93,7 @@ module CallHierarchy =
                 |> Seq.distinct
                 |> Seq.toArray
                 |> Some
-                |> success
+                |> LspResult.success
     }
 
     let outgoingCalls
@@ -102,5 +102,5 @@ module CallHierarchy =
         : AsyncLspResult<CallHierarchyOutgoingCall[] option> = async {
         // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
         // Then how can we implement it? Parsing AST manually?
-        return None |> success
+        return None |> LspResult.success
     }
