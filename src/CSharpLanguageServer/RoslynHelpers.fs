@@ -149,65 +149,69 @@ type PickMembersServiceInterceptor (_logMessage) =
                 NotImplementedException(string invocation.Method) |> raise
 
 type ExtractClassOptionsServiceInterceptor (_logMessage) =
+
+    let getExtractClassOptionsImpl(argOriginalType: INamedTypeSymbol): Object =
+        let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
+
+        let typeName = "Base" + argOriginalType.Name
+        let fileName = typeName + ".cs"
+        let sameFile = box true
+
+        let immArrayType = typeof<ImmutableArray>
+        let extractClassMemberAnalysisResultType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
+
+        let resultListType = typedefof<List<_>>.MakeGenericType(extractClassMemberAnalysisResultType)
+        let resultList = Activator.CreateInstance(resultListType)
+
+        let memberFilter (m: ISymbol) =
+            match m with
+            | :? IMethodSymbol as ms -> ms.MethodKind = MethodKind.Ordinary
+            | :? IFieldSymbol as fs -> not fs.IsImplicitlyDeclared
+            | _ -> m.Kind = SymbolKind.Property || m.Kind = SymbolKind.Event
+
+        let selectedMembersToAdd =
+            argOriginalType.GetMembers()
+            |> Seq.filter memberFilter
+
+        for memberToAdd in selectedMembersToAdd do
+            let memberAnalysisResult =
+                Activator.CreateInstance(extractClassMemberAnalysisResultType, memberToAdd, false)
+
+            resultListType.GetMethod("Add").Invoke(resultList, [| memberAnalysisResult |])
+            |> ignore
+
+        let resultListAsArray =
+            resultListType.GetMethod("ToArray").Invoke(resultList, null)
+
+        let immArrayCreateFromArray =
+            immArrayType.GetMethods()
+            |> Seq.filter (fun m -> m.GetParameters().Length = 1 && (m.GetParameters()[0]).ParameterType.IsArray)
+            |> Seq.head
+
+        let emptyMemberAnalysisResults =
+            immArrayCreateFromArray.MakeGenericMethod([| extractClassMemberAnalysisResultType |]).Invoke(null, [| resultListAsArray |])
+
+        let extractClassOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions")
+
+        Activator.CreateInstance(
+            extractClassOptionsType, fileName, typeName, sameFile, emptyMemberAnalysisResults)
+
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
 
             match invocation.Method.Name with
             | "GetExtractClassOptionsAsync" ->
-                let _argDocument = invocation.Arguments[0] :?> Document
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
-                let _argSelectedMembers = invocation.Arguments[2] :?> ImmutableArray<ISymbol>
-
-                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
-                let extractClassOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions")
-
-                let typeName = "Base" + argOriginalType.Name
-                let fileName = typeName + ".cs"
-                let sameFile = box true
-
-                let immArrayType = typeof<ImmutableArray>
-                let extractClassMemberAnalysisResultType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
-
-                let resultListType = typedefof<List<_>>.MakeGenericType(extractClassMemberAnalysisResultType)
-                let resultList = Activator.CreateInstance(resultListType)
-
-                let memberFilter (m: ISymbol) =
-                    match m with
-                    | :? IMethodSymbol as ms -> ms.MethodKind = MethodKind.Ordinary
-                    | :? IFieldSymbol as fs -> not fs.IsImplicitlyDeclared
-                    | _ -> m.Kind = SymbolKind.Property || m.Kind = SymbolKind.Event
-
-                let selectedMembersToAdd =
-                    argOriginalType.GetMembers()
-                    |> Seq.filter memberFilter
-
-                for memberToAdd in selectedMembersToAdd do
-                    let memberAnalysisResult =
-                        Activator.CreateInstance(extractClassMemberAnalysisResultType, memberToAdd, false)
-
-                    resultListType.GetMethod("Add").Invoke(resultList, [| memberAnalysisResult |])
-                    |> ignore
-
-                let resultListAsArray =
-                    resultListType.GetMethod("ToArray").Invoke(resultList, null)
-
-                let immArrayCreateFromArray =
-                    immArrayType.GetMethods()
-                    |> Seq.filter (fun m -> m.GetParameters().Length = 1 && (m.GetParameters()[0]).ParameterType.IsArray)
-                    |> Seq.head
-
-                let emptyMemberAnalysisResults =
-                    immArrayCreateFromArray.MakeGenericMethod([| extractClassMemberAnalysisResultType |]).Invoke(null, [| resultListAsArray |])
-
-                let extractClassOptionsValue =
-                    Activator.CreateInstance(
-                        extractClassOptionsType, fileName, typeName, sameFile, emptyMemberAnalysisResults)
+                let extractClassOptionsValue = getExtractClassOptionsImpl(argOriginalType)
 
                 let fromResultMethod = typeof<Task>.GetMethod("FromResult")
-                let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractClassOptionsType |])
+                let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractClassOptionsValue.GetType() |])
 
-                invocation.ReturnValue <-
-                    typedFromResultMethod.Invoke(null, [| extractClassOptionsValue |])
+                invocation.ReturnValue <- typedFromResultMethod.Invoke(null, [| extractClassOptionsValue |])
+
+            | "GetExtractClassOptions" ->
+                let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
+                invocation.ReturnValue <- getExtractClassOptionsImpl(argOriginalType)
 
             | _ ->
                 NotImplementedException(string invocation.Method) |> raise
@@ -221,7 +225,6 @@ type ExtractInterfaceOptionsServiceInterceptor (logMessage) =
                 let argExtractableMembers = invocation.Arguments[2] :?> List<ISymbol>
                 let argDefaultInterfaceName = invocation.Arguments[3] :?> string
 
-                let isCancelled = false
                 let fileName = sprintf "%s.cs" argDefaultInterfaceName
 
                 let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
