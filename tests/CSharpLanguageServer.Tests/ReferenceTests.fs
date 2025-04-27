@@ -5,10 +5,10 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
-let testReferenceWorks() =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testReferenceWorks"
+[<TestCase("TestData/dotnet9TestReferenceWorks")>]
+[<TestCase("TestData/dotnet8TestReferenceWorks")>]
+let testReferenceWorks(testDataDir: string) =
+    use client = setupServerClient defaultClientProfile testDataDir
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
