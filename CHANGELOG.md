@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Upgrade Roslyn to 4.13.0
   - https://github.com/razzmatazz/csharp-language-server/pull/220
-* csharp-ls will now use and require .NET 8 runtime/SDK
+* csharp-ls will now use and require .NET 9 runtime/SDK
   - PR by @lapponiandevil in https://github.com/razzmatazz/csharp-language-server/pull/222
 * Upgrade Ionide.LanguageServerProtocol to 0.7.0:
   - https://github.com/razzmatazz/csharp-language-server/pull/221
