@@ -8,7 +8,7 @@
   <PropertyGroup>
     <MSBuildPackageVersion>17.12.6</MSBuildPackageVersion>
     <RoslynPackageVersion>4.13.0</RoslynPackageVersion>
-    <MSBuildLocatorPackageVersion>1.7.8</MSBuildLocatorPackageVersion>
+    <MSBuildLocatorPackageVersion>1.9.1</MSBuildLocatorPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
