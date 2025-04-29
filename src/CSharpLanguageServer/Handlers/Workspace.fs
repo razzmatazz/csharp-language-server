@@ -117,6 +117,7 @@ module Workspace =
             context.State.Settings with
                 SolutionPath = csharpSettings.solution
                 ApplyFormattingOptions = csharpSettings.applyFormattingOptions
+                                         |> Option.defaultValue false
         }
 
         context.Emit(SettingsChange newServerSettings)

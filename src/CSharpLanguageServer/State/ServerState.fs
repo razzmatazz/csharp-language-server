@@ -442,9 +442,9 @@ type ServerSettingsDto = {
 and ServerSettingsCSharpDto =
     {
         solution: string option
-        applyFormattingOptions: bool
+        applyFormattingOptions: bool option
     }
     static member Default = {
         solution = None
-        applyFormattingOptions = false
+        applyFormattingOptions = None
     }
