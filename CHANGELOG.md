@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Make sure `.editorconfig` settings are respected, add `csharp.applyFormattingOptions` override (defaults to false):
   - By @DmitryHudrich in https://github.com/razzmatazz/csharp-language-server/pull/204
 
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.16.0...0.17.0
+
 ## [0.16.0] - 2024-12-24 / Nemunaitis
 * Upgrade Roslyn to 4.12.0
 * Fix an issue where server breaks when inspecting class/properties involved in source-generated code:
