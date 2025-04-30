@@ -304,6 +304,10 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 let p = p |> deserialize<ShowMessageParams>
                 logMessage "windows/showMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
                 state
+            | "window/logMessage" ->
+                let p = p |> deserialize<LogMessageParams>
+                logMessage "windows/logMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
+                state
             | "$/progress" ->
                 logMessage "$/progress" (String.Format("({0}) \"{1}\"", p["value"]["kind"], p["value"]["message"]))
                 state
