@@ -30,7 +30,7 @@ module Workspace =
         | false -> None
         | true ->
             let fileSystemWatcher =
-                { GlobPattern = U2.C1 "**/*.{cs,csproj,sln}"
+                { GlobPattern = U2.C1 "**/*.{cs,csproj,sln,slnx}"
                   Kind = Some (WatchKind.Create ||| WatchKind.Change ||| WatchKind.Delete) }
 
             let registerOptions: DidChangeWatchedFilesRegistrationOptions =
@@ -84,7 +84,7 @@ module Workspace =
                 do! context.WindowShowMessage "change to .csproj detected, will reload solution"
                 context.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5:int64)))
 
-            | ".sln" ->
+            | ".sln" | ".slnx" ->
                 do! context.WindowShowMessage "change to .sln detected, will reload solution"
                 context.Emit(SolutionReloadRequest (TimeSpan.FromSeconds(5:int64)))
 

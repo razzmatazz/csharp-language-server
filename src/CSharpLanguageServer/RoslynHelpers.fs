@@ -478,7 +478,7 @@ let findAndLoadSolutionOnDir
             |> not
 
         let solutionFiles =
-            Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
+            Directory.GetFiles(dir, "*.sln|.slnx", SearchOption.AllDirectories)
             |> Seq.filter fileNotOnNodeModules
             |> Seq.toList
 
