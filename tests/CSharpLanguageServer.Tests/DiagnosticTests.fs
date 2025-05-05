@@ -90,7 +90,7 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
         Assert.AreEqual("Identifier expected", diagnostic0.Message)
         Assert.AreEqual(
-            "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/compiler-messages/cs1001",
+            "https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1001)",
             diagnostic0.CodeDescription.Value.Href)
 
         let diagnostic1 = report.Items.[1]
