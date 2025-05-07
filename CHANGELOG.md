@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 * Use diagnostic url from Roslyn
+* Support loading slnx files
 
 ## [0.17.0] - 2025-04-30 / Krokšlys
 * Upgrade Roslyn to 4.13.0
