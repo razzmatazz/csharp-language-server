@@ -478,7 +478,8 @@ let findAndLoadSolutionOnDir
             |> not
 
         let solutionFiles =
-            Directory.GetFiles(dir, "*.sln", SearchOption.AllDirectories)
+            [ "*.sln"; "*.slnx" ]
+            |> List.collect(fun p -> Directory.GetFiles(dir, p, SearchOption.AllDirectories) |> List.ofArray)
             |> Seq.filter fileNotOnNodeModules
             |> Seq.toList
 
@@ -497,7 +498,7 @@ let findAndLoadSolutionOnDir
 
         match singleSolutionFound with
         | None ->
-            do! logMessage ("no or multiple .sln files found on " + dir)
+            do! logMessage ("no or multiple .sln/.slnx files found on " + dir)
             do! logMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
             let projFiles =

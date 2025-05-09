@@ -114,5 +114,17 @@ let testServerRegistersCapabilitiesWithTheClient () =
         null,
         serverCaps.MonikerProvider)
 
-    Assert.IsTrue(client.ServerDidRespondTo("initialize"))
-    Assert.IsTrue(client.ServerDidRespondTo("initialized"))
+    Assert.IsTrue(client.ServerDidRespondTo "initialize")
+    Assert.IsTrue(client.ServerDidRespondTo "initialized")
+
+
+[<TestCase>]
+let testSlnxSolutionFileWillBeFoundAndLoaded () =
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testSlnx"
+    client.StartAndWaitForSolutionLoad()
+
+    Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
+
+    Assert.IsTrue(client.ServerDidRespondTo "initialize")
+    Assert.IsTrue(client.ServerDidRespondTo "initialized")
