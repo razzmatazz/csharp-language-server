@@ -5,7 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 * Use diagnostic url from Roslyn
+  - By @CoolCoderSuper https://github.com/razzmatazz/csharp-language-server/pull/227
 * Support loading slnx files
+  - By @CoolCoderSuper https://github.com/razzmatazz/csharp-language-server/pull/226
 
 ## [0.17.0] - 2025-04-30 / Krokšlys
 * Upgrade Roslyn to 4.13.0
