@@ -640,9 +640,9 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             fun rc -> SendServerRpcRequest ("initialized", JObject(), Some rc))
         log "OK, 'initialized' request complete"
 
-        this.WaitForProgressEnd("OK, 1 project file(s) loaded")
+        this.WaitForProgressEnd(fun m -> m = "OK, 1 project file(s) loaded" || m.Contains("Finished loading solution"))
 
-    member __.WaitForProgressEnd(message: string) =
+    member __.WaitForProgressEnd(messagePred: (string -> bool)) =
         let timeoutMS = 60 * 1000
         let start = DateTime.Now
 
@@ -650,7 +650,7 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
             m.Source = Server
             && (m.Message.["method"] |> string) = "$/progress"
             && (m.Message.["params"].["value"].["kind"] |> string) = "end"
-            && (m.Message.["params"].["value"].["message"] |> string) = message
+            && messagePred(m.Message.["params"].["value"].["message"] |> string)
 
         let mutable haveProgressEnd = false
         while (not haveProgressEnd) do
@@ -689,6 +689,14 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
         |> Seq.exists (fun m -> m.Source = Client
                                 && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
                                 && (m.Message.["method"] |> string) = rpcMethod)
+
+    member __.ServerMessageLogContains (pred: string -> bool): bool =
+        let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
+
+        rpcLog
+        |> Seq.exists(fun m -> m.Source = Server
+                               && (string m.Message["method"]) = "window/logMessage"
+                               && (pred (string m.Message.["params"].["message"])))
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
         let requestJObject = request |> serialize
