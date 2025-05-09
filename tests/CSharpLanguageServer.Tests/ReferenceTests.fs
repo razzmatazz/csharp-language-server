@@ -5,8 +5,8 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase("TestData/dotnet9TestReferenceWorks")>]
-[<TestCase("TestData/dotnet8TestReferenceWorks")>]
+[<TestCase("TestData/testReferenceWorksDotnet9")>]
+[<TestCase("TestData/testReferenceWorksDotnet8")>]
 let testReferenceWorks(testDataDir: string) =
     use client = setupServerClient defaultClientProfile testDataDir
     client.StartAndWaitForSolutionLoad()
