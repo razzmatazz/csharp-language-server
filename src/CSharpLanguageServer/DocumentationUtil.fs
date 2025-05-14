@@ -182,13 +182,13 @@ module DocumentationUtil =
         let symbolInfoLines =
             match symbolName, symAssemblyName with
             | "", "" -> []
-            | typeName, "" -> [ sprintf "`` %s ``" typeName ]
+            | typeName, "" -> [ sprintf "```csharp\n%s\n```" typeName ]
             | _, _ ->
                 let docAssembly = semanticModel.Compilation.Assembly
                 if symAssemblyName = docAssembly.Name then
-                    [ sprintf "`` %s ``" symbolName ]
+                    [ sprintf "```csharp\n%s\n```" symbolName ]
                 else
-                    [ sprintf "`` %s `` from assembly `` %s ``" symbolName symAssemblyName ]
+                    [ sprintf "```csharp\n%s\n``` from assembly `%s`" symbolName symAssemblyName ]
 
         let comment = parseComment (sym.GetDocumentationCommentXml())
         let formattedDocLines = formatComment comment
