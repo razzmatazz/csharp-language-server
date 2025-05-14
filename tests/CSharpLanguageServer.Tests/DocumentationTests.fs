@@ -130,6 +130,6 @@ Types:
             AddChild(childNode);
             If you need the child node to be added below a specific node in the list of children, use  instead of this method.Note: If you want a child to be persisted to a , you must set  in addition to calling . This is typically relevant for tool scripts and editor plugins. If  is called without setting , the newly added  will not be visible in the scene tree, though it will be visible in the 2D/3D view."""
 )>]
-let testFormatDocXml (xml, expectedMD: string) =
-    let resultXmlDoc = String.Join("\n", formatDocXml xml)
-    Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultXmlDoc)
+let testFormatDocXml (inputXml, expectedMD: string) =
+    let resultMd = String.Join("\n", formatDocXml inputXml)
+    Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)

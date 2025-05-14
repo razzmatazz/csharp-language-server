@@ -60,7 +60,7 @@ let testHoverWorks() =
             Assert.AreEqual(MarkupKind.Markdown, c.Kind)
             Assert.AreEqual("""```csharp
 string
-``` from assembly `System.Runtime`
+```
 
 Represents text as a sequence of UTF-16 code units.""", c.Value)
         | _ -> failwith "C1 was expected"

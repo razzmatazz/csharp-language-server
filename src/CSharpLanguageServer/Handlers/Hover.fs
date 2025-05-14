@@ -41,9 +41,7 @@ module Hover =
         | None ->
             return None |> LspResult.success
         | Some (symbol, doc) ->
-            let! ct = Async.CancellationToken
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol semanticModel
+            let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol
             let hover =
                 { Contents = { Kind = MarkupKind.Markdown; Value = content } |> U3.C1
                   // TODO: Support range

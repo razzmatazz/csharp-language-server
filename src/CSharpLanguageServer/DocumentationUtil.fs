@@ -170,25 +170,13 @@ module DocumentationUtil =
 
         formattedDocLines |> (fun ss -> String.Join("\n", ss))
 
-    let markdownDocForSymbolWithSignature (sym: ISymbol) (semanticModel: SemanticModel) =
+    let markdownDocForSymbolWithSignature (sym: ISymbol) =
         let symbolName = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat sym
 
-        let symAssemblyName =
-            sym.ContainingAssembly
-            |> Option.ofObj
-            |> Option.map (fun a -> a.Name)
-            |> Option.defaultValue ""
-
         let symbolInfoLines =
-            match symbolName, symAssemblyName with
-            | "", "" -> []
-            | typeName, "" -> [ sprintf "```csharp\n%s\n```" typeName ]
-            | _, _ ->
-                let docAssembly = semanticModel.Compilation.Assembly
-                if symAssemblyName = docAssembly.Name then
-                    [ sprintf "```csharp\n%s\n```" symbolName ]
-                else
-                    [ sprintf "```csharp\n%s\n``` from assembly `%s`" symbolName symAssemblyName ]
+            match symbolName with
+            | "" -> []
+            | typeName -> [ sprintf "```csharp\n%s\n```" typeName ]
 
         let comment = parseComment (sym.GetDocumentationCommentXml())
         let formattedDocLines = formatComment comment
