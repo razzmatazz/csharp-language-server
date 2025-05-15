@@ -48,28 +48,33 @@ module DocumentationUtil =
                 |> Option.ofObj
                 |> Option.map (fun x -> x.Value)
                 |> Option.map parseCref
-                |> Option.map (fun s -> sprintf "`` %s ``" s)
+                |> Option.map (fun s -> sprintf "``%s``" s)
                 |> Option.toList
 
             let langWordMaybe =
                 e.Attribute(XName.Get("langword"))
                 |> Option.ofObj
-                |> Option.map (fun x -> sprintf "`` %s ``" x.Value)
+                |> Option.map (fun x -> sprintf "``%s``" x.Value)
                 |> Option.toList
 
             crefMaybe |> Seq.append langWordMaybe |> List.ofSeq
 
-        let formatTextNode (subnode: XNode) =
+        let rec formatTextNode (subnode: XNode) =
             match subnode with
             | :? XElement as e ->
                 match e.Name.LocalName with
-                | "c" -> [ sprintf "`` %s ``" e.Value ]
+                | "c" -> [ sprintf "``%s``" e.Value ]
                 | "see" -> formatSeeElement e
                 | "paramref" ->
                     e.Attribute(XName.Get("name"))
                     |> Option.ofObj
-                    |> Option.map (fun x -> sprintf "`` %s ``" x.Value)
+                    |> Option.map (fun x -> sprintf "``%s``" x.Value)
                     |> Option.toList
+                | "para" ->
+                    e.Nodes()
+                    |> Seq.collect formatTextNode
+                    |> Seq.append [ "\n\n" ]
+                    |> List.ofSeq
                 | _ -> [ e.Value ]
             | :? XText as t -> [ t.Value |> normalizeWhitespace ]
             | _ -> []
@@ -130,7 +135,7 @@ module DocumentationUtil =
             | true -> markdownLines
             | false ->
                 let formatItem (key, value) =
-                    sprintf "- `` %s ``: %s" key (formatTextElement value)
+                    sprintf "- ``%s``: %s" key (formatTextElement value)
 
                 markdownLines
                 |> List.append [ name + ":"; "" ]
