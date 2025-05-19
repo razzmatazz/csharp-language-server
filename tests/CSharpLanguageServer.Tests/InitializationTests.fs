@@ -160,4 +160,3 @@ let testMultiTargetProjectLoads () =
     | x -> failwithf "Some (U3.C1 c) was expected but '%s' received" (string x)
 
     Assert.IsTrue(false)
->>>>>>> 57c0c11 (add tests for multi target project)
