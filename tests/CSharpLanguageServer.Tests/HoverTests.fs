@@ -62,7 +62,7 @@ let testHoverWorks() =
 string
 ```
 
-Represents text as a sequence of UTF-16 code units.""", c.Value)
+Represents text as a sequence of UTF-16 code units.""", c.Value.ReplaceLineEndings())
         | _ -> failwith "C1 was expected"
 
         Assert.IsTrue(hover.Range.IsNone)
