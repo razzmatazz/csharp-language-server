@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Upgrade Roslyn to 4.14.0
 * Use diagnostic url from Roslyn
   - By @CoolCoderSuper https://github.com/razzmatazz/csharp-language-server/pull/227
 * Support loading slnx files
