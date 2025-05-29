@@ -428,6 +428,8 @@ let resolveTargetFrameworkWorkspaceProps (logger: ILog) (projs: string seq) prop
         // select the highest tfm
         let selectedTargetFramework =
             distinctTfms
+            |> Seq.filter (fun tfm -> not (tfm.StartsWith("netstandard")))
+            |> Seq.filter (fun tfm -> not (tfm.StartsWith("netcore")))
             |> Seq.sortByDescending (fun s -> s)
             |> Seq.head
 
