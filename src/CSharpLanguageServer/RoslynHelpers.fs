@@ -375,6 +375,73 @@ type CSharpLspHostServices () =
         let interceptor = WorkspaceServicesInterceptor()
         generator.CreateClassProxyWithTarget(services, interceptor)
 
+
+let loadProjectFilenamesFromSolution solutionPath =
+    let projectFilenames = new List<string>()
+
+    let solutionFile = Microsoft.Build.Construction.SolutionFile.Parse(solutionPath)
+    for project in solutionFile.ProjectsInOrder do
+        if project.ProjectType = Microsoft.Build.Construction.SolutionProjectType.KnownToBeMSBuildFormat then
+            projectFilenames.Add(project.AbsolutePath)
+
+    projectFilenames |> Set.ofSeq
+
+
+let resolveTargetFrameworkWorkspaceProps (logger: ILog) (projs: string seq) props =
+    let tfms = new List<string>()
+
+    for projectFilename in projs do
+        let projectCollection = new Microsoft.Build.Evaluation.ProjectCollection();
+        let props = new Dictionary<string, string>();
+
+        let buildProject = projectCollection.LoadProject(projectFilename, props, toolsVersion=null)
+
+        let noneIfEmpty s =
+            s |> Option.ofObj
+                |> Option.bind (fun s -> if String.IsNullOrEmpty(s) then None else Some s)
+
+        let targetFramework = buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty
+
+        match targetFramework with
+        | Some tfm ->
+            tfms.Add(tfm.Trim())
+        | _ -> ()
+
+        let targetFrameworks = buildProject.GetPropertyValue("TargetFrameworks") |> noneIfEmpty
+
+        match targetFrameworks with
+        | Some semicolonSeparatedTfms ->
+            for tfm in semicolonSeparatedTfms.Split(";") do
+                tfms.Add(tfm.Trim())
+        | _ -> ()
+
+        projectCollection.UnloadProject(buildProject)
+
+    let distinctTfms = tfms |> Set.ofSeq
+
+    logger.debug (
+        Log.setMessage "resolveDefaultWorkspaceProps: distinctTfms={distinctTfms}"
+        >> Log.addContext "distinctTfms" (string distinctTfms)
+    )
+
+    if distinctTfms.Count > 1 then
+        // select the highest tfm
+        let selectedTargetFramework =
+            distinctTfms
+            |> Seq.sortByDescending (fun s -> s)
+            |> Seq.head
+
+        props
+        |> Map.add "TargetFramework" selectedTargetFramework
+    else
+        props
+
+
+let resolveDefaultWorkspaceProps (logger: ILog) projs =
+    Map.empty
+    |> resolveTargetFrameworkWorkspaceProps logger projs
+
+
 let tryLoadSolutionOnPath
         (lspClient: ILspClient)
         (logger: ILog)
@@ -399,7 +466,16 @@ let tryLoadSolutionOnPath
             do! progress.Begin(beginMessage)
             do! logMessage beginMessage
 
-            let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
+            let projs = loadProjectFilenamesFromSolution solutionPath
+            let workspaceProps = resolveDefaultWorkspaceProps logger projs
+
+            if workspaceProps.Count > 0 then
+                logger.info (
+                    Log.setMessage "Will use these MSBuild props: {workspaceProps}"
+                    >> Log.addContext "workspaceProps" (string workspaceProps)
+                )
+
+            let msbuildWorkspace = MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
             let! solution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
@@ -436,8 +512,17 @@ let tryLoadSolutionFromProjectFiles
         do! progress.Begin($"Loading {projs.Length} project(s)...", false, $"0/{projs.Length}", 0u)
         let loadedProj = ref 0
 
-        let msbuildWorkspace = MSBuildWorkspace.Create(CSharpLspHostServices())
+        let workspaceProps = resolveDefaultWorkspaceProps logger projs
+
+        if workspaceProps.Count > 0 then
+            logger.info (
+                Log.setMessage "Will use these MSBuild props: {workspaceProps}"
+                >> Log.addContext "workspaceProps" (string workspaceProps)
+            )
+
+        let msbuildWorkspace = MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
+
         for file in projs do
             if projs.Length < 10 then
               do! logMessage (sprintf "loading project \"%s\".." file)
