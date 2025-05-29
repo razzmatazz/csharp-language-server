@@ -5,6 +5,25 @@ open NUnit.Framework
 open CSharpLanguageServer.Tests.Tooling
 open Ionide.LanguageServerProtocol.Types
 
+let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
+    use classFile = client.Open(file)
+
+    let hover0Params: HoverParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = pos
+          WorkDoneToken = None
+        }
+
+    let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
+
+    match hover0 with
+    | Some { Contents = U3.C1 markupContent; Range = None } ->
+        Assert.AreEqual(MarkupKind.Markdown, markupContent.Kind)
+        Assert.AreEqual(expectedMarkupContent, markupContent.Value)
+
+    | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
+
+
 [<TestCase>]
 let testServerRegistersCapabilitiesWithTheClient () =
     use client = setupServerClient defaultClientProfile
@@ -120,11 +139,28 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
 [<TestCase>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testSlnx"
+    use client = setupServerClient defaultClientProfile "TestData/testSlnx"
     client.StartAndWaitForSolutionLoad()
 
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
 
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
     Assert.IsTrue(client.ServerDidRespondTo "initialized")
+
+    assertHoverWorks
+        client
+        "Project/Class.cs" { Line = 2u; Character = 16u }
+        "```csharp\nvoid Class.MethodA(string arg)\n```"
+
+
+[<TestCase>]
+let testMultiTargetProjectLoads () =
+    use client = setupServerClient defaultClientProfile "TestData/testMultiTargetProjectLoads"
+    client.StartAndWaitForSolutionLoad()
+
+    Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
+
+    assertHoverWorks
+        client
+        "Project/Class.cs" { Line = 2u; Character = 16u }
+        "```csharp\nvoid Class.Method(string arg)\n```"
