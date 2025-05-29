@@ -310,7 +310,8 @@ module Server =
         let serverCreator client =
             new CSharpLspServer(client, settings) :> ICSharpLspServer
 
-        let clientCreator = CSharpLspClient
+        let clientCreator =
+            fun (a, b) -> new CSharpLspClient(a, b)
 
         Ionide.LanguageServerProtocol.Server.start
             requestHandlings
