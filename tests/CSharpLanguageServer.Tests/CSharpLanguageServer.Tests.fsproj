@@ -4,6 +4,7 @@
 
     <IsPackable>false</IsPackable>
     <GenerateProgramFile>false</GenerateProgramFile>
+    <NoWarn>FS0988</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
