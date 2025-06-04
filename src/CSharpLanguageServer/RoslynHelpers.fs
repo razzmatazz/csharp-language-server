@@ -398,7 +398,6 @@ type TfmCategory =
 
 let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
     let parseTfm (tfm: string) : TfmCategory =
-
         let patterns = [
             @"^net(?<major>\d)(?<minor>\d)?(?<build>\d)?$", NetFramework
             @"^netstandard(?<major>\d+)\.(?<minor>\d+)$", NetStandard
@@ -409,13 +408,13 @@ let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
         let matchingTfmCategory (pat, categoryCtor) =
             let m = Regex.Match(tfm.ToLowerInvariant(), pat)
             if m.Success then
-                let parseGroupAsInt (group: Group) = if group.Success then (int group.Value) else 0
+                let readVersionNum (groupName: string) =
+                    let group = m.Groups.[groupName]
+                    if group.Success then (int group.Value) else 0
 
-                let version = Version(m.Groups["major"] |> parseGroupAsInt,
-                                      m.Groups["minor"] |> parseGroupAsInt,
-                                      m.Groups["build"] |> parseGroupAsInt)
-
-                version |> categoryCtor |> Some
+                Version(readVersionNum "major", readVersionNum "minor", readVersionNum "build")
+                |> categoryCtor
+                |> Some
             else
                 None
 
