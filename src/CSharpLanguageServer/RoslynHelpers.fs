@@ -398,37 +398,37 @@ type TfmCategory =
 
 let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
     let parseTfm (tfm: string) : TfmCategory =
-        let normalizeVersion (major: string) (minor: string option) =
-            Version(int major, int (defaultArg minor "0"))
 
-        let m = Regex.Match(tfm.ToLowerInvariant(), @"^net(?<major>\d)(?<minor>\d)?$")
-        if m.Success then
-            let version = normalizeVersion m.Groups.["major"].Value (Some m.Groups.["minor"].Value)
-            NetFramework version
-        else
-            let patterns = [
-                @"^netstandard(?<major>\d+)\.(?<minor>\d+)$", NetStandard
-                @"^netcoreapp(?<major>\d+)\.(?<minor>\d+)$", NetCoreApp
-                @"^net(?<major>\d+)\.(?<minor>\d+)$", Net
-            ]
+        let patterns = [
+            @"^net(?<major>\d)(?<minor>\d)?(?<build>\d)?$", NetFramework
+            @"^netstandard(?<major>\d+)\.(?<minor>\d+)$", NetStandard
+            @"^netcoreapp(?<major>\d+)\.(?<minor>\d+)$", NetCoreApp
+            @"^net(?<major>\d+)\.(?<minor>\d+)$", Net
+        ]
 
-            let matchingTfmCategory (pat, ctor) =
-                let m = Regex.Match(tfm.ToLowerInvariant(), pat)
-                if m.Success then
-                    Some (ctor (normalizeVersion m.Groups.["major"].Value (Some m.Groups.["minor"].Value)))
-                else
-                    None
+        let matchingTfmCategory (pat, categoryCtor) =
+            let m = Regex.Match(tfm.ToLowerInvariant(), pat)
+            if m.Success then
+                let parseGroupAsInt (group: Group) = if group.Success then (int group.Value) else 0
 
-            patterns
-            |> List.tryPick matchingTfmCategory
-            |> Option.defaultValue Unknown
+                let version = Version(m.Groups["major"] |> parseGroupAsInt,
+                                      m.Groups["minor"] |> parseGroupAsInt,
+                                      m.Groups["build"] |> parseGroupAsInt)
+
+                version |> categoryCtor |> Some
+            else
+                None
+
+        patterns
+        |> List.tryPick matchingTfmCategory
+        |> Option.defaultValue Unknown
 
     let rankTfm = function
-        | Unknown -> -1
-        | NetFramework v -> 0 + v.Major * 10 + v.Minor
-        | NetStandard v -> 1000 + v.Major * 10 + v.Minor
-        | NetCoreApp v -> 2000 + v.Major * 10 + v.Minor
         | Net v -> 3000 + v.Major * 10 + v.Minor
+        | NetCoreApp v -> 2000 + v.Major * 10 + v.Minor
+        | NetStandard v -> 1000 + v.Major * 10 + v.Minor
+        | NetFramework v -> 0 + v.Major * 10 + v.Minor
+        | Unknown -> -1
 
     tfms
     |> Seq.sortByDescending (parseTfm >> rankTfm)
