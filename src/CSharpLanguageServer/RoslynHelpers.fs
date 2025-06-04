@@ -7,6 +7,7 @@ open System.Reflection
 open System.Threading
 open System.Threading.Tasks
 open System.Collections.Immutable
+open System.Text.RegularExpressions
 
 open Castle.DynamicProxy
 open ICSharpCode.Decompiler
@@ -387,7 +388,54 @@ let loadProjectFilenamesFromSolution solutionPath =
     projectFilenames |> Set.ofSeq
 
 
-let resolveTargetFrameworkWorkspaceProps (logger: ILog) (projs: string seq) props =
+type TfmCategory =
+    | NetFramework of Version
+    | NetStandard of Version
+    | NetCoreApp of Version
+    | Net of Version
+    | Unknown
+
+
+let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
+    let parseTfm (tfm: string) : TfmCategory =
+        let normalizeVersion (major: string) (minor: string option) =
+            Version(int major, int (defaultArg minor "0"))
+
+        let m = Regex.Match(tfm.ToLowerInvariant(), @"^net(?<major>\d)(?<minor>\d)?$")
+        if m.Success then
+            let version = normalizeVersion m.Groups.["major"].Value (Some m.Groups.["minor"].Value)
+            NetFramework version
+        else
+            let patterns = [
+                @"^netstandard(?<major>\d+)\.(?<minor>\d+)$", NetStandard
+                @"^netcoreapp(?<major>\d+)\.(?<minor>\d+)$", NetCoreApp
+                @"^net(?<major>\d+)\.(?<minor>\d+)$", Net
+            ]
+
+            let matchingTfmCategory (pat, ctor) =
+                let m = Regex.Match(tfm.ToLowerInvariant(), pat)
+                if m.Success then
+                    Some (ctor (normalizeVersion m.Groups.["major"].Value (Some m.Groups.["minor"].Value)))
+                else
+                    None
+
+            patterns
+            |> List.tryPick matchingTfmCategory
+            |> Option.defaultValue Unknown
+
+    let rankTfm = function
+        | Unknown -> -1
+        | NetFramework v -> 0 + v.Major * 10 + v.Minor
+        | NetStandard v -> 1000 + v.Major * 10 + v.Minor
+        | NetCoreApp v -> 2000 + v.Major * 10 + v.Minor
+        | Net v -> 3000 + v.Major * 10 + v.Minor
+
+    tfms
+    |> Seq.sortByDescending (parseTfm >> rankTfm)
+    |> Seq.tryHead
+
+
+let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
     let tfms = new List<string>()
 
     for projectFilename in projs do
@@ -421,27 +469,21 @@ let resolveTargetFrameworkWorkspaceProps (logger: ILog) (projs: string seq) prop
 
     logger.debug (
         Log.setMessage "resolveDefaultWorkspaceProps: distinctTfms={distinctTfms}"
-        >> Log.addContext "distinctTfms" (string distinctTfms)
+        >> Log.addContext "distinctTfms" (String.Join(";", distinctTfms))
     )
 
-    if distinctTfms.Count > 1 then
-        // select the highest tfm
-        let selectedTargetFramework =
-            distinctTfms
-            |> Seq.filter (fun tfm -> not (tfm.StartsWith("netstandard")))
-            |> Seq.filter (fun tfm -> not (tfm.StartsWith("netcore")))
-            |> Seq.sortByDescending (fun s -> s)
-            |> Seq.head
-
-        props
-        |> Map.add "TargetFramework" selectedTargetFramework
-    else
-        props
+    match distinctTfms.Count with
+    | 0 -> props
+    | 1 -> props
+    | _ ->
+        match selectMostCapableCompatibleTfm distinctTfms with
+        | Some tfm -> props |> Map.add "TargetFramework" tfm
+        | None -> props
 
 
-let resolveDefaultWorkspaceProps (logger: ILog) projs =
+let resolveDefaultWorkspaceProps (logger: ILog) projs : Map<string, string> =
     Map.empty
-    |> resolveTargetFrameworkWorkspaceProps logger projs
+    |> applyWorkspaceTargetFrameworkProp logger projs
 
 
 let tryLoadSolutionOnPath
@@ -717,4 +759,3 @@ let makeDocumentFromMetadata
 
     let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText
     (mdDocument, text)
-

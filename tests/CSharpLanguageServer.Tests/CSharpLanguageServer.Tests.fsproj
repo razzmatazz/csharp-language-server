@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
     <Compile Include="Tooling.fs" />
     <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
@@ -17,6 +18,8 @@
     <Compile Include="ReferenceTests.fs" />
     <Compile Include="DefinitionTests.fs" />
     <Compile Include="DocumentFormattingTests.fs" />
+    -->
+    <Compile Include="InternalTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
