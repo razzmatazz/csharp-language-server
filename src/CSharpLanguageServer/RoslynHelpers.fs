@@ -15,6 +15,7 @@ open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
+open Microsoft.Build.Exceptions
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -441,33 +442,41 @@ let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
         let projectCollection = new Microsoft.Build.Evaluation.ProjectCollection();
         let props = new Dictionary<string, string>();
 
-        let buildProject = projectCollection.LoadProject(projectFilename, props, toolsVersion=null)
+        try
+            let buildProject = projectCollection.LoadProject(projectFilename, props, toolsVersion=null)
 
-        let noneIfEmpty s =
-            s |> Option.ofObj
-                |> Option.bind (fun s -> if String.IsNullOrEmpty(s) then None else Some s)
+            let noneIfEmpty s =
+                s |> Option.ofObj
+                    |> Option.bind (fun s -> if String.IsNullOrEmpty(s) then None else Some s)
 
-        let targetFramework = buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty
+            let targetFramework = buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty
 
-        match targetFramework with
-        | Some tfm ->
-            tfms.Add(tfm.Trim())
-        | _ -> ()
-
-        let targetFrameworks = buildProject.GetPropertyValue("TargetFrameworks") |> noneIfEmpty
-
-        match targetFrameworks with
-        | Some semicolonSeparatedTfms ->
-            for tfm in semicolonSeparatedTfms.Split(";") do
+            match targetFramework with
+            | Some tfm ->
                 tfms.Add(tfm.Trim())
-        | _ -> ()
+            | _ -> ()
 
-        projectCollection.UnloadProject(buildProject)
+            let targetFrameworks = buildProject.GetPropertyValue("TargetFrameworks") |> noneIfEmpty
+
+            match targetFrameworks with
+            | Some semicolonSeparatedTfms ->
+                for tfm in semicolonSeparatedTfms.Split(";") do
+                    tfms.Add(tfm.Trim())
+            | _ -> ()
+
+            projectCollection.UnloadProject(buildProject)
+        with
+        | :? InvalidProjectFileException as ipfe ->
+            logger.debug (
+                Log.setMessage "applyWorkspaceTargetFrameworkProp: failed to load {projectFilename}: {ex}"
+                >> Log.addContext "projectFilename" projectFilename
+                >> Log.addContext "ex" (string ipfe)
+            )
 
     let distinctTfms = tfms |> Set.ofSeq
 
     logger.debug (
-        Log.setMessage "resolveDefaultWorkspaceProps: distinctTfms={distinctTfms}"
+        Log.setMessage "applyWorkspaceTargetFrameworkProp: distinctTfms={distinctTfms}"
         >> Log.addContext "distinctTfms" (String.Join(";", distinctTfms))
     )
 
