@@ -4,6 +4,7 @@ open System.Threading
 
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
 
@@ -117,3 +118,83 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
     ()
+
+
+[<TestCase>]
+let testWorkspaceDiagnosticsWork() =
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testWorkspaceDiagnosticsWork"
+    client.StartAndWaitForSolutionLoad()
+
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let report0: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    match report0 with
+    | Some report0 ->
+        Assert.AreEqual(3, report0.Items.Length)
+
+        match report0.Items[0] with
+        | U2.C1 fullReport ->
+            Assert.AreEqual("full", fullReport.Kind)
+            Assert.AreEqual(None, fullReport.ResultId)
+            Assert.AreEqual(3, fullReport.Items.Length)
+
+            let diagnostic0 = fullReport.Items[0]
+            Assert.AreEqual(true, diagnostic0.Code.IsSome)
+            Assert.AreEqual("Identifier expected", diagnostic0.Message)
+
+        | _ -> failwith "'U2.C1' was expected"
+
+    | _ -> failwith "'Some' was expected"
+
+
+[<TestCase>]
+let testWorkspaceDiagnosticsWorkWithStreaming() =
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testWorkspaceDiagnosticsWork"
+    client.StartAndWaitForSolutionLoad()
+
+    let partialResultToken: ProgressToken =
+        System.Guid.NewGuid() |> string |> U2.C2
+
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some partialResultToken
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let report0: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    // report should have 0 results, all of them streamed to lsp client via $/progress instead
+    match report0 with
+    | Some report0 ->
+        Assert.AreEqual(0, report0.Items.Length)
+    | _ -> failwith "'Some' was expected"
+
+    let progress = client.GetProgressParams partialResultToken
+    Assert.AreEqual(3, progress.Length)
+
+    let report0 = progress[0].Value |> deserialize<WorkspaceDiagnosticReport>
+    Assert.AreEqual(1, report0.Items.Length)
+
+    match report0.Items[0] with
+    | U2.C1 fullReport ->
+        Assert.AreEqual("full", fullReport.Kind)
+        Assert.AreEqual(None, fullReport.ResultId)
+        Assert.AreEqual(3, fullReport.Items.Length)
+
+        let diagnostic0 = fullReport.Items[0]
+        Assert.AreEqual(true, diagnostic0.Code.IsSome)
+        Assert.AreEqual("Identifier expected", diagnostic0.Message)
+
+    | _ -> failwith "'U2.C1' was expected"
+
+    let report1 = progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
+    Assert.AreEqual(1, report1.Items.Length)
