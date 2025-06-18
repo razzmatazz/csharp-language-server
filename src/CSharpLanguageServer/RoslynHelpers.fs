@@ -497,7 +497,8 @@ let resolveDefaultWorkspaceProps (logger: ILog) projs : Map<string, string> =
 let tryLoadSolutionOnPath
         (lspClient: ILspClient)
         (logger: ILog)
-        solutionPath =
+        (solutionPath: string) =
+    assert Path.IsPathRooted(solutionPath)
     let progress = ProgressReporter(lspClient)
 
     let logMessage m =
@@ -660,11 +661,16 @@ let findAndLoadSolutionOnDir
 let loadSolutionOnSolutionPathOrDir
         (lspClient: ILspClient)
         (logger: ILog)
-        solutionPathMaybe
-        rootPath =
+        (solutionPathMaybe: string option)
+        (rootPath: string) =
     match solutionPathMaybe with
     | Some solutionPath -> async {
-        return! tryLoadSolutionOnPath lspClient logger solutionPath
+        let rootedSolutionPath =
+            match (Path.IsPathRooted(solutionPath)) with
+            | true -> solutionPath
+            | false -> Path.Combine(rootPath, solutionPath)
+
+        return! tryLoadSolutionOnPath lspClient logger rootedSolutionPath
       }
 
     | None -> async {
