@@ -4,18 +4,17 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
-
   <PropertyGroup>
     <MSBuildPackageVersion>17.14.8</MSBuildPackageVersion>
     <RoslynPackageVersion>4.14.0</RoslynPackageVersion>
     <MSBuildLocatorPackageVersion>1.9.1</MSBuildLocatorPackageVersion>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageVersion Include="Argu" Version="6.2.3" />
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
     <PackageVersion Include="coverlet.collector" Version="3.0.3" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
+    <PackageVersion Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <PackageVersion Include="ICSharpCode.Decompiler" Version="8.2.0.7535" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.7.0" />

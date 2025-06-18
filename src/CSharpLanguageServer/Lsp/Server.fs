@@ -249,7 +249,7 @@ type CSharpLspServer(
         override __.TypeHierarchySupertypes(p) = p |> withReadOnlyContext TypeHierarchy.supertypes
         override __.TypeHierarchySubtypes(p) = p |> withReadOnlyContext TypeHierarchy.subtypes
         override __.TextDocumentDeclaration(p) = p |> withReadOnlyContext Declaration.handle
-        override __.WorkspaceDiagnostic(_) = notImplemented
+        override __.WorkspaceDiagnostic(p) = p |> withReadOnlyContext Diagnostic.handleWorkspaceDiagnostic
         override __.CancelRequest(_) = ignoreNotification
         override __.NotebookDocumentDidChange(_) = ignoreNotification
         override __.NotebookDocumentDidClose(_) = ignoreNotification
