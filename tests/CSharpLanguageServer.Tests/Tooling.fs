@@ -673,6 +673,17 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
     member __.GetState () =
         client.PostAndReply(fun rc -> GetState rc)
 
+    member __.GetRpcLog () =
+        client.PostAndReply(fun rc -> GetRpcLog rc)
+
+    member __.GetProgressParams (token: ProgressToken) =
+        client.PostAndReply(fun rc -> GetRpcLog rc)
+        |> Seq.filter (fun m -> m.Source = Server)
+        |> Seq.filter (fun m -> (string m.Message["method"]) = "$/progress")
+        |> Seq.map (fun m -> m.Message["params"] |> deserialize<ProgressParams>)
+        |> Seq.filter (fun pp -> pp.Token = token)
+        |> List.ofSeq
+
     member __.DumpRpcLog () =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         for m in rpcLog do
