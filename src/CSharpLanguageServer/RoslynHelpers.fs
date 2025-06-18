@@ -378,7 +378,8 @@ type CSharpLspHostServices () =
         generator.CreateClassProxyWithTarget(services, interceptor)
 
 
-let loadProjectFilenamesFromSolution solutionPath =
+let loadProjectFilenamesFromSolution (solutionPath: string) =
+    assert Path.IsPathRooted(solutionPath)
     let projectFilenames = new List<string>()
 
     let solutionFile = Microsoft.Build.Construction.SolutionFile.Parse(solutionPath)

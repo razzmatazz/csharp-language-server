@@ -2,6 +2,7 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
@@ -21,37 +22,31 @@ module Diagnostic =
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
+    let private registrationOptions: DiagnosticRegistrationOptions =
+        { DocumentSelector = Some defaultDocumentSelector
+          WorkDoneProgress = None
+          Identifier = None
+          InterFileDependencies = false
+          WorkspaceDiagnostics = true
+          Id = None
+        }
+
     let provider (clientCapabilities: ClientCapabilities): U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         match dynamicRegistration clientCapabilities with
         | true -> None
-        | false ->
-            let diagnosticOptions: DiagnosticRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  WorkDoneProgress = None
-                  Identifier = None
-                  InterFileDependencies = false
-                  WorkspaceDiagnostics = false
-                  Id = None
-                }
-
-            Some (U2.C2 diagnosticOptions)
+        | false -> Some (U2.C2 registrationOptions)
 
     let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
         | false -> None
         | true ->
-            let registerOptions: DiagnosticRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  WorkDoneProgress = None
-                  Identifier = None
-                  InterFileDependencies = false
-                  WorkspaceDiagnostics = false
-                  Id = None }
-
-            Some
+            let registration =
                 { Id = Guid.NewGuid().ToString()
                   Method = "textDocument/diagnostic"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+                  RegisterOptions = registrationOptions |> serialize |> Some
+                }
+
+            Some registration
 
     let handle (context: ServerRequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
         let emptyReport: RelatedFullDocumentDiagnosticReport =
@@ -82,4 +77,77 @@ module Diagnostic =
 
             | None ->
                 return emptyReport |> U2.C1 |> LspResult.success
+    }
+
+    let private getWorkspaceDiagnosticReports (solution: Microsoft.CodeAnalysis.Solution) : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
+        asyncSeq {
+            for project in solution.Projects do
+                let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
+
+                match compilation |> Option.ofObj with
+                | None -> ()
+                | Some compilation ->
+                    let diagnostics = compilation.GetDiagnostics()
+
+                    let diagnosticsByDocument =
+                        diagnostics
+                        |> Seq.groupBy (fun d -> d.Location.SourceTree.FilePath |> Path.toUri)
+
+                    for (uri, docDiagnostics) in diagnosticsByDocument do
+                        let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
+                            {
+                                Kind = "full"
+                                ResultId = None
+                                Uri = uri
+                                Items = docDiagnostics |> Seq.map Diagnostic.fromRoslynDiagnostic |> Array.ofSeq
+                                Version = None
+                            }
+
+                        let documentReport: WorkspaceDocumentDiagnosticReport =
+                            U2.C1 fullDocumentReport
+
+                        yield documentReport
+        }
+
+    let handleWorkspaceDiagnostic (context: ServerRequestContext) (p: WorkspaceDiagnosticParams) : AsyncLspResult<WorkspaceDiagnosticReport> = async {
+        let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
+            { Items = Array.empty }
+
+        match context.State.Solution, p.PartialResultToken with
+        | None, _ ->
+            return emptyWorkspaceDiagnosticReport |> LspResult.success
+
+        | Some solution, None ->
+            let! diagnosticReports =
+                getWorkspaceDiagnosticReports solution
+                |> AsyncSeq.toArrayAsync
+
+            let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
+                { Items = diagnosticReports }
+
+            return workspaceDiagnosticReport |> LspResult.success
+
+        | Some solution, Some partialResultToken ->
+            let sendWorkspaceDiagnosticReport (documentReport, index) = async {
+                let progressParams =
+                    if index = 0 then
+                        let report: WorkspaceDiagnosticReport =
+                            { Items = [| documentReport |] }
+
+                        { Token = partialResultToken; Value = serialize report }
+                    else
+                        let reportPartialResult: WorkspaceDiagnosticReportPartialResult =
+                            { Items = [| documentReport |] }
+
+                        { Token = partialResultToken; Value = serialize reportPartialResult }
+
+                let lspClient = context.State.LspClient.Value
+                do! lspClient.Progress(progressParams)
+            }
+
+            do! AsyncSeq.ofSeq (Seq.initInfinite id)
+                |> AsyncSeq.zip (getWorkspaceDiagnosticReports solution)
+                |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
+
+            return emptyWorkspaceDiagnosticReport |> LspResult.success
     }

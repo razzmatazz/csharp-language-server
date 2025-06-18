@@ -71,13 +71,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\CHANGELOG.md" Pack="true" PackagePath="\"/>
-    <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+    <None Include="..\..\CHANGELOG.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Argu" />
     <PackageReference Include="Castle.Core" />
+    <PackageReference Include="FSharp.Control.AsyncSeq" />
     <PackageReference Include="ICSharpCode.Decompiler" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
     <PackageReference Include="Newtonsoft.Json" />

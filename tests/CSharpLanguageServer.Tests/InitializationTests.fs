@@ -76,7 +76,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
           WorkDoneProgress      = None
           Identifier            = None
           InterFileDependencies = false
-          WorkspaceDiagnostics  = false
+          WorkspaceDiagnostics  = true
           Id                    = None
         }
         |> U2<DiagnosticOptions, DiagnosticRegistrationOptions>.C2 |> Some,
