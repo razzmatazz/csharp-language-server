@@ -471,7 +471,7 @@ let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
             logger.debug (
                 Log.setMessage "applyWorkspaceTargetFrameworkProp: failed to load {projectFilename}: {ex}"
                 >> Log.addContext "projectFilename" projectFilename
-                >> Log.addContext "ex" (string ipfe)
+                >> Log.addContext "ex" (string (ipfe.GetType()))
             )
 
     let distinctTfms = tfms |> Set.ofSeq
