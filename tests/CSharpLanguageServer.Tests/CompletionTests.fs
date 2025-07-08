@@ -59,3 +59,36 @@ let testCompletionWorks () =
 
     Assert.IsTrue(resolvedItem.Documentation.IsSome)
     ()
+
+[<TestCase>]
+let testCompletionWorksForExtensionMethods () =
+    use client = setupServerClient defaultClientProfile
+                                   "TestData/testCompletionWorksForExtensionMethods"
+    client.StartAndWaitForSolutionLoad()
+
+    use classFile = client.Open("Project/Class.cs")
+
+    let completionParams0: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 13u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None
+        }
+
+    let completion0: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams0)
+
+    match completion0 with
+    | Some (U2.C2 cl) ->
+        Assert.AreEqual(7, cl.Items.Length)
+
+        let methodBItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodB")
+        match methodBItem with
+        | Some item ->
+            Assert.AreEqual(Some CompletionItemKind.Method, item.Kind)
+            ()
+
+        | _ -> failwith "an item with Label 'MethodB' was expected for completion at this position"
+
+    | _ -> failwith "Some U2.C1 was expected"
