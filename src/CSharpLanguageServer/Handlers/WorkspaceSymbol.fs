@@ -28,7 +28,7 @@ module WorkspaceSymbol =
         | false -> None
         | true ->
             let registerOptions: WorkspaceSymbolRegistrationOptions =
-                { ResolveProvider = Some true
+                { ResolveProvider = None
                   WorkDoneProgress = None
                 }
 
