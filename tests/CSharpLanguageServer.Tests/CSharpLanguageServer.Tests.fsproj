@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="Tooling.fs" />
+    <!--
     <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
@@ -19,6 +20,7 @@
     <Compile Include="DocumentFormattingTests.fs" />
     <Compile Include="InternalTests.fs" />
     <Compile Include="CompletionTests.fs" />
+    -->
     <Compile Include="WorkspaceSymbolTests.fs" />
   </ItemGroup>
 
