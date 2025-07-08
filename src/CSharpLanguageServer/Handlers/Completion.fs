@@ -104,11 +104,11 @@ module Completion =
         | "Enum" -> CompletionItemKind.Enum
         | "EnumMember" -> CompletionItemKind.EnumMember
         | "Interface" -> CompletionItemKind.Interface
-        | "Struct" -> CompletionItemKind.Struct
+        | "Structure" -> CompletionItemKind.Struct
         | "Local" -> CompletionItemKind.Variable
         | "Parameter" -> CompletionItemKind.Variable
         | "RangeVariable" -> CompletionItemKind.Variable
-        | "Const" -> CompletionItemKind.Constant
+        | "Constant" -> CompletionItemKind.Constant
         | "Event" -> CompletionItemKind.Event
         | "Field" -> CompletionItemKind.Field
         | "Method" -> CompletionItemKind.Method
@@ -116,6 +116,9 @@ module Completion =
         | "Label" -> CompletionItemKind.Unit
         | "Keyword" -> CompletionItemKind.Keyword
         | "Namespace" -> CompletionItemKind.Module
+        | "ExtensionMethod" -> CompletionItemKind.Method
+        | "Assembly" -> CompletionItemKind.Module
+        | "TypeParameter" -> CompletionItemKind.TypeParameter
         | _ -> CompletionItemKind.Property
 
     // TODO: Add parameters to label so that we can distinguish override versions?
