@@ -2,6 +2,7 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open FSharp.Control
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -27,12 +28,9 @@ module WorkspaceSymbol =
               RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
-        let pattern =
-            if String.IsNullOrEmpty(p.Query) then
-                None
-            else
-                Some p.Query
-        let! symbols = context.FindSymbols pattern
+        let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
+
+        let! symbols = context.FindSymbols pattern |> AsyncSeq.toArrayAsync
         return
             symbols
             |> Seq.map (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)

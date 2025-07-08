@@ -1,5 +1,6 @@
 namespace CSharpLanguageServer.State
 
+open FSharp.Control
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
@@ -196,7 +197,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
         return aggregatedLspLocations
     }
 
-    member this.FindSymbols (pattern: string option): Async<Microsoft.CodeAnalysis.ISymbol seq> = async {
+    member this.FindSymbols (pattern: string option): AsyncSeq<Microsoft.CodeAnalysis.ISymbol> = asyncSeq {
         let findTask ct =
                 match pattern with
                 | Some pat ->
@@ -206,10 +207,14 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                     fun (sln: Solution) -> SymbolFinder.FindSourceDeclarationsAsync(sln, true', SymbolFilter.TypeAndMember, cancellationToken=ct)
 
         match this.State.Solution with
-        | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken
-            return! findTask ct solution |> Async.AwaitTask
+            let! items = findTask ct solution |> Async.AwaitTask
+
+            for item in items do
+                yield item
+
+        | None -> ()
     }
 
     member this.FindReferences (symbol: ISymbol) (withDefinition: bool): Async<Microsoft.CodeAnalysis.Location seq> = async {
