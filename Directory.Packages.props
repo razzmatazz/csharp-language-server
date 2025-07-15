@@ -10,7 +10,7 @@
     <MSBuildLocatorPackageVersion>1.9.1</MSBuildLocatorPackageVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Argu" Version="6.2.3" />
+    <PackageVersion Include="Argu" Version="6.2.5" />
     <PackageVersion Include="Castle.Core" Version="5.1.1" />
     <PackageVersion Include="coverlet.collector" Version="3.0.3" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
