@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.IO
 
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
@@ -89,8 +90,14 @@ module Diagnostic =
                 | Some compilation ->
                     let diagnostics = compilation.GetDiagnostics()
 
+                    for d in diagnostics do
+                        if d.Location.SourceTree = null then
+                            let text = sprintf "getWorkspaceDiagnosticReports, d=%s has no sourcetree" (string d)
+                            File.AppendAllText("/Users/bob/output.txt", text)
+
                     let diagnosticsByDocument =
                         diagnostics
+//                        |> Seq.filter (fun d -> d.Location.SourceTree <> null)
                         |> Seq.groupBy (fun d -> d.Location.SourceTree.FilePath |> Path.toUri)
 
                     for (uri, docDiagnostics) in diagnosticsByDocument do
