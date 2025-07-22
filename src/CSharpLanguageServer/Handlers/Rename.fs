@@ -32,9 +32,15 @@ module Rename =
             (updatedSolution: Solution)
             (docId: DocumentId)
             : Async<TextDocumentEdit> = async {
-            let originalDoc = originalSolution.GetDocument(docId)
+            let originalDoc = match originalSolution.GetDocument(docId) with
+                              | null -> failwith "could not originalSolution.GetDocument(docId)"
+                              | x -> x
             let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
-            let updatedDoc = updatedSolution.GetDocument(docId)
+
+            let updatedDoc = match updatedSolution.GetDocument(docId) with
+                             | null -> failwith "could not updatedSolution.GetDocument(docId)"
+                             | x -> x
+
             let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
             let diffEdits: U2<TextEdit, AnnotatedTextEdit> array =
