@@ -140,6 +140,28 @@ If you need the child node to be added below a specific node in the list of chil
 
 Note: If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for tool scripts and editor plugins. If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view."""
 )>]
+[<TestCase("""
+<summary>
+Upserts an item as an asynchronous operation in the Azure Cosmos service.
+</summary>
+<param name="item">A JSON serializable object that must contain an id property. <see cref="T:Microsoft.Azure.Cosmos.CosmosSerializer" /> to implement a custom serializer</param>
+<param name="partitionKey"><see cref="T:Microsoft.Azure.Cosmos.PartitionKey" /> for the item. If not specified will be populated by extracting from {T}</param>
+<param name="requestOptions">(Optional) The options for the item request.</param>
+<param name="cancellationToken">(Optional) <see cref="T:System.Threading.CancellationToken" /> representing request cancellation.</param>
+<returns>The <see cref="T:Microsoft.Azure.Cosmos.ItemResponse`1" /> that was upserted contained within a <see cref="T:System.Threading.Tasks.Task" /> object representing the service response for the asynchronous operation.</returns>
+<exception>https://aka.ms/cosmosdb-dot-net-exceptions#typed-api</exception>
+""", """Upserts an item as an asynchronous operation in the Azure Cosmos service.
+
+Parameters:
+- ``item``: A JSON serializable object that must contain an id property. ``Microsoft.Azure.Cosmos.CosmosSerializer`` to implement a custom serializer
+- ``partitionKey``: ``Microsoft.Azure.Cosmos.PartitionKey`` for the item. If not specified will be populated by extracting from {T}
+- ``requestOptions``: (Optional) The options for the item request.
+- ``cancellationToken``: (Optional) ``System.Threading.CancellationToken`` representing request cancellation.
+
+Returns: The ``Microsoft.Azure.Cosmos.ItemResponse`1`` that was upserted contained within a ``System.Threading.Tasks.Task`` object representing the service response for the asynchronous operation.
+
+Exceptions:
+- ``(unspecified)``: https://aka.ms/cosmosdb-dot-net-exceptions#typed-api""")>]
 let testFormatDocXml (inputXml, expectedMD: string) =
     let resultMd = String.Join("\n", formatDocXml inputXml)
     Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)
