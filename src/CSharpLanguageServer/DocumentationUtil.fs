@@ -101,9 +101,8 @@ module DocumentationUtil =
         | "exception" ->
             let name = n.Attribute(XName.Get("cref"))
                        |> Option.ofObj
-                       |> Option.map (fun a -> a.Value)
-                       |> Option.defaultValue n.Value
-                       |> parseCref
+                       |> Option.map (fun a -> parseCref a.Value)
+                       |> Option.defaultValue "(unspecified)"
 
             { comment with
                 Exceptions = comment.Exceptions |> List.append [ (name, n) ] }

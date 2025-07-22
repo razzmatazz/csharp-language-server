@@ -161,7 +161,7 @@ Parameters:
 Returns: The ``Microsoft.Azure.Cosmos.ItemResponse`1`` that was upserted contained within a ``System.Threading.Tasks.Task`` object representing the service response for the asynchronous operation.
 
 Exceptions:
-- ``//aka.ms/cosmosdb-dot-net-exceptions#typed-api``: https://aka.ms/cosmosdb-dot-net-exceptions#typed-api""")>]
+- ``(unspecified)``: https://aka.ms/cosmosdb-dot-net-exceptions#typed-api""")>]
 let testFormatDocXml (inputXml, expectedMD: string) =
     let resultMd = String.Join("\n", formatDocXml inputXml)
     Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)
