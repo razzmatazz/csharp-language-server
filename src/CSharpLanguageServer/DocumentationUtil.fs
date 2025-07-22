@@ -99,7 +99,12 @@ module DocumentationUtil =
             { comment with Returns = comment.Returns |> List.append [ n ] }
 
         | "exception" ->
-            let name = n.Attribute(XName.Get("cref")).Value |> parseCref
+            let name = n.Attribute(XName.Get("cref"))
+                       |> Option.ofObj
+                       |> Option.map (fun a -> a.Value)
+                       |> Option.defaultValue n.Value
+                       |> parseCref
+
             { comment with
                 Exceptions = comment.Exceptions |> List.append [ (name, n) ] }
 
