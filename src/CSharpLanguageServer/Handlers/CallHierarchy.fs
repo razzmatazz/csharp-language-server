@@ -15,15 +15,12 @@ open CSharpLanguageServer.Conversions
 [<RequireQualifiedAccess>]
 module CallHierarchy =
     let private isCallableSymbol (symbol: ISymbol): bool =
-        if isNull symbol then
-            false
-        else
-            List.contains
-                symbol.Kind
-                [ Microsoft.CodeAnalysis.SymbolKind.Method
-                  Microsoft.CodeAnalysis.SymbolKind.Field
-                  Microsoft.CodeAnalysis.SymbolKind.Event
-                  Microsoft.CodeAnalysis.SymbolKind.Property ]
+        List.contains
+            symbol.Kind
+            [ Microsoft.CodeAnalysis.SymbolKind.Method
+              Microsoft.CodeAnalysis.SymbolKind.Field
+              Microsoft.CodeAnalysis.SymbolKind.Event
+              Microsoft.CodeAnalysis.SymbolKind.Property ]
 
     let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
