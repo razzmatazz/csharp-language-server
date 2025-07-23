@@ -89,12 +89,17 @@ module Initialization =
         setupTimer()
 
         let initializeResult =
+            let assemblyVersion =
+                Assembly.GetExecutingAssembly().GetName().Version
+                |> Option.ofObj
+                |> Option.map string
+
             { InitializeResult.Default with
                     Capabilities = serverCapabilities
                     ServerInfo =
                       Some
                         { Name = "csharp-ls"
-                          Version = Some (Assembly.GetExecutingAssembly().GetName().Version.ToString()) }}
+                          Version = assemblyVersion }}
 
         return initializeResult |> LspResult.success
     }
