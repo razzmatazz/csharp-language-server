@@ -9,6 +9,12 @@ open System.Text.RegularExpressions
 module Types =
     open System
 
+    let nonNull (name: string) (value: 'T when 'T : null) : 'T =
+        if Object.ReferenceEquals(value, null) then
+            raise (new Exception(sprintf "unexpected null value for %s" name))
+        else
+            value
+
     type LogLevel =
         | Trace = 0
         | Debug = 1
@@ -504,6 +510,7 @@ module Providers =
         open System.Linq.Expressions
 
         let getLogManagerType () = Type.GetType("Serilog.Log, Serilog")
+                                   |> nonNull "Type.GetType('Serilog.Log, Serilog')"
 
         let isAvailable () =
             getLogManagerType ()
@@ -603,12 +610,7 @@ module Providers =
 
             static member Create() =
                 let logEventLevelType = Type.GetType("Serilog.Events.LogEventLevel, Serilog")
-
-                if
-                    (logEventLevelType
-                     |> isNull)
-                then
-                    failwith ("Type Serilog.Events.LogEventLevel was not found.")
+                                        |> nonNull "Type.GetType('Serilog.Events.LogEventLevel, Serilog')"
 
                 let debugLevel = Enum.Parse(logEventLevelType, "Debug", false)
 
@@ -633,9 +635,7 @@ module Providers =
                     | _ -> debugLevel
 
                 let loggerType = Type.GetType("Serilog.ILogger, Serilog")
-
-                if (loggerType |> isNull) then
-                    failwith ("Type Serilog.ILogger was not found.")
+                                 |> nonNull "Type.GetType('Serilog.ILogger, Serilog')"
 
                 let isEnabledMethodInfo = loggerType.GetMethod("IsEnabled", [| logEventLevelType |])
 
@@ -844,12 +844,15 @@ module Providers =
                     Type.GetType(
                         "Microsoft.Extensions.Logging.LoggerExtensions, Microsoft.Extensions.Logging.Abstractions"
                     )
+                    |> nonNull "Type.GetType('Microsoft.Extensions.Logging.LoggerExtensions')"
 
                 let loggerType =
                     Type.GetType("Microsoft.Extensions.Logging.ILogger, Microsoft.Extensions.Logging.Abstractions")
+                    |> nonNull "Type.GetType('Microsoft.Extensions.Logging.ILogger')"
 
                 let logEventLevelType =
                     Type.GetType("Microsoft.Extensions.Logging.LogLevel, Microsoft.Extensions.Logging.Abstractions")
+                    |> nonNull "Type.GetType('Microsoft.Extensions.Logging.LogLevel')"
 
                 let instanceParam = Expression.Parameter(typedefof<ILogger>)
 
@@ -985,7 +988,9 @@ module Providers =
 
                 let beginScope =
                     let beginScopeMethodInfo =
-                        loggerType.GetMethod("BeginScope").MakeGenericMethod(typedefof<obj>)
+                        loggerType.GetMethod("BeginScope")
+                        |> nonNull "loggerType.GetMethod('BeginScope')"
+                        |> _.MakeGenericMethod(typedefof<obj>)
 
                     let stateParam = Expression.Parameter(typedefof<obj>)
 
@@ -1221,11 +1226,14 @@ type LogProvider =
     /// <returns></returns>
     static member inline getLoggerByFunc([<System.Runtime.CompilerServices.CallerMemberName>] ?memberName: string) =
         let mi = System.Reflection.MethodBase.GetCurrentMethod()
+                 |> nonNull "System.Reflection.MethodBase.GetCurrentMethod()"
         // When we're in a CE we get something like `WebBackend.App+thingsToCall2@130`.
         // CallerMemberName gets us the function that actually called it
         // Splitting off + seems like the best option to get the Fully Qualified Path
         let location =
-            mi.DeclaringType.FullName.Split('+')
+            mi.DeclaringType
+            |> nonNull "mi.DeclaringType"
+            |> _.FullName.Split('+')
             |> Seq.tryHead
             |> Option.defaultValue ""
 
