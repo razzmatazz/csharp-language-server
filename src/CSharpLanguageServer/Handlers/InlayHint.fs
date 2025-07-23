@@ -14,6 +14,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module InlayHint =
@@ -27,7 +28,8 @@ module InlayHint =
     let private getParameterForArgumentSyntax (semanticModel: SemanticModel) (argument: ArgumentSyntax) : IParameterSymbol option =
         match argument.Parent with
         | :? BaseArgumentListSyntax as argumentList when not (isNull argumentList.Parent) ->
-            let symbols = semanticModel.GetSymbolInfo(argumentList.Parent) |> getBestOrAllSymbols
+            let argumentListParent = argumentList.Parent |> nonNull "argumentList.Parent"
+            let symbols = semanticModel.GetSymbolInfo(argumentListParent) |> getBestOrAllSymbols
             match symbols with
             | [| symbol |] ->
                 let parameters =
@@ -35,11 +37,13 @@ module InlayHint =
                     | :? IMethodSymbol as m -> m.Parameters
                     | :? IPropertySymbol as nt -> nt.Parameters
                     | _ -> ImmutableArray<IParameterSymbol>.Empty
+
                 let namedParameter =
-                    if isNull argument.NameColon || argument.NameColon.IsMissing then
-                        None
-                    else
-                        parameters |> Seq.tryFind (fun p -> p.Name = argument.NameColon.Name.Identifier.ValueText)
+                    argument.NameColon
+                    |> Option.ofObj
+                    |> Option.bind (fun anc -> if anc.IsMissing then None else Some anc)
+                    |> Option.bind (fun anc -> parameters |> Seq.tryFind (fun p -> p.Name = anc.Name.Identifier.ValueText))
+
                 let positionalParameter =
                     match argumentList.Arguments.IndexOf(argument) with
                     | index when 0 <= index && index < parameters.Length ->
@@ -68,11 +72,13 @@ module InlayHint =
                         | :? IMethodSymbol as m -> m.Parameters
                         | :? IPropertySymbol as nt -> nt.Parameters
                         | _ -> ImmutableArray<IParameterSymbol>.Empty
+
                     let namedParameter =
-                        if isNull argument.NameColon || argument.NameColon.IsMissing then
-                            None
-                        else
-                            parameters |> Seq.tryFind (fun p -> p.Name = argument.NameColon.Name.Identifier.ValueText)
+                        argument.NameColon
+                        |> Option.ofObj
+                        |> Option.bind (fun anc -> if anc.IsMissing then None else Some anc)
+                        |> Option.bind (fun anc -> parameters |> Seq.tryFind (fun p -> p.Name = anc.Name.Identifier.ValueText))
+
                     let positionalParameter =
                         match argumentList.Arguments.IndexOf(argument) with
                         | index when 0 <= index && index < parameters.Length -> Some parameters[index]
@@ -83,7 +89,7 @@ module InlayHint =
         | _ -> None
 
     let private toInlayHint (semanticModel: SemanticModel) (lines: TextLineCollection) (node: SyntaxNode): InlayHint option =
-        let validateType (ty: ITypeSymbol) =
+        let validateType (ty: ITypeSymbol | null) =
             if isNull ty || ty :? IErrorTypeSymbol || ty.Name = "var" then
                 None
             else

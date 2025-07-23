@@ -4,6 +4,12 @@ open System
 open System.Runtime.InteropServices
 open System.IO
 
+let nonNull name (value: 'T when 'T : null) : 'T =
+    if Object.ReferenceEquals(value, null) then
+        raise (new Exception(sprintf "A non-null value was expected: %s" name))
+    else
+        value
+
 let parseFileUri s: string =
     Uri(s).LocalPath
 
