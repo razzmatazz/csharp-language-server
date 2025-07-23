@@ -133,13 +133,17 @@ module CodeAction =
                         )
 
         let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-            let nestedCAProp = ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance|||BindingFlags.NonPublic)
-            if not (isNull nestedCAProp) then
+            let nestedCAProp =
+                ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance|||BindingFlags.NonPublic)
+                |> Option.ofObj
+
+            match nestedCAProp with
+            | Some nestedCAProp ->
                 let nestedCAs = nestedCAProp.GetValue(ca, null) :?> ImmutableArray<Microsoft.CodeAnalysis.CodeActions.CodeAction>
                 match nestedCAs.Length with
                 | 0 -> [ca].ToImmutableArray()
                 | _ -> nestedCAs
-            else
+            | None ->
                 [ca].ToImmutableArray()
 
         return roslynCodeActions
@@ -222,22 +226,26 @@ module CodeAction =
         let changedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetChangedDocuments())
 
         for docId in changedDocs do
-            let originalDoc = originalSolution.GetDocument(docId)
-            let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
-            let updatedDoc = updatedSolution.GetDocument(docId)
-            let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
+            let originalDoc = originalSolution.GetDocument(docId) |> Option.ofObj
+            let updatedDoc = updatedSolution.GetDocument(docId) |> Option.ofObj
 
-            let diffEdits: U2<TextEdit,AnnotatedTextEdit> array =
-                docChanges
-                |> Seq.sortBy (fun c -> c.Span.Start)
-                |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
-                |> Seq.map U2.C1
-                |> Array.ofSeq
+            match originalDoc, updatedDoc with
+            | Some originalDoc, Some updatedDoc ->
+                let! originalDocText = originalDoc.GetTextAsync(ct) |> Async.AwaitTask
+                let! docChanges = updatedDoc.GetTextChangesAsync(originalDoc, ct) |> Async.AwaitTask
 
-            let textEditDocument = { Uri = originalDoc.FilePath |> Path.toUri
-                                     Version = originalDoc.FilePath |> Path.toUri |> tryGetDocVersionByUri }
+                let diffEdits: U2<TextEdit,AnnotatedTextEdit> array =
+                    docChanges
+                    |> Seq.sortBy (fun c -> c.Span.Start)
+                    |> Seq.map (TextEdit.fromTextChange originalDocText.Lines)
+                    |> Seq.map U2.C1
+                    |> Array.ofSeq
 
-            docTextEdits.Add({ TextDocument = textEditDocument; Edits = diffEdits })
+                let textEditDocument = { Uri = originalDoc.FilePath |> Path.toUri
+                                         Version = originalDoc.FilePath |> Path.toUri |> tryGetDocVersionByUri }
+
+                docTextEdits.Add({ TextDocument = textEditDocument; Edits = diffEdits })
+            | _, _ -> ()
 
         return docTextEdits |> List.ofSeq
     }
