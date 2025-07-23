@@ -20,8 +20,10 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     let mutable collectedSymbols = []
 
     let collect (node: SyntaxNode) (nameSpan: TextSpan) =
-        let symbol = semanticModel.GetDeclaredSymbol(node)
-        collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
+        match semanticModel.GetDeclaredSymbol(node) |> Option.ofObj with
+        | Some symbol ->
+            collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
+        | _ -> ()
 
     member __.GetSymbols() =
         collectedSymbols |> List.rev |> Array.ofList
@@ -154,9 +156,11 @@ module CodeLens =
     let resolve (context: ServerRequestContext)
                 (p: CodeLens)
             : AsyncLspResult<CodeLens> = async {
-        let lensData =
+
+        let lensData: CodeLensData =
             p.Data
-            |> Option.map (fun t -> t.ToObject<CodeLensData>())
+            |> Option.map _.ToObject<CodeLensData>()
+            |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
