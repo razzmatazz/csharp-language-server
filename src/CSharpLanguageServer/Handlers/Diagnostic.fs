@@ -10,12 +10,9 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let private logger = LogProvider.getLoggerByName "Diagnostic"
-
     let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.Diagnostic)
@@ -81,17 +78,25 @@ module Diagnostic =
 
     let private getWorkspaceDiagnosticReports (solution: Microsoft.CodeAnalysis.Solution) : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
+            let! ct = Async.CancellationToken
+
             for project in solution.Projects do
-                let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
+                let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
                 match compilation |> Option.ofObj with
                 | None -> ()
                 | Some compilation ->
-                    let diagnostics = compilation.GetDiagnostics()
+                    let uriForDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) =
+                        d.Location.SourceTree
+                        |> Option.ofObj
+                        |> Option.map _.FilePath
+                        |> Option.map Path.toUri
 
                     let diagnosticsByDocument =
-                        diagnostics
-                        |> Seq.groupBy (fun d -> d.Location.SourceTree.FilePath |> Path.toUri)
+                        compilation.GetDiagnostics(ct)
+                        |> Seq.groupBy uriForDiagnostic
+                        |> Seq.filter (fun (uri, _ds) -> uri.IsSome)
+                        |> Seq.map (fun (uri, ds) -> (uri.Value, ds))
 
                     for (uri, docDiagnostics) in diagnosticsByDocument do
                         let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
