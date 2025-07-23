@@ -2,6 +2,8 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Server
@@ -43,6 +45,29 @@ module DocumentOnTypeFormatting =
                   Method = "textDocument/onTypeFormatting"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
+    let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
+        if token.IsKind(SyntaxKind.EndOfFileToken) then
+            getSyntaxNode (token.GetPreviousToken())
+        else
+            match token.Kind() with
+            | SyntaxKind.SemicolonToken -> token.Parent |> Some
+            | SyntaxKind.CloseBraceToken ->
+                match token.Parent |> Option.ofObj with
+                | Some parent ->
+                    match parent.Kind() with
+                    | SyntaxKind.Block -> parent.Parent |> Some
+                    | _ -> parent |> Some
+                | None -> None
+            | SyntaxKind.CloseParenToken ->
+                if
+                    token.GetPreviousToken().IsKind(SyntaxKind.SemicolonToken)
+                    && token.Parent.IsKind(SyntaxKind.ForStatement)
+                then
+                    token.Parent |> Some
+                else
+                    None
+            | _ -> None
+
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         match context.GetUserDocument p.TextDocument.Uri with
         | None ->
@@ -58,7 +83,8 @@ module DocumentOnTypeFormatting =
             | "}"
             | ")" ->
                 let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
-                match FormatUtil.findFormatTarget root pos with
+                let tokenAtPos = root.FindToken pos
+                match getSyntaxNode tokenAtPos with
                 | None -> return None |> LspResult.success
                 | Some node ->
                     let! newDoc =
