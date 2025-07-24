@@ -76,9 +76,9 @@ module DocumentHighlight =
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> LspResult.success
         | Some (symbol, doc) ->
-            match Option.ofObj symbol with
-            | Some symbol when shouldHighlight symbol ->
+            if shouldHighlight symbol then
                 let! highlights = getHighlights symbol doc
                 return highlights |> Seq.toArray |> Some |> LspResult.success
-            | _ -> return None |> LspResult.success
+            else
+                return None |> LspResult.success
     }
