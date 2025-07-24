@@ -13,6 +13,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module DocumentSymbol =
@@ -95,7 +96,7 @@ module DocumentSymbol =
         let mutable symbolStack = []
 
         let push (node: SyntaxNode) (nameSpan: TextSpan) =
-            let symbol = semanticModel.GetDeclaredSymbol(node)
+            let symbol = semanticModel.GetDeclaredSymbol(node) |> nonNull "semanticModel.GetDeclaredSymbol(node)"
 
             let (fullSymbolName, symbolKind) =
                 getSymbolNameAndKind (Some semanticModel)
