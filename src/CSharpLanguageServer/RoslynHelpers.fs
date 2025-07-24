@@ -89,12 +89,15 @@ type CleanCodeGenerationOptionsProviderInterceptor (_logMessage) =
             match invocation.Method.Name with
             "GetCleanCodeGenerationOptionsAsync" ->
                 let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
-                let cleanCodeGenOptionsType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions")
 
-                let methodGetDefault = cleanCodeGenOptionsType.GetMethod("GetDefault")
+                let cleanCodeGenOptionsType =
+                    workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions")
+                    |> nonNull "workspacesAssembly.GetType('Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions')"
+
+                let getDefaultMI = cleanCodeGenOptionsType.GetMethod("GetDefault") |> nonNull "cleanCodeGenOptionsType.GetMethod('GetDefault')"
 
                 let argLanguageServices = invocation.Arguments[0]
-                let defaultCleanCodeGenOptions = methodGetDefault.Invoke(null, [| argLanguageServices |])
+                let defaultCleanCodeGenOptions = getDefaultMI.Invoke(null, [| argLanguageServices |])
 
                 let valueTaskType = typedefof<ValueTask<_>>
                 let valueTaskTypeForCleanCodeGenOptions = valueTaskType.MakeGenericType([| cleanCodeGenOptionsType |])
@@ -160,7 +163,10 @@ type ExtractClassOptionsServiceInterceptor (_logMessage) =
         let sameFile = box true
 
         let immArrayType = typeof<ImmutableArray>
-        let extractClassMemberAnalysisResultType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
+
+        let extractClassMemberAnalysisResultType =
+            featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
+            |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult')"
 
         let resultListType = typedefof<List<_>>.MakeGenericType(extractClassMemberAnalysisResultType)
         let resultList = Activator.CreateInstance(resultListType)
@@ -179,24 +185,30 @@ type ExtractClassOptionsServiceInterceptor (_logMessage) =
             let memberAnalysisResult =
                 Activator.CreateInstance(extractClassMemberAnalysisResultType, memberToAdd, false)
 
-            resultListType.GetMethod("Add").Invoke(resultList, [| memberAnalysisResult |])
+            let resultListAddMI = resultListType.GetMethod("Add") |> nonNull "resultListType.GetMethod('Add')"
+
+            resultListAddMI.Invoke(resultList, [| memberAnalysisResult |])
             |> ignore
 
-        let resultListAsArray =
-            resultListType.GetMethod("ToArray").Invoke(resultList, null)
+        let resultListToArrayMI = resultListType.GetMethod("ToArray") |> nonNull "resultListType.GetMethod('ToArray')"
+        let resultListAsArray = resultListToArrayMI.Invoke(resultList, null)
 
-        let immArrayCreateFromArray =
+        let immArrayCreateFromArrayMI =
             immArrayType.GetMethods()
             |> Seq.filter (fun m -> m.GetParameters().Length = 1 && (m.GetParameters()[0]).ParameterType.IsArray)
             |> Seq.head
 
         let emptyMemberAnalysisResults =
-            immArrayCreateFromArray.MakeGenericMethod([| extractClassMemberAnalysisResultType |]).Invoke(null, [| resultListAsArray |])
+            immArrayCreateFromArrayMI.MakeGenericMethod([| extractClassMemberAnalysisResultType |]).Invoke(null, [| resultListAsArray |])
+            |> nonNull "MakeGenericMethod()"
 
-        let extractClassOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions")
+        let extractClassOptionsType =
+            featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions")
+            |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractClass.ExtractClassOptions')"
 
         Activator.CreateInstance(
             extractClassOptionsType, fileName, typeName, sameFile, emptyMemberAnalysisResults)
+        |> nonNull (sprintf "could not Activator.CreateInstance(%s,..)" (string extractClassOptionsType))
 
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
@@ -206,7 +218,10 @@ type ExtractClassOptionsServiceInterceptor (_logMessage) =
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
                 let extractClassOptionsValue = getExtractClassOptionsImpl(argOriginalType)
 
-                let fromResultMethod = typeof<Task>.GetMethod("FromResult")
+                let fromResultMethod =
+                    typeof<Task>.GetMethod("FromResult")
+                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
+
                 let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractClassOptionsValue.GetType() |])
 
                 invocation.ReturnValue <- typedFromResultMethod.Invoke(null, [| extractClassOptionsValue |])
@@ -233,6 +248,7 @@ type ExtractInterfaceOptionsServiceInterceptor (logMessage) =
 
                 let extractInterfaceOptionsResultType =
                     featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult")
+                    |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
 
                 let locationEnumType = extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
                 let location = Enum.Parse(locationEnumType, "NewFile") // or "SameFile"
@@ -255,7 +271,10 @@ type ExtractInterfaceOptionsServiceInterceptor (logMessage) =
                         location,
                         cleanCodeGenerationOptionsProvider)
 
-                let fromResultMethod = typeof<Task>.GetMethod("FromResult")
+                let fromResultMethod =
+                    typeof<Task>.GetMethod("FromResult")
+                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
+
                 let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| extractInterfaceOptionsResultType |])
 
                 invocation.ReturnValue <-
@@ -299,9 +318,15 @@ type RemoteHostClientProviderInterceptor (_logMessage) =
             match invocation.Method.Name with
             | "TryGetRemoteHostClientAsync" ->
                 let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
-                let remoteHostClientType = workspacesAssembly.GetType("Microsoft.CodeAnalysis.Remote.RemoteHostClient")
-                let methodInfo = typeof<Task>.GetMethod("FromResult", BindingFlags.Static ||| BindingFlags.Public)
-                let genericMethod = methodInfo.MakeGenericMethod(remoteHostClientType)
+                let remoteHostClientType =
+                    workspacesAssembly.GetType("Microsoft.CodeAnalysis.Remote.RemoteHostClient")
+                    |> nonNull "GetType(Microsoft.CodeAnalysis.Remote.RemoteHostClient)"
+
+                let fromResultMI =
+                    typeof<Task>.GetMethod("FromResult", BindingFlags.Static ||| BindingFlags.Public)
+                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
+
+                let genericMethod = fromResultMI.MakeGenericMethod(remoteHostClientType)
                 let nullResultTask = genericMethod.Invoke(null, [| null |])
                 invocation.ReturnValue <- nullResultTask
 
@@ -369,10 +394,14 @@ type CSharpLspHostServices () =
         // Ugly but we can't:
         // 1. use Castle since there is no default constructor of MefHostServices.
         // 2. call this.hostServices.CreateWorkspaceServices directly since it's internal.
-        let methodInfo = this.hostServices.GetType().GetMethod("CreateWorkspaceServices", BindingFlags.Instance|||BindingFlags.NonPublic)
+        let createWorkspaceServicesMI =
+            this.hostServices.GetType().GetMethod("CreateWorkspaceServices", BindingFlags.Instance|||BindingFlags.NonPublic)
+            |> nonNull (sprintf "no %s.CreateWorkspaceServices()" (this.hostServices.GetType() |> string))
+
         let services =
-            methodInfo.Invoke(this.hostServices, [| workspace |])
+            createWorkspaceServicesMI.Invoke(this.hostServices, [| workspace |])
             |> Unchecked.unbox<HostWorkspaceServices>
+
         let generator = ProxyGenerator()
         let interceptor = WorkspaceServicesInterceptor()
         generator.CreateClassProxyWithTarget(services, interceptor)
