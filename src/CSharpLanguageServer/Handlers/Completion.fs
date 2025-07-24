@@ -19,8 +19,11 @@ module Completion =
     let private _logger = LogProvider.getLoggerByName "Completion"
 
     let emptyRoslynOptionSet: Microsoft.CodeAnalysis.Options.OptionSet =
-        let osType = typeof<Microsoft.CodeAnalysis.Options.OptionSet>
-        let osEmptyOptionSetField = osType.GetField("Empty", BindingFlags.Static|||BindingFlags.NonPublic)
+        let osEmptyOptionSetField =
+            typeof<Microsoft.CodeAnalysis.Options.OptionSet>
+            |> _.GetField("Empty", BindingFlags.Static|||BindingFlags.NonPublic)
+            |> nonNull "Microsoft.CodeAnalysis.Options.OptionSet.Empty"
+
         osEmptyOptionSetField.GetValue(null) :?> Microsoft.CodeAnalysis.Options.OptionSet
 
     /// the type reflects on internal class Microsoft.CodeAnalysis.Completion.CompletionOptions
@@ -32,16 +35,29 @@ module Completion =
         }
         with
             member rco.WithBool(optionName: string, optionValue: bool) =
-                let cloneCompletionOptionsMI = rco.CompletionOptionsType.GetMethod("<Clone>$")
+                let cloneCompletionOptionsMI =
+                    rco.CompletionOptionsType.GetMethod("<Clone>$")
+                    |> nonNull "rco.CompletionOptionsType.GetMethod('<Clone>$')"
+
                 let updatedCompletionOptions = cloneCompletionOptionsMI.Invoke(rco.Object, null)
-                let newCo = rco.CompletionOptionsType.GetProperty(optionName)
+                let newCo =
+                    rco.CompletionOptionsType.GetProperty(optionName)
+                    |> nonNull (sprintf "rco.CompletionOptionsType.GetProperty('%s')" optionName)
+
                 newCo.SetValue(updatedCompletionOptions, optionValue)
                 { rco with Object = updatedCompletionOptions }
 
             static member Default() =
                 let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
-                let coType = featuresAssembly.GetType("Microsoft.CodeAnalysis.Completion.CompletionOptions")
-                let defaultCo: obj = coType.GetField("Default").GetValue()
+                let coType =
+                    featuresAssembly.GetType("Microsoft.CodeAnalysis.Completion.CompletionOptions")
+                    |> nonNull "GetType('Microsoft.CodeAnalysis.Completion.CompletionOptions')"
+
+                let defaultCo: obj =
+                    coType.GetField("Default")
+                    |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionOptions.Default"
+                    |> _.GetValue()
+
                 { Object = defaultCo; CompletionOptionsType = coType }
 
     type RoslynCompletionServiceWrapper(service: Microsoft.CodeAnalysis.Completion.CompletionService) =
@@ -194,7 +210,10 @@ module Completion =
                 |> Option.map (fun x -> (doc, x)))
         with
         | Some (doc, cachedItem) ->
-            let completionService = Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+            let completionService =
+                Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+                |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)"
+
             let! ct = Async.CancellationToken
             let! description =
                 completionService.GetDescriptionAsync(doc, cachedItem, ct)

@@ -92,7 +92,11 @@ module DocumentationUtil =
             { comment with Remarks = newRemarks }
 
         | "param" ->
-            let name = n.Attribute(XName.Get("name")).Value
+            let name = n.Attribute(XName.Get("name"))
+                       |> Option.ofObj
+                       |> Option.map (fun a -> a.Value)
+                       |> Option.defaultValue "(unspecified)"
+
             { comment with Params = comment.Params |> List.append [ (name, n) ] }
 
         | "returns" ->
@@ -108,7 +112,11 @@ module DocumentationUtil =
                 Exceptions = comment.Exceptions |> List.append [ (name, n) ] }
 
         | "typeparam" ->
-            let name = n.Attribute(XName.Get("name")).Value
+            let name = n.Attribute(XName.Get("name"))
+                       |> Option.ofObj
+                       |> Option.map (fun a -> a.Value)
+                       |> Option.defaultValue "(unspecified)"
+
             { comment with Types = comment.Types |> List.append [ (name, n) ] }
 
         | _ ->

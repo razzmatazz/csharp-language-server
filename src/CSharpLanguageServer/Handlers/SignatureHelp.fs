@@ -112,9 +112,16 @@ module SignatureHelp =
                     |> Option.map (fun argList -> argList.Span.Contains(position))
                     |> Option.defaultValue false
                     ->
+                    let argumentList = objectCreation.ArgumentList |> Option.ofObj
+
                     Some { Receiver      = objectCreation
-                           ArgumentTypes = objectCreation.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression)) |> List.ofSeq
-                           Separators    = objectCreation.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
+                           ArgumentTypes = argumentList
+                                           |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                                           |> Option.defaultValue []
+                                           |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                           Separators    = argumentList
+                                           |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                                           |> Option.defaultValue [] }
 
                 | :? AttributeSyntax as attributeSyntax when
                     attributeSyntax.ArgumentList
@@ -122,14 +129,22 @@ module SignatureHelp =
                     |> Option.map (fun argList -> argList.Span.Contains(position))
                     |> Option.defaultValue false
                     ->
+                    let argumentList = attributeSyntax.ArgumentList |> Option.ofObj
+
                     Some { Receiver      = attributeSyntax
-                           ArgumentTypes = attributeSyntax.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression)) |> List.ofSeq
-                           Separators    = attributeSyntax.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
+                           ArgumentTypes = argumentList
+                                           |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                                           |> Option.defaultValue []
+                                           |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                           Separators    = argumentList
+                                           |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                                           |> Option.defaultValue [] }
 
                 | _ ->
                     node
                     |> Option.ofObj
-                    |> Option.bind (fun node -> findInvocationContext node.Parent)
+                    |> Option.bind (fun n -> n.Parent |> Option.ofObj)
+                    |> Option.bind findInvocationContext
 
             match root.FindToken(position).Parent |> findInvocationContext with
             | None -> return None |> LspResult.success

@@ -15,6 +15,8 @@ open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+let indexJToken (name: string) (jobj: option<JToken>): option<JToken> =
+    jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
 
 let emptyClientCapabilities: ClientCapabilities = {
     Workspace = None
@@ -133,7 +135,7 @@ type ClientEvent =
     | ServerRpcCallResultOrError of JObject
     | SendServerRpcNotification of string * JToken
     | ClientRpcCall of JValue * string * JObject
-    | SendClientRpcCallResult of JToken * JToken
+    | SendClientRpcCallResult of JToken * option<JToken>
     | SendRpcMessage of JObject
     | EmitLogMessage of DateTime * string * string
     | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
@@ -309,19 +311,20 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 logMessage "windows/logMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
                 state
             | "$/progress" ->
-                logMessage "$/progress" (String.Format("({0}) \"{1}\"", p["value"]["kind"], p["value"]["message"]))
+                let value = p["value"] |> Option.ofObj
+                logMessage "$/progress" (String.Format("({0}) \"{1}\"", value |> indexJToken "kind", value |> indexJToken "message"))
                 state
             | "client/registerCapability" ->
                 logMessage "ClientRpcCall" (String.Format("client/registerCapability: registrations={0}", p["registrations"]))
-                post (SendClientRpcCallResult (id, null))
+                post (SendClientRpcCallResult (id, None))
                 state
             | "workspace/configuration" ->
                 logMessage "ClientRpcCall" (String.Format("workspace/configuration: params={0}", p))
-                post (SendClientRpcCallResult (id, new JArray()))
+                post (SendClientRpcCallResult (id, Some (new JArray())))
                 state
             | "window/workDoneProgress/create" ->
                 logMessage "ClientRpcCall" (String.Format("window/workDoneProgress/create: params={0}", p))
-                post (SendClientRpcCallResult (id, null))
+                post (SendClientRpcCallResult (id, None))
                 state
             | "textDocument/publishDiagnostics" ->
                 logMessage "ClientRpcCall" (sprintf "textDocument/publishDiagnostics: %s" (string p))
@@ -386,7 +389,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         let msg = JObject()
         msg["jsonrpc"] <- JValue "2.0"
         msg["id"] <- id
-        msg["result"] <- result
+        msg["result"] <- result |> Option.defaultValue null
         post (SendRpcMessage msg)
 
         return state
@@ -647,10 +650,12 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
         let start = DateTime.Now
 
         let progressEndMatch m =
+            let paramsValue = m.Message["params"] |> Option.ofObj |> indexJToken "value"
+
             m.Source = Server
             && (m.Message.["method"] |> string) = "$/progress"
-            && (m.Message.["params"].["value"].["kind"] |> string) = "end"
-            && messagePred(m.Message.["params"].["value"].["message"] |> string)
+            && (paramsValue |> indexJToken "kind" |> Option.map string |> Option.defaultValue "(None)") = "end"
+            && messagePred(paramsValue |> indexJToken "message" |> Option.map string |> Option.defaultValue "(None)")
 
         let mutable haveProgressEnd = false
         while (not haveProgressEnd) do
@@ -704,10 +709,14 @@ type ClientController (client: MailboxProcessor<ClientEvent>, testDataDir: Direc
     member __.ServerMessageLogContains (pred: string -> bool): bool =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
-        rpcLog
-        |> Seq.exists(fun m -> m.Source = Server
-                               && (string m.Message["method"]) = "window/logMessage"
-                               && (pred (string m.Message.["params"].["message"])))
+        let containsPred m =
+            let messageParams = m.Message["params"] |> Option.ofObj
+
+            m.Source = Server
+            && (m.Message["method"] |> string) = "window/logMessage"
+            && (pred (messageParams |> indexJToken "message" |> Option.map string |> Option.defaultValue "(None)"))
+
+        rpcLog |> Seq.exists containsPred
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request): 'Response =
         let requestJObject = request |> serialize

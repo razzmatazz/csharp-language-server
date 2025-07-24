@@ -16,6 +16,7 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <ChangelogFile>CHANGELOG.md</ChangelogFile>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>

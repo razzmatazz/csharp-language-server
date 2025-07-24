@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.Options
 open Microsoft.CodeAnalysis.Text
@@ -95,28 +94,3 @@ module internal FormatUtil =
                        _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
                    | None -> id
     }
-
-    let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
-        if token.IsKind(SyntaxKind.EndOfFileToken) then
-            getSyntaxNode (token.GetPreviousToken())
-        else
-            match token.Kind() with
-            | SyntaxKind.SemicolonToken -> token.Parent |> Some
-            | SyntaxKind.CloseBraceToken ->
-                let parent = token.Parent
-                match parent.Kind() with
-                | SyntaxKind.Block -> parent.Parent |> Some
-                | _ -> parent |> Some
-            | SyntaxKind.CloseParenToken ->
-                if
-                    token.GetPreviousToken().IsKind(SyntaxKind.SemicolonToken)
-                    && token.Parent.IsKind(SyntaxKind.ForStatement)
-                then
-                    token.Parent |> Some
-                else
-                    None
-            | _ -> None
-
-    let findFormatTarget (root: SyntaxNode) (position: int) : SyntaxNode option =
-        let token = root.FindToken position
-        getSyntaxNode token

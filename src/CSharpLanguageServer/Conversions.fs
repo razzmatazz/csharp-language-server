@@ -75,16 +75,20 @@ module Location =
 
         match loc.Kind with
         | LocationKind.SourceFile ->
-            let mappedLoc = loc.GetMappedLineSpan()
+            let mappedSourceLocation =
+                loc.GetMappedLineSpan()
+                |> Some
+                |> Option.bind (fun mappedLoc -> if mappedLoc.IsValid && File.Exists(mappedLoc.Path) then Some mappedLoc else None)
+                |> Option.map (fun mappedLoc -> toLspLocation mappedLoc.Path mappedLoc.Span)
 
-            if mappedLoc.IsValid && File.Exists(mappedLoc.Path) then
-                toLspLocation mappedLoc.Path mappedLoc.Span
-                |> Some
-            elif File.Exists(loc.SourceTree.FilePath) then
-                toLspLocation loc.SourceTree.FilePath (loc.GetLineSpan().Span)
-                |> Some
-            else
-                None
+            let sourceLocation =
+                loc.SourceTree
+                |> Option.ofObj
+                |> Option.map _.FilePath
+                |> Option.bind (fun filePath -> if File.Exists(filePath) then Some filePath else None)
+                |> Option.map (fun filePath -> toLspLocation filePath (loc.GetLineSpan().Span))
+
+            mappedSourceLocation |> Option.orElse sourceLocation
 
         | _ -> None
 
