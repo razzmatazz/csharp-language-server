@@ -197,7 +197,7 @@ module CodeAction =
         let addedDocs = solutionProjectChanges |> Seq.collect (fun pc -> pc.GetAddedDocuments())
 
         for docId in addedDocs do
-            let newDoc = updatedSolution.GetDocument(docId)
+            let newDoc = updatedSolution.GetDocument(docId) |> nonNull "updatedSolution.GetDocument(docId)"
             let! newDocText = newDoc.GetTextAsync(ct) |> Async.AwaitTask
 
             let edit: TextEdit =
