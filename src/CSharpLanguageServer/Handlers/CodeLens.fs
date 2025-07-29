@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.IO
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
@@ -167,26 +168,27 @@ module CodeLens =
         | None ->
             return p |> LspResult.success
         | Some symbol ->
-            let! locations = context.FindReferences symbol false
+            let! locations' = context.FindReferences symbol false
+
+            let locations =
+                locations'
+                |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
+                |> Seq.map Location.fromRoslynLocation
+                |> Seq.choose id
+
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
             // (l.SourceTree.FilePath, l.SourceSpan)
-            let refNum =
-                locations
-                |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
-                |> Seq.length
+            let title = sprintf "%d Reference(s)" (Seq.length locations)
 
-            let title = sprintf "%d Reference(s)" refNum
-
-            let arg: ReferenceParams =
-                { TextDocument = { Uri = lensData.DocumentUri }
-                  Position = lensData.Position
-                  WorkDoneToken = None
-                  PartialResultToken = None
-                  Context = { IncludeDeclaration = true } }
             let command =
                 { Title = title
                   Command = "editor.action.showReferences"
-                  Arguments = Some [| lensData.DocumentUri |> serialize; lensData.Position |> serialize; arg |> serialize |] }
+                  Arguments = Some [| lensData.DocumentUri |> serialize
+                                      lensData.Position |> serialize
+                                      locations |> Seq.head |> serialize
+                                    |] }
+
+            File.WriteAllText("/Users/bob/debug.txt", (serialize command |> string))
 
             return { p with Command = Some command } |> LspResult.success
     }
