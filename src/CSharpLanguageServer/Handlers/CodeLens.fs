@@ -185,8 +185,8 @@ module CodeLens =
                   Context = { IncludeDeclaration = true } }
             let command =
                 { Title = title
-                  Command = "textDocument/references"
-                  Arguments = Some [| arg |> serialize |] }
+                  Command = "editor.action.showReferences"
+                  Arguments = Some [| lensData.DocumentUri |> serialize; lensData.Position |> serialize; arg |> serialize |] }
 
             return { p with Command = Some command } |> LspResult.success
     }
