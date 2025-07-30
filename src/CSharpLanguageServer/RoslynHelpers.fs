@@ -615,7 +615,7 @@ let tryLoadSolutionFromProjectFiles
                 logger.error (
                     Log.setMessage "could not OpenProjectAsync('{file}'): {exception}"
                     >> Log.addContext "file" file
-                    >> Log.addContext "ex" (string ex)
+                    >> Log.addContext "exception" (string ex)
                 )
             let projectFile = new FileInfo(file)
             let projName = projectFile.Name
