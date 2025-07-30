@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Print error mesage to stderr in case of invalid args or a server crash.
+  - Fixed by @zachristmas in https://github.com/zachristmas/csharp-language-server
 * Fix completion item kind for an extension method
   - Reported by @sharpchen in https://github.com/razzmatazz/csharp-language-server/issues/237
   - Fixed in https://github.com/razzmatazz/csharp-language-server/pull/238
