@@ -67,7 +67,6 @@
     <Compile Include="Handlers/Workspace.fs" />
     <Compile Include="Handlers/WorkspaceSymbol.fs" />
     <Compile Include="Lsp/Server.fs" />
-    <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
