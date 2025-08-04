@@ -12,19 +12,30 @@ open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
-    let provider (_: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option =
-        U2.C1 true |> Some
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.Workspace
+        |> Option.bind (fun x -> x.Symbol)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
-    let registration (_: ClientCapabilities) : Registration option =
-        let registrationOptions: WorkspaceSymbolRegistrationOptions =
-            { ResolveProvider = None
-              WorkDoneProgress = None
-            }
+    let provider (cc: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option =
+        match dynamicRegistration cc with
+        | true -> None
+        | false -> Some (U2.C1 true)
 
-        Some
-            { Id = Guid.NewGuid().ToString()
-              Method = "workspace/symbol"
-              RegisterOptions = registrationOptions |> serialize |> Some }
+    let registration (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
+        | false -> None
+        | true ->
+            let registrationOptions: WorkspaceSymbolRegistrationOptions =
+                { ResolveProvider = None
+                  WorkDoneProgress = None
+                }
+
+            Some
+                { Id = Guid.NewGuid().ToString()
+                  Method = "workspace/symbol"
+                  RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: WorkspaceSymbolParams) : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> = async {
         let pattern =
