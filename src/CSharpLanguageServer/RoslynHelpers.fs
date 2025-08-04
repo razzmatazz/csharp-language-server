@@ -16,6 +16,7 @@ open ICSharpCode.Decompiler.CSharp.Transforms
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.Build.Exceptions
+open Microsoft.Build.Construction
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -635,6 +636,23 @@ let tryLoadSolutionFromProjectFiles
         return Some msbuildWorkspace.CurrentSolution
     }
 
+let selectPreferredSolution (slnFiles: string list): option<string> =
+    let getProjectCount (slnPath: string) =
+        try
+            let sln = SolutionFile.Parse(slnPath)
+            Some (sln.ProjectsInOrder.Count, slnPath)
+        with _ ->
+            None
+
+    match slnFiles with
+    | [] -> None
+    | slnFiles ->
+        slnFiles
+        |> Seq.choose getProjectCount
+        |> Seq.sortByDescending fst
+        |> Seq.map snd
+        |> Seq.tryHead
+
 let findAndLoadSolutionOnDir
         (lspClient: ILspClient)
         (logger: ILog)
@@ -659,14 +677,11 @@ let findAndLoadSolutionOnDir
 
         do! logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)) )
 
-        let singleSolutionFound =
-            match solutionFiles with
-            | [x] -> Some x
-            | _ -> None
+        let preferredSlnFile = solutionFiles |> selectPreferredSolution
 
-        match singleSolutionFound with
+        match preferredSlnFile with
         | None ->
-            do! logMessage ("no or multiple .sln/.slnx files found on " + dir)
+            do! logMessage ("no single preferred .sln/.slnx file found on " + dir + "; fill load project files manually")
             do! logMessage ("looking for .csproj/fsproj files on " + dir + "..")
 
             let projFiles =
