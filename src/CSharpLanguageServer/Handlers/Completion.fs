@@ -20,17 +20,17 @@ module Completion =
 
     let private completionItemMemoryCache = new MemoryCache(new MemoryCacheOptions())
 
-    let private completionItemMemoryCacheSet (itemId: string) roslynDoc roslynCompletionItem =
+    let private completionItemMemoryCacheSet (cacheItemId: string) roslynDoc roslynCompletionItem =
         completionItemMemoryCache.Set<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem>(
-            key=itemId,
+            key=cacheItemId,
             value=(roslynDoc, roslynCompletionItem),
             absoluteExpiration=DateTimeOffset.Now.AddMinutes(5)
         )
         |> ignore
 
-    let private completionItemMemoryCacheGet (itemId: string) : option<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem> =
+    let private completionItemMemoryCacheGet (cacheItemId: string) : option<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem> =
         let mutable value = Unchecked.defaultof<obj>
-        if completionItemMemoryCache.TryGetValue(itemId, &value) then
+        if completionItemMemoryCache.TryGetValue(cacheItemId, &value) then
             Some(value :?> Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem)
         else
             None
@@ -216,29 +216,35 @@ module Completion =
                 else
                     async.Return None
 
-            let toLspCompletionList (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
-                seq {
-                    for item in completions.ItemsList do
-                        let itemId = Guid.NewGuid() |> string
+            let toLspCompletionItemsWithCacheInfo (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
+                completions.ItemsList
+                |> Seq.map (fun item -> (item, Guid.NewGuid() |> string))
+                |> Seq.map (fun (item, cacheItemId) ->
+                    let lspCompletionItem =
+                        { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
+                            Kind          = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
+                            SortText      = item.SortText |> Option.ofString
+                            FilterText    = item.FilterText |> Option.ofString
+                            InsertText    = item.DisplayText |> Option.ofString
+                            Data          = cacheItemId |> serialize |> Some
+                        }
 
-                        completionItemMemoryCacheSet itemId doc item
+                    (lspCompletionItem, cacheItemId, doc, item))
+                |> Array.ofSeq
 
-                        yield
-                            { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
-                                Kind          = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
-                                SortText      = item.SortText |> Option.ofString
-                                FilterText    = item.FilterText |> Option.ofString
-                                InsertText    = item.DisplayText |> Option.ofString
-                                Data          = itemId |> serialize |> Some
-                            }
-                }
+            let lspCompletionItemsWithCacheInfo =
+                roslynCompletions
+                |> Option.map toLspCompletionItemsWithCacheInfo
+
+            // cache roslyn completion items
+            for (_, cacheItemId, roslynDoc, roslynItem)
+                    in (lspCompletionItemsWithCacheInfo |> Option.defaultValue Array.empty) do
+                completionItemMemoryCacheSet cacheItemId roslynDoc roslynItem
 
             return
-                roslynCompletions
-                |> Option.map (fun completions ->
-                                   { IsIncomplete = true
-                                     Items = completions |> toLspCompletionList |> Seq.toArray
-                                     ItemDefaults = None })
+                lspCompletionItemsWithCacheInfo
+                |> Option.map (fun itemsWithCacheInfo -> itemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item))
+                |> Option.map (fun items -> { IsIncomplete = true; Items = items; ItemDefaults = None })
                 |> Option.map U2.C2
                 |> LspResult.success
     }
