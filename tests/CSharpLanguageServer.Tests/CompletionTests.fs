@@ -11,6 +11,16 @@ let testCompletionWorks () =
                                    "TestData/testCompletionWorks"
     client.StartAndWaitForSolutionLoad()
 
+    // resolve provider is necessary for lsp client to resolve
+    // detail and documentation props for a completion item
+    let haveResolveProvider =
+        client.GetState().ServerCapabilities
+        |> Option.bind (fun c -> c.CompletionProvider)
+        |> Option.bind (fun p -> p.ResolveProvider)
+        |> Option.defaultValue false
+
+    Assert.IsTrue(haveResolveProvider)
+
     use classFile = client.Open("Project/Class.cs")
 
     let completionParams0: CompletionParams =
@@ -113,6 +123,7 @@ let testCompletionWorksForExtensionMethods () =
         | Some item ->
             Assert.AreEqual("MethodB", item.Label)
             Assert.IsFalse(item.Detail.IsSome)
+            Assert.IsFalse(item.Documentation.IsSome)
             Assert.AreEqual(Some CompletionItemKind.Method, item.Kind)
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
