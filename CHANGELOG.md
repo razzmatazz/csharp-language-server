@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Fix how completion item details are resolved
+  - https://github.com/razzmatazz/csharp-language-server/pull/251
 * Apply simple heuristics to select a .sln/.slnx file when multiple are found.
   - https://github.com/razzmatazz/csharp-language-server/pull/250
 * Print error mesage to stderr in case of invalid args or a server crash.

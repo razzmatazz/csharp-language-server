@@ -3,11 +3,11 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.Reflection
 
+open Microsoft.Extensions.Caching.Memory
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
@@ -17,6 +17,8 @@ open CSharpLanguageServer.Logging
 [<RequireQualifiedAccess>]
 module Completion =
     let private _logger = LogProvider.getLoggerByName "Completion"
+
+    let private completionItemMemoryCache = new MemoryCache(new MemoryCacheOptions())
 
     let emptyRoslynOptionSet: Microsoft.CodeAnalysis.Options.OptionSet =
         let osEmptyOptionSetField =
@@ -79,6 +81,9 @@ module Completion =
         member __.ShouldTriggerCompletion(sourceText, position, completionTrigger) =
             service.ShouldTriggerCompletion(sourceText, position, completionTrigger)
 
+        member __.GetDescriptionAsync(doc, item, ct) =
+            service.GetDescriptionAsync(doc, item, ct)
+
     let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.Completion)
@@ -89,11 +94,12 @@ module Completion =
         match dynamicRegistration clientCapabilities with
         | true -> None
         | false ->
-            Some { ResolveProvider = None
+            Some { ResolveProvider = Some true
                    TriggerCharacters = Some ([| "."; "'"; |])
                    AllCommitCharacters = None
                    WorkDoneProgress = None
-                   CompletionItem = None }
+                   CompletionItem = None
+                 }
 
     let registration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistration clientCapabilities with
@@ -137,21 +143,31 @@ module Completion =
         | "TypeParameter" -> CompletionItemKind.TypeParameter
         | _ -> CompletionItemKind.Property
 
-    // TODO: Add parameters to label so that we can distinguish override versions?
-    // TODO: Change parameters to snippets like clangd
-    let private makeLspCompletionItem
-        (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
-        (cacheKey: uint64) =
-        { Ionide.LanguageServerProtocol.Types.CompletionItem.Create(item.DisplayText) with
-            Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
-            SortText         = item.SortText |> Option.ofString
-            FilterText       = item.FilterText |> Option.ofString
-            Detail           = item.InlineDescription |> Option.ofString
-            TextEditText     = item.DisplayTextPrefix |> Option.ofObj
-            InsertTextFormat = Some InsertTextFormat.PlainText
-            Data             = cacheKey |> serialize |> Some }
+    let parseAndFormatDocumentation (completionDescription: Microsoft.CodeAnalysis.Completion.CompletionDescription)
+            : (string option * string option) =
+        let codeBlockStartIndex = completionDescription.TaggedParts |> Seq.tryFindIndex (fun t -> t.Tag = "CodeBlockStart")
+        let codeBlockEndIndex = completionDescription.TaggedParts |> Seq.tryFindIndex (fun t -> t.Tag = "CodeBlockEnd")
 
-    let private cache = new LruCache<(Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionList)>(5)
+        match codeBlockStartIndex, codeBlockEndIndex with
+        | Some 0, Some codeBlockEndIndex ->
+            let synopsis =
+                completionDescription.TaggedParts
+                |> Seq.take codeBlockEndIndex
+                |> Seq.map _.Text
+                |> String.concat ""
+                |> Some
+
+            let documentationText =
+                completionDescription.TaggedParts
+                |> Seq.skip (codeBlockEndIndex+1)
+                |> Seq.skipWhile (fun t -> t.Tag = "LineBreak")
+                |> Seq.map _.Text
+                |> String.concat ""
+                |> Option.ofString
+
+            synopsis, documentationText
+        | _, _ ->
+            None, None
 
     let handle (context: ServerRequestContext) (p: CompletionParams) : Async<LspResult<U2<CompletionItem array, CompletionList> option>> = async {
         match context.GetDocument p.TextDocument.Uri with
@@ -173,56 +189,87 @@ module Completion =
                 |> _.WithBool("ShowNameSuggestions", false)
 
             let completionTrigger = CompletionContext.toCompletionTrigger p.Context
+
             let shouldTriggerCompletion =
                 p.Context |> Option.exists (fun x -> x.TriggerKind = CompletionTriggerKind.TriggerForIncompleteCompletions) ||
                 completionService.ShouldTriggerCompletion(sourceText, position, completionTrigger)
 
-            let! completions =
+            let! roslynCompletions =
                 if shouldTriggerCompletion then
                     completionService.GetCompletionsAsync(doc, position, completionOptions, completionTrigger, ct)
                     |> Async.map Option.ofObj
                 else
                     async.Return None
 
+            let toLspCompletionList (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
+                seq {
+                    for item in completions.ItemsList do
+                        let itemId = Guid.NewGuid() |> string
+
+                        completionItemMemoryCache.Set<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem>(
+                            key=itemId,
+                            value=(doc, item),
+                            absoluteExpiration=DateTimeOffset.Now.AddMinutes(5)
+                        )
+                        |> ignore
+
+                        yield
+                            { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
+                                Kind          = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
+                                SortText      = item.SortText |> Option.ofString
+                                FilterText    = item.FilterText |> Option.ofString
+                                InsertText    = item.DisplayText |> Option.ofString
+                                Data          = itemId |> serialize |> Some
+                            }
+                }
+
             return
-                completions
+                roslynCompletions
                 |> Option.map (fun completions ->
-                    let key = cache.add((doc, completions))
-                    let items =
-                        completions.ItemsList
-                        |> Seq.map (flip makeLspCompletionItem key)
-                        |> Array.ofSeq
-                    { IsIncomplete = true
-                      Items = items
-                      ItemDefaults = None })
+                                   { IsIncomplete = true
+                                     Items = completions |> toLspCompletionList |> Seq.toArray
+                                     ItemDefaults = None })
                 |> Option.map U2.C2
                 |> LspResult.success
     }
 
     let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
-        match
+        let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize
-            |> Option.bind cache.get
-            |> Option.bind (fun (doc, cachedItems) ->
-                cachedItems.ItemsList
-                |> Seq.tryFind (fun x -> x.DisplayText = item.Label && (item.SortText.IsNone || x.SortText = item.SortText.Value))
-                |> Option.map (fun x -> (doc, x)))
-        with
-        | Some (doc, cachedItem) ->
+            |> Option.bind (fun itemId ->
+                let mutable value = Unchecked.defaultof<obj>
+                if completionItemMemoryCache.TryGetValue(itemId, &value) then
+                    Some(value :?> Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem)
+                else
+                    None
+            )
+
+        match roslynDocAndItemMaybe with
+        | Some (doc, roslynCompletionItem) ->
             let completionService =
                 Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                 |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)"
 
             let! ct = Async.CancellationToken
             let! description =
-                completionService.GetDescriptionAsync(doc, cachedItem, ct)
+                completionService.GetDescriptionAsync(doc, roslynCompletionItem, ct)
                 |> Async.AwaitTask
                 |> Async.map Option.ofObj
-            // TODO: make the doc as a markdown string instead of a plain text
-            let itemDocumentation = description |> Option.map Documentation.fromCompletionDescription
-            return { item with Documentation = itemDocumentation |> Option.map U2.C2 }
-                   |> LspResult.success
+
+            let synopsis, documentation =
+                description
+                |> Option.map parseAndFormatDocumentation
+                |> Option.defaultValue (None, None)
+
+            let updatedItemDocumentation =
+                documentation
+                |> Option.map (fun d -> { Kind = MarkupKind.PlainText; Value = d } |> U2.C2)
+
+            return
+                { item with Detail = synopsis; Documentation = updatedItemDocumentation }
+                |> LspResult.success
+
         | None ->
             return item |> LspResult.success
     }
