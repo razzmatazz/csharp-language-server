@@ -212,15 +212,14 @@ module Completion =
                             |> Option.map parseAndFormatDocumentation
                             |> Option.defaultValue (None, None)
 
-                        let itemLabel = synopsis |> Option.defaultValue item.DisplayText
-
                         yield
-                            { Ionide.LanguageServerProtocol.Types.CompletionItem.Create itemLabel with
-                                Kind             = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
-                                SortText         = item.SortText |> Option.ofString
-                                FilterText       = item.FilterText |> Option.ofString
-                                InsertText       = item.DisplayText |> Option.ofString
-                                Documentation    = documentation |> Option.map (fun d -> { Kind = MarkupKind.Markdown; Value = d } |> U2.C2)
+                            { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
+                                Detail        = synopsis
+                                Kind          = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
+                                SortText      = item.SortText |> Option.ofString
+                                FilterText    = item.FilterText |> Option.ofString
+                                InsertText    = item.DisplayText |> Option.ofString
+                                Documentation = documentation |> Option.map (fun d -> { Kind = MarkupKind.Markdown; Value = d } |> U2.C2)
                             }
                 }
 

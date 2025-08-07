@@ -32,15 +32,15 @@ let testCompletionWorks () =
         Assert.IsFalse(cl.ItemDefaults.IsSome)
         Assert.AreEqual(6, cl.Items.Length)
 
-        let methodAItem = cl.Items |> Seq.tryFind (fun i -> i.InsertText = Some "MethodA")
+        let methodAItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodA")
         match methodAItem with
-        | None -> failwith "an item with InsertText 'MethodA' was expected for completion at this position"
+        | None -> failwith "an item with Label 'MethodA' was expected for completion at this position"
         | Some item ->
             completionItemForMethodA <- Some item
-            Assert.AreEqual(item.Label, "void Class.MethodA(string arg)")
+            Assert.AreEqual(item.Label, "MethodA")
+            Assert.AreEqual(item.Detail, Some "void Class.MethodA(string arg)")
             Assert.IsFalse(item.Documentation.IsSome)
             Assert.IsFalse(item.Tags.IsSome)
-            Assert.IsFalse(item.Detail.IsSome)
             Assert.AreEqual(item.InsertText, Some "MethodA")
             Assert.AreEqual(Some CompletionItemKind.Method, item.Kind)
             Assert.AreEqual(Some "MethodA", item.SortText)
@@ -51,12 +51,13 @@ let testCompletionWorks () =
             Assert.IsFalse(item.Data.IsSome)
             ()
 
-        let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.InsertText = Some "GetHashCode")
+        let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "GetHashCode")
         match getHashCodeItem with
-        | None -> failwith "an item with InsertText 'GetHashCode' was expected for completion at this position"
+        | None -> failwith "an item with Label 'GetHashCode' was expected for completion at this position"
         | Some item ->
             completionItemForMethodA <- Some item
-            Assert.AreEqual(item.Label, "int object.GetHashCode()")
+            Assert.AreEqual(item.Label, "GetHashCode")
+            Assert.AreEqual(item.Detail, Some "int object.GetHashCode()")
 
             match item.Documentation with
             | Some (U2.C2 markup) ->
@@ -65,7 +66,6 @@ let testCompletionWorks () =
             | _ -> failwith "Documentation w/ Kind=Markdown was expected for GetHashCode"
 
             Assert.IsFalse(item.Tags.IsSome)
-            Assert.IsFalse(item.Detail.IsSome)
             Assert.AreEqual(item.InsertText, Some "GetHashCode")
             Assert.AreEqual(Some CompletionItemKind.Method, item.Kind)
             Assert.AreEqual(Some "GetHashCode", item.SortText)
@@ -102,10 +102,11 @@ let testCompletionWorksForExtensionMethods () =
     | Some (U2.C2 cl) ->
         Assert.AreEqual(7, cl.Items.Length)
 
-        let methodBItem = cl.Items |> Seq.tryFind (fun i -> i.InsertText = Some "MethodB")
+        let methodBItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodB")
         match methodBItem with
         | Some item ->
-            Assert.AreEqual("(extension) string Class.MethodB()", item.Label)
+            Assert.AreEqual("MethodB", item.Label)
+            Assert.AreEqual(Some "(extension) string Class.MethodB()", item.Detail)
             Assert.AreEqual(Some CompletionItemKind.Method, item.Kind)
             ()
 
