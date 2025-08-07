@@ -20,6 +20,21 @@ module Completion =
 
     let private completionItemMemoryCache = new MemoryCache(new MemoryCacheOptions())
 
+    let private completionItemMemoryCacheSet (itemId: string) roslynDoc roslynCompletionItem =
+        completionItemMemoryCache.Set<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem>(
+            key=itemId,
+            value=(roslynDoc, roslynCompletionItem),
+            absoluteExpiration=DateTimeOffset.Now.AddMinutes(5)
+        )
+        |> ignore
+
+    let private completionItemMemoryCacheGet (itemId: string) : option<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem> =
+        let mutable value = Unchecked.defaultof<obj>
+        if completionItemMemoryCache.TryGetValue(itemId, &value) then
+            Some(value :?> Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem)
+        else
+            None
+
     let emptyRoslynOptionSet: Microsoft.CodeAnalysis.Options.OptionSet =
         let osEmptyOptionSetField =
             typeof<Microsoft.CodeAnalysis.Options.OptionSet>
@@ -206,12 +221,7 @@ module Completion =
                     for item in completions.ItemsList do
                         let itemId = Guid.NewGuid() |> string
 
-                        completionItemMemoryCache.Set<Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem>(
-                            key=itemId,
-                            value=(doc, item),
-                            absoluteExpiration=DateTimeOffset.Now.AddMinutes(5)
-                        )
-                        |> ignore
+                        completionItemMemoryCacheSet itemId doc item
 
                         yield
                             { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
@@ -236,14 +246,8 @@ module Completion =
     let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
         let roslynDocAndItemMaybe =
             item.Data
-            |> Option.bind deserialize
-            |> Option.bind (fun itemId ->
-                let mutable value = Unchecked.defaultof<obj>
-                if completionItemMemoryCache.TryGetValue(itemId, &value) then
-                    Some(value :?> Microsoft.CodeAnalysis.Document * Microsoft.CodeAnalysis.Completion.CompletionItem)
-                else
-                    None
-            )
+            |> Option.bind deserialize<string option>
+            |> Option.bind completionItemMemoryCacheGet
 
         match roslynDocAndItemMaybe with
         | Some (doc, roslynCompletionItem) ->
