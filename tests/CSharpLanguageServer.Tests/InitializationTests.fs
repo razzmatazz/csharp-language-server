@@ -90,7 +90,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         { WorkDoneProgress    = None
           TriggerCharacters   = Some [|"."; "'"|]
           AllCommitCharacters = None
-          ResolveProvider     = None
+          ResolveProvider     = Some true
           CompletionItem      = None }
         |> Some,
         serverCaps.CompletionProvider)

@@ -81,6 +81,7 @@
     <PackageReference Include="FSharp.Control.AsyncSeq" />
     <PackageReference Include="ICSharpCode.Decompiler" />
     <PackageReference Include="Ionide.LanguageServerProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Microsoft.Build.Locator" />
     <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />

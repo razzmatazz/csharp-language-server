@@ -264,25 +264,3 @@ module CompletionContext =
                 |> Option.map Completion.CompletionTrigger.CreateInsertionTrigger
             | _ -> None)
         |> Option.defaultValue (Completion.CompletionTrigger.Invoke)
-
-
-module CompletionDescription =
-    let toMarkdownString (description: CompletionDescription) : string =
-        description.TaggedParts
-        |> Seq.map (fun taggedText ->
-            // WTF, if the developers of Roslyn don't want users to use TaggedText, why they set TaggedText to public?
-            // If they indeed want users to use it, why they set lots of imported fields to internal?
-            match taggedText.Tag with
-            // TODO: Support code block?
-            | "CodeBlockStart"   -> "`` " + taggedText.Text
-            | "CodeBlockEnd"     -> " ``" + taggedText.Text
-            | TextTags.LineBreak -> "\n\n"
-            | _                  -> taggedText.Text)
-        |> String.concat ""
-
-    let toDocumentation (description: CompletionDescription) : MarkupContent =
-        { Kind = MarkupKind.Markdown; Value = toMarkdownString description }
-
-
-module Documentation =
-    let fromCompletionDescription = CompletionDescription.toDocumentation
