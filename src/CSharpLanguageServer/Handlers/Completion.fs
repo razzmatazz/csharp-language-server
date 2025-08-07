@@ -4,7 +4,6 @@ open System
 open System.Reflection
 
 open Microsoft.Extensions.Caching.Memory
-open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
@@ -195,15 +194,15 @@ module Completion =
                 p.Context |> Option.exists (fun x -> x.TriggerKind = CompletionTriggerKind.TriggerForIncompleteCompletions) ||
                 completionService.ShouldTriggerCompletion(sourceText, position, completionTrigger)
 
-            let! completions =
+            let! roslynCompletions =
                 if shouldTriggerCompletion then
                     completionService.GetCompletionsAsync(doc, position, completionOptions, completionTrigger, ct)
                     |> Async.map Option.ofObj
                 else
                     async.Return None
 
-            let buildLspCompletionList (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
-                asyncSeq {
+            let toLspCompletionList (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
+                seq {
                     for item in completions.ItemsList do
                         let itemId = Guid.NewGuid() |> string
 
@@ -224,19 +223,12 @@ module Completion =
                             }
                 }
 
-            let! lspCompletionList = async {
-                match completions with
-                | None -> return None
-                | Some completions ->
-                    let! lspCompletionItems = completions |> buildLspCompletionList |> AsyncSeq.toArrayAsync
-
-                    return Some { IsIncomplete = true
-                                  Items = lspCompletionItems
-                                  ItemDefaults = None }
-            }
-
             return
-                lspCompletionList
+                roslynCompletions
+                |> Option.map (fun completions ->
+                                   { IsIncomplete = true
+                                     Items = completions |> toLspCompletionList |> Seq.toArray
+                                     ItemDefaults = None })
                 |> Option.map U2.C2
                 |> LspResult.success
     }
