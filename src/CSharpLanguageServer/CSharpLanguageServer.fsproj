@@ -29,6 +29,7 @@
     <Compile Include="ProgressReporter.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="DocumentationUtil.fs" />
+    <Compile Include="Diagnostics.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State/ServerState.fs" />
     <Compile Include="State/ServerRequestContext.fs" />
@@ -67,7 +68,6 @@
     <Compile Include="Handlers/Workspace.fs" />
     <Compile Include="Handlers/WorkspaceSymbol.fs" />
     <Compile Include="Lsp/Server.fs" />
-    <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
