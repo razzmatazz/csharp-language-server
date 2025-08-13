@@ -428,7 +428,7 @@ type TfmCategory =
     | Unknown
 
 
-let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
+let selectLatestTfm (tfms: string seq) : string option =
     let parseTfm (tfm: string) : TfmCategory =
         let patterns = [
             @"^net(?<major>\d)(?<minor>\d)?(?<build>\d)?$", NetFramework
@@ -467,7 +467,7 @@ let selectMostCapableCompatibleTfm (tfms: string seq) : string option =
 
 
 let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
-    let tfms = new List<string>()
+    let targetFrameworkCandidates = new List<List<string>>()
 
     for projectFilename in projs do
         let projectCollection = new Microsoft.Build.Evaluation.ProjectCollection();
@@ -480,20 +480,17 @@ let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
                 s |> Option.ofObj
                     |> Option.bind (fun s -> if String.IsNullOrEmpty(s) then None else Some s)
 
-            let targetFramework = buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty
+            let targetFramework =
+              match buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty with
+              | Some tfm -> [tfm.Trim()]
+              | None -> []
 
-            match targetFramework with
-            | Some tfm ->
-                tfms.Add(tfm.Trim())
-            | _ -> ()
+            let targetFrameworks =
+              match buildProject.GetPropertyValue("TargetFrameworks") |> noneIfEmpty with
+              | Some tfms -> tfms.Split(";") |> Array.map (fun s -> s.Trim()) |> List.ofArray
+              | None -> []
 
-            let targetFrameworks = buildProject.GetPropertyValue("TargetFrameworks") |> noneIfEmpty
-
-            match targetFrameworks with
-            | Some semicolonSeparatedTfms ->
-                for tfm in semicolonSeparatedTfms.Split(";") do
-                    tfms.Add(tfm.Trim())
-            | _ -> ()
+            targetFrameworkCandidates.Add(List(targetFramework @ targetFrameworks))
 
             projectCollection.UnloadProject(buildProject)
         with
@@ -504,18 +501,23 @@ let applyWorkspaceTargetFrameworkProp (logger: ILog) (projs: string seq) props =
                 >> Log.addContext "ex" (string (ipfe.GetType()))
             )
 
-    let distinctTfms = tfms |> Set.ofSeq
+    let distinctCommonTfms =
+        targetFrameworkCandidates
+        |> Seq.map Set.ofSeq
+        |> Seq.reduce Set.intersect
+        |> Seq.distinct
+        |> Set.ofSeq
 
     logger.debug (
-        Log.setMessage "applyWorkspaceTargetFrameworkProp: distinctTfms={distinctTfms}"
-        >> Log.addContext "distinctTfms" (String.Join(";", distinctTfms))
+        Log.setMessage "applyWorkspaceTargetFrameworkProp: distinctCommonTfms={distinctCommonTfms}"
+        >> Log.addContext "distinctCommonTfms" (String.Join(";", distinctCommonTfms))
     )
 
-    match distinctTfms.Count with
+    match distinctCommonTfms.Count with
     | 0 -> props
     | 1 -> props
     | _ ->
-        match selectMostCapableCompatibleTfm distinctTfms with
+        match selectLatestTfm distinctCommonTfms with
         | Some tfm -> props |> Map.add "TargetFramework" tfm
         | None -> props
 
