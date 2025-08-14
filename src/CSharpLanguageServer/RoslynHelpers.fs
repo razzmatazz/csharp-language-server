@@ -505,22 +505,18 @@ let loadProjectTfms (logger: ILog) (projs: string seq) : Map<string, list<string
 
 
 let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>) props : Map<string, string> =
-    let distinctCommonTfms =
-        tfmsPerProject.Values
-        |> Seq.map Set.ofSeq
-        |> Seq.reduce Set.intersect
-        |> Seq.distinct
-        |> Set.ofSeq
+    let selectedTfm =
+        match tfmsPerProject.Count with
+        | 0 -> None
+        | _ ->
+            tfmsPerProject.Values
+            |> Seq.map Set.ofSeq
+            |> Set.intersectMany
+            |> selectLatestTfm
 
-
-    match distinctCommonTfms.Count with
-    | 0 -> props
-    | 1 -> props
-    | _ ->
-        match selectLatestTfm distinctCommonTfms with
-        | Some tfm -> props |> Map.add "TargetFramework" tfm
-        | None -> props
-
+    match selectedTfm with
+    | Some tfm -> props |> Map.add "TargetFramework" tfm
+    | None -> props
 
 let resolveDefaultWorkspaceProps (logger: ILog) projs : Map<string, string> =
     let tfmsPerProject = loadProjectTfms logger projs
