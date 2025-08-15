@@ -41,7 +41,9 @@ module Completion =
             |> _.GetField("Empty", BindingFlags.Static|||BindingFlags.NonPublic)
             |> nonNull "Microsoft.CodeAnalysis.Options.OptionSet.Empty"
 
-        osEmptyOptionSetField.GetValue(null) :?> Microsoft.CodeAnalysis.Options.OptionSet
+        osEmptyOptionSetField.GetValue(null)
+            |> nonNull "Microsoft.CodeAnalysis.Options.OptionSet.Empty"
+            :?> Microsoft.CodeAnalysis.Options.OptionSet
 
     /// the type reflects on internal class Microsoft.CodeAnalysis.Completion.CompletionOptions
     /// see https://github.com/dotnet/roslyn/blob/main/src/Features/Core/Portable/Completion/CompletionOptions.cs
@@ -88,7 +90,7 @@ module Completion =
 
             let parameters: obj array = [| doc; position; completionOptions.Object; emptyRoslynOptionSet; completionTrigger; null; ct |]
 
-            let result = getCompletionsAsync7MI.Invoke(service, parameters)
+            let result = getCompletionsAsync7MI.Invoke(service, parameters) |> nonNull "result of getCompletionsAsync7MI"
 
             (result :?> System.Threading.Tasks.Task<Microsoft.CodeAnalysis.Completion.CompletionList>)
             |> Async.AwaitTask

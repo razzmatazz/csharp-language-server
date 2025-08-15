@@ -56,7 +56,13 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
             let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
-            let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{l.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+
+            let containingAssemblyName =
+                l.MetadataModule
+                |> nonNull "l.MetadataModule"
+                |> _.ContainingAssembly.Name
+
+            let uri = $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
 
             let mdDocument, stateChanges =
                 match Map.tryFind uri state.DecompiledMetadata with
@@ -66,7 +72,7 @@ type ServerRequestContext (requestId: int, state: ServerState, emitServerEvent) 
                     let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
 
                     let csharpMetadata = { ProjectName = project.Name
-                                           AssemblyName = l.MetadataModule.ContainingAssembly.Name
+                                           AssemblyName = containingAssemblyName
                                            SymbolName = fullName
                                            Source = text }
                     (documentFromMd, [
