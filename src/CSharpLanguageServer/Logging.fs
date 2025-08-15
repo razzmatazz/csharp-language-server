@@ -535,6 +535,7 @@ module Providers =
                         typedefof<bool>
                     |]
                 )
+                |> nonNull "ndcContextType[.PushProperty]"
 
             let nameParam = Expression.Parameter(typedefof<string>, "name")
 
@@ -571,6 +572,7 @@ module Providers =
                         typedefof<bool>
                     |]
                 )
+                |> nonNull "logManagerType[.ForContext]"
 
             let propertyNameParam = Expression.Parameter(typedefof<string>, "propertyName")
 
@@ -637,7 +639,9 @@ module Providers =
                 let loggerType = Type.GetType("Serilog.ILogger, Serilog")
                                  |> nonNull "Type.GetType('Serilog.ILogger, Serilog')"
 
-                let isEnabledMethodInfo = loggerType.GetMethod("IsEnabled", [| logEventLevelType |])
+                let isEnabledMethodInfo =
+                    loggerType.GetMethod("IsEnabled", [| logEventLevelType |])
+                    |> nonNull "loggerType[.IsEnabled]"
 
                 let instanceParam = Expression.Parameter(typedefof<obj>)
 
@@ -664,6 +668,7 @@ module Providers =
                             typedefof<obj[]>
                         |]
                     )
+                    |> nonNull "loggerType[.Write]"
 
                 let messageParam = Expression.Parameter(typedefof<string>)
                 let propertyValuesParam = Expression.Parameter(typedefof<obj[]>)
@@ -692,6 +697,7 @@ module Providers =
                             typedefof<obj[]>
                         |]
                     )
+                    |> nonNull "loggerType[.Write]"
 
                 let exceptionParam = Expression.Parameter(typedefof<exn>)
 
@@ -808,6 +814,7 @@ module Providers =
 
                     let createLoggerMethodInfo =
                         factoryType.GetMethod("CreateLogger", [| typedefof<string> |])
+                        |> nonNull "factoryType[.CreateLogger]"
 
                     let instanceParam = Expression.Parameter(typedefof<ILoggerFactory>)
                     let nameParam = Expression.Parameter(typedefof<string>)
@@ -862,11 +869,12 @@ module Providers =
                 let levelCast = Expression.Convert(levelParam, logEventLevelType)
 
                 let isEnabled =
-                    let isEnabledMethodInfo = loggerType.GetMethod("IsEnabled", [| logEventLevelType |])
+                    let isEnabledMethodInfo =
+                        loggerType.GetMethod("IsEnabled", [| logEventLevelType |])
+                        |> nonNull "loggerType[.IsEnabled]"
 
                     let isEnabledMethodCall =
                         Expression.Call(instanceCast, isEnabledMethodInfo, levelCast)
-
 
                     Expression
                         .Lambda<Func<ILogger, MicrosoftLogLevel, bool>>(isEnabledMethodCall, instanceParam, levelParam)
@@ -892,6 +900,7 @@ module Providers =
                                 |],
                                 null
                             )
+                            |> nonNull "loggerExtensions[.Log]"
 
                         let writeMethodExp =
                             Expression.Call(
@@ -933,6 +942,7 @@ module Providers =
                                 null
 
                             )
+                            |> nonNull "loggerExtensions[.Log]"
 
                         let exnParam = Expression.Parameter(typedefof<exn>)
 

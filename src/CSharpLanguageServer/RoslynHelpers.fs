@@ -53,7 +53,9 @@ type DocumentSymbolCollectorForMatchingSymbolName
         else
             suggestedLocations |> Seq.rev |> List.ofSeq
 
-    override __.Visit(node) =
+    override __.Visit(node: SyntaxNode | null) =
+        let node = node |> nonNull "node"
+
         if sym.Kind = SymbolKind.Method then
             if node :? MethodDeclarationSyntax then
                 let nodeMethodDecl = node :?> MethodDeclarationSyntax
@@ -251,7 +253,10 @@ type ExtractInterfaceOptionsServiceInterceptor (logMessage) =
                     featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult")
                     |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
 
-                let locationEnumType = extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
+                let locationEnumType =
+                    extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
+                    |> nonNull "extractInterfaceOptionsResultType.GetNestedType('ExtractLocation')"
+
                 let location = Enum.Parse(locationEnumType, "NewFile") // or "SameFile"
 
                 let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
@@ -295,7 +300,9 @@ type MoveStaticMembersOptionsServiceInterceptor (_logMessage) =
                 let argSelectedMembers = invocation.Arguments[2] :?> ImmutableArray<ISymbol>
 
                 let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
-                let msmOptionsType = featuresAssembly.GetType("Microsoft.CodeAnalysis.MoveStaticMembers.MoveStaticMembersOptions")
+                let msmOptionsType =
+                    featuresAssembly.GetType("Microsoft.CodeAnalysis.MoveStaticMembers.MoveStaticMembersOptions")
+                    |> nonNull "typeof<Microsoft.CodeAnalysis.MoveStaticMembers.MoveStaticMembersOptions>"
 
                 let newStaticClassName = "NewStaticClass"
 
@@ -796,7 +803,16 @@ let makeDocumentFromMetadata
         (l: Microsoft.CodeAnalysis.Location)
         (fullName: string) =
     let mdLocation = l
-    let reference = compilation.GetMetadataReference(mdLocation.MetadataModule.ContainingAssembly)
+
+    let containingAssembly =
+        mdLocation.MetadataModule
+        |> nonNull "mdLocation.MetadataModule"
+        |> _.ContainingAssembly
+
+    let reference =
+        compilation.GetMetadataReference(containingAssembly)
+        |> nonNull "compilation.GetMetadataReference(containingAssembly)"
+
     let peReference = reference :?> PortableExecutableReference |> Option.ofObj
     let assemblyLocation = peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
 
@@ -813,7 +829,7 @@ let makeDocumentFromMetadata
 
     let text = decompiler.DecompileTypeAsString(fullTypeName)
 
-    let mdDocumentFilename = $"$metadata$/projects/{project.Name}/assemblies/{mdLocation.MetadataModule.ContainingAssembly.Name}/symbols/{fullName}.cs"
+    let mdDocumentFilename = $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
     let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
 
     let mdDocument = SourceText.From(text) |> mdDocumentEmpty.WithText

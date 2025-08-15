@@ -90,10 +90,14 @@ module InlayHint =
 
     let private toInlayHint (semanticModel: SemanticModel) (lines: TextLineCollection) (node: SyntaxNode): InlayHint option =
         let validateType (ty: ITypeSymbol | null) =
-            if isNull ty || ty :? IErrorTypeSymbol || ty.Name = "var" then
-                None
-            else
-                Some ty
+            match ty |> Option.ofObj with
+            | None -> None
+            | Some ty ->
+                if ty :? IErrorTypeSymbol || ty.Name = "var" then
+                    None
+                else
+                    Some ty
+
         let typeDisplayStyle = SymbolDisplayFormat(
             genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
             miscellaneousOptions = (SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral ||| SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier ||| SymbolDisplayMiscellaneousOptions.UseSpecialTypes))
