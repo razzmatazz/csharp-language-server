@@ -17,7 +17,7 @@ open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
-    let private logger = LogProvider.getLoggerByName "TextDocumentSync"
+    let private logger = Logging.getLoggerByName "TextDocumentSync"
 
     let private applyLspContentChangesOnRoslynSourceText
             (changes: TextDocumentContentChangeEvent[])

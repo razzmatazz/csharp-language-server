@@ -16,7 +16,7 @@ open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Completion =
-    let private _logger = LogProvider.getLoggerByName "Completion"
+    let private _logger = Logging.getLoggerByName "Completion"
 
     let private completionItemMemoryCache = new MemoryCache(new MemoryCacheOptions())
 
