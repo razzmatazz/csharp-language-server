@@ -29,13 +29,12 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="9.0.8" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageVersion Include="NUnit" Version="3.14.0" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="9.0.0" />
-    <PackageVersion Include="Serilog" Version="3.1.1" />
-    <PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
-    <PackageVersion Include="Serilog.Sinks.Async" Version="1.5.0" />
   </ItemGroup>
 </Project>

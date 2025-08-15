@@ -15,19 +15,23 @@ open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Util
+
 
 type CSharpCodeActionResolutionData =
     { TextDocumentUri: string
       Range: Range }
 
+
 [<RequireQualifiedAccess>]
 module CodeAction =
-    let private logger = LogProvider.getLoggerByName "CodeAction"
+    let private logger = Logging.getLoggerByName "CodeAction"
 
     let private instantiateRoslynProviders<'ProviderType> (isValidProvider: Type -> bool) =
         let assemblies =
@@ -81,11 +85,10 @@ module CodeAction =
             try
                 do! refactoringProvider.ComputeRefactoringsAsync(codeActionContext) |> Async.AwaitTask
             with ex ->
-                logger.error (
-                    Log.setMessage "cannot compute refactorings for {provider}"
-                    >> Log.addContext "provider" (string refactoringProvider)
-                    >> Log.addException ex
-                )
+                logger.LogError(
+                    ex,
+                    "cannot compute refactorings for {provider}",
+                    refactoringProvider)
 
         // register code fixes
         let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -127,10 +130,7 @@ module CodeAction =
                     try
                         do! codeFixProvider.RegisterCodeFixesAsync(codeFixContext) |> Async.AwaitTask
                     with ex ->
-                        logger.error (
-                            Log.setMessage "error in RegisterCodeFixesAsync()"
-                            >> Log.addException ex
-                        )
+                        logger.LogError(ex, "error in RegisterCodeFixesAsync()")
 
         let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
             let nestedCAProp =
@@ -156,10 +156,7 @@ module CodeAction =
             let! value = op ()
             return Some value
         with ex ->
-            logger.warn (
-                Log.setMessage "Error in asyncMaybeOnException"
-                >> Log.addException ex
-            )
+            logger.LogWarning(ex, "Error in asyncMaybeOnException")
             return None
     }
 
@@ -427,10 +424,7 @@ module CodeAction =
                     let! resolvedCA = toResolvedLspCodeAction ca
 
                     if resolvedCA.IsNone then
-                        logger.error (
-                            Log.setMessage "handleCodeActionResolve: could not resolve {action} - null"
-                            >> Log.addContext "action" (string ca)
-                        )
+                        logger.LogError("handleCodeActionResolve: could not resolve {action} - null", ca)
 
                     return resolvedCA.Value
                   }

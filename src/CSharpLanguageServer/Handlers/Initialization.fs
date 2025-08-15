@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
@@ -17,7 +18,7 @@ open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module Initialization =
-    let private logger = LogProvider.getLoggerByName "Initialization"
+    let private logger = Logging.getLoggerByName "Initialization"
 
     let handleInitialize (lspClient: ILspClient)
                          (setupTimer: unit -> unit)
@@ -32,19 +33,14 @@ module Initialization =
 
         let serverName = "csharp-ls"
         let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
-        logger.info (
-            Log.setMessage "initializing, {name} version {version}"
-            >> Log.addContext "name" serverName
-            >> Log.addContext "version" serverVersion
-        )
+        logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
 
         do! windowShowMessage(
             sprintf "csharp-ls: initializing, version %s" serverVersion)
 
-        logger.info (
-            Log.setMessage "{name} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
-            >> Log.addContext "name" serverName
-        )
+        logger.LogInformation(
+            "{serverName} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server",
+            serverName)
 
         do! windowShowMessage(
             sprintf "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName)
@@ -65,19 +61,15 @@ module Initialization =
 
         let vsInstance = vsInstanceList |> Seq.head
 
-        logger.info(
-            Log.setMessage "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance"
-            >> Log.addContext "vsInstanceName" vsInstance.Name
-            >> Log.addContext "vsInstanceVersion" (string vsInstance.Version)
-        )
+        logger.LogInformation(
+            "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance",
+            vsInstance.Name,
+            (string vsInstance.Version))
 
         MSBuildLocator.RegisterInstance(vsInstance)
 
 (*
-        logger.trace (
-            Log.setMessage "handleInitialize: p.Capabilities={caps}"
-            >> Log.addContext "caps" (serialize p.Capabilities)
-        )
+        logger.LogTrace("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities))
 *)
         context.Emit(ClientCapabilityChange p.Capabilities)
 
@@ -111,9 +103,7 @@ module Initialization =
                           (_p: unit)
             : Async<LspResult<unit>> =
         async {
-            logger.trace (
-                Log.setMessage "handleInitialized: \"initialized\" notification received from client"
-            )
+            logger.LogTrace("handleInitialized: \"initialized\" notification received from client")
 
             let registrationParams = { Registrations = getRegistrations context.ClientCapabilities |> List.toArray }
 
@@ -122,16 +112,10 @@ module Initialization =
                 match! lspClient.ClientRegisterCapability registrationParams with
                 | Ok _ -> ()
                 | Error error ->
-                    logger.warn(
-                        Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
-                        >> Log.addContext "error" (string error)
-                    )
+                    logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", error)
             with
             | ex ->
-                logger.warn(
-                    Log.setMessage "handleInitialized: didChangeWatchedFiles registration has failed with {error}"
-                    >> Log.addContext "error" (string ex)
-                )
+                logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", string ex)
 
             //
             // retrieve csharp settings
@@ -169,9 +153,9 @@ module Initialization =
                 | _ -> ()
             with
             | ex ->
-                logger.warn(
-                    Log.setMessage "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}"
-                    >> Log.addContext "error" (ex |> string)
+                logger.LogWarning(
+                    "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",
+                    ex |> string
                 )
 
             //
@@ -179,8 +163,7 @@ module Initialization =
             //
             stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
 
-            logger.trace(
-                Log.setMessage "handleInitialized: OK")
+            logger.LogTrace("handleInitialized: OK")
 
             return Ok()
         }

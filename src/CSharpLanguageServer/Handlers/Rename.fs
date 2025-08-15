@@ -10,6 +10,7 @@ open Microsoft.CodeAnalysis.Rename
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
@@ -19,7 +20,7 @@ open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Rename =
-    let private logger = LogProvider.getLoggerByName "Rename"
+    let private logger = Logging.getLoggerByName "Rename"
 
     let private lspDocChangesFromSolutionDiff
         (ct: CancellationToken)
@@ -139,9 +140,9 @@ module Rename =
                 | :? ForEachStatementSyntax as forEachSyn              -> forEachSyn.Identifier.Span     |> Some
                 | :? LocalFunctionStatementSyntax as localFunStSyn     -> localFunStSyn.Identifier.Span  |> Some
                 | node ->
-                    logger.debug (
-                        Log.setMessage "textDocument/prepareRename: unhandled Type={type}"
-                        >> Log.addContext "type" (node.GetType().Name)
+                    logger.LogDebug(
+                        "textDocument/prepareRename: unhandled Type={type}",
+                        (node.GetType().Name)
                     )
                     None
 

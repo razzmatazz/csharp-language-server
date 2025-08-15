@@ -3,15 +3,16 @@ module CSharpLanguageServer.Types
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
 
 type ServerSettings =
     { SolutionPath: string option
-      LogLevel: string
+      LogLevel: LogLevel
       ApplyFormattingOptions: bool
     }
     static member Default: ServerSettings =
         { SolutionPath = None
-          LogLevel = "log"
+          LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
         }
 

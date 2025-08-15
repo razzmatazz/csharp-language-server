@@ -17,7 +17,7 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Workspace =
-    let private logger = LogProvider.getLoggerByName "Workspace"
+    let private logger = Logging.getLoggerByName "Workspace"
 
     let dynamicRegistration (clientCapabilities: ClientCapabilities) =
         clientCapabilities.Workspace

@@ -8,6 +8,7 @@ open System.Threading.Tasks
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Types
@@ -150,7 +151,7 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
-let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = async {
+let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
@@ -198,10 +199,9 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
             postSelf ProcessRequestQueue
             return newState
         | None ->
-            logger.debug (
-                Log.setMessage "serverEventLoop/FinishRequest#{requestId}: request not found in state.RunningRequests"
-                >> Log.addContext "requestId" (requestId |> string)
-            )
+            logger.LogDebug(
+                "serverEventLoop/FinishRequest#{requestId}: request not found in state.RunningRequests",
+                requestId)
             return state
 
     | ProcessRequestQueue ->
@@ -332,10 +332,9 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
                 match docAndTypeMaybe with
                 | None ->
                     // could not find document for this enqueued uri
-                    logger.debug (
-                        Log.setMessage "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\""
-                        >> Log.addContext "docUri" (string docUri)
-                    )
+                    logger.LogDebug(
+                        "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
+                        string docUri)
                     return newState
 
                 | Some (doc, _docType) ->
@@ -375,10 +374,7 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
 
         match result with
         | Error exn ->
-            logger.debug (
-                Log.setMessage "PushDiagnosticsDocumentDiagnosticsResolution: {exn}"
-                >> Log.addContext "exn" (exn)
-            )
+            logger.LogDebug("PushDiagnosticsDocumentDiagnosticsResolution: {exn}", exn)
             return newState
 
         | Ok (docUri, version, diagnostics) ->
@@ -418,7 +414,7 @@ let processServerEvent (logger: ILog) state postSelf msg : Async<ServerState> = 
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
-    let logger = LogProvider.getLoggerByName "serverEventLoop"
+    let logger = Logging.getLoggerByName "serverEventLoop"
 
     let rec loop state = async {
         let! msg = inbox.Receive()
@@ -427,10 +423,10 @@ let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
             let! newState = msg |> processServerEvent logger state inbox.Post
             return! loop newState
         with ex ->
-            logger.debug (
-                Log.setMessage "serverEventLoop: crashed with {exception}"
-                >> Log.addContext "exception" (string ex)
-            )
+            logger.LogError(
+                ex,
+                "serverEventLoop: crashed with {exception}",
+                string ex)
             raise ex
     }
 

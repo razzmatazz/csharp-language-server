@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open StreamJsonRpc
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
@@ -32,7 +33,7 @@ type CSharpLspServer(
         settings: ServerSettings
     ) =
 
-    let _logger = LogProvider.getLoggerByName "Server"
+    let _logger = Logging.getLoggerByName "Server"
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
@@ -264,7 +265,7 @@ type CSharpLspServer(
         override __.CSharpMetadata(p) = p |> withReadOnlyContext CSharpMetadata.handle
 
 module Server =
-    let logger = LogProvider.getLoggerByName "LSP"
+    let logger = Logging.getLoggerByName "LSP"
 
     let private createRpc (handler: IJsonRpcMessageHandler) : JsonRpc =
         let rec (|HandleableException|_|) (e: exn) =
@@ -326,9 +327,5 @@ module Server =
             let result = startCore options
             int result
         with ex ->
-            logger.error (
-                Log.setMessage "{name} crashed:"
-                >> Log.addContext "name" (Process.GetCurrentProcess().ProcessName)
-                >> Log.addException ex
-            )
+            logger.LogError("{name} crashed", ex, (Process.GetCurrentProcess().ProcessName))
             3

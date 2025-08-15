@@ -4,12 +4,11 @@ open System
 open System.Reflection
 
 open Argu
-open Serilog
-open Serilog.Core
-open Serilog.Events
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Logging
 
 [<EntryPoint>]
 let entry args =
@@ -24,36 +23,22 @@ let entry args =
 
         let logLevelArg =
             serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
-            |> Option.defaultValue "log"
 
         let logLevel =
             match logLevelArg with
-                | "error" -> LogEventLevel.Error
-                | "warning" -> LogEventLevel.Warning
-                | "info" -> LogEventLevel.Information
-                | "log" -> LogEventLevel.Verbose
-                | _ -> LogEventLevel.Information
+            | Some "error" -> LogLevel.Error
+            | Some "warning" -> LogLevel.Warning
+            | Some "info" -> LogLevel.Information
+            | Some "debug" -> LogLevel.Debug
+            | Some "trace" -> LogLevel.Trace
+            | _ -> LogLevel.Information
 
-        let logConfig =
-                LoggerConfiguration()
-                    .MinimumLevel.ControlledBy(LoggingLevelSwitch(logLevel))
-                    .Enrich.FromLogContext()
-                    .WriteTo.Async(fun conf ->
-                        conf.Console(
-                            outputTemplate =
-                                "[{Timestamp:HH:mm:ss.fff} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}",
-                            // Redirect all logs to stderr since stdout is used to communicate with client.
-                            standardErrorFromLevel = Nullable<_>(LogEventLevel.Verbose),
-                            theme = Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code
-                        )
-                        |> ignore)
-
-        Log.Logger <- logConfig.CreateLogger()
+        Logging.setupLogging logLevel
 
         let settings = {
             ServerSettings.Default with
                 SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
-                LogLevel = logLevelArg
+                LogLevel = logLevel
         }
 
         Server.start settings

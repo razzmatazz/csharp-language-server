@@ -24,10 +24,12 @@ open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.Host.Mef
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.Text
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Util
 
 type DocumentSymbolCollectorForMatchingSymbolName
         (documentUri, sym: ISymbol) =
@@ -342,7 +344,7 @@ type RemoteHostClientProviderInterceptor (_logMessage) =
                 NotImplementedException(string invocation.Method) |> raise
 
 type WorkspaceServicesInterceptor () =
-    let logger = LogProvider.getLoggerByName "WorkspaceServicesInterceptor"
+    let logger = Logging.getLoggerByName "WorkspaceServicesInterceptor"
 
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
@@ -385,10 +387,7 @@ type WorkspaceServicesInterceptor () =
                         null
 
                     | _ ->
-                        logger.debug (
-                            Log.setMessage "GetService failed for {serviceType}"
-                            >> Log.addContext "serviceType" (serviceType.FullName)
-                        )
+                        logger.LogDebug("GetService failed for {serviceType}", serviceType.FullName)
                         null
 
                 invocation.ReturnValue <- updatedReturnValue
@@ -473,7 +472,7 @@ let selectLatestTfm (tfms: string seq) : string option =
     |> Seq.tryHead
 
 
-let loadProjectTfms (logger: ILog) (projs: string seq) : Map<string, list<string>> =
+let loadProjectTfms (logger: ILogger) (projs: string seq) : Map<string, list<string>> =
     let mutable projectTfms = Map.empty
 
     for projectFilename in projs do
@@ -502,14 +501,12 @@ let loadProjectTfms (logger: ILog) (projs: string seq) : Map<string, list<string
             projectCollection.UnloadProject(buildProject)
         with
         | :? InvalidProjectFileException as ipfe ->
-            logger.debug (
-                Log.setMessage "loadProjectTfms: failed to load {projectFilename}: {ex}"
-                >> Log.addContext "projectFilename" projectFilename
-                >> Log.addContext "ex" (string (ipfe.GetType()))
-            )
+            logger.LogDebug(
+                "loadProjectTfms: failed to load {projectFilename}: {ex}",
+                projectFilename,
+                ipfe.GetType() |> string)
 
     projectTfms
-
 
 let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>) props : Map<string, string> =
     let selectedTfm =
@@ -525,7 +522,7 @@ let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>
     | Some tfm -> props |> Map.add "TargetFramework" tfm
     | None -> props
 
-let resolveDefaultWorkspaceProps (logger: ILog) projs : Map<string, string> =
+let resolveDefaultWorkspaceProps (logger: ILogger) projs : Map<string, string> =
     let tfmsPerProject = loadProjectTfms logger projs
 
     Map.empty
@@ -534,7 +531,7 @@ let resolveDefaultWorkspaceProps (logger: ILog) projs : Map<string, string> =
 
 let tryLoadSolutionOnPath
         (lspClient: ILspClient)
-        (logger: ILog)
+        (logger: ILogger)
         (solutionPath: string) =
     assert Path.IsPathRooted(solutionPath)
     let progress = ProgressReporter(lspClient)
@@ -561,10 +558,7 @@ let tryLoadSolutionOnPath
             let workspaceProps = resolveDefaultWorkspaceProps logger projs
 
             if workspaceProps.Count > 0 then
-                logger.info (
-                    Log.setMessage "Will use these MSBuild props: {workspaceProps}"
-                    >> Log.addContext "workspaceProps" (string workspaceProps)
-                )
+                logger.LogInformation("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
 
             let msbuildWorkspace = MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -572,10 +566,7 @@ let tryLoadSolutionOnPath
             let! solution = msbuildWorkspace.OpenSolutionAsync(solutionPath) |> Async.AwaitTask
 
             for diag in msbuildWorkspace.Diagnostics do
-                logger.info (
-                    Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
-                    >> Log.addContext "message" (diag.ToString())
-                )
+                logger.LogInformation("msbuildWorkspace.Diagnostics: {message}", diag.ToString())
 
                 do! logMessage (sprintf "msbuildWorkspace.Diagnostics: %s" (diag.ToString()))
 
@@ -594,7 +585,7 @@ let tryLoadSolutionOnPath
 
 let tryLoadSolutionFromProjectFiles
         (lspClient: ILspClient)
-        (logger: ILog)
+        (logger: ILogger)
         (logMessage: string -> Async<unit>)
         (projs: string list) =
     let progress = ProgressReporter(lspClient)
@@ -606,10 +597,9 @@ let tryLoadSolutionFromProjectFiles
         let workspaceProps = resolveDefaultWorkspaceProps logger projs
 
         if workspaceProps.Count > 0 then
-            logger.info (
-                Log.setMessage "Will use these MSBuild props: {workspaceProps}"
-                >> Log.addContext "workspaceProps" (string workspaceProps)
-            )
+            logger.LogDebug(
+                "Will use these MSBuild props: {workspaceProps}",
+                string workspaceProps)
 
         let msbuildWorkspace = MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
         msbuildWorkspace.LoadMetadataForReferencedProjects <- true
@@ -620,11 +610,8 @@ let tryLoadSolutionFromProjectFiles
             try
                 do! msbuildWorkspace.OpenProjectAsync(file) |> Async.AwaitTask |> Async.Ignore
             with ex ->
-                logger.error (
-                    Log.setMessage "could not OpenProjectAsync('{file}'): {exception}"
-                    >> Log.addContext "file" file
-                    >> Log.addContext "exception" (string ex)
-                )
+                logger.LogError("could not OpenProjectAsync('{file}'): {exception}", file, (string ex))
+
             let projectFile = new FileInfo(file)
             let projName = projectFile.Name
             let loaded = Interlocked.Increment(loadedProj)
@@ -632,10 +619,7 @@ let tryLoadSolutionFromProjectFiles
             do! progress.Report(false, $"{projName} {loaded}/{projs.Length}", percent)
 
         for diag in msbuildWorkspace.Diagnostics do
-            logger.trace (
-                Log.setMessage "msbuildWorkspace.Diagnostics: {message}"
-                >> Log.addContext "message" (diag.ToString())
-            )
+            logger.LogTrace("msbuildWorkspace.Diagnostics: {message}", diag.ToString())
 
         do! progress.End (sprintf "OK, %d project file(s) loaded" projs.Length)
 
@@ -662,7 +646,7 @@ let selectPreferredSolution (slnFiles: string list): option<string> =
 
 let findAndLoadSolutionOnDir
         (lspClient: ILspClient)
-        (logger: ILog)
+        (logger: ILogger)
         dir =
     async {
         let fileNotOnNodeModules (filename: string) =
@@ -712,7 +696,7 @@ let findAndLoadSolutionOnDir
 
 let loadSolutionOnSolutionPathOrDir
         (lspClient: ILspClient)
-        (logger: ILog)
+        (logger: ILogger)
         (solutionPathMaybe: string option)
         (rootPath: string) =
     match solutionPathMaybe with
@@ -755,7 +739,7 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
-let tryAddDocument (logger: ILog)
+let tryAddDocument (logger: ILogger)
                    (docFilePath: string)
                    (text: string)
                    (solution: Solution)
@@ -787,10 +771,9 @@ let tryAddDocument (logger: ILog)
             Some newDoc |> async.Return
 
         | None -> async {
-            logger.trace (
-                Log.setMessage "No parent project could be resolved to add file \"{file}\" to workspace"
-                >> Log.addContext "file" docFilePath
-            )
+            logger.LogTrace(
+                "No parent project could be resolved to add file \"{file}\" to workspace",
+                docFilePath)
             return None
           }
 
