@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Select common target framework when multiple projects are found
+  - By @AdeAttwood in https://github.com/razzmatazz/csharp-language-server/pull/253
 * Fix how completion item details are resolved
   - https://github.com/razzmatazz/csharp-language-server/pull/251
 * Apply simple heuristics to select a .sln/.slnx file when multiple are found.
