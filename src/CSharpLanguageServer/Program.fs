@@ -10,19 +10,32 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
 
+type CLIArguments =
+    | [<AltCommandLine("-v")>] Version
+    | [<AltCommandLine("-l")>] LogLevel of level:string
+    | [<AltCommandLine("-s")>] Solution of solution:string
+    with
+        interface IArgParserTemplate with
+            member s.Usage =
+                match s with
+                | Version -> "display versioning information"
+                | Solution _ -> ".sln file to load (relative to CWD)"
+                | LogLevel _ -> "log level, <trace|debug|info|warning|error>; default is `info`"
+
+
 [<EntryPoint>]
 let entry args =
     try
-        let argParser = ArgumentParser.Create<Options.CLIArguments>(programName = "csharp-ls")
+        let argParser = ArgumentParser.Create<CLIArguments>(programName = "csharp-ls")
         let serverArgs = argParser.Parse args
 
-        serverArgs.TryGetResult(<@ Options.CLIArguments.Version @>)
+        serverArgs.TryGetResult(<@ CLIArguments.Version @>)
             |> Option.iter (fun _ -> printfn "csharp-ls, %s"
                                              (Assembly.GetExecutingAssembly().GetName().Version |> string)
                                      exit 0)
 
         let logLevelArg =
-            serverArgs.TryGetResult(<@ Options.CLIArguments.LogLevel @>)
+            serverArgs.TryGetResult(<@ CLIArguments.LogLevel @>)
 
         let logLevel =
             match logLevelArg with
@@ -33,13 +46,13 @@ let entry args =
             | Some "trace" -> LogLevel.Trace
             | _ -> LogLevel.Information
 
-        Logging.setupLogging logLevel
-
         let settings = {
             ServerSettings.Default with
-                SolutionPath = serverArgs.TryGetResult(<@ Options.CLIArguments.Solution @>)
+                SolutionPath = serverArgs.TryGetResult(<@ CLIArguments.Solution @>)
                 LogLevel = logLevel
         }
+
+        Logging.setupLogging settings.LogLevel
 
         Server.start settings
     with
