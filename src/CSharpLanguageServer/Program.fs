@@ -14,6 +14,7 @@ type CLIArguments =
     | [<AltCommandLine("-v")>] Version
     | [<AltCommandLine("-l")>] LogLevel of level:string
     | [<AltCommandLine("-s")>] Solution of solution:string
+    | Debug
     with
         interface IArgParserTemplate with
             member s.Usage =
@@ -21,6 +22,7 @@ type CLIArguments =
                 | Version -> "display versioning information"
                 | Solution _ -> ".sln file to load (relative to CWD)"
                 | LogLevel _ -> "log level, <trace|debug|info|warning|error>; default is `info`"
+                | Debug -> "enable debug mode"
 
 
 [<EntryPoint>]
@@ -29,13 +31,16 @@ let entry args =
         let argParser = ArgumentParser.Create<CLIArguments>(programName = "csharp-ls")
         let serverArgs = argParser.Parse args
 
-        serverArgs.TryGetResult(<@ CLIArguments.Version @>)
-            |> Option.iter (fun _ -> printfn "csharp-ls, %s"
-                                             (Assembly.GetExecutingAssembly().GetName().Version |> string)
-                                     exit 0)
+        let printVersion () =
+            printfn "csharp-ls, %s"
+                    (Assembly.GetExecutingAssembly().GetName().Version |> string)
 
-        let logLevelArg =
-            serverArgs.TryGetResult(<@ CLIArguments.LogLevel @>)
+        serverArgs.TryGetResult(<@ CLIArguments.Version @>)
+            |> Option.iter (fun _ -> printVersion ();  exit 0)
+
+        let debugMode: bool =  serverArgs.Contains Debug
+
+        let logLevelArg = serverArgs.TryGetResult(<@ CLIArguments.LogLevel @>)
 
         let logLevel =
             match logLevelArg with
@@ -44,7 +49,7 @@ let entry args =
             | Some "info" -> LogLevel.Information
             | Some "debug" -> LogLevel.Debug
             | Some "trace" -> LogLevel.Trace
-            | _ -> LogLevel.Information
+            | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
 
         let settings = {
             ServerSettings.Default with
