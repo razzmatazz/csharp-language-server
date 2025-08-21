@@ -1,3 +1,5 @@
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/razzmatazz)
+
 # Description
 This is a hacky Roslyn-based LSP server for C#, as an alternative to 
 [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn).
@@ -8,9 +10,6 @@ to work with projects using older versions of dotnet SDK, including .NET Core 3,
 Roslyn/MSBuild libs that Visual Studio & omnisharp does.
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
-
-# Buy Me a Coffee
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/razzmatazz)
 
 # Acknowledgements
 - csharp-ls is not affiliated with Microsoft Corp;
