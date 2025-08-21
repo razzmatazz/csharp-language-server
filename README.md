@@ -9,6 +9,9 @@ Roslyn/MSBuild libs that Visual Studio & omnisharp does.
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
+# Buy Me a Coffee
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/razzmatazz)
+
 # Acknowledgements
 - csharp-ls is not affiliated with Microsoft Corp;
 - csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
