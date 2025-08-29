@@ -37,7 +37,7 @@ type CSharpLspServer(
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
-            { emptyServerState with Settings = settings })
+            { ServerState.Empty with Settings = settings })
 
     let getDocumentForUriFromCurrentState docType uri =
         stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))

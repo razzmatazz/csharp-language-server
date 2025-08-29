@@ -52,6 +52,23 @@ and ServerState = {
     PushDiagnosticsDocumentBacklog: string list
     PushDiagnosticsCurrentDocTask: (string * Task) option
 }
+with
+    static member Empty = {
+      Settings = ServerSettings.Default
+      RootPath = Directory.GetCurrentDirectory()
+      LspClient = None
+      ClientCapabilities = emptyClientCapabilities
+      Solution = None
+      OpenDocs = Map.empty
+      DecompiledMetadata = Map.empty
+      LastRequestId = 0
+      RunningRequests = Map.empty
+      RequestQueue = []
+      SolutionReloadPending = None
+      PushDiagnosticsDocumentBacklog = []
+      PushDiagnosticsCurrentDocTask = None
+   }
+
 
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
@@ -82,21 +99,6 @@ let pullNextRequestMaybe requestQueue =
             nonEmptyRequestQueue |> List.except [nextRequest]
 
         (Some nextRequest, queueRemainder)
-
-let emptyServerState = { Settings = ServerSettings.Default
-                         RootPath = Directory.GetCurrentDirectory()
-                         LspClient = None
-                         ClientCapabilities = emptyClientCapabilities
-                         Solution = None
-                         OpenDocs = Map.empty
-                         DecompiledMetadata = Map.empty
-                         LastRequestId = 0
-                         RunningRequests = Map.empty
-                         RequestQueue = []
-                         SolutionReloadPending = None
-                         PushDiagnosticsDocumentBacklog = []
-                         PushDiagnosticsCurrentDocTask = None }
-
 
 type ServerDocumentType =
      | UserDocument // user Document from solution, on disk
