@@ -37,7 +37,7 @@ type CSharpLspServer(
 
     let stateActor = MailboxProcessor.Start(
         serverEventLoop
-            { emptyServerState with Settings = settings })
+            { ServerState.Empty with Settings = settings })
 
     let getDocumentForUriFromCurrentState docType uri =
         stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri (docType, uri, rc))
@@ -53,17 +53,16 @@ type CSharpLspServer(
     let mutable _workspaceFolders: WorkspaceFolder list = []
 
     let withContext
-            requestType
+            requestName
+            requestMode
             (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>)
             param =
-        let requestName = handlerFn.ToString()
-
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        let startRequest rc = StartRequest (requestName, requestType, 0, rc)
+        let startRequest rc = StartRequest (requestName, requestMode, 0, rc)
         let requestId, semaphore = stateActor.PostAndReply(startRequest)
 
         let stateAcquisitionAndHandlerInvocation = async {
@@ -94,8 +93,8 @@ type CSharpLspServer(
         |> wrapExceptionAsLspResult
         |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
 
-    let withReadOnlyContext handlerFn = withContext ReadOnly handlerFn
-    let withReadWriteContext handlerFn = withContext ReadWrite handlerFn
+    let withReadOnlyContext requestName handlerFn = withContext requestName ReadOnly handlerFn
+    let withReadWriteContext requestName handlerFn = withContext requestName ReadWrite handlerFn
 
     let ignoreResult handlerFn = async {
         let! _ = handlerFn
@@ -186,83 +185,83 @@ type CSharpLspServer(
 
         override __.Initialize(p) =
             let serverCapabilities = getServerCapabilities p
-            p |> withReadWriteContext (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
+            p |> withReadWriteContext "initialize" (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
 
         override __.Initialized(_) =
-            () |> withReadWriteContext (Initialization.handleInitialized lspClient stateActor getRegistrations)
+            () |> withReadWriteContext "initialized" (Initialization.handleInitialized lspClient stateActor getRegistrations)
                |> ignoreResult
 
-        override __.Shutdown() = () |> withReadWriteContext Initialization.handleShutdown
+        override __.Shutdown() = () |> withReadWriteContext "shutdown" Initialization.handleShutdown
         override __.Exit() = ignoreNotification
-        override __.TextDocumentHover(p) = p |> withReadOnlyContext Hover.handle
-        override __.TextDocumentDidOpen(p) = p |> withReadOnlyContext (TextDocumentSync.didOpen) |> ignoreResult
-        override __.TextDocumentDidChange(p) = p |> withReadWriteContext (TextDocumentSync.didChange) |> ignoreResult
-        override __.TextDocumentDidClose(p) = p |> withReadWriteContext (TextDocumentSync.didClose) |> ignoreResult
-        override __.TextDocumentWillSave(p) = p |> withReadWriteContext TextDocumentSync.willSave |> ignoreResult
-        override __.TextDocumentWillSaveWaitUntil(p) = p |> withReadWriteContext TextDocumentSync.willSaveWaitUntil
-        override __.TextDocumentDidSave(p) = p |> withReadWriteContext (TextDocumentSync.didSave) |> ignoreResult
-        override __.TextDocumentCompletion(p) = p |> withReadOnlyContext Completion.handle
-        override __.CompletionItemResolve(p) = p |> withReadOnlyContext Completion.resolve
-        override __.TextDocumentPrepareRename(p) = p |> withReadOnlyContext Rename.prepare
-        override __.TextDocumentRename(p) = p |> withReadOnlyContext Rename.handle
-        override __.TextDocumentDefinition(p) = p |> withReadOnlyContext Definition.handle
-        override __.TextDocumentReferences(p) = p |> withReadOnlyContext References.handle
-        override __.TextDocumentDocumentHighlight(p) = p |> withReadOnlyContext DocumentHighlight.handle
-        override __.TextDocumentDocumentLink(p) = p |> withReadOnlyContext DocumentLink.handle
-        override __.DocumentLinkResolve(p) = p |> withReadOnlyContext DocumentLink.resolve
-        override __.TextDocumentTypeDefinition(p) = p |> withReadOnlyContext TypeDefinition.handle
-        override __.TextDocumentImplementation(p) = p |> withReadOnlyContext Implementation.handle
-        override __.TextDocumentCodeAction(p) = p |> withReadOnlyContext CodeAction.handle
-        override __.CodeActionResolve(p) = p |> withReadOnlyContext CodeAction.resolve
-        override __.TextDocumentCodeLens(p) = p |> withReadOnlyContext CodeLens.handle
-        override __.CodeLensResolve(p) = p |> withReadOnlyContext CodeLens.resolve
-        override __.TextDocumentSignatureHelp(p) = p |> withReadOnlyContext SignatureHelp.handle
-        override __.TextDocumentDocumentColor(p) = p |> withReadOnlyContext Color.handle
-        override __.TextDocumentColorPresentation(p) = p |> withReadOnlyContext Color.present
-        override __.TextDocumentFormatting(p) = p |> withReadOnlyContext DocumentFormatting.handle
-        override __.TextDocumentRangeFormatting(p) = p |> withReadOnlyContext DocumentRangeFormatting.handle
-        override __.TextDocumentOnTypeFormatting(p) = p |> withReadOnlyContext DocumentOnTypeFormatting.handle
-        override __.TextDocumentDocumentSymbol(p) = p |> withReadOnlyContext DocumentSymbol.handle
-        override __.WorkspaceDidChangeWatchedFiles(p) = p |> withReadWriteContext Workspace.didChangeWatchedFiles |> ignoreResult
+        override __.TextDocumentHover(p) = p |> withReadOnlyContext "textDocument/hover" Hover.handle
+        override __.TextDocumentDidOpen(p) = p |> withReadOnlyContext "textDocument/didOpen" TextDocumentSync.didOpen |> ignoreResult
+        override __.TextDocumentDidChange(p) = p |> withReadWriteContext "textDocument/didChange" TextDocumentSync.didChange |> ignoreResult
+        override __.TextDocumentDidClose(p) = p |> withReadWriteContext "textDocument/didClose" TextDocumentSync.didClose |> ignoreResult
+        override __.TextDocumentWillSave(p) = p |> withReadWriteContext "textDocument/willSave" TextDocumentSync.willSave |> ignoreResult
+        override __.TextDocumentWillSaveWaitUntil(p) = p |> withReadWriteContext "textDocument/willSaveWaitUntil" TextDocumentSync.willSaveWaitUntil
+        override __.TextDocumentDidSave(p) = p |> withReadWriteContext "textDocument/didSave" TextDocumentSync.didSave |> ignoreResult
+        override __.TextDocumentCompletion(p) = p |> withReadOnlyContext "textDocument/completion" Completion.handle
+        override __.CompletionItemResolve(p) = p |> withReadOnlyContext "completionItem/resolve" Completion.resolve
+        override __.TextDocumentPrepareRename(p) = p |> withReadOnlyContext "textDocument/prepareRename" Rename.prepare
+        override __.TextDocumentRename(p) = p |> withReadOnlyContext "textDocument/rename" Rename.handle
+        override __.TextDocumentDefinition(p) = p |> withReadOnlyContext "textDocument/definition" Definition.handle
+        override __.TextDocumentReferences(p) = p |> withReadOnlyContext "textDocument/references" References.handle
+        override __.TextDocumentDocumentHighlight(p) = p |> withReadOnlyContext "textDocument/documentHighlight" DocumentHighlight.handle
+        override __.TextDocumentDocumentLink(p) = p |> withReadOnlyContext "textDocument/documentLink" DocumentLink.handle
+        override __.DocumentLinkResolve(p) = p |> withReadOnlyContext "documentLink/resolve" DocumentLink.resolve
+        override __.TextDocumentTypeDefinition(p) = p |> withReadOnlyContext "textDocument/typeDefinition" TypeDefinition.handle
+        override __.TextDocumentImplementation(p) = p |> withReadOnlyContext "textDocument/implementation" Implementation.handle
+        override __.TextDocumentCodeAction(p) = p |> withReadOnlyContext "textDocument/codeAction" CodeAction.handle
+        override __.CodeActionResolve(p) = p |> withReadOnlyContext "codeAction/resolve" CodeAction.resolve
+        override __.TextDocumentCodeLens(p) = p |> withReadOnlyContext "textDocument/codeLens" CodeLens.handle
+        override __.CodeLensResolve(p) = p |> withReadOnlyContext "codeLens/resolve" CodeLens.resolve
+        override __.TextDocumentSignatureHelp(p) = p |> withReadOnlyContext "textDocument/signatureHelp" SignatureHelp.handle
+        override __.TextDocumentDocumentColor(p) = p |> withReadOnlyContext "textDocument/documentColor" Color.handle
+        override __.TextDocumentColorPresentation(p) = p |> withReadOnlyContext "textDocument/colorPresentation" Color.present
+        override __.TextDocumentFormatting(p) = p |> withReadOnlyContext "textDocument/formatting" DocumentFormatting.handle
+        override __.TextDocumentRangeFormatting(p) = p |> withReadOnlyContext "textDocument/rangeFormatting" DocumentRangeFormatting.handle
+        override __.TextDocumentOnTypeFormatting(p) = p |> withReadOnlyContext "textDocument/onTypeFormatting" DocumentOnTypeFormatting.handle
+        override __.TextDocumentDocumentSymbol(p) = p |> withReadOnlyContext "textDocument/documentSymbol" DocumentSymbol.handle
+        override __.WorkspaceDidChangeWatchedFiles(p) = p |> withReadWriteContext "workspace/didChangeWatchedFiles" Workspace.didChangeWatchedFiles |> ignoreResult
         override __.WorkspaceDidChangeWorkspaceFolders(_p) = ignoreNotification
-        override __.WorkspaceDidChangeConfiguration(p) = p |> withReadWriteContext Workspace.didChangeConfiguration |> ignoreResult
-        override __.WorkspaceWillCreateFiles(_) = notImplemented
+        override __.WorkspaceDidChangeConfiguration(p) = p |> withReadWriteContext "workspace/didChangeConfiguration" Workspace.didChangeConfiguration |> ignoreResult
+        override __.WorkspaceWillCreateFiles(_) = () |> withReadOnlyContext "workspace/willCreateFiles" (fun _ _ -> notImplemented)
         override __.WorkspaceDidCreateFiles(_) = ignoreNotification
-        override __.WorkspaceWillRenameFiles(_) = notImplemented
+        override __.WorkspaceWillRenameFiles(_) = () |> withReadOnlyContext "workspace/willRenameFiles" (fun _ _ -> notImplemented)
         override __.WorkspaceDidRenameFiles(_) = ignoreNotification
-        override __.WorkspaceWillDeleteFiles(_) = notImplemented
+        override __.WorkspaceWillDeleteFiles(_) = () |> withReadOnlyContext "workspace/willDeleteFiles" (fun _ _ -> notImplemented)
         override __.WorkspaceDidDeleteFiles(_) = ignoreNotification
-        override __.WorkspaceSymbol(p) = p |> withReadOnlyContext WorkspaceSymbol.handle
-        override __.WorkspaceExecuteCommand(p) = p |> withReadOnlyContext ExecuteCommand.handle
-        override __.TextDocumentFoldingRange(p) = p |> withReadOnlyContext FoldingRange.handle
-        override __.TextDocumentSelectionRange(p) = p |> withReadOnlyContext SelectionRange.handle
-        override __.TextDocumentSemanticTokensFull(p) = p |> withReadOnlyContext SemanticTokens.handleFull
-        override __.TextDocumentSemanticTokensFullDelta(p) = p |> withReadOnlyContext SemanticTokens.handleFullDelta
-        override __.TextDocumentSemanticTokensRange(p) = p |> withReadOnlyContext SemanticTokens.handleRange
-        override __.TextDocumentInlayHint(p) = p |> withReadOnlyContext InlayHint.handle
-        override __.InlayHintResolve(p) = p |> withReadOnlyContext InlayHint.resolve
+        override __.WorkspaceSymbol(p) = p |> withReadOnlyContext "workspace/symbol" WorkspaceSymbol.handle
+        override __.WorkspaceExecuteCommand(p) = p |> withReadOnlyContext "workspace/executeCommand" ExecuteCommand.handle
+        override __.TextDocumentFoldingRange(p) = p |> withReadOnlyContext "textDocument/foldingRange" FoldingRange.handle
+        override __.TextDocumentSelectionRange(p) = p |> withReadOnlyContext "textDocument/selectionRange" SelectionRange.handle
+        override __.TextDocumentSemanticTokensFull(p) = p |> withReadOnlyContext "textDocument/semanticTokens/full" SemanticTokens.handleFull
+        override __.TextDocumentSemanticTokensFullDelta(p) = p |> withReadOnlyContext "textDocument/semanticTokens/full/delta" SemanticTokens.handleFullDelta
+        override __.TextDocumentSemanticTokensRange(p) = p |> withReadOnlyContext "textDocument/semanticTokens/range" SemanticTokens.handleRange
+        override __.TextDocumentInlayHint(p) = p |> withReadOnlyContext "textDocument/inlayHint" InlayHint.handle
+        override __.InlayHintResolve(p) = p |> withReadOnlyContext "inlayHint/resolve" InlayHint.resolve
         override __.WindowWorkDoneProgressCancel (_) = raise (System.NotImplementedException())
         override __.TextDocumentInlineValue(_) = notImplemented
-        override __.TextDocumentPrepareCallHierarchy(p) = p |> withReadOnlyContext CallHierarchy.prepare
-        override __.CallHierarchyIncomingCalls(p) = p |> withReadOnlyContext CallHierarchy.incomingCalls
-        override __.CallHierarchyOutgoingCalls(p) = p |> withReadOnlyContext CallHierarchy.outgoingCalls
-        override __.TextDocumentPrepareTypeHierarchy(p) = p |> withReadOnlyContext TypeHierarchy.prepare
-        override __.TypeHierarchySupertypes(p) = p |> withReadOnlyContext TypeHierarchy.supertypes
-        override __.TypeHierarchySubtypes(p) = p |> withReadOnlyContext TypeHierarchy.subtypes
-        override __.TextDocumentDeclaration(p) = p |> withReadOnlyContext Declaration.handle
-        override __.WorkspaceDiagnostic(p) = p |> withReadOnlyContext Diagnostic.handleWorkspaceDiagnostic
+        override __.TextDocumentPrepareCallHierarchy(p) = p |> withReadOnlyContext "textDocument/prepareCallHierarchy" CallHierarchy.prepare
+        override __.CallHierarchyIncomingCalls(p) = p |> withReadOnlyContext "callHierarchy/incomingCalls" CallHierarchy.incomingCalls
+        override __.CallHierarchyOutgoingCalls(p) = p |> withReadOnlyContext "callHierarchy/outgoingCalls" CallHierarchy.outgoingCalls
+        override __.TextDocumentPrepareTypeHierarchy(p) = p |> withReadOnlyContext "textDocument/prepareTypeHierarchy" TypeHierarchy.prepare
+        override __.TypeHierarchySupertypes(p) = p |> withReadOnlyContext "typeHierarchy/supertypes" TypeHierarchy.supertypes
+        override __.TypeHierarchySubtypes(p) = p |> withReadOnlyContext "typeHierarchy/subtypes" TypeHierarchy.subtypes
+        override __.TextDocumentDeclaration(p) = p |> withReadOnlyContext "textDocument/declaration" Declaration.handle
+        override __.WorkspaceDiagnostic(p) = p |> withReadOnlyContext "workspace/diagnostic" Diagnostic.handleWorkspaceDiagnostic
         override __.CancelRequest(_) = ignoreNotification
         override __.NotebookDocumentDidChange(_) = ignoreNotification
         override __.NotebookDocumentDidClose(_) = ignoreNotification
         override __.NotebookDocumentDidOpen(_) = ignoreNotification
         override __.NotebookDocumentDidSave(_) = ignoreNotification
-        override __.WorkspaceSymbolResolve(p) = p |> withReadOnlyContext WorkspaceSymbol.resolve
-        override __.TextDocumentDiagnostic(p) = p |> withReadOnlyContext Diagnostic.handle
-        override __.TextDocumentLinkedEditingRange(p) = p |> withReadOnlyContext LinkedEditingRange.handle
-        override __.TextDocumentMoniker(p) = p |> withReadOnlyContext Moniker.handle
+        override __.WorkspaceSymbolResolve(p) = p |> withReadOnlyContext "workspaceSymbol/resolve" WorkspaceSymbol.resolve
+        override __.TextDocumentDiagnostic(p) = p |> withReadOnlyContext "textDocument/diagnostic" Diagnostic.handle
+        override __.TextDocumentLinkedEditingRange(p) = p |> withReadOnlyContext "textDocument/linkedEditingRange" LinkedEditingRange.handle
+        override __.TextDocumentMoniker(p) = p |> withReadOnlyContext "textDocument/moniker" Moniker.handle
         override __.Progress(_) = ignoreNotification
         override __.SetTrace(_) = ignoreNotification
-        override __.CSharpMetadata(p) = p |> withReadOnlyContext CSharpMetadata.handle
+        override __.CSharpMetadata(p) = p |> withReadOnlyContext "csharp/metadata" CSharpMetadata.handle
 
 module Server =
     let logger = Logging.getLoggerByName "LSP"

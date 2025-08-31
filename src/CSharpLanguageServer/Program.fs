@@ -55,6 +55,7 @@ let entry args =
             ServerSettings.Default with
                 SolutionPath = serverArgs.TryGetResult(<@ CLIArguments.Solution @>)
                 LogLevel = logLevel
+                DebugMode = debugMode
         }
 
         Logging.setupLogging settings.LogLevel

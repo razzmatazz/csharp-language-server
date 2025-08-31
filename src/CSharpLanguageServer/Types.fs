@@ -9,11 +9,13 @@ type ServerSettings =
     { SolutionPath: string option
       LogLevel: LogLevel
       ApplyFormattingOptions: bool
+      DebugMode: bool
     }
     static member Default: ServerSettings =
         { SolutionPath = None
           LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
+          DebugMode = false
         }
 
 type CSharpMetadataInformation =

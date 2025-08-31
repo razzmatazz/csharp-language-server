@@ -14,13 +14,14 @@ open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Util
 
 type DecompiledMetadataDocument = {
     Metadata: CSharpMetadataInformation
     Document: Document
 }
 
-type ServerRequestType = ReadOnly | ReadWrite
+type ServerRequestMode = ReadOnly | ReadWrite
 
 type ServerOpenDocInfo =
     {
@@ -28,10 +29,21 @@ type ServerOpenDocInfo =
         Touched: DateTime
     }
 
+type RequestMetrics =
+    {
+      Count: int
+      TotalDuration: TimeSpan
+      MaxDuration: TimeSpan
+    }
+    with
+        static member Zero = { Count = 0
+                               TotalDuration = TimeSpan.Zero
+                               MaxDuration = TimeSpan.Zero }
+
 type ServerRequest = {
     Id: int
     Name: string
-    Type: ServerRequestType
+    Mode: ServerRequestMode
     Semaphore: SemaphoreSlim
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
                   // priority is used to order pending R/O requests and is ignored wrt R/W requests
@@ -51,7 +63,28 @@ and ServerState = {
     SolutionReloadPending: DateTime option
     PushDiagnosticsDocumentBacklog: string list
     PushDiagnosticsCurrentDocTask: (string * Task) option
+    RequestStats: Map<string, RequestMetrics>
+    LastStatsDumpTime: DateTime
 }
+with
+    static member Empty = {
+      Settings = ServerSettings.Default
+      RootPath = Directory.GetCurrentDirectory()
+      LspClient = None
+      ClientCapabilities = emptyClientCapabilities
+      Solution = None
+      OpenDocs = Map.empty
+      DecompiledMetadata = Map.empty
+      LastRequestId = 0
+      RunningRequests = Map.empty
+      RequestQueue = []
+      SolutionReloadPending = None
+      PushDiagnosticsDocumentBacklog = []
+      PushDiagnosticsCurrentDocTask = None
+      RequestStats = Map.empty
+      LastStatsDumpTime = DateTime.MinValue
+   }
+
 
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
@@ -63,7 +96,7 @@ let pullNextRequestMaybe requestQueue =
     | [] -> (None, requestQueue)
 
     | nonEmptyRequestQueue ->
-        let requestIsReadOnly r = r.Type = ServerRequestType.ReadOnly
+        let requestIsReadOnly r = (r.Mode = ReadOnly)
 
         // here we will try to take non-interrupted r/o request sequence at the front,
         // order it by priority and run the most prioritized one first
@@ -83,21 +116,6 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-let emptyServerState = { Settings = ServerSettings.Default
-                         RootPath = Directory.GetCurrentDirectory()
-                         LspClient = None
-                         ClientCapabilities = emptyClientCapabilities
-                         Solution = None
-                         OpenDocs = Map.empty
-                         DecompiledMetadata = Map.empty
-                         LastRequestId = 0
-                         RunningRequests = Map.empty
-                         RequestQueue = []
-                         SolutionReloadPending = None
-                         PushDiagnosticsDocumentBacklog = []
-                         PushDiagnosticsCurrentDocTask = None }
-
-
 type ServerDocumentType =
      | UserDocument // user Document from solution, on disk
      | DecompiledDocument // Document decompiled from metadata, readonly
@@ -116,7 +134,7 @@ type ServerStateEvent =
     | OpenDocTouch of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
     | SolutionReloadRequest of TimeSpan
@@ -124,6 +142,7 @@ type ServerStateEvent =
     | PushDiagnosticsProcessPendingDocuments
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PeriodicTimerTick
+    | DumpAndResetRequestStats
 
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -151,6 +170,44 @@ let getDocumentForUriOfType state docType (u: string) =
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
 
+
+let processDumpAndResetRequestStats state =
+    let formatStats stats =
+        let calculateRequestStatsMetrics (name, metrics) =
+            let avgDurationMs =
+                if metrics.Count > 0 then metrics.TotalDuration.TotalMilliseconds / float metrics.Count
+                else 0.0
+            (name, metrics, avgDurationMs)
+
+        let sortedStats =
+            stats
+            |> Map.toList
+            |> List.map calculateRequestStatsMetrics
+            |> List.sortByDescending (fun (_, _, avg) -> avg)
+
+        let formatStatsRow (name, metrics, avgDurationMs: float) =
+            [ $"\"{name}\""
+              metrics.Count |> string
+              avgDurationMs.ToString("F2")
+              metrics.MaxDuration.TotalMilliseconds.ToString("F2") ]
+
+        let headerRow = ["Name"; "Count"; "AvgDuration (ms)"; "MaxDuration (ms)"]
+
+        let dataRows = sortedStats |> List.map formatStatsRow
+
+        formatInColumns (headerRow :: dataRows)
+
+    if not (Map.isEmpty state.RequestStats) then
+        System.Console.Error.WriteLine("--------- Request Stats ---------")
+        System.Console.Error.WriteLine(state.RequestStats |> formatStats)
+        System.Console.Error.WriteLine("---------------------------------")
+    else
+        System.Console.Error.WriteLine("------- No request stats  -------")
+
+    { state with RequestStats = Map.empty
+                 LastStatsDumpTime = DateTime.Now }
+
+
 let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
     | SettingsChange newSettings ->
@@ -173,12 +230,12 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return state
 
-    | StartRequest (name, requestType, requestPriority, replyChannel) ->
+    | StartRequest (name, requestMode, requestPriority, replyChannel) ->
         postSelf ProcessRequestQueue
 
         let newRequest = { Id=state.LastRequestId+1
                            Name=name
-                           Type=requestType
+                           Mode=requestMode
                            Semaphore=new SemaphoreSlim(0, 1)
                            Priority=requestPriority
                            Enqueued=DateTime.Now }
@@ -191,10 +248,31 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
     | FinishRequest requestId ->
         let request = state.RunningRequests |> Map.tryFind requestId
         match request with
-        | Some(request) ->
+        | Some request ->
             request.Semaphore.Dispose()
+
+            let newRequestStats =
+                let requestDuration = DateTime.Now - request.Enqueued
+
+                let updateRequestStats stats =
+                    match stats with
+                    | Some s ->
+                        Some { Count = s.Count + 1
+                               TotalDuration = s.TotalDuration + requestDuration
+                               MaxDuration = max s.MaxDuration requestDuration }
+                    | None ->
+                        Some { Count = 1
+                               TotalDuration = requestDuration
+                               MaxDuration = requestDuration }
+
+                match state.Settings.DebugMode with
+                | true -> state.RequestStats |> Map.change request.Name updateRequestStats
+                | false -> state.RequestStats
+
             let newRunningRequests = state.RunningRequests |> Map.remove requestId
-            let newState = { state with RunningRequests = newRunningRequests }
+
+            let newState = { state with RunningRequests = newRunningRequests
+                                        RequestStats = newRequestStats }
 
             postSelf ProcessRequestQueue
             return newState
@@ -208,7 +286,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         let runningRWRequestMaybe =
             state.RunningRequests
             |> Seq.map (fun kv -> kv.Value)
-            |> Seq.tryFind (fun r -> r.Type = ReadWrite)
+            |> Seq.tryFind (fun r -> r.Mode = ReadWrite)
 
         // let numRunningRequests = state.RunningRequests |> Map.count
 
@@ -394,10 +472,15 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
     | PeriodicTimerTick ->
         postSelf PushDiagnosticsProcessPendingDocuments
 
-        let solutionReloadTime = state.SolutionReloadPending
-                                 |> Option.defaultValue (DateTime.Now.AddDays(1))
+        let statsDumpDeadline = state.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
+        if state.Settings.DebugMode && statsDumpDeadline < DateTime.Now then
+            postSelf DumpAndResetRequestStats
 
-        match solutionReloadTime < DateTime.Now with
+        let solutionReloadDeadline =
+            state.SolutionReloadPending
+            |> Option.defaultValue (DateTime.Now.AddDays(1))
+
+        match solutionReloadDeadline < DateTime.Now with
         | true ->
             let! newSolution =
                 loadSolutionOnSolutionPathOrDir
@@ -411,6 +494,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         | false ->
             return state
+
+    | DumpAndResetRequestStats ->
+        return processDumpAndResetRequestStats state
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
