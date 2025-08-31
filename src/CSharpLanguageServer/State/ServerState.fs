@@ -28,6 +28,14 @@ type ServerOpenDocInfo =
         Touched: DateTime
     }
 
+type RequestMetrics =
+    {
+      Count: int
+      TotalDuration: TimeSpan
+    }
+    with
+        static member Zero = { Count = 0; TotalDuration = TimeSpan.Zero }
+
 type ServerRequest = {
     Id: int
     Name: string
@@ -51,6 +59,8 @@ and ServerState = {
     SolutionReloadPending: DateTime option
     PushDiagnosticsDocumentBacklog: string list
     PushDiagnosticsCurrentDocTask: (string * Task) option
+    RequestStats: Map<string, RequestMetrics>
+    LastStatsDumpTime: DateTime
 }
 with
     static member Empty = {
@@ -67,6 +77,8 @@ with
       SolutionReloadPending = None
       PushDiagnosticsDocumentBacklog = []
       PushDiagnosticsCurrentDocTask = None
+      RequestStats = Map.empty
+      LastStatsDumpTime = DateTime.MinValue
    }
 
 
@@ -126,6 +138,7 @@ type ServerStateEvent =
     | PushDiagnosticsProcessPendingDocuments
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PeriodicTimerTick
+    | DumpAndResetRequestStats
 
 
 let getDocumentForUriOfType state docType (u: string) =
@@ -152,6 +165,32 @@ let getDocumentForUriOfType state docType (u: string) =
         | DecompiledDocument -> matchingDecompiledDocumentMaybe
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
+
+
+let processDumpAndResetRequestStats state =
+    if Map.isEmpty state.RequestStats then
+        System.Console.Error.WriteLine("------- No request stats  -------")
+    else
+        System.Console.Error.WriteLine("--------- Request Stats ---------")
+        let sortedStats =
+            state.RequestStats
+            |> Map.toList
+            |> List.map (fun (name, metrics) ->
+                let avgDurationMs =
+                    if metrics.Count > 0 then metrics.TotalDuration.TotalMilliseconds / float metrics.Count
+                    else 0.0
+                (name, metrics, avgDurationMs)
+            )
+            |> List.sortByDescending (fun (_, _, avg) -> avg)
+
+        for (name, metrics, avgDurationMs) in sortedStats do
+            System.Console.Error.WriteLine($"{name}: Count={metrics.Count}, AvgDuration={avgDurationMs:F2}ms")
+
+        System.Console.Error.WriteLine("---------------------------------")
+
+    { state with RequestStats = Map.empty
+                 LastStatsDumpTime = DateTime.Now }
+
 
 let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
@@ -193,10 +232,25 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
     | FinishRequest requestId ->
         let request = state.RunningRequests |> Map.tryFind requestId
         match request with
-        | Some(request) ->
+        | Some request ->
             request.Semaphore.Dispose()
+
+            let newRequestStats =
+                let requestDuration = DateTime.Now - request.Enqueued
+
+                let updateRequestStats stats =
+                    match stats with
+                    | Some s -> Some { Count = s.Count + 1; TotalDuration = s.TotalDuration + requestDuration }
+                    | None -> Some { Count = 1; TotalDuration = requestDuration }
+
+                match state.Settings.DebugMode with
+                | true -> state.RequestStats |> Map.change request.Name updateRequestStats
+                | false -> state.RequestStats
+
             let newRunningRequests = state.RunningRequests |> Map.remove requestId
-            let newState = { state with RunningRequests = newRunningRequests }
+
+            let newState = { state with RunningRequests = newRunningRequests
+                                        RequestStats = newRequestStats }
 
             postSelf ProcessRequestQueue
             return newState
@@ -396,10 +450,15 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
     | PeriodicTimerTick ->
         postSelf PushDiagnosticsProcessPendingDocuments
 
-        let solutionReloadTime = state.SolutionReloadPending
-                                 |> Option.defaultValue (DateTime.Now.AddDays(1))
+        let statsDumpDeadline = state.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
+        if state.Settings.DebugMode && statsDumpDeadline < DateTime.Now then
+            postSelf DumpAndResetRequestStats
 
-        match solutionReloadTime < DateTime.Now with
+        let solutionReloadDeadline =
+            state.SolutionReloadPending
+            |> Option.defaultValue (DateTime.Now.AddDays(1))
+
+        match solutionReloadDeadline < DateTime.Now with
         | true ->
             let! newSolution =
                 loadSolutionOnSolutionPathOrDir
@@ -413,6 +472,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         | false ->
             return state
+
+    | DumpAndResetRequestStats ->
+        return processDumpAndResetRequestStats state
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
