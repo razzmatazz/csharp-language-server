@@ -53,7 +53,7 @@ type CSharpLspServer(
     let mutable _workspaceFolders: WorkspaceFolder list = []
 
     let withContext
-            requestType
+            requestMode
             (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>)
             param =
         let requestName = handlerFn.ToString()
@@ -63,7 +63,7 @@ type CSharpLspServer(
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        let startRequest rc = StartRequest (requestName, requestType, 0, rc)
+        let startRequest rc = StartRequest (requestName, requestMode, 0, rc)
         let requestId, semaphore = stateActor.PostAndReply(startRequest)
 
         let stateAcquisitionAndHandlerInvocation = async {

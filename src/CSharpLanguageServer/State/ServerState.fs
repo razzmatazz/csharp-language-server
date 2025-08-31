@@ -20,7 +20,7 @@ type DecompiledMetadataDocument = {
     Document: Document
 }
 
-type ServerRequestType = ReadOnly | ReadWrite
+type ServerRequestMode = ReadOnly | ReadWrite
 
 type ServerOpenDocInfo =
     {
@@ -31,7 +31,7 @@ type ServerOpenDocInfo =
 type ServerRequest = {
     Id: int
     Name: string
-    Type: ServerRequestType
+    Mode: ServerRequestMode
     Semaphore: SemaphoreSlim
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
                   // priority is used to order pending R/O requests and is ignored wrt R/W requests
@@ -80,7 +80,7 @@ let pullNextRequestMaybe requestQueue =
     | [] -> (None, requestQueue)
 
     | nonEmptyRequestQueue ->
-        let requestIsReadOnly r = r.Type = ServerRequestType.ReadOnly
+        let requestIsReadOnly r = (r.Mode = ReadOnly)
 
         // here we will try to take non-interrupted r/o request sequence at the front,
         // order it by priority and run the most prioritized one first
@@ -118,7 +118,7 @@ type ServerStateEvent =
     | OpenDocTouch of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
     | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of string * ServerRequestType * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
     | SolutionReloadRequest of TimeSpan
@@ -175,12 +175,12 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return state
 
-    | StartRequest (name, requestType, requestPriority, replyChannel) ->
+    | StartRequest (name, requestMode, requestPriority, replyChannel) ->
         postSelf ProcessRequestQueue
 
         let newRequest = { Id=state.LastRequestId+1
                            Name=name
-                           Type=requestType
+                           Mode=requestMode
                            Semaphore=new SemaphoreSlim(0, 1)
                            Priority=requestPriority
                            Enqueued=DateTime.Now }
@@ -210,7 +210,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         let runningRWRequestMaybe =
             state.RunningRequests
             |> Seq.map (fun kv -> kv.Value)
-            |> Seq.tryFind (fun r -> r.Type = ReadWrite)
+            |> Seq.tryFind (fun r -> r.Mode = ReadWrite)
 
         // let numRunningRequests = state.RunningRequests |> Map.count
 
