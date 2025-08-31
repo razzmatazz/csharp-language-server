@@ -34,6 +34,7 @@ module Initialization =
         let serverName = "csharp-ls"
         let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
         logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
+        logger.LogInformation("server settings: {settings}", context.State.Settings |> string)
 
         do! windowShowMessage(
             sprintf "csharp-ls: initializing, version %s" serverVersion)
