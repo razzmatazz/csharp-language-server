@@ -14,6 +14,7 @@ open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Util
 
 type DecompiledMetadataDocument = {
     Metadata: CSharpMetadataInformation
@@ -32,9 +33,12 @@ type RequestMetrics =
     {
       Count: int
       TotalDuration: TimeSpan
+      MaxDuration: TimeSpan
     }
     with
-        static member Zero = { Count = 0; TotalDuration = TimeSpan.Zero }
+        static member Zero = { Count = 0
+                               TotalDuration = TimeSpan.Zero
+                               MaxDuration = TimeSpan.Zero }
 
 type ServerRequest = {
     Id: int
@@ -168,25 +172,37 @@ let getDocumentForUriOfType state docType (u: string) =
 
 
 let processDumpAndResetRequestStats state =
-    if Map.isEmpty state.RequestStats then
-        System.Console.Error.WriteLine("------- No request stats  -------")
-    else
-        System.Console.Error.WriteLine("--------- Request Stats ---------")
+    let formatStats stats =
+        let calculateRequestStatsMetrics (name, metrics) =
+            let avgDurationMs =
+                if metrics.Count > 0 then metrics.TotalDuration.TotalMilliseconds / float metrics.Count
+                else 0.0
+            (name, metrics, avgDurationMs)
+
         let sortedStats =
-            state.RequestStats
+            stats
             |> Map.toList
-            |> List.map (fun (name, metrics) ->
-                let avgDurationMs =
-                    if metrics.Count > 0 then metrics.TotalDuration.TotalMilliseconds / float metrics.Count
-                    else 0.0
-                (name, metrics, avgDurationMs)
-            )
+            |> List.map calculateRequestStatsMetrics
             |> List.sortByDescending (fun (_, _, avg) -> avg)
 
-        for (name, metrics, avgDurationMs) in sortedStats do
-            System.Console.Error.WriteLine($"{name}: Count={metrics.Count}, AvgDuration={avgDurationMs:F2}ms")
+        let formatStatsRow (name, metrics, avgDurationMs: float) =
+            [ $"\"{name}\""
+              metrics.Count |> string
+              avgDurationMs.ToString("F2")
+              metrics.MaxDuration.TotalMilliseconds.ToString("F2") ]
 
+        let headerRow = ["Name"; "Count"; "AvgDuration (ms)"; "MaxDuration (ms)"]
+
+        let dataRows = sortedStats |> List.map formatStatsRow
+
+        formatInColumns (headerRow :: dataRows)
+
+    if not (Map.isEmpty state.RequestStats) then
+        System.Console.Error.WriteLine("--------- Request Stats ---------")
+        System.Console.Error.WriteLine(state.RequestStats |> formatStats)
         System.Console.Error.WriteLine("---------------------------------")
+    else
+        System.Console.Error.WriteLine("------- No request stats  -------")
 
     { state with RequestStats = Map.empty
                  LastStatsDumpTime = DateTime.Now }
@@ -240,8 +256,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                 let updateRequestStats stats =
                     match stats with
-                    | Some s -> Some { Count = s.Count + 1; TotalDuration = s.TotalDuration + requestDuration }
-                    | None -> Some { Count = 1; TotalDuration = requestDuration }
+                    | Some s ->
+                        Some { Count = s.Count + 1
+                               TotalDuration = s.TotalDuration + requestDuration
+                               MaxDuration = max s.MaxDuration requestDuration }
+                    | None ->
+                        Some { Count = 1
+                               TotalDuration = requestDuration
+                               MaxDuration = requestDuration }
 
                 match state.Settings.DebugMode with
                 | true -> state.RequestStats |> Map.change request.Name updateRequestStats

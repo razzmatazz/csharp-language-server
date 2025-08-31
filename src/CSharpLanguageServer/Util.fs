@@ -52,6 +52,35 @@ let curry f x y = f (x, y)
 let uncurry f (x, y) = f x y
 
 
+let formatInColumns (data: list<list<string>>) : string =
+    if List.isEmpty data then
+        ""
+    else
+        let numCols = data |> List.map List.length |> List.max
+
+        let columnWidths =
+            [0 .. numCols - 1]
+            |> List.map (fun colIdx ->
+                data
+                |> List.map (fun row ->
+                    if colIdx < row.Length then row.[colIdx].Length
+                    else 0
+                )
+                |> List.max)
+
+        data
+        |> List.map (fun row ->
+            [0 .. numCols - 1]
+            |> List.map (fun colIdx ->
+                let value = if colIdx < row.Length then row.[colIdx] else ""
+                let width = columnWidths.[colIdx]
+                value.PadRight(width)
+            )
+            |> String.concat "  "
+        )
+        |> String.concat System.Environment.NewLine
+
+
 module Seq =
     let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq): 'T option =
         if isNull source || Seq.isEmpty source then
