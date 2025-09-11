@@ -31,14 +31,15 @@ type ServerOpenDocInfo =
 
 type RequestMetrics =
     {
-      Count: int
-      TotalDuration: TimeSpan
-      MaxDuration: TimeSpan
+        Count: int
+        TotalDuration: TimeSpan
+        MaxDuration: TimeSpan
     }
     with
-        static member Zero = { Count = 0
-                               TotalDuration = TimeSpan.Zero
-                               MaxDuration = TimeSpan.Zero }
+        static member Zero = {
+            Count = 0
+            TotalDuration = TimeSpan.Zero
+            MaxDuration = TimeSpan.Zero }
 
 type ServerRequest = {
     Id: int
@@ -58,8 +59,8 @@ and ServerState = {
     OpenDocs: Map<string, ServerOpenDocInfo>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     LastRequestId: int
+    PendingRequests: ServerRequest list
     RunningRequests: Map<int, ServerRequest>
-    RequestQueue: ServerRequest list
     SolutionReloadPending: DateTime option
     PushDiagnosticsDocumentBacklog: string list
     PushDiagnosticsCurrentDocTask: (string * Task) option
@@ -76,8 +77,8 @@ with
       OpenDocs = Map.empty
       DecompiledMetadata = Map.empty
       LastRequestId = 0
+      PendingRequests = []
       RunningRequests = Map.empty
-      RequestQueue = []
       SolutionReloadPending = None
       PushDiagnosticsDocumentBacklog = []
       PushDiagnosticsCurrentDocTask = None
@@ -243,7 +244,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
 
         return { state with LastRequestId=newRequest.Id
-                            RequestQueue=state.RequestQueue @ [newRequest] }
+                            PendingRequests=state.PendingRequests @ [newRequest] }
 
     | FinishRequest requestId ->
         let request = state.RunningRequests |> Map.tryFind requestId
@@ -297,7 +298,8 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             if not canRunNextRequest then
                 state // block until current ReadWrite request is finished
             else
-                let (nextRequestMaybe, queueRemainder) = pullNextRequestMaybe state.RequestQueue
+                let (nextRequestMaybe, pendingRequestsRemainder) =
+                    pullNextRequestMaybe state.PendingRequests
 
                 match nextRequestMaybe with
                 | None -> state
@@ -305,7 +307,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     // try to process next msg from the remainder, if possible, later
                     postSelf ProcessRequestQueue
 
-                    let newState = { state with RequestQueue = queueRemainder
+                    let newState = { state with PendingRequests = pendingRequestsRemainder
                                                 RunningRequests = state.RunningRequests |> Map.add nextRequest.Id nextRequest }
 
                     // unblock this request to run by sending it current state
