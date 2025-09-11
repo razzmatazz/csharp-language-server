@@ -7,6 +7,7 @@ open Ionide.LanguageServerProtocol.Server
 open System
 open CSharpLanguageServer.Tests.Tooling
 
+// TODO: Test other kinds of constructs, i.e. class, methods, etc.
 [<TestCase>]
 let testSemanticTokenWorks () =
     use client = setupServerClient defaultClientProfile "TestData/testSemanticToken"
