@@ -74,6 +74,10 @@ let testSemanticTokens () =
 
     Assert.IsTrue semanticTokensOptions.IsSome
 
+    let legend = semanticTokensOptions.Value.Legend
+    Assert.AreEqual([| "static" |], legend.TokenModifiers)
+    Assert.AreEqual(18, legend.TokenTypes.Length)
+
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
         semanticTokensOptions
@@ -98,10 +102,7 @@ let testSemanticTokens () =
 
     Assert.IsTrue(semanticToken.ResultId.IsNone)
 
-    let tokens =
-        semanticToken
-        |> (decodeSemanticToken semanticTokensOptions.Value.Legend)
-
+    let tokens = semanticToken |> (decodeSemanticToken legend)
     Assert.AreEqual(123, tokens.Length)
 
     let firstNTokens = tokens |> Seq.take 8 |> Array.ofSeq
@@ -126,7 +127,7 @@ let testSemanticTokensWithMultiLineLiteral () =
     client.StartAndWaitForSolutionLoad()
 
     use file = client.Open "Project/Program.cs"
-    let len = (file.GetFileContentsWithTextEditsApplied Array.empty).Length
+    let len = file.GetFileContents().Length
 
     let semanticTokenParams: SemanticTokensParams =
         { PartialResultToken = None

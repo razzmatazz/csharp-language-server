@@ -549,6 +549,9 @@ type FileController (client: MailboxProcessor<ClientEvent>, projectDir: string, 
 
         client.Post(SendServerRpcNotification ("textDocument/didChange", serialize didChangeParams))
 
+    member __.GetFileContents () =
+        fileContents.Value
+
     member __.GetFileContentsWithTextEditsApplied (tes: TextEdit[]) =
         let indexOfPos (c: string) (pos: Position) : int =
             let lines = c.Split([|'\n'|], StringSplitOptions.None)
