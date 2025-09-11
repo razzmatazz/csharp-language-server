@@ -20,6 +20,7 @@
     <Compile Include="InternalTests.fs" />
     <Compile Include="CompletionTests.fs" />
     <Compile Include="WorkspaceSymbolTests.fs" />
+    <Compile Include="SemanticTokenTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -99,7 +99,7 @@ module SemanticTokens =
                     (getSemanticTokenIdFromClassification s.ClassificationType, m)
             ) (None, 0u)
         let pos = lines.GetLinePositionSpan(textSpan)
-        (uint32 pos.Start.Line, uint32 pos.Start.Character, uint32 (pos.End.Character - pos.Start.Character), typeId, modifiers)
+        (uint32 pos.Start.Line, uint32 pos.Start.Character, uint32 textSpan.Length, typeId, modifiers)
 
     let private computePosition (((pLine, pChar, _, _, _), (cLine, cChar, cLen, cToken, cModifiers)): ((uint32 * uint32 * uint32 * uint32 * uint32) * (uint32 * uint32 * uint32 * uint32 * uint32))) =
         let deltaLine = cLine - pLine
