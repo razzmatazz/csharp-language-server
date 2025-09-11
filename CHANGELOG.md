@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Fix semantic tokens for multi-line literals
+  - By @onion108 in https://github.com/razzmatazz/csharp-language-server/pull/261
 * Print request stats in debug mode.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/258
 
