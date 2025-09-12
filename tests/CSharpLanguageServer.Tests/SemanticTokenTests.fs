@@ -13,7 +13,7 @@ type DecodedToken = {
     TokenModifiers: string[]
 }
 
-let decodeSemanticToken legend (semanticToken: SemanticTokens) : list<DecodedToken> =
+let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] =
     let decodeTokenWithLegend (legend: SemanticTokensLegend) (token: uint[]) : DecodedToken =
         if token.Length <> 5 then failwith "invalid size of `token`, must be 5!"
 
@@ -56,7 +56,7 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : list<DecodedTok
         |> Seq.map (decodeTokenWithLegend legend)
         |> Seq.mapFold offsetMappingFn None
 
-    tokens |> List.ofSeq
+    tokens |> Array.ofSeq
 
 
 [<TestCase>]
@@ -105,8 +105,6 @@ let testSemanticTokens () =
     let tokens = semanticToken |> (decodeSemanticToken legend)
     Assert.AreEqual(123, tokens.Length)
 
-    let firstNTokens = tokens |> Seq.take 8 |> Array.ofSeq
-
     Assert.AreEqual(
         [|
             { Line=0u; StartChar=0u; Length=5u; TokenType="keyword"; TokenModifiers=[||] }
@@ -118,13 +116,23 @@ let testSemanticTokens () =
             { Line=6u; StartChar=8u; Length=6u; TokenType="keyword"; TokenModifiers=[||] }
             { Line=6u; StartChar=15u; Length=11u; TokenType="method"; TokenModifiers=[||] }
          |],
-         firstNTokens)
+         tokens |> Array.take 8)
 
 
 [<TestCase>]
 let testSemanticTokensWithMultiLineLiteral () =
     use client = setupServerClient defaultClientProfile "TestData/testSemanticTokensWithMultiLineLiteral"
     client.StartAndWaitForSolutionLoad()
+
+    let semanticTokensOptions =
+        client.GetState().ServerCapabilities
+        |> Option.bind (fun c -> c.SemanticTokensProvider)
+        |> Option.bind (fun s ->
+            match s with
+            | U2.C1 c1 -> Some c1
+            | _ -> None)
+
+    let legend = semanticTokensOptions.Value.Legend
 
     use file = client.Open "Project/Program.cs"
     let len = file.GetFileContents().Length
@@ -143,3 +151,15 @@ let testSemanticTokensWithMultiLineLiteral () =
         |> Array.chunkBySize 5
         |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 len) false
     )
+
+    let tokens = semanticToken |> (decodeSemanticToken legend)
+    Assert.AreEqual(
+        [|
+            { Line=0u; StartChar=0u; Length=3u; TokenType="keyword"; TokenModifiers=[||] }
+            { Line=0u; StartChar=4u; Length=1u; TokenType="variable"; TokenModifiers=[||] }
+            { Line=0u; StartChar=6u; Length=1u; TokenType="operator"; TokenModifiers=[||] }
+            { Line=0u; StartChar=8u; Length=5u; TokenType="string"; TokenModifiers=[||] }
+            { Line=1u; StartChar=0u; Length=24u; TokenType="string"; TokenModifiers=[||] }
+            { Line=2u; StartChar=15u; Length=4u; TokenType="string"; TokenModifiers=[||] }
+         |],
+        tokens)
