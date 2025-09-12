@@ -283,7 +283,10 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 if rpcMsg.ContainsKey("result") || rpcMsg.ContainsKey("error") then
                     post (ServerRpcCallResultOrError rpcMsg)
                 else if rpcMsg.ContainsKey("method") then
-                    post (ClientRpcCall (rpcMsg["id"] :?> JValue, string rpcMsg["method"], rpcMsg["params"] :?> JObject))
+                    let rpcMsgId: JValue = rpcMsg["id"] :?> JValue
+                    let rpcMsgMethod: string = string rpcMsg["method"]
+                    let rpcMsgParams: JObject = rpcMsg["params"] :?> JObject
+                    post (ClientRpcCall (rpcMsgId, rpcMsgMethod, rpcMsgParams))
                 else
                     failwith (sprintf "RpcMessageReceived: unknown json rpc msg type: %s" (string rpcMsg))
             | None ->

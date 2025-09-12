@@ -31,14 +31,19 @@ type ServerOpenDocInfo =
 
 type RequestMetrics =
     {
-      Count: int
-      TotalDuration: TimeSpan
-      MaxDuration: TimeSpan
+        Count: int
+        TotalDuration: TimeSpan
+        MaxDuration: TimeSpan
+        ImpactedRequestsCount: int
+        TotalImpactedWaitingTime: TimeSpan
     }
     with
-        static member Zero = { Count = 0
-                               TotalDuration = TimeSpan.Zero
-                               MaxDuration = TimeSpan.Zero }
+        static member Zero = {
+            Count = 0
+            TotalDuration = TimeSpan.Zero
+            MaxDuration = TimeSpan.Zero
+            ImpactedRequestsCount = 0
+            TotalImpactedWaitingTime = TimeSpan.Zero }
 
 type ServerRequest = {
     Id: int
@@ -47,6 +52,7 @@ type ServerRequest = {
     Semaphore: SemaphoreSlim
     Priority: int // 0 is the highest priority, 1 is lower prio, etc.
                   // priority is used to order pending R/O requests and is ignored wrt R/W requests
+    StartedProcessing: option<DateTime>
     Enqueued: DateTime
 }
 and ServerState = {
@@ -58,8 +64,8 @@ and ServerState = {
     OpenDocs: Map<string, ServerOpenDocInfo>
     DecompiledMetadata: Map<string, DecompiledMetadataDocument>
     LastRequestId: int
+    PendingRequests: ServerRequest list
     RunningRequests: Map<int, ServerRequest>
-    RequestQueue: ServerRequest list
     SolutionReloadPending: DateTime option
     PushDiagnosticsDocumentBacklog: string list
     PushDiagnosticsCurrentDocTask: (string * Task) option
@@ -76,8 +82,8 @@ with
       OpenDocs = Map.empty
       DecompiledMetadata = Map.empty
       LastRequestId = 0
+      PendingRequests = []
       RunningRequests = Map.empty
-      RequestQueue = []
       SolutionReloadPending = None
       PushDiagnosticsDocumentBacklog = []
       PushDiagnosticsCurrentDocTask = None
@@ -171,38 +177,95 @@ let getDocumentForUriOfType state docType (u: string) =
     | None -> None
 
 
-let processDumpAndResetRequestStats state =
+let processFinishRequest postSelf state request =
+    request.Semaphore.Dispose()
+
+    let newRequestStats =
+        let requestExecutionDuration: TimeSpan =
+            match request.StartedProcessing with
+            | Some startTime -> DateTime.Now - startTime
+            | None -> DateTime.Now - request.Enqueued
+
+        let updateRequestStats (stats: RequestMetrics option) : RequestMetrics option =
+            match stats with
+            | None -> { RequestMetrics.Zero with
+                            Count = 1
+                            TotalDuration = requestExecutionDuration
+                            MaxDuration = requestExecutionDuration }
+                        |> Some
+            | Some s ->
+                let (impactedCount, totalImpactedWait) =
+                    if request.Mode = ReadWrite then
+                        let blockingStartTime = request.StartedProcessing |> Option.defaultValue request.Enqueued
+
+                        let aggregateBlockedRequestStats (count, totalWait) pendingRequest =
+                            let waitStartTime = max blockingStartTime pendingRequest.Enqueued
+                            let waitDurationForPending = DateTime.Now - waitStartTime
+
+                            (count + 1, totalWait + waitDurationForPending)
+
+                        state.PendingRequests
+                        |> List.fold aggregateBlockedRequestStats (0, TimeSpan.Zero)
+                    else
+                        (0, TimeSpan.Zero)
+
+                Some { s with Count = s.Count + 1
+                              TotalDuration = s.TotalDuration + requestExecutionDuration
+                              MaxDuration = max s.MaxDuration requestExecutionDuration
+                              ImpactedRequestsCount = s.ImpactedRequestsCount + impactedCount
+                              TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
+
+        match state.Settings.DebugMode with
+        | true -> state.RequestStats |> Map.change request.Name updateRequestStats
+        | false -> state.RequestStats
+
+    let newRunningRequests = state.RunningRequests |> Map.remove request.Id
+
+    let newState = { state with RunningRequests = newRunningRequests
+                                RequestStats = newRequestStats }
+
+    postSelf ProcessRequestQueue
+    newState
+
+
+let processDumpAndResetRequestStats (logger: ILogger) state =
     let formatStats stats =
         let calculateRequestStatsMetrics (name, metrics) =
             let avgDurationMs =
                 if metrics.Count > 0 then metrics.TotalDuration.TotalMilliseconds / float metrics.Count
                 else 0.0
-            (name, metrics, avgDurationMs)
+
+            let avgImpactedWaitMs =
+                if metrics.ImpactedRequestsCount > 0 then
+                    metrics.TotalImpactedWaitingTime.TotalMilliseconds / float metrics.ImpactedRequestsCount
+                else 0.0
+
+            (name, metrics, avgImpactedWaitMs, avgDurationMs)
 
         let sortedStats =
             stats
             |> Map.toList
             |> List.map calculateRequestStatsMetrics
-            |> List.sortByDescending (fun (_, _, avg) -> avg)
+            |> List.sortByDescending (fun (_, _, _, avgDuration) -> avgDuration)
 
-        let formatStatsRow (name, metrics, avgDurationMs: float) =
+        let formatStatsRowWithImpact (name, metrics, avgImpactedWaitMs: float, avgDurationMs: float) =
             [ $"\"{name}\""
               metrics.Count |> string
               avgDurationMs.ToString("F2")
-              metrics.MaxDuration.TotalMilliseconds.ToString("F2") ]
+              metrics.MaxDuration.TotalMilliseconds.ToString("F2")
+              sprintf "%d (%s ms on avg)" metrics.ImpactedRequestsCount (avgImpactedWaitMs.ToString("F2")) ]
 
-        let headerRow = ["Name"; "Count"; "AvgDuration (ms)"; "MaxDuration (ms)"]
-
-        let dataRows = sortedStats |> List.map formatStatsRow
+        let headerRow = ["Name"; "Count"; "AvgDuration (ms)"; "MaxDuration (ms)"; "ImpactedRequests"]
+        let dataRows = sortedStats |> List.map formatStatsRowWithImpact
 
         formatInColumns (headerRow :: dataRows)
 
     if not (Map.isEmpty state.RequestStats) then
-        System.Console.Error.WriteLine("--------- Request Stats ---------")
-        System.Console.Error.WriteLine(state.RequestStats |> formatStats)
-        System.Console.Error.WriteLine("---------------------------------")
+        logger.LogDebug("--------- Request Stats ---------")
+        logger.LogDebug("{stats}", (state.RequestStats |> formatStats))
+        logger.LogDebug("---------------------------------")
     else
-        System.Console.Error.WriteLine("------- No request stats  -------")
+        logger.LogDebug("------- No request stats  -------")
 
     { state with RequestStats = Map.empty
                  LastStatsDumpTime = DateTime.Now }
@@ -237,47 +300,24 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                            Name=name
                            Mode=requestMode
                            Semaphore=new SemaphoreSlim(0, 1)
+                           StartedProcessing=None
                            Priority=requestPriority
                            Enqueued=DateTime.Now }
 
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
 
         return { state with LastRequestId=newRequest.Id
-                            RequestQueue=state.RequestQueue @ [newRequest] }
+                            PendingRequests=state.PendingRequests @ [newRequest] }
 
     | FinishRequest requestId ->
         let request = state.RunningRequests |> Map.tryFind requestId
+
         match request with
         | Some request ->
-            request.Semaphore.Dispose()
+            return processFinishRequest postSelf state request
 
-            let newRequestStats =
-                let requestDuration = DateTime.Now - request.Enqueued
-
-                let updateRequestStats stats =
-                    match stats with
-                    | Some s ->
-                        Some { Count = s.Count + 1
-                               TotalDuration = s.TotalDuration + requestDuration
-                               MaxDuration = max s.MaxDuration requestDuration }
-                    | None ->
-                        Some { Count = 1
-                               TotalDuration = requestDuration
-                               MaxDuration = requestDuration }
-
-                match state.Settings.DebugMode with
-                | true -> state.RequestStats |> Map.change request.Name updateRequestStats
-                | false -> state.RequestStats
-
-            let newRunningRequests = state.RunningRequests |> Map.remove requestId
-
-            let newState = { state with RunningRequests = newRunningRequests
-                                        RequestStats = newRequestStats }
-
-            postSelf ProcessRequestQueue
-            return newState
         | None ->
-            logger.LogDebug(
+            logger.LogWarning(
                 "serverEventLoop/FinishRequest#{requestId}: request not found in state.RunningRequests",
                 requestId)
             return state
@@ -297,7 +337,8 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             if not canRunNextRequest then
                 state // block until current ReadWrite request is finished
             else
-                let (nextRequestMaybe, queueRemainder) = pullNextRequestMaybe state.RequestQueue
+                let (nextRequestMaybe, pendingRequestsRemainder) =
+                    pullNextRequestMaybe state.PendingRequests
 
                 match nextRequestMaybe with
                 | None -> state
@@ -305,11 +346,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     // try to process next msg from the remainder, if possible, later
                     postSelf ProcessRequestQueue
 
-                    let newState = { state with RequestQueue = queueRemainder
-                                                RunningRequests = state.RunningRequests |> Map.add nextRequest.Id nextRequest }
+                    let requestToRun = { nextRequest with StartedProcessing = Some DateTime.Now }
+
+                    let newState = {
+                        state with PendingRequests = pendingRequestsRemainder
+                                   RunningRequests = state.RunningRequests |> Map.add requestToRun.Id requestToRun }
 
                     // unblock this request to run by sending it current state
-                    nextRequest.Semaphore.Release() |> ignore
+                    requestToRun.Semaphore.Release() |> ignore
 
                     newState
 
@@ -406,7 +450,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             | false, Some docUri ->
                 let newState = { state with PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docAndTypeMaybe = docUri |> getDocumentForUriOfType state ServerDocumentType.AnyDocument
+                let docAndTypeMaybe = docUri |> getDocumentForUriOfType state AnyDocument
                 match docAndTypeMaybe with
                 | None ->
                     // could not find document for this enqueued uri
@@ -496,7 +540,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             return state
 
     | DumpAndResetRequestStats ->
-        return processDumpAndResetRequestStats state
+        return processDumpAndResetRequestStats logger state
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
