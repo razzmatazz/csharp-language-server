@@ -10,7 +10,6 @@ module Logging =
 
         let createConsoleLogger (builder: ILoggingBuilder) =
             let configureSimpleConsole (opts: SimpleConsoleFormatterOptions) =
-                opts.SingleLine <- true
                 opts.TimestampFormat <- "H:mm:ss.fff "
                 opts.IncludeScopes <- true
 
