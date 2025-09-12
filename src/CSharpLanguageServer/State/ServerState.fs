@@ -172,7 +172,7 @@ let getDocumentForUriOfType state docType (u: string) =
     | None -> None
 
 
-let processDumpAndResetRequestStats state =
+let processDumpAndResetRequestStats (logger: ILogger) state =
     let formatStats stats =
         let calculateRequestStatsMetrics (name, metrics) =
             let avgDurationMs =
@@ -199,11 +199,11 @@ let processDumpAndResetRequestStats state =
         formatInColumns (headerRow :: dataRows)
 
     if not (Map.isEmpty state.RequestStats) then
-        System.Console.Error.WriteLine("--------- Request Stats ---------")
-        System.Console.Error.WriteLine(state.RequestStats |> formatStats)
-        System.Console.Error.WriteLine("---------------------------------")
+        logger.LogDebug("--------- Request Stats ---------")
+        logger.LogDebug("{stats}", (state.RequestStats |> formatStats))
+        logger.LogDebug("---------------------------------")
     else
-        System.Console.Error.WriteLine("------- No request stats  -------")
+        logger.LogDebug("------- No request stats  -------")
 
     { state with RequestStats = Map.empty
                  LastStatsDumpTime = DateTime.Now }
@@ -498,7 +498,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             return state
 
     | DumpAndResetRequestStats ->
-        return processDumpAndResetRequestStats state
+        return processDumpAndResetRequestStats logger state
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
