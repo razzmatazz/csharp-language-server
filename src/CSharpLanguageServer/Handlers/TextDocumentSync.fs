@@ -3,7 +3,6 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Microsoft.CodeAnalysis.Text
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -11,7 +10,6 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Logging
 
@@ -37,75 +35,14 @@ module TextDocumentSync =
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Synchronization)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
+    let provider (_: ClientCapabilities) : TextDocumentSyncOptions option =
+        { TextDocumentSyncOptions.Default with
+            OpenClose = Some true
+            Save = Some (U2.C2 { IncludeText = Some true })
+            Change = Some TextDocumentSyncKind.Incremental
+        }
+        |> Some
 
-    let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false ->
-            Some
-                { TextDocumentSyncOptions.Default with
-                    OpenClose = Some true
-                    Save = Some (U2.C2 { IncludeText = Some true })
-                    Change = Some TextDocumentSyncKind.Incremental }
-
-    let didOpenRegistration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions = {
-                DocumentSelector = Some defaultDocumentSelector }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/didOpen"
-                  RegisterOptions = registerOptions |> serialize |> Some }
-
-
-    let didChangeRegistration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  SyncKind = TextDocumentSyncKind.Incremental }
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/didChange"
-                  RegisterOptions = registerOptions|> serialize |> Some }
-
-    let didSaveRegistration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  IncludeText = Some true }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/didSave"
-                  RegisterOptions = registerOptions |> serialize |> Some }
-
-    let didCloseRegistration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions = {
-                DocumentSelector = Some defaultDocumentSelector }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/didClose"
-                  RegisterOptions = registerOptions |> serialize |> Some }
-
-    let willSaveRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
-
-    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
     let didOpen (context: ServerRequestContext)
                 (openParams: DidOpenTextDocumentParams)

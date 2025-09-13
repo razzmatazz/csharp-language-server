@@ -116,7 +116,7 @@ module Initialization =
                     logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
             with
             | ex ->
-                logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", string ex)
+                logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
             logger.LogDebug("handleInitialized: retrieve csharp settings..")
             //

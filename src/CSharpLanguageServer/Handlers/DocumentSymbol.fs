@@ -6,13 +6,11 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
@@ -283,30 +281,8 @@ module DocumentSymbol =
             base.VisitEventDeclaration(node)
             pop node
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.DocumentSymbol)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false -> true |> U2.C1 |> Some
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: DocumentSymbolRegistrationOptions =
-                { Label = None
-                  WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/documentSymbol"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+    let provider (_: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
+        true |> U2.C1 |> Some
 
     let handle (context: ServerRequestContext)
                (p: DocumentSymbolParams)

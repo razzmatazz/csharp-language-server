@@ -102,48 +102,8 @@ type CSharpLspServer(
     }
 
     let getRegistrations (clientCapabilities: ClientCapabilities): Registration list =
-        let registrationBuilders =
-            [ CallHierarchy.registration
-              CodeAction.registration
-              CodeLens.registration
-              Color.registration
-              Completion.registration
-              Declaration.registration
-              Definition.registration
-              Diagnostic.registration
-              DocumentFormatting.registration
-              DocumentHighlight.registration
-              DocumentLink.registration
-              DocumentOnTypeFormatting.registration
-              DocumentRangeFormatting.registration
-              DocumentSymbol.registration
-              ExecuteCommand.registration
-              FoldingRange.registration
-              Hover.registration
-              Implementation.registration
-              InlayHint.registration
-              InlineValue.registration
-              LinkedEditingRange.registration
-              Moniker.registration
-              References.registration
-              Rename.registration
-              SelectionRange.registration
-              SemanticTokens.registration
-              SignatureHelp.registration
-              TextDocumentSync.didOpenRegistration
-              TextDocumentSync.didChangeRegistration
-              TextDocumentSync.didSaveRegistration
-              TextDocumentSync.didCloseRegistration
-              TextDocumentSync.willSaveRegistration
-              TextDocumentSync.willSaveWaitUntilRegistration
-              TypeDefinition.registration
-              TypeHierarchy.registration
-              Workspace.registration
-              WorkspaceSymbol.registration ]
-        registrationBuilders
-        |> List.map ((|>) clientCapabilities)
-        |> List.filter (Option.isSome)
-        |> List.map (Option.get)
+        [ Workspace.didChangeWatchedFilesRegistration ]
+        |> List.choose (fun regFunc -> regFunc clientCapabilities)
 
     let getServerCapabilities
         (lspClient: InitializeParams) =
@@ -178,7 +138,9 @@ type CSharpLspServer(
                     // InlineValueProvider = InlineValue.provider lspClient.Capabilities
                     InlayHintProvider = InlayHint.provider lspClient.Capabilities
                     DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
-                    WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities }
+                    WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities
+                    Workspace = Workspace.provider lspClient.Capabilities
+                }
 
     interface ICSharpLspServer with
         override __.Dispose() = ()

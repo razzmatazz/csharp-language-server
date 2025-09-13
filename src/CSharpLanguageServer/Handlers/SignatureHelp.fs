@@ -56,34 +56,11 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map (uncurry score) |> Seq.sum
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.SignatureHelp)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let provider (clientCapabilities: ClientCapabilities) : SignatureHelpOptions option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false ->
-            Some
-                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
-                  WorkDoneProgress = None
-                  RetriggerCharacters = None }
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: SignatureHelpRegistrationOptions =
-                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
-                  RetriggerCharacters = None
-                  WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/signatureHelp"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+    let provider (_: ClientCapabilities) : SignatureHelpOptions option =
+        { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
+          WorkDoneProgress = None
+          RetriggerCharacters = None }
+        |> Some
 
     let handle (context: ServerRequestContext) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
         let docMaybe = context.GetUserDocument p.TextDocument.Uri
