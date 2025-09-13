@@ -1,13 +1,11 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
 open System.Threading
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Rename
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
@@ -15,7 +13,6 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
@@ -67,12 +64,6 @@ module Rename =
         |> Async.Parallel
         |> Async.map (Seq.distinct >> Array.ofSeq)
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Rename)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
     let private prepareSupport (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
         |> Option.bind (fun x -> x.Rename)
@@ -80,24 +71,9 @@ module Rename =
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities): U2<bool, RenameOptions> option =
-        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
-        | true, _ -> None
-        | false, true -> Some (U2.C2 { PrepareProvider = Some true; WorkDoneProgress = None })
-        | false, false -> Some (U2.C1 true)
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: RenameRegistrationOptions = {
-                PrepareProvider = Some (prepareSupport clientCapabilities)
-                DocumentSelector = Some defaultDocumentSelector
-                WorkDoneProgress = None
-            }
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/rename"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+        match prepareSupport clientCapabilities with
+        | true -> Some (U2.C2 { PrepareProvider = Some true; WorkDoneProgress = None })
+        | false -> Some (U2.C1 true)
 
     let prepare (context: ServerRequestContext)
                 (p: PrepareRenameParams)

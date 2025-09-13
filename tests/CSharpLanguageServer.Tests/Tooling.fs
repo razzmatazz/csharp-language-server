@@ -32,9 +32,57 @@ type ClientProfile = {
     ClientCapabilities: ClientCapabilities
 }
 
+let defaultClientCapabilities =
+    { emptyClientCapabilities with
+        TextDocument = Some {
+            Hover = None
+            Synchronization = None
+            Completion = None
+            SignatureHelp = None
+            Declaration = None
+            Definition = None
+            TypeDefinition = None
+            Implementation = None
+            References = None
+            DocumentHighlight = None
+            DocumentSymbol = None
+            CodeLens = None
+            DocumentLink = None
+            ColorProvider = None
+            Formatting = None
+            RangeFormatting = None
+            OnTypeFormatting = None
+            Rename = None
+            FoldingRange = None
+            SelectionRange = None
+            PublishDiagnostics = None
+            CallHierarchy = None
+            SemanticTokens = None
+            LinkedEditingRange = None
+            Moniker = None
+            TypeHierarchy = None
+            InlineValue = None
+            InlayHint = None
+            Diagnostic = None
+            CodeAction = Some {
+                DynamicRegistration = None
+                IsPreferredSupport = None
+                DisabledSupport = None
+                DataSupport = None
+                ResolveSupport = None
+                HonorsChangeAnnotations = None
+                CodeActionLiteralSupport = Some {
+                    CodeActionKind = {
+                        ValueSet = Array.empty
+                    }
+                }
+            }
+        }
+    }
+
 let defaultClientProfile = {
     LoggingEnabled = false
-    ClientCapabilities = emptyClientCapabilities
+    ClientCapabilities = defaultClientCapabilities
 }
 
 let makeServerProcessInfo projectTempDir =

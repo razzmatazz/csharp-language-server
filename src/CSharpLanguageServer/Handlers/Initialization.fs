@@ -69,9 +69,7 @@ module Initialization =
 
         MSBuildLocator.RegisterInstance(vsInstance)
 
-(*
-        logger.LogTrace("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities))
-*)
+        logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
         context.Emit(ClientCapabilityChange p.Capabilities)
 
         // TODO use p.RootUri
@@ -99,25 +97,30 @@ module Initialization =
 
     let handleInitialized (lspClient: ILspClient)
                           (stateActor: MailboxProcessor<ServerStateEvent>)
-                          (getRegistrations: ClientCapabilities -> Registration list)
+                          (getDynamicRegistrations: ClientCapabilities -> Registration list)
                           (context: ServerRequestContext)
                           (_p: unit)
             : Async<LspResult<unit>> =
         async {
-            logger.LogTrace("handleInitialized: \"initialized\" notification received from client")
+            logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
-            let registrationParams = { Registrations = getRegistrations context.ClientCapabilities |> List.toArray }
+            logger.LogDebug("handleInitialized: registrationParams..")
+            let registrationParams = {
+                Registrations = getDynamicRegistrations context.ClientCapabilities |> List.toArray
+            }
 
+            logger.LogDebug("handleInitialized: ClientRegisterCapability..")
             // TODO: Retry on error?
             try
                 match! lspClient.ClientRegisterCapability registrationParams with
                 | Ok _ -> ()
                 | Error error ->
-                    logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", error)
+                    logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
             with
             | ex ->
-                logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", string ex)
+                logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
+            logger.LogDebug("handleInitialized: retrieve csharp settings..")
             //
             // retrieve csharp settings
             //
@@ -162,9 +165,10 @@ module Initialization =
             //
             // start loading the solution
             //
+            logger.LogDebug("handleInitialized: post SolutionReloadRequest")
             stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
 
-            logger.LogTrace("handleInitialized: OK")
+            logger.LogDebug("handleInitialized: Ok")
 
             return Ok()
         }

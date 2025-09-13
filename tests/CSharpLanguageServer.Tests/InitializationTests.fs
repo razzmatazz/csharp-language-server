@@ -46,7 +46,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.TextDocumentSync)
 
     Assert.AreEqual(
-        null,
+        { WorkspaceFolders = None; FileOperations = None } |> Some,
         serverCaps.Workspace)
 
     Assert.AreEqual(
