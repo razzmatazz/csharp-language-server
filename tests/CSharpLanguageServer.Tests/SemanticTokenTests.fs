@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.SemanticTokenTests
 
+open System
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
@@ -152,14 +153,15 @@ let testSemanticTokensWithMultiLineLiteral () =
         |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 len) false
     )
 
+    let extraLF = uint (Environment.NewLine.Length - 1)
+    let expectedTokens = [|
+        { Line=0u; StartChar=0u; Length=3u; TokenType="keyword"; TokenModifiers=[||] }
+        { Line=0u; StartChar=4u; Length=1u; TokenType="variable"; TokenModifiers=[||] }
+        { Line=0u; StartChar=6u; Length=1u; TokenType="operator"; TokenModifiers=[||] }
+        { Line=0u; StartChar=8u; Length=5u + extraLF; TokenType="string"; TokenModifiers=[||] }
+        { Line=1u; StartChar=0u; Length=24u + extraLF; TokenType="string"; TokenModifiers=[||] }
+        { Line=2u; StartChar=15u; Length=4u + extraLF; TokenType="string"; TokenModifiers=[||] }
+    |]
+
     let tokens = semanticToken |> (decodeSemanticToken legend)
-    Assert.AreEqual(
-        [|
-            { Line=0u; StartChar=0u; Length=3u; TokenType="keyword"; TokenModifiers=[||] }
-            { Line=0u; StartChar=4u; Length=1u; TokenType="variable"; TokenModifiers=[||] }
-            { Line=0u; StartChar=6u; Length=1u; TokenType="operator"; TokenModifiers=[||] }
-            { Line=0u; StartChar=8u; Length=5u; TokenType="string"; TokenModifiers=[||] }
-            { Line=1u; StartChar=0u; Length=24u; TokenType="string"; TokenModifiers=[||] }
-            { Line=2u; StartChar=15u; Length=4u; TokenType="string"; TokenModifiers=[||] }
-         |],
-        tokens)
+    Assert.AreEqual(expectedTokens, tokens)
