@@ -1,41 +1,15 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Implementation =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Implementation)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let provider (clientCapabilities: ClientCapabilities) : U3<bool,ImplementationOptions,ImplementationRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false -> Some (U3.C1 true)
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: ImplementationRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  Id = None
-                  WorkDoneProgress = None }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/implementation"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+    let provider (_: ClientCapabilities) : U3<bool,ImplementationOptions,ImplementationRegistrationOptions> option =
+        Some (U3.C1 true)
 
     let handle (context: ServerRequestContext) (p: ImplementationParams) : Async<LspResult<U2<Definition, DefinitionLink array> option>> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
