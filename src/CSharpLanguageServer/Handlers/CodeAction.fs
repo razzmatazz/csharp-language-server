@@ -19,7 +19,6 @@ open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Conversions
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 
@@ -289,41 +288,21 @@ module CodeAction =
             }
     }
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.CodeAction)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let private literalSupport (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.CodeAction)
-        |> Option.bind (fun x -> x.CodeActionLiteralSupport)
-
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, CodeActionOptions> option =
-        match dynamicRegistration clientCapabilities, literalSupport clientCapabilities with
-        | true, _ -> None
-        | false, _ ->
-            // TODO: Server can only return CodeActionOptions if literalSupport is not None
+        let literalSupport =
+            clientCapabilities.TextDocument
+            |> Option.bind (fun x -> x.CodeAction)
+            |> Option.bind (fun x -> x.CodeActionLiteralSupport)
+
+        match literalSupport with
+        | Some _ ->
             { CodeActionKinds = None
               ResolveProvider = Some true
               WorkDoneProgress = None }
             |> U2.C2
             |> Some
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: CodeActionRegistrationOptions =
-                    { CodeActionKinds = None
-                      ResolveProvider = Some true
-                      WorkDoneProgress = None
-                      DocumentSelector = Some defaultDocumentSelector }
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/codeAction"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+        | None ->
+            true |> U2.C1 |> Some
 
     let handle (context: ServerRequestContext)
                (p: CodeActionParams)

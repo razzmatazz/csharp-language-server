@@ -11,7 +11,6 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
@@ -101,40 +100,13 @@ module Completion =
         member __.GetDescriptionAsync(doc, item, ct) =
             service.GetDescriptionAsync(doc, item, ct)
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Completion)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
     let provider (clientCapabilities: ClientCapabilities) : CompletionOptions option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false ->
-            Some { ResolveProvider = Some true
+        Some {     ResolveProvider = Some true
                    TriggerCharacters = Some ([| "."; "'"; |])
                    AllCommitCharacters = None
-                   WorkDoneProgress = None
                    CompletionItem = None
+                   WorkDoneProgress = None
                  }
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: CompletionRegistrationOptions =
-                    { DocumentSelector = Some defaultDocumentSelector
-                      ResolveProvider = Some true
-                      TriggerCharacters = Some ([| "."; "'"; |])
-                      AllCommitCharacters = None
-                      CompletionItem = None
-                      WorkDoneProgress = None
-                    }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/completion"
-                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let private roslynTagToLspCompletion tag =
         match tag with

@@ -1,44 +1,19 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
 open System.Collections.Immutable
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.DocumentHighlight)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false -> Some (U2.C1 true)
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registerOptions: DocumentHighlightRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
-                  WorkDoneProgress = None
-                }
-
-            Some
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/documentHighlight"
-                  RegisterOptions = registerOptions |> serialize |> Some }
+    let provider (_: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option =
+        Some (U2.C1 true)
 
     let private shouldHighlight (symbol: ISymbol) =
         match symbol with

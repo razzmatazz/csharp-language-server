@@ -97,7 +97,7 @@ module Initialization =
 
     let handleInitialized (lspClient: ILspClient)
                           (stateActor: MailboxProcessor<ServerStateEvent>)
-                          (getRegistrations: ClientCapabilities -> Registration list)
+                          (getDynamicRegistrations: ClientCapabilities -> Registration list)
                           (context: ServerRequestContext)
                           (_p: unit)
             : Async<LspResult<unit>> =
@@ -105,7 +105,9 @@ module Initialization =
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
             logger.LogDebug("handleInitialized: registrationParams..")
-            let registrationParams = { Registrations = getRegistrations context.ClientCapabilities |> List.toArray }
+            let registrationParams = {
+                Registrations = getDynamicRegistrations context.ClientCapabilities |> List.toArray
+            }
 
             logger.LogDebug("handleInitialized: ClientRegisterCapability..")
             // TODO: Retry on error?
@@ -116,7 +118,7 @@ module Initialization =
                     logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
             with
             | ex ->
-                logger.LogWarning("handleInitialized: didChangeWatchedFiles registration has failed with {error}", string ex)
+                logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
             logger.LogDebug("handleInitialized: retrieve csharp settings..")
             //

@@ -9,8 +9,6 @@ open CSharpLanguageServer.State
 module Color =
     let provider (clientCapabilities: ClientCapabilities)  = None
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
-
     let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return
 

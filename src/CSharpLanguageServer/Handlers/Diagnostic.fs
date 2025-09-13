@@ -1,7 +1,5 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -13,37 +11,17 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Diagnostic)
-        |> Option.bind (fun x -> x.DynamicRegistration)
-        |> Option.defaultValue false
-
-    let private registrationOptions: DiagnosticRegistrationOptions =
-        { DocumentSelector = Some defaultDocumentSelector
-          WorkDoneProgress = None
-          Identifier = None
-          InterFileDependencies = false
-          WorkspaceDiagnostics = true
-          Id = None
+    let provider (clientCapabilities: ClientCapabilities): U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+        let registrationOptions: DiagnosticRegistrationOptions =
+            { DocumentSelector = Some defaultDocumentSelector
+              WorkDoneProgress = None
+              Identifier = None
+              InterFileDependencies = false
+              WorkspaceDiagnostics = true
+              Id = None
         }
 
-    let provider (clientCapabilities: ClientCapabilities): U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
-        | true -> None
-        | false -> Some (U2.C2 registrationOptions)
-
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
-        | false -> None
-        | true ->
-            let registration =
-                { Id = Guid.NewGuid().ToString()
-                  Method = "textDocument/diagnostic"
-                  RegisterOptions = registrationOptions |> serialize |> Some
-                }
-
-            Some registration
+        Some (U2.C2 registrationOptions)
 
     let handle (context: ServerRequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
         let emptyReport: RelatedFullDocumentDiagnosticReport =

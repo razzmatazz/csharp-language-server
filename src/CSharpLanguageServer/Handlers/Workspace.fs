@@ -19,14 +19,20 @@ open CSharpLanguageServer.Types
 module Workspace =
     let private logger = Logging.getLoggerByName "Workspace"
 
-    let dynamicRegistration (clientCapabilities: ClientCapabilities) =
+    let provider (_: ClientCapabilities) : ServerCapabilitiesWorkspace option =
+        { WorkspaceFolders = None
+          FileOperations = None
+        }
+        |> Some
+
+    let dynamicRegistrationForDidChangeWatchedFiles (clientCapabilities: ClientCapabilities) =
         clientCapabilities.Workspace
         |> Option.bind (fun x -> x.DidChangeWatchedFiles)
         |> Option.bind (fun x -> x.DynamicRegistration)
         |> Option.defaultValue false
 
-    let registration (clientCapabilities: ClientCapabilities): Registration option =
-        match dynamicRegistration clientCapabilities with
+    let didChangeWatchedFilesRegistration (clientCapabilities: ClientCapabilities): Registration option =
+        match dynamicRegistrationForDidChangeWatchedFiles clientCapabilities with
         | false -> None
         | true ->
             let fileSystemWatcher =
