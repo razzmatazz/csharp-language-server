@@ -1,4 +1,11 @@
-# Support for decompilation via "csharp/metadata"
+# Settings
+
+- `csharp.solution` - solution to load, optional
+
+- `csharp.applyFormattingOptions` - use formatting options as supplied by the
+  client (may override `.editorconfig` values), defaults to `false`
+
+# Support for decompilation
 
 ## API
 
@@ -8,14 +15,12 @@ The api is "csharp/metadata" and in neovim, you can request it like
   local result, err = client.request_sync("csharp/metadata", params, 10000)
 ```
 
-## sender
+## Request Parameters
 You need to send a uri, it is like
 
 **csharp:/metadata/projects/trainning2/assemblies/System.Console/symbols/System.Console.cs**
 
-In neovim, it will be result(s) from vim.lsp.handles["textDocument/definition"]
-
-and the key of uri is the key,
+The `uri` parameter should be the URI of the symbol obtained from an LSP `textDocument/definition` (or similar) request.
 
 The key to send is like
 
@@ -28,9 +33,9 @@ local params = {
 }
 ```
 
-The key of textDocument is needed. And timeout is just for neovim. It is the same if is expressed by json.
+The key of textDocument is needed.
 
-## receiver
+## Response Structure
 
 The object received is like
 
