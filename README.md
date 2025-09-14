@@ -13,11 +13,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 See [FEATURES.md](FEATURES.md) for a more detailed discussion regarding features
 and customization available in csharp-ls.
 
-# Acknowledgements
-- csharp-ls is not affiliated with Microsoft Corp;
-- csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
-- csharp-ls uses [Roslyn](https://github.com/dotnet/roslyn) to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
-- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
 
 # Installation
 `dotnet tool install --global csharp-ls`
@@ -59,3 +54,8 @@ See [vscode-csharp-ls](https://marketplace.visualstudio.com/items?itemName=stati
 $ dotnet build
 ```
 
+# Acknowledgements
+- csharp-ls is not affiliated with Microsoft Corp;
+- csharp-ls uses LSP interface from [Ionide.LanguageServerProtocol](https://github.com/ionide/LanguageServerProtocol);
+- csharp-ls uses [Roslyn](https://github.com/dotnet/roslyn) to parse and update code; Roslyn maps really nicely to LSP w/relatively little impedance mismatch;
+- csharp-ls uses [ILSpy/ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) to decompile types in assemblies to C# source.
