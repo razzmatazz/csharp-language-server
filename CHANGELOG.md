@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 * Will use static server capability registration, unless required (i.e. for workspace/didChangeWatchedFiles).
-  - By @razzmatazz inhttps://github.com/razzmatazz/csharp-language-server/pull/263
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/263
 * Fix semantic tokens for multi-line literals
   - By @onion108 in https://github.com/razzmatazz/csharp-language-server/pull/261
 * Print request stats in debug mode.
