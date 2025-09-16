@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30114.105
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36429.23 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3ADA171B-D93F-4D34-97EA-5BB06662678B}"
 EndProject
@@ -11,10 +11,22 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{35DF1A49
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "CSharpLanguageServer.Tests", "tests\CSharpLanguageServer.Tests\CSharpLanguageServer.Tests.fsproj", "{754F8FCE-6DC2-43E2-832D-00A8B830D192}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitignore = .gitignore
+		CHANGELOG.md = CHANGELOG.md
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
+		Directory.Packages.props = Directory.Packages.props
+		FEATURES.md = FEATURES.md
+		global.json = global.json
+		LICENSE = LICENSE
+		nuget.config = nuget.config
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Debug|x64 = Debug|x64
@@ -49,8 +61,14 @@ Global
 		{754F8FCE-6DC2-43E2-832D-00A8B830D192}.Release|x86.ActiveCfg = Release|Any CPU
 		{754F8FCE-6DC2-43E2-832D-00A8B830D192}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{228A59AD-2E4C-4DF4-AC5E-1F126A4FFF02} = {3ADA171B-D93F-4D34-97EA-5BB06662678B}
 		{754F8FCE-6DC2-43E2-832D-00A8B830D192} = {35DF1A49-B49A-42CB-B43B-8E8120AD9B0E}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6E645033-9E5A-4849-9814-68EC7EA428FE}
 	EndGlobalSection
 EndGlobal

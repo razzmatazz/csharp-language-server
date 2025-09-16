@@ -8,7 +8,6 @@ open System.Threading
 open System.Threading.Tasks
 open System.Collections.Immutable
 open System.Text.RegularExpressions
-
 open Castle.DynamicProxy
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
@@ -30,6 +29,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Util
+open ReflectedTypes
 
 type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -56,27 +56,29 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
     override __.Visit(node: SyntaxNode | null) =
         let node = node |> nonNull "node"
 
-        if sym.Kind = SymbolKind.Method then
-            if node :? MethodDeclarationSyntax then
-                let nodeMethodDecl = node :?> MethodDeclarationSyntax
+        match sym.Kind, node with
+        | SymbolKind.Method, (:? MethodDeclarationSyntax as m)
+            when m.Identifier.ValueText = sym.Name ->
+                let symMethod = sym :?> IMethodSymbol
+                let methodArityMatches =
+                    symMethod.Parameters.Length = m.ParameterList.Parameters.Count
+                collectIdentifier m.Identifier methodArityMatches
 
-                if nodeMethodDecl.Identifier.ValueText = sym.Name then
-                    let methodArityMatches =
-                        let symMethod = sym :?> IMethodSymbol
-                        symMethod.Parameters.Length = nodeMethodDecl.ParameterList.Parameters.Count
+         | _, (:? TypeDeclarationSyntax as t) 
+             when t.Identifier.ValueText = sym.Name ->
+                 collectIdentifier t.Identifier false
 
-                    collectIdentifier nodeMethodDecl.Identifier methodArityMatches
-        else if node :? TypeDeclarationSyntax then
-            let typeDecl = node :?> TypeDeclarationSyntax
+         | _, (:? PropertyDeclarationSyntax as p) 
+             when p.Identifier.ValueText = sym.Name ->
+                 collectIdentifier p.Identifier false
 
-            if typeDecl.Identifier.ValueText = sym.Name then
-                collectIdentifier typeDecl.Identifier false
+         | _, (:? EventDeclarationSyntax as e) 
+             when e.Identifier.ValueText = sym.Name ->
+                 collectIdentifier e.Identifier false
+         // TODO: collect other type of syntax nodes too
 
-        else if node :? PropertyDeclarationSyntax then
-            let propertyDecl = node :?> PropertyDeclarationSyntax
+         | _ -> ()
 
-            if propertyDecl.Identifier.ValueText = sym.Name then
-                collectIdentifier propertyDecl.Identifier false
 
         else if node :? EventDeclarationSyntax then
             let eventDecl = node :?> EventDeclarationSyntax
@@ -119,7 +121,15 @@ type CleanCodeGenerationOptionsProviderInterceptor(_logMessage) =
 
             | _ -> NotImplementedException(string invocation.Method) |> raise
 
-type LegacyWorkspaceOptionServiceInterceptor(logMessage) =
+type CleanCodeGenOptionsProxy(logMessage) =
+    static let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
+    static let generator = ProxyGenerator()
+    let interceptor = CleanCodeGenerationOptionsProviderInterceptor(logMessage)
+
+    member __.Create() =
+        workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider")
+
+type LegacyWorkspaceOptionServiceInterceptor (logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             //logMessage (sprintf "LegacyWorkspaceOptionServiceInterceptor: %s" (string invocation.Method))
@@ -131,18 +141,9 @@ type LegacyWorkspaceOptionServiceInterceptor(logMessage) =
             | "GetGenerateConstructorFromMembersOptionsAddNullChecks" -> invocation.ReturnValue <- box true
             | "get_GenerateOverrides" -> invocation.ReturnValue <- box true
             | "get_CleanCodeGenerationOptionsProvider" ->
-                let workspacesAssembly = Assembly.Load "Microsoft.CodeAnalysis.Workspaces"
-
-                let cleanCodeGenOptionsProvType =
-                    workspacesAssembly.GetType
-                        "Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider"
-
-                let generator = ProxyGenerator()
-                let interceptor = CleanCodeGenerationOptionsProviderInterceptor logMessage
-                let proxy = generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)
-                invocation.ReturnValue <- proxy
-
-            | _ -> NotImplementedException(string invocation.Method) |> raise
+                invocation.ReturnValue <- CleanCodeGenOptionsProxy(logMessage).Create()
+            | _ ->
+                NotImplementedException(string invocation.Method) |> raise
 
 type PickMembersServiceInterceptor(_logMessage) =
     interface IInterceptor with
@@ -228,16 +229,8 @@ type ExtractClassOptionsServiceInterceptor(_logMessage) =
             match invocation.Method.Name with
             | "GetExtractClassOptionsAsync" ->
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
-                let extractClassOptionsValue = getExtractClassOptionsImpl argOriginalType
-
-                let fromResultMethod =
-                    typeof<Task>.GetMethod "FromResult"
-                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
-
-                let typedFromResultMethod =
-                    fromResultMethod.MakeGenericMethod [| extractClassOptionsValue.GetType() |]
-
-                invocation.ReturnValue <- typedFromResultMethod.Invoke(null, [| extractClassOptionsValue |])
+                let extractClassOptionsValue = getExtractClassOptionsImpl(argOriginalType)
+                invocation.ReturnValue <- TaskOfType(extractClassOptionsValue.GetType()).FromResult(extractClassOptionsValue)
 
             | "GetExtractClassOptions" ->
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
@@ -249,59 +242,54 @@ type ExtractInterfaceOptionsServiceInterceptor(logMessage) =
     interface IInterceptor with
 
         member __.Intercept(invocation: IInvocation) =
-            match invocation.Method.Name with
-            | "GetExtractInterfaceOptionsAsync" ->
-                let argExtractableMembers = invocation.Arguments[2] :?> List<ISymbol>
-                let argDefaultInterfaceName = invocation.Arguments[3] :?> string
+            let (argExtractableMembers, argDefaultInterfaceName) =
+                match invocation.Method.Name, invocation.Arguments[1], invocation.Arguments[2], invocation.Arguments[3] with
+                | "GetExtractInterfaceOptions", (:? ImmutableArray<ISymbol> as extractableMembers), (:? string as interfaceName), _ ->
+                    (extractableMembers,interfaceName)
+                | "GetExtractInterfaceOptions", _, (:? ImmutableArray<ISymbol> as extractableMembers), (:? string as interfaceName) ->
+                    (extractableMembers, interfaceName)
+                | "GetExtractInterfaceOptionsAsync", _, (:? List<ISymbol> as extractableMembers), (:? string as interfaceName) ->
+                    (extractableMembers.ToImmutableArray(), interfaceName)
+                | _ ->
+                    NotImplementedException(string invocation.Method.Name) |> raise
 
-                let fileName = sprintf "%s.cs" argDefaultInterfaceName
 
-                let featuresAssembly = Assembly.Load "Microsoft.CodeAnalysis.Features"
+            let fileName = sprintf "%s.cs" argDefaultInterfaceName
 
-                let extractInterfaceOptionsResultType =
-                    featuresAssembly.GetType "Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult"
-                    |> nonNull
-                        "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
+            let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
 
-                let locationEnumType =
-                    extractInterfaceOptionsResultType.GetNestedType "ExtractLocation"
-                    |> nonNull "extractInterfaceOptionsResultType.GetNestedType('ExtractLocation')"
+            let extractInterfaceOptionsResultType =
+                featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult")
+                |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
 
-                let location = Enum.Parse(locationEnumType, "NewFile") // or "SameFile"
+            let locationEnumType =
+                extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
+                |> nonNull "extractInterfaceOptionsResultType.GetNestedType('ExtractLocation')"
 
-                let workspacesAssembly = Assembly.Load "Microsoft.CodeAnalysis.Workspaces"
+            let location =
+                Enum.Parse(locationEnumType, "NewFile")
+                |> fun v -> Convert.ChangeType(v, locationEnumType)
 
-                let cleanCodeGenOptionsProvType =
-                    workspacesAssembly.GetType
-                        "Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider"
-
-                let generator = ProxyGenerator()
-                let interceptor = CleanCodeGenerationOptionsProviderInterceptor logMessage
-
-                let cleanCodeGenerationOptionsProvider =
-                    generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)
-
-                let extractInterfaceOptionsResultValue =
-                    Activator.CreateInstance(
+            invocation.ReturnValue <-
+                match invocation.Method.Name with
+                | "GetExtractInterfaceOptionsAsync" ->
+                     TaskOfType(extractInterfaceOptionsResultType).FromResult(Activator.CreateInstance(
                         extractInterfaceOptionsResultType,
                         false, // isCancelled
-                        argExtractableMembers.ToImmutableArray(),
+                        argExtractableMembers,
                         argDefaultInterfaceName,
                         fileName,
                         location,
-                        cleanCodeGenerationOptionsProvider
-                    )
+                        CleanCodeGenOptionsProxy(logMessage).Create()))
 
-                let fromResultMethod =
-                    typeof<Task>.GetMethod "FromResult"
-                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
-
-                let typedFromResultMethod =
-                    fromResultMethod.MakeGenericMethod [| extractInterfaceOptionsResultType |]
-
-                invocation.ReturnValue <- typedFromResultMethod.Invoke(null, [| extractInterfaceOptionsResultValue |])
-
-            | _ -> NotImplementedException(string invocation.Method.Name) |> raise
+                | _ ->
+                    Activator.CreateInstance(
+                        extractInterfaceOptionsResultType,
+                        false, // isCancelled
+                        argExtractableMembers,
+                        argDefaultInterfaceName,
+                        fileName,
+                        location)
 
 type MoveStaticMembersOptionsServiceInterceptor(_logMessage) =
     interface IInterceptor with
@@ -346,13 +334,7 @@ type RemoteHostClientProviderInterceptor(_logMessage) =
                     workspacesAssembly.GetType "Microsoft.CodeAnalysis.Remote.RemoteHostClient"
                     |> nonNull "GetType(Microsoft.CodeAnalysis.Remote.RemoteHostClient)"
 
-                let fromResultMI =
-                    typeof<Task>.GetMethod("FromResult", BindingFlags.Static ||| BindingFlags.Public)
-                    |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
-
-                let genericMethod = fromResultMI.MakeGenericMethod remoteHostClientType
-                let nullResultTask = genericMethod.Invoke(null, [| null |])
-                invocation.ReturnValue <- nullResultTask
+                invocation.ReturnValue <- TaskOfType(remoteHostClientType).FromResult(null)
 
             | _ -> NotImplementedException(string invocation.Method) |> raise
 
