@@ -14,6 +14,7 @@ open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
+open System.Text.RegularExpressions
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
@@ -328,9 +329,9 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 if rpcMsg.ContainsKey("result") || rpcMsg.ContainsKey("error") then
                     post (ServerRpcCallResultOrError rpcMsg)
                 else if rpcMsg.ContainsKey("method") then
-                    let rpcMsgId: JValue = rpcMsg["id"] :?> JValue
+                    let rpcMsgId: JValue = rpcMsg["id"] :?> JValue | null
                     let rpcMsgMethod: string = string rpcMsg["method"]
-                    let rpcMsgParams: JObject = rpcMsg["params"] :?> JObject
+                    let rpcMsgParams: JObject = rpcMsg["params"] :?> JObject | null
                     post (ClientRpcCall(rpcMsgId, rpcMsgMethod, rpcMsgParams))
                 else
                     failwith (sprintf "RpcMessageReceived: unknown json rpc msg type: %s" (string rpcMsg))
@@ -853,3 +854,12 @@ let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
         DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", testDataDirName))
 
     new ClientController(clientActor, actualTestDataDirName)
+
+module Text =
+    let normalizeLineEndings (s: string) =
+        Regex.Replace(s, @"\r\n|\n\r|\r|\n", "\n")
+
+module TextEdit =
+    let normalizeNewText (s: TextEdit) =
+        { s with
+            NewText = s.NewText |> Text.normalizeLineEndings }
