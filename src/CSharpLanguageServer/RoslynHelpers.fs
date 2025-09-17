@@ -56,53 +56,44 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
         let node = node |> nonNull "node"
 
         match sym.Kind, node with
-        | SymbolKind.Method, (:? MethodDeclarationSyntax as m)
-            when m.Identifier.ValueText = sym.Name ->
-                let symMethod = sym :?> IMethodSymbol
-                let methodArityMatches =
-                    symMethod.Parameters.Length = m.ParameterList.Parameters.Count
-                collectIdentifier m.Identifier methodArityMatches
+        | SymbolKind.Method, (:? MethodDeclarationSyntax as m) when m.Identifier.ValueText = sym.Name ->
+            let symMethod = sym :?> IMethodSymbol
 
-         | _, (:? TypeDeclarationSyntax as t) 
-             when t.Identifier.ValueText = sym.Name ->
-                 collectIdentifier t.Identifier false
+            let methodArityMatches =
+                symMethod.Parameters.Length = m.ParameterList.Parameters.Count
 
-         | _, (:? PropertyDeclarationSyntax as p) 
-             when p.Identifier.ValueText = sym.Name ->
-                 collectIdentifier p.Identifier false
+            collectIdentifier m.Identifier methodArityMatches
 
-         | _, (:? EventDeclarationSyntax as e) 
-             when e.Identifier.ValueText = sym.Name ->
-                 collectIdentifier e.Identifier false
-         // TODO: collect other type of syntax nodes too
+        | _, (:? TypeDeclarationSyntax as t) when t.Identifier.ValueText = sym.Name ->
+            collectIdentifier t.Identifier false
 
-         | _ -> ()
+        | _, (:? PropertyDeclarationSyntax as p) when p.Identifier.ValueText = sym.Name ->
+            collectIdentifier p.Identifier false
+
+        | _, (:? EventDeclarationSyntax as e) when e.Identifier.ValueText = sym.Name ->
+            collectIdentifier e.Identifier false
+        // TODO: collect other type of syntax nodes too
+
+        | _ -> ()
 
 
         else if node :? EventDeclarationSyntax then
             let eventDecl = node :?> EventDeclarationSyntax
-
-            if eventDecl.Identifier.ValueText = sym.Name then
-                collectIdentifier eventDecl.Identifier false
-
-        // TODO: collect other type of syntax nodes too
-
-        base.Visit node
 
 type CleanCodeGenerationOptionsProviderInterceptor(_logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             match invocation.Method.Name with
             | "GetCleanCodeGenerationOptionsAsync" ->
-                let workspacesAssembly = Assembly.Load "Microsoft.CodeAnalysis.Workspaces"
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
 
                 let cleanCodeGenOptionsType =
-                    workspacesAssembly.GetType "Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions"
+                    workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions")
                     |> nonNull
                         "workspacesAssembly.GetType('Microsoft.CodeAnalysis.CodeGeneration.CleanCodeGenerationOptions')"
 
                 let getDefaultMI =
-                    cleanCodeGenOptionsType.GetMethod "GetDefault"
+                    cleanCodeGenOptionsType.GetMethod("GetDefault")
                     |> nonNull "cleanCodeGenOptionsType.GetMethod('GetDefault')"
 
                 let argLanguageServices = invocation.Arguments[0]
@@ -113,7 +104,7 @@ type CleanCodeGenerationOptionsProviderInterceptor(_logMessage) =
                 let valueTaskType = typedefof<ValueTask<_>>
 
                 let valueTaskTypeForCleanCodeGenOptions =
-                    valueTaskType.MakeGenericType [| cleanCodeGenOptionsType |]
+                    valueTaskType.MakeGenericType([| cleanCodeGenOptionsType |])
 
                 invocation.ReturnValue <-
                     Activator.CreateInstance(valueTaskTypeForCleanCodeGenOptions, defaultCleanCodeGenOptions)
@@ -128,7 +119,7 @@ type CleanCodeGenOptionsProxy(logMessage) =
     member __.Create() =
         workspacesAssembly.GetType("Microsoft.CodeAnalysis.CodeGeneration.AbstractCleanCodeGenerationOptionsProvider")
 
-type LegacyWorkspaceOptionServiceInterceptor (logMessage) =
+type LegacyWorkspaceOptionServiceInterceptor(logMessage) =
     interface IInterceptor with
         member __.Intercept(invocation: IInvocation) =
             //logMessage (sprintf "LegacyWorkspaceOptionServiceInterceptor: %s" (string invocation.Method))
@@ -141,8 +132,7 @@ type LegacyWorkspaceOptionServiceInterceptor (logMessage) =
             | "get_GenerateOverrides" -> invocation.ReturnValue <- box true
             | "get_CleanCodeGenerationOptionsProvider" ->
                 invocation.ReturnValue <- CleanCodeGenOptionsProxy(logMessage).Create()
-            | _ ->
-                NotImplementedException(string invocation.Method) |> raise
+            | _ -> NotImplementedException(string invocation.Method) |> raise
 
 type PickMembersServiceInterceptor(_logMessage) =
     interface IInterceptor with
@@ -163,7 +153,7 @@ type PickMembersServiceInterceptor(_logMessage) =
 type ExtractClassOptionsServiceInterceptor(_logMessage) =
 
     let getExtractClassOptionsImpl (argOriginalType: INamedTypeSymbol) : Object =
-        let featuresAssembly = Assembly.Load "Microsoft.CodeAnalysis.Features"
+        let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
 
         let typeName = "Base" + argOriginalType.Name
         let fileName = typeName + ".cs"
@@ -172,14 +162,14 @@ type ExtractClassOptionsServiceInterceptor(_logMessage) =
         let immArrayType = typeof<ImmutableArray>
 
         let extractClassMemberAnalysisResultType =
-            featuresAssembly.GetType "Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult"
+            featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult")
             |> nonNull
                 "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractClass.ExtractClassMemberAnalysisResult')"
 
         let resultListType =
-            typedefof<List<_>>.MakeGenericType extractClassMemberAnalysisResultType
+            typedefof<List<_>>.MakeGenericType(extractClassMemberAnalysisResultType)
 
-        let resultList = Activator.CreateInstance resultListType
+        let resultList = Activator.CreateInstance(resultListType)
 
         let memberFilter (m: ISymbol) =
             match m with
@@ -194,12 +184,12 @@ type ExtractClassOptionsServiceInterceptor(_logMessage) =
                 Activator.CreateInstance(extractClassMemberAnalysisResultType, memberToAdd, false)
 
             let resultListAddMI =
-                resultListType.GetMethod "Add" |> nonNull "resultListType.GetMethod('Add')"
+                resultListType.GetMethod("Add") |> nonNull "resultListType.GetMethod('Add')"
 
             resultListAddMI.Invoke(resultList, [| memberAnalysisResult |]) |> ignore
 
         let resultListToArrayMI =
-            resultListType.GetMethod "ToArray"
+            resultListType.GetMethod("ToArray")
             |> nonNull "resultListType.GetMethod('ToArray')"
 
         let resultListAsArray = resultListToArrayMI.Invoke(resultList, null)
@@ -228,12 +218,12 @@ type ExtractClassOptionsServiceInterceptor(_logMessage) =
             match invocation.Method.Name with
             | "GetExtractClassOptionsAsync" ->
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
-                let extractClassOptionsValue = getExtractClassOptionsImpl(argOriginalType)
-                invocation.ReturnValue <- TaskOfType(extractClassOptionsValue.GetType()).FromResult(extractClassOptionsValue)
+                let extractClassOptionsValue = getExtractClassOptionsImpl (argOriginalType)
+                invocation.ReturnValue <- Task.fromResult (extractClassOptionsValue.GetType(), extractClassOptionsValue)
 
             | "GetExtractClassOptions" ->
                 let argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
-                invocation.ReturnValue <- getExtractClassOptionsImpl argOriginalType
+                invocation.ReturnValue <- getExtractClassOptionsImpl (argOriginalType)
 
             | _ -> NotImplementedException(string invocation.Method) |> raise
 
@@ -242,16 +232,22 @@ type ExtractInterfaceOptionsServiceInterceptor(logMessage) =
 
         member __.Intercept(invocation: IInvocation) =
             let (argExtractableMembers, argDefaultInterfaceName) =
-                match invocation.Method.Name, invocation.Arguments[1], invocation.Arguments[2], invocation.Arguments[3] with
-                | "GetExtractInterfaceOptions", (:? ImmutableArray<ISymbol> as extractableMembers), (:? string as interfaceName), _ ->
-                    (extractableMembers,interfaceName)
-                | "GetExtractInterfaceOptions", _, (:? ImmutableArray<ISymbol> as extractableMembers), (:? string as interfaceName) ->
-                    (extractableMembers, interfaceName)
-                | "GetExtractInterfaceOptionsAsync", _, (:? List<ISymbol> as extractableMembers), (:? string as interfaceName) ->
-                    (extractableMembers.ToImmutableArray(), interfaceName)
-                | _ ->
-                    NotImplementedException(string invocation.Method.Name) |> raise
-
+                match
+                    invocation.Method.Name, invocation.Arguments[1], invocation.Arguments[2], invocation.Arguments[3]
+                with
+                | "GetExtractInterfaceOptions",
+                  (:? ImmutableArray<ISymbol> as extractableMembers),
+                  (:? string as interfaceName),
+                  _ -> (extractableMembers, interfaceName)
+                | "GetExtractInterfaceOptions",
+                  _,
+                  (:? ImmutableArray<ISymbol> as extractableMembers),
+                  (:? string as interfaceName) -> (extractableMembers, interfaceName)
+                | "GetExtractInterfaceOptionsAsync",
+                  _,
+                  (:? List<ISymbol> as extractableMembers),
+                  (:? string as interfaceName) -> (extractableMembers.ToImmutableArray(), interfaceName)
+                | _ -> NotImplementedException(string invocation.Method.Name) |> raise
 
             let fileName = sprintf "%s.cs" argDefaultInterfaceName
 
@@ -259,7 +255,8 @@ type ExtractInterfaceOptionsServiceInterceptor(logMessage) =
 
             let extractInterfaceOptionsResultType =
                 featuresAssembly.GetType("Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult")
-                |> nonNull "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
+                |> nonNull
+                    "featuresAssembly.GetType('Microsoft.CodeAnalysis.ExtractInterface.ExtractInterfaceOptionsResult')"
 
             let locationEnumType =
                 extractInterfaceOptionsResultType.GetNestedType("ExtractLocation")
@@ -272,14 +269,18 @@ type ExtractInterfaceOptionsServiceInterceptor(logMessage) =
             invocation.ReturnValue <-
                 match invocation.Method.Name with
                 | "GetExtractInterfaceOptionsAsync" ->
-                     TaskOfType(extractInterfaceOptionsResultType).FromResult(Activator.CreateInstance(
+                    Task.fromResult (
                         extractInterfaceOptionsResultType,
-                        false, // isCancelled
-                        argExtractableMembers,
-                        argDefaultInterfaceName,
-                        fileName,
-                        location,
-                        CleanCodeGenOptionsProxy(logMessage).Create()))
+                        Activator.CreateInstance(
+                            extractInterfaceOptionsResultType,
+                            false, // isCancelled
+                            argExtractableMembers,
+                            argDefaultInterfaceName,
+                            fileName,
+                            location,
+                            CleanCodeGenOptionsProxy(logMessage).Create()
+                        )
+                    )
 
                 | _ ->
                     Activator.CreateInstance(
@@ -288,7 +289,8 @@ type ExtractInterfaceOptionsServiceInterceptor(logMessage) =
                         argExtractableMembers,
                         argDefaultInterfaceName,
                         fileName,
-                        location)
+                        location
+                    )
 
 type MoveStaticMembersOptionsServiceInterceptor(_logMessage) =
     interface IInterceptor with
@@ -300,7 +302,7 @@ type MoveStaticMembersOptionsServiceInterceptor(_logMessage) =
                 let _argOriginalType = invocation.Arguments[1] :?> INamedTypeSymbol
                 let argSelectedMembers = invocation.Arguments[2] :?> ImmutableArray<ISymbol>
 
-                let featuresAssembly = Assembly.Load "Microsoft.CodeAnalysis.Features"
+                let featuresAssembly = Assembly.Load("Microsoft.CodeAnalysis.Features")
 
                 let msmOptionsType =
                     featuresAssembly.GetType "Microsoft.CodeAnalysis.MoveStaticMembers.MoveStaticMembersOptions"
@@ -327,13 +329,13 @@ type RemoteHostClientProviderInterceptor(_logMessage) =
 
             match invocation.Method.Name with
             | "TryGetRemoteHostClientAsync" ->
-                let workspacesAssembly = Assembly.Load "Microsoft.CodeAnalysis.Workspaces"
+                let workspacesAssembly = Assembly.Load("Microsoft.CodeAnalysis.Workspaces")
 
                 let remoteHostClientType =
                     workspacesAssembly.GetType "Microsoft.CodeAnalysis.Remote.RemoteHostClient"
                     |> nonNull "GetType(Microsoft.CodeAnalysis.Remote.RemoteHostClient)"
 
-                invocation.ReturnValue <- TaskOfType(remoteHostClientType).FromResult(null)
+                invocation.ReturnValue <- Task.fromResult (remoteHostClientType, null)
 
             | _ -> NotImplementedException(string invocation.Method) |> raise
 
@@ -414,7 +416,7 @@ let loadProjectFilenamesFromSolution (solutionPath: string) =
     assert Path.IsPathRooted solutionPath
     let projectFilenames = new List<string>()
 
-    let solutionFile = SolutionFile.Parse solutionPath
+    let solutionFile = Microsoft.Build.Construction.SolutionFile.Parse(solutionPath)
 
     for project in solutionFile.ProjectsInOrder do
         if project.ProjectType = SolutionProjectType.KnownToBeMSBuildFormat then
@@ -480,10 +482,10 @@ let loadProjectTfms (logger: ILogger) (projs: string seq) : Map<string, list<str
             let noneIfEmpty s =
                 s
                 |> Option.ofObj
-                |> Option.bind (fun s -> if String.IsNullOrEmpty s then None else Some s)
+                |> Option.bind (fun s -> if String.IsNullOrEmpty(s) then None else Some s)
 
             let targetFramework =
-                match buildProject.GetPropertyValue "TargetFramework" |> noneIfEmpty with
+                match buildProject.GetPropertyValue("TargetFramework") |> noneIfEmpty with
                 | Some tfm -> [ tfm.Trim() ]
                 | None -> []
 
@@ -494,7 +496,7 @@ let loadProjectTfms (logger: ILogger) (projs: string seq) : Map<string, list<str
 
             projectTfms <- projectTfms |> Map.add projectFilename (targetFramework @ targetFrameworks)
 
-            projectCollection.UnloadProject buildProject
+            projectCollection.UnloadProject(buildProject)
         with :? InvalidProjectFileException as ipfe ->
             logger.LogDebug(
                 "loadProjectTfms: failed to load {projectFilename}: {ex}",
@@ -525,18 +527,20 @@ let resolveDefaultWorkspaceProps (logger: ILogger) projs : Map<string, string> =
 
 
 let tryLoadSolutionOnPath (lspClient: ILspClient) (logger: ILogger) (solutionPath: string) =
-    assert Path.IsPathRooted solutionPath
-    let progress = ProgressReporter lspClient
+    assert Path.IsPathRooted(solutionPath)
+    let progress = ProgressReporter(lspClient)
 
     let logMessage m =
-        lspClient.WindowLogMessage
+        lspClient.WindowLogMessage(
             { Type = MessageType.Info
               Message = sprintf "csharp-ls: %s" m }
+        )
 
     let showMessage m =
-        lspClient.WindowShowMessage
+        lspClient.WindowShowMessage(
             { Type = MessageType.Info
               Message = sprintf "csharp-ls: %s" m }
+        )
 
     async {
         try
@@ -582,7 +586,7 @@ let tryLoadSolutionFromProjectFiles
     (logMessage: string -> Async<unit>)
     (projs: string list)
     =
-    let progress = ProgressReporter lspClient
+    let progress = ProgressReporter(lspClient)
 
     async {
         do! progress.Begin($"Loading {projs.Length} project(s)...", false, $"0/{projs.Length}", 0u)
@@ -625,7 +629,7 @@ let tryLoadSolutionFromProjectFiles
 let selectPreferredSolution (slnFiles: string list) : option<string> =
     let getProjectCount (slnPath: string) =
         try
-            let sln = SolutionFile.Parse slnPath
+            let sln = SolutionFile.Parse(slnPath)
             Some(sln.ProjectsInOrder.Count, slnPath)
         with _ ->
             None
@@ -641,7 +645,9 @@ let selectPreferredSolution (slnFiles: string list) : option<string> =
 
 let findAndLoadSolutionOnDir (lspClient: ILspClient) (logger: ILogger) dir = async {
     let fileNotOnNodeModules (filename: string) =
-        filename.Split Path.DirectorySeparatorChar |> Seq.contains "node_modules" |> not
+        filename.Split(Path.DirectorySeparatorChar)
+        |> Seq.contains "node_modules"
+        |> not
 
     let solutionFiles =
         [ "*.sln"; "*.slnx" ]
@@ -650,9 +656,10 @@ let findAndLoadSolutionOnDir (lspClient: ILspClient) (logger: ILogger) dir = asy
         |> Seq.toList
 
     let logMessage m =
-        lspClient.WindowLogMessage
+        lspClient.WindowLogMessage(
             { Type = MessageType.Info
               Message = sprintf "csharp-ls: %s" m }
+        )
 
     do! logMessage (sprintf "%d solution(s) found: [%s]" solutionFiles.Length (String.Join(", ", solutionFiles)))
 
@@ -714,20 +721,20 @@ let loadSolutionOnSolutionPathOrDir
       }
 
 let getContainingTypeOrThis (symbol: ISymbol) : INamedTypeSymbol =
-    if symbol :? INamedTypeSymbol then
+    if (symbol :? INamedTypeSymbol) then
         symbol :?> INamedTypeSymbol
     else
         symbol.ContainingType
 
 let getFullReflectionName (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
-    stack.Push containingType.MetadataName
+    stack.Push(containingType.MetadataName)
     let mutable ns = containingType.ContainingNamespace
 
     let mutable doContinue = true
 
     while doContinue do
-        stack.Push ns.Name
+        stack.Push(ns.Name)
         ns <- ns.ContainingNamespace
 
         doContinue <- ns <> null && not ns.IsGlobalNamespace
@@ -741,21 +748,21 @@ let tryAddDocument
     (solution: Solution)
     : Async<Document option> =
     async {
-        let docDir = Path.GetDirectoryName docFilePath
+        let docDir = Path.GetDirectoryName(docFilePath)
         //logMessage (sprintf "TextDocumentDidOpen: docFilename=%s docDir=%s" docFilename docDir)
 
         let fileOnProjectDir (p: Project) =
-            let projectDir = Path.GetDirectoryName p.FilePath
-            let projectDirWithDirSepChar = projectDir + string Path.DirectorySeparatorChar
+            let projectDir = Path.GetDirectoryName(p.FilePath)
+            let projectDirWithDirSepChar = projectDir + (string Path.DirectorySeparatorChar)
 
-            docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
+            (docDir = projectDir) || docDir.StartsWith(projectDirWithDirSepChar)
 
         let projectOnPath = solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
 
         let! newDocumentMaybe =
             match projectOnPath with
             | Some proj ->
-                let projectBaseDir = Path.GetDirectoryName proj.FilePath
+                let projectBaseDir = Path.GetDirectoryName(proj.FilePath)
                 let docName = docFilePath.Substring(projectBaseDir.Length + 1)
 
                 //logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
@@ -763,7 +770,7 @@ let tryAddDocument
                 let newDoc =
                     proj.AddDocument(
                         name = docName,
-                        text = SourceText.From text,
+                        text = SourceText.From(text),
                         folders = null,
                         filePath = docFilePath
                     )
@@ -812,6 +819,9 @@ let makeDocumentFromMetadata
     let fullTypeName = TypeSystem.FullTypeName fullName
 
     let text = decompiler.DecompileTypeAsString fullTypeName
+
+    let mdDocumentFilename =
+        $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
 
     let mdDocumentFilename =
         $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"

@@ -29,7 +29,8 @@ let testHoverWorks () =
         match hover.Contents with
         | U3.C1 c ->
             Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-            Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", c.Value)
+            let actualHoverContents = c.Value |> Text.normalizeLineEndings
+            Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", actualHoverContents)
         | _ -> failwith "C1 was expected"
 
         Assert.IsTrue(hover.Range.IsNone)
@@ -55,12 +56,8 @@ let testHoverWorks () =
             Assert.AreEqual(MarkupKind.Markdown, c.Kind)
 
             Assert.AreEqual(
-                """```csharp
-string
-```
-
-Represents text as a sequence of UTF-16 code units.""",
-                c.Value.ReplaceLineEndings()
+                "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
+                c.Value |> Text.normalizeLineEndings
             )
         | _ -> failwith "C1 was expected"
 

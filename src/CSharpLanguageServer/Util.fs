@@ -2,8 +2,9 @@ module CSharpLanguageServer.Util
 
 open System
 open System.Runtime.InteropServices
+open System.Threading.Tasks
 open System.IO
-open Microsoft.Build.Utilities
+open System.Reflection
 
 let nonNull name (value: 'T when 'T: null) : 'T =
     if Object.ReferenceEquals(value, null) then
@@ -75,6 +76,16 @@ let formatInColumns (data: list<list<string>>) : string =
         |> String.concat Environment.NewLine
 
 
+[<AutoOpen>]
+module TaskExtensions =
+    type Task with
+        static member private fromResultMI =
+            typeof<Task>.GetMethod("FromResult")
+            |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
+
+        static member fromResult(taskType: Type, resultValue: obj | null) =
+            Task.fromResultMI.MakeGenericMethod([| taskType |]).Invoke(null, [| resultValue |])
+
 module Seq =
     let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq) : 'T option =
         if isNull source || Seq.isEmpty source then
@@ -96,11 +107,3 @@ module Map =
     let union map1 map2 =
         Map.fold (fun acc key value -> Map.add key value acc) map1 map2
 
-type TaskOfType (taskType: Type) =
-    static let fromResultMethod =
-        typeof<Task>.GetMethod("FromResult")
-        |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
-    let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| taskType |])
-
-    member __.FromResult(resultValue: obj | null) =
-        typedFromResultMethod.Invoke(null, [| resultValue |])
