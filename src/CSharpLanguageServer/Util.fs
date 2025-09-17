@@ -3,6 +3,7 @@ module CSharpLanguageServer.Util
 open System
 open System.Runtime.InteropServices
 open System.IO
+open Microsoft.Build.Utilities
 
 let nonNull name (value: 'T when 'T: null) : 'T =
     if Object.ReferenceEquals(value, null) then
@@ -94,3 +95,12 @@ module Async =
 module Map =
     let union map1 map2 =
         Map.fold (fun acc key value -> Map.add key value acc) map1 map2
+
+type TaskOfType (taskType: Type) =
+    static let fromResultMethod =
+        typeof<Task>.GetMethod("FromResult")
+        |> nonNull (sprintf "%s.FromResult()" (string typeof<Task>))
+    let typedFromResultMethod = fromResultMethod.MakeGenericMethod([| taskType |])
+
+    member __.FromResult(resultValue: obj | null) =
+        typedFromResultMethod.Invoke(null, [| resultValue |])
