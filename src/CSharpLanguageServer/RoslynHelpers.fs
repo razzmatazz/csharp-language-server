@@ -29,7 +29,6 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Util
-open ReflectedTypes
 
 type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)

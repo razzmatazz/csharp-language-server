@@ -16,7 +16,7 @@
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
     <PackageVersion Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <PackageVersion Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
-    <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.3.0" />
+    <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.7.0" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
