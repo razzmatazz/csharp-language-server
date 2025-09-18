@@ -11,50 +11,52 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let provider (clientCapabilities: ClientCapabilities): U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         let registrationOptions: DiagnosticRegistrationOptions =
             { DocumentSelector = Some defaultDocumentSelector
               WorkDoneProgress = None
               Identifier = None
               InterFileDependencies = false
               WorkspaceDiagnostics = true
-              Id = None
+              Id = None }
+
+        Some(U2.C2 registrationOptions)
+
+    let handle
+        (context: ServerRequestContext)
+        (p: DocumentDiagnosticParams)
+        : AsyncLspResult<DocumentDiagnosticReport> =
+        async {
+            let emptyReport: RelatedFullDocumentDiagnosticReport =
+                { Kind = "full"
+                  ResultId = None
+                  Items = [||]
+                  RelatedDocuments = None }
+
+            match context.GetDocument p.TextDocument.Uri with
+            | None -> return emptyReport |> U2.C1 |> LspResult.success
+
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+
+                match semanticModelMaybe |> Option.ofObj with
+                | Some semanticModel ->
+                    let diagnostics =
+                        semanticModel.GetDiagnostics()
+                        |> Seq.map Diagnostic.fromRoslynDiagnostic
+                        |> Array.ofSeq
+
+                    return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
+
+                | None -> return emptyReport |> U2.C1 |> LspResult.success
         }
 
-        Some (U2.C2 registrationOptions)
-
-    let handle (context: ServerRequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
-        let emptyReport: RelatedFullDocumentDiagnosticReport =
-            {
-                Kind = "full"
-                ResultId = None
-                Items = [| |]
-                RelatedDocuments = None
-            }
-
-        match context.GetDocument p.TextDocument.Uri with
-        | None ->
-            return emptyReport |> U2.C1 |> LspResult.success
-
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            match semanticModelMaybe |> Option.ofObj with
-            | Some semanticModel ->
-                let diagnostics =
-                    semanticModel.GetDiagnostics()
-                    |> Seq.map Diagnostic.fromRoslynDiagnostic
-                    |> Array.ofSeq
-
-                return { emptyReport with Items = diagnostics }
-                       |> U2.C1
-                       |> LspResult.success
-
-            | None ->
-                return emptyReport |> U2.C1 |> LspResult.success
-    }
-
-    let private getWorkspaceDiagnosticReports (solution: Microsoft.CodeAnalysis.Solution) : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
+    let private getWorkspaceDiagnosticReports
+        (solution: Microsoft.CodeAnalysis.Solution)
+        : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
             let! ct = Async.CancellationToken
 
@@ -78,59 +80,59 @@ module Diagnostic =
 
                     for (uri, docDiagnostics) in diagnosticsByDocument do
                         let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
-                            {
-                                Kind = "full"
-                                ResultId = None
-                                Uri = uri
-                                Items = docDiagnostics |> Seq.map Diagnostic.fromRoslynDiagnostic |> Array.ofSeq
-                                Version = None
-                            }
+                            { Kind = "full"
+                              ResultId = None
+                              Uri = uri
+                              Items = docDiagnostics |> Seq.map Diagnostic.fromRoslynDiagnostic |> Array.ofSeq
+                              Version = None }
 
-                        let documentReport: WorkspaceDocumentDiagnosticReport =
-                            U2.C1 fullDocumentReport
+                        let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
 
                         yield documentReport
         }
 
-    let handleWorkspaceDiagnostic (context: ServerRequestContext) (p: WorkspaceDiagnosticParams) : AsyncLspResult<WorkspaceDiagnosticReport> = async {
-        let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
-            { Items = Array.empty }
+    let handleWorkspaceDiagnostic
+        (context: ServerRequestContext)
+        (p: WorkspaceDiagnosticParams)
+        : AsyncLspResult<WorkspaceDiagnosticReport> =
+        async {
+            let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
+                { Items = Array.empty }
 
-        match context.State.Solution, p.PartialResultToken with
-        | None, _ ->
-            return emptyWorkspaceDiagnosticReport |> LspResult.success
+            match context.State.Solution, p.PartialResultToken with
+            | None, _ -> return emptyWorkspaceDiagnosticReport |> LspResult.success
 
-        | Some solution, None ->
-            let! diagnosticReports =
-                getWorkspaceDiagnosticReports solution
-                |> AsyncSeq.toArrayAsync
+            | Some solution, None ->
+                let! diagnosticReports = getWorkspaceDiagnosticReports solution |> AsyncSeq.toArrayAsync
 
-            let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
-                { Items = diagnosticReports }
+                let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
+                    { Items = diagnosticReports }
 
-            return workspaceDiagnosticReport |> LspResult.success
+                return workspaceDiagnosticReport |> LspResult.success
 
-        | Some solution, Some partialResultToken ->
-            let sendWorkspaceDiagnosticReport (documentReport, index) = async {
-                let progressParams =
-                    if index = 0 then
-                        let report: WorkspaceDiagnosticReport =
-                            { Items = [| documentReport |] }
+            | Some solution, Some partialResultToken ->
+                let sendWorkspaceDiagnosticReport (documentReport, index) = async {
+                    let progressParams =
+                        if index = 0 then
+                            let report: WorkspaceDiagnosticReport = { Items = [| documentReport |] }
 
-                        { Token = partialResultToken; Value = serialize report }
-                    else
-                        let reportPartialResult: WorkspaceDiagnosticReportPartialResult =
-                            { Items = [| documentReport |] }
+                            { Token = partialResultToken
+                              Value = serialize report }
+                        else
+                            let reportPartialResult: WorkspaceDiagnosticReportPartialResult =
+                                { Items = [| documentReport |] }
 
-                        { Token = partialResultToken; Value = serialize reportPartialResult }
+                            { Token = partialResultToken
+                              Value = serialize reportPartialResult }
 
-                let lspClient = context.State.LspClient.Value
-                do! lspClient.Progress(progressParams)
-            }
+                    let lspClient = context.State.LspClient.Value
+                    do! lspClient.Progress(progressParams)
+                }
 
-            do! AsyncSeq.ofSeq (Seq.initInfinite id)
-                |> AsyncSeq.zip (getWorkspaceDiagnosticReports solution)
-                |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
+                do!
+                    AsyncSeq.ofSeq (Seq.initInfinite id)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports solution)
+                    |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
-            return emptyWorkspaceDiagnosticReport |> LspResult.success
-    }
+                return emptyWorkspaceDiagnosticReport |> LspResult.success
+        }

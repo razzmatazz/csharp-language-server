@@ -4,39 +4,37 @@ open System
 open System.Runtime.InteropServices
 open System.IO
 
-let nonNull name (value: 'T when 'T : null) : 'T =
+let nonNull name (value: 'T when 'T: null) : 'T =
     if Object.ReferenceEquals(value, null) then
         raise (new Exception(sprintf "A non-null value was expected: %s" name))
     else
         value
 
-let parseFileUri s: string =
-    Uri(s).LocalPath
+let parseFileUri s : string = Uri(s).LocalPath
 
-let tryParseFileUri s: string option =
+let tryParseFileUri s : string option =
     try
-        let uri = Uri(s)
+        let uri = Uri s
         Some uri.LocalPath
     with _ex ->
         None
 
-let makeFileUri (path: string): string =
-    let fullPath = Path.GetFullPath(path)
+let makeFileUri (path: string) : string =
+    let fullPath = Path.GetFullPath path
 
-    match RuntimeInformation.IsOSPlatform(OSPlatform.Windows) with
+    match RuntimeInformation.IsOSPlatform OSPlatform.Windows with
     | true -> "file:///" + fullPath
     | false -> "file://" + fullPath
 
-let unwindProtect cleanupFn op =
-    async {
-        try
-            return! op
-        finally
-            cleanupFn ()
-    }
+let unwindProtect cleanupFn op = async {
+    try
+        return! op
+    finally
+        cleanupFn ()
+}
 
 // TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
-let rec unpackException (exn : Exception) =
+let rec unpackException (exn: Exception) =
     match exn with
     | :? AggregateException as agg ->
         match Seq.tryExactlyOne agg.InnerExceptions with
@@ -59,30 +57,25 @@ let formatInColumns (data: list<list<string>>) : string =
         let numCols = data |> List.map List.length |> List.max
 
         let columnWidths =
-            [0 .. numCols - 1]
+            [ 0 .. numCols - 1 ]
             |> List.map (fun colIdx ->
                 data
-                |> List.map (fun row ->
-                    if colIdx < row.Length then row.[colIdx].Length
-                    else 0
-                )
+                |> List.map (fun row -> if colIdx < row.Length then row.[colIdx].Length else 0)
                 |> List.max)
 
         data
         |> List.map (fun row ->
-            [0 .. numCols - 1]
+            [ 0 .. numCols - 1 ]
             |> List.map (fun colIdx ->
                 let value = if colIdx < row.Length then row.[colIdx] else ""
                 let width = columnWidths.[colIdx]
-                value.PadRight(width)
-            )
-            |> String.concat "  "
-        )
-        |> String.concat System.Environment.NewLine
+                value.PadRight width)
+            |> String.concat "  ")
+        |> String.concat Environment.NewLine
 
 
 module Seq =
-    let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq): 'T option =
+    let inline tryMaxBy (projection: 'T -> 'U) (source: 'T seq) : 'T option =
         if isNull source || Seq.isEmpty source then
             None
         else
@@ -90,7 +83,7 @@ module Seq =
 
 module Option =
     let inline ofString (value: string) =
-        match String.IsNullOrWhiteSpace(value) with
+        match String.IsNullOrWhiteSpace value with
         | true -> None
         | false -> Some value
 

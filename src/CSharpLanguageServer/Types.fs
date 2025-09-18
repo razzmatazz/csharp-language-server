@@ -9,14 +9,13 @@ type ServerSettings =
     { SolutionPath: string option
       LogLevel: LogLevel
       ApplyFormattingOptions: bool
-      DebugMode: bool
-    }
+      DebugMode: bool }
+
     static member Default: ServerSettings =
         { SolutionPath = None
           LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
-          DebugMode = false
-        }
+          DebugMode = false }
 
 type CSharpMetadataInformation =
     { ProjectName: string
@@ -42,22 +41,17 @@ type ICSharpLspClient =
     abstract member Capabilities: ClientCapabilities option with get, set
 
 let defaultDocumentFilter: TextDocumentFilter =
-        { Language = None
-          Scheme = Some "file"
-          Pattern = Some "**/*.cs" }
+    { Language = None
+      Scheme = Some "file"
+      Pattern = Some "**/*.cs" }
 
 // Type abbreviations cannot have augmentations, extensions
-let defaultDocumentSelector: DocumentSelector =
-    [|
-        defaultDocumentFilter |> U2.C1
-    |]
+let defaultDocumentSelector: DocumentSelector = [| defaultDocumentFilter |> U2.C1 |]
 
 let emptyClientCapabilities: ClientCapabilities =
-    {
-        Workspace = None
-        TextDocument = None
-        NotebookDocument = None
-        Window = None
-        General = None
-        Experimental = None
-    }
+    { Workspace = None
+      TextDocument = None
+      NotebookDocument = None
+      Window = None
+      General = None
+      Experimental = None }

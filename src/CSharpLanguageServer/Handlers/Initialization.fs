@@ -20,94 +20,110 @@ open CSharpLanguageServer.Logging
 module Initialization =
     let private logger = Logging.getLoggerByName "Initialization"
 
-    let handleInitialize (lspClient: ILspClient)
-                         (setupTimer: unit -> unit)
-                         (serverCapabilities: ServerCapabilities)
-                         (context: ServerRequestContext)
-                         (p: InitializeParams)
-            : Async<LspResult<InitializeResult>> = async {
-        // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
-        let windowShowMessage m = lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
+    let handleInitialize
+        (lspClient: ILspClient)
+        (setupTimer: unit -> unit)
+        (serverCapabilities: ServerCapabilities)
+        (context: ServerRequestContext)
+        (p: InitializeParams)
+        : Async<LspResult<InitializeResult>> =
+        async {
+            // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
+            let windowShowMessage m =
+                lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
 
-        context.Emit(ClientChange (Some lspClient))
+            context.Emit(ClientChange(Some lspClient))
 
-        let serverName = "csharp-ls"
-        let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
-        logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
-        logger.LogInformation("server settings: {settings}", context.State.Settings |> string)
+            let serverName = "csharp-ls"
+            let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
+            logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
+            logger.LogInformation("server settings: {settings}", context.State.Settings |> string)
 
-        do! windowShowMessage(
-            sprintf "csharp-ls: initializing, version %s" serverVersion)
+            do! windowShowMessage (sprintf "csharp-ls: initializing, version %s" serverVersion)
 
-        logger.LogInformation(
-            "{serverName} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server",
-            serverName)
+            logger.LogInformation(
+                "{serverName} is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server",
+                serverName
+            )
 
-        do! windowShowMessage(
-            sprintf "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server" serverName)
+            do!
+                windowShowMessage (
+                    sprintf
+                        "csharp-ls: %s is released under MIT license and is not affiliated with Microsoft Corp.; see https://github.com/razzmatazz/csharp-language-server"
+                        serverName
+                )
 
-        let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
-        let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
-        if Seq.isEmpty vsInstanceList then
-            raise (InvalidOperationException("No instances of MSBuild could be detected." + Environment.NewLine + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."))
+            let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
+            let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
 
-        // do! infoMessage "MSBuildLocator instances found:"
-        //
-        // for vsInstance in vsInstanceList do
-        //     do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-        //                              vsInstance.Name
-        //                              (string vsInstance.Version)
-        //                              vsInstance.MSBuildPath
-        //                              (string vsInstance.DiscoveryType))
+            if Seq.isEmpty vsInstanceList then
+                raise (
+                    InvalidOperationException(
+                        "No instances of MSBuild could be detected."
+                        + Environment.NewLine
+                        + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."
+                    )
+                )
 
-        let vsInstance = vsInstanceList |> Seq.head
+            // do! infoMessage "MSBuildLocator instances found:"
+            //
+            // for vsInstance in vsInstanceList do
+            //     do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+            //                              vsInstance.Name
+            //                              (string vsInstance.Version)
+            //                              vsInstance.MSBuildPath
+            //                              (string vsInstance.DiscoveryType))
 
-        logger.LogInformation(
-            "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance",
-            vsInstance.Name,
-            (string vsInstance.Version))
+            let vsInstance = vsInstanceList |> Seq.head
 
-        MSBuildLocator.RegisterInstance(vsInstance)
+            logger.LogInformation(
+                "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance",
+                vsInstance.Name,
+                (string vsInstance.Version)
+            )
 
-        logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
-        context.Emit(ClientCapabilityChange p.Capabilities)
+            MSBuildLocator.RegisterInstance(vsInstance)
 
-        // TODO use p.RootUri
-        let rootPath = Directory.GetCurrentDirectory()
-        context.Emit(RootPathChange rootPath)
+            logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
+            context.Emit(ClientCapabilityChange p.Capabilities)
 
-        // setup timer so actors get period ticks
-        setupTimer()
+            // TODO use p.RootUri
+            let rootPath = Directory.GetCurrentDirectory()
+            context.Emit(RootPathChange rootPath)
 
-        let initializeResult =
-            let assemblyVersion =
-                Assembly.GetExecutingAssembly().GetName().Version
-                |> Option.ofObj
-                |> Option.map string
+            // setup timer so actors get period ticks
+            setupTimer ()
 
-            { InitializeResult.Default with
+            let initializeResult =
+                let assemblyVersion =
+                    Assembly.GetExecutingAssembly().GetName().Version
+                    |> Option.ofObj
+                    |> Option.map string
+
+                { InitializeResult.Default with
                     Capabilities = serverCapabilities
                     ServerInfo =
-                      Some
-                        { Name = "csharp-ls"
-                          Version = assemblyVersion }}
+                        Some
+                            { Name = "csharp-ls"
+                              Version = assemblyVersion } }
 
-        return initializeResult |> LspResult.success
-    }
+            return initializeResult |> LspResult.success
+        }
 
-    let handleInitialized (lspClient: ILspClient)
-                          (stateActor: MailboxProcessor<ServerStateEvent>)
-                          (getDynamicRegistrations: ClientCapabilities -> Registration list)
-                          (context: ServerRequestContext)
-                          (_p: unit)
-            : Async<LspResult<unit>> =
+    let handleInitialized
+        (lspClient: ILspClient)
+        (stateActor: MailboxProcessor<ServerStateEvent>)
+        (getDynamicRegistrations: ClientCapabilities -> Registration list)
+        (context: ServerRequestContext)
+        (_p: unit)
+        : Async<LspResult<unit>> =
         async {
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
             logger.LogDebug("handleInitialized: registrationParams..")
-            let registrationParams = {
-                Registrations = getDynamicRegistrations context.ClientCapabilities |> List.toArray
-            }
+
+            let registrationParams =
+                { Registrations = getDynamicRegistrations context.ClientCapabilities |> List.toArray }
 
             logger.LogDebug("handleInitialized: ClientRegisterCapability..")
             // TODO: Retry on error?
@@ -116,8 +132,7 @@ module Initialization =
                 | Ok _ -> ()
                 | Error error ->
                     logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
-            with
-            | ex ->
+            with ex ->
                 logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
             logger.LogDebug("handleInitialized: retrieve csharp settings..")
@@ -127,7 +142,10 @@ module Initialization =
             try
                 let! workspaceCSharpConfig =
                     lspClient.WorkspaceConfiguration(
-                        { Items=[| { Section=Some "csharp"; ScopeUri=None } |] })
+                        { Items =
+                            [| { Section = Some "csharp"
+                                 ScopeUri = None } |] }
+                    )
 
                 let csharpConfigTokensMaybe =
                     match workspaceCSharpConfig with
@@ -135,28 +153,29 @@ module Initialization =
                     | _ -> None
 
                 let newSettingsMaybe =
-                  match csharpConfigTokensMaybe with
-                  | Some [| t |] ->
-                      let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
+                    match csharpConfigTokensMaybe with
+                    | Some [| t |] ->
+                        let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
 
-                      match csharpSettingsMaybe with
-                      | Some csharpSettings ->
+                        match csharpSettingsMaybe with
+                        | Some csharpSettings ->
 
-                          match csharpSettings.solution with
-                          | Some solutionPath-> Some { context.State.Settings with SolutionPath = Some solutionPath }
-                          | _ -> None
+                            match csharpSettings.solution with
+                            | Some solutionPath ->
+                                Some
+                                    { context.State.Settings with
+                                        SolutionPath = Some solutionPath }
+                            | _ -> None
 
-                      | _ -> None
-                  | _ -> None
+                        | _ -> None
+                    | _ -> None
 
                 // do! logMessage (sprintf "handleInitialized: newSettingsMaybe=%s" (string newSettingsMaybe))
 
                 match newSettingsMaybe with
-                | Some newSettings ->
-                    context.Emit(SettingsChange newSettings)
+                | Some newSettings -> context.Emit(SettingsChange newSettings)
                 | _ -> ()
-            with
-            | ex ->
+            with ex ->
                 logger.LogWarning(
                     "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",
                     ex |> string
@@ -166,7 +185,7 @@ module Initialization =
             // start loading the solution
             //
             logger.LogDebug("handleInitialized: post SolutionReloadRequest")
-            stateActor.Post(SolutionReloadRequest (TimeSpan.FromMilliseconds(100)))
+            stateActor.Post(SolutionReloadRequest(TimeSpan.FromMilliseconds(100)))
 
             logger.LogDebug("handleInitialized: Ok")
 

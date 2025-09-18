@@ -16,12 +16,10 @@ module Logging =
             let configureConsoleLogger (opts: ConsoleLoggerOptions) =
                 opts.LogToStandardErrorThreshold <- LogLevel.Trace // send everything to stderr
 
-            builder
-                .AddSimpleConsole(configureSimpleConsole)
-                .AddConsole(configureConsoleLogger)
-                .SetMinimumLevel(minimumLevel)
-                |> ignore
+            builder.AddSimpleConsole(configureSimpleConsole).AddConsole(configureConsoleLogger).SetMinimumLevel
+                minimumLevel
+            |> ignore
 
-        loggerFactory <- LoggerFactory.Create(createConsoleLogger) |> Some
+        loggerFactory <- LoggerFactory.Create createConsoleLogger |> Some
 
     let getLoggerByName name = loggerFactory.Value.CreateLogger name

@@ -15,71 +15,59 @@ open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module DocumentSymbol =
-    let private formatSymbol (sym: ISymbol)
-                     showAttributes
-                     (semanticModelMaybe: SemanticModel option)
-                     (posMaybe: int option) =
+    let private formatSymbol
+        (sym: ISymbol)
+        showAttributes
+        (semanticModelMaybe: SemanticModel option)
+        (posMaybe: int option)
+        =
         match showAttributes, semanticModelMaybe, posMaybe with
         | true, Some semanticModel, Some pos -> sym.ToMinimalDisplayString(semanticModel, pos)
         | true, _, _ -> sym.ToDisplayString()
         | false, _, _ -> sym.Name
 
-    let private getSymbolNameAndKind
-            (semanticModel: SemanticModel option)
-            (pos: int option)
-            (symbol: ISymbol) =
+    let private getSymbolNameAndKind (semanticModel: SemanticModel option) (pos: int option) (symbol: ISymbol) =
         let showAttributes = true
 
         match symbol with
-        | :? ILocalSymbol as ls ->
-            (formatSymbol ls showAttributes semanticModel pos,
-                SymbolKind.Variable)
+        | :? ILocalSymbol as ls -> (formatSymbol ls showAttributes semanticModel pos, SymbolKind.Variable)
 
-        | :? IFieldSymbol as fs ->
-            (formatSymbol fs showAttributes semanticModel pos,
-                SymbolKind.Field)
+        | :? IFieldSymbol as fs -> (formatSymbol fs showAttributes semanticModel pos, SymbolKind.Field)
 
-        | :? IPropertySymbol as ps ->
-            (formatSymbol ps showAttributes semanticModel pos,
-                SymbolKind.Property)
+        | :? IPropertySymbol as ps -> (formatSymbol ps showAttributes semanticModel pos, SymbolKind.Property)
 
         | :? IMethodSymbol as ms ->
             (formatSymbol ms showAttributes semanticModel pos,
-                match ms.MethodKind with
-                | MethodKind.Constructor -> SymbolKind.Constructor
-                | MethodKind.StaticConstructor -> SymbolKind.Constructor
-                | MethodKind.BuiltinOperator -> SymbolKind.Operator
-                | MethodKind.UserDefinedOperator -> SymbolKind.Operator
-                | MethodKind.Conversion -> SymbolKind.Operator
-                | _ -> SymbolKind.Method)
+             match ms.MethodKind with
+             | MethodKind.Constructor -> SymbolKind.Constructor
+             | MethodKind.StaticConstructor -> SymbolKind.Constructor
+             | MethodKind.BuiltinOperator -> SymbolKind.Operator
+             | MethodKind.UserDefinedOperator -> SymbolKind.Operator
+             | MethodKind.Conversion -> SymbolKind.Operator
+             | _ -> SymbolKind.Method)
 
         | :? ITypeSymbol as ts ->
             (formatSymbol ts showAttributes semanticModel pos,
-                match ts.TypeKind with
-                | TypeKind.Class -> SymbolKind.Class
-                | TypeKind.Enum -> SymbolKind.Enum
-                | TypeKind.Struct -> SymbolKind.Struct
-                | TypeKind.Interface -> SymbolKind.Interface
-                | TypeKind.Delegate -> SymbolKind.Class
-                | TypeKind.Array -> SymbolKind.Array
-                | TypeKind.TypeParameter -> SymbolKind.TypeParameter
-                | _ -> SymbolKind.Class)
+             match ts.TypeKind with
+             | TypeKind.Class -> SymbolKind.Class
+             | TypeKind.Enum -> SymbolKind.Enum
+             | TypeKind.Struct -> SymbolKind.Struct
+             | TypeKind.Interface -> SymbolKind.Interface
+             | TypeKind.Delegate -> SymbolKind.Class
+             | TypeKind.Array -> SymbolKind.Array
+             | TypeKind.TypeParameter -> SymbolKind.TypeParameter
+             | _ -> SymbolKind.Class)
 
-        | :? IEventSymbol as es ->
-            (formatSymbol es showAttributes semanticModel pos,
-                SymbolKind.Event)
+        | :? IEventSymbol as es -> (formatSymbol es showAttributes semanticModel pos, SymbolKind.Event)
 
         | :? INamespaceSymbol as ns ->
 
-            (formatSymbol ns showAttributes semanticModel pos,
-                SymbolKind.Namespace)
+            (formatSymbol ns showAttributes semanticModel pos, SymbolKind.Namespace)
 
-        | _ ->
-            (symbol.ToString(), SymbolKind.File)
+        | _ -> (symbol.ToString(), SymbolKind.File)
 
     let rec private flattenDocumentSymbol (node: DocumentSymbol) =
-        let nodeWithNoChildren =
-            { node with Children = None }
+        let nodeWithNoChildren = { node with Children = None }
 
         let flattenedChildren =
             match node.Children with
@@ -88,18 +76,18 @@ module DocumentSymbol =
 
         nodeWithNoChildren :: flattenedChildren
 
-    type private DocumentSymbolCollector (docText: SourceText, semanticModel: SemanticModel) =
+    type private DocumentSymbolCollector(docText: SourceText, semanticModel: SemanticModel) =
         inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
         let mutable symbolStack = []
 
         let push (node: SyntaxNode) (nameSpan: TextSpan) =
-            let symbol = semanticModel.GetDeclaredSymbol(node) |> nonNull "semanticModel.GetDeclaredSymbol(node)"
+            let symbol =
+                semanticModel.GetDeclaredSymbol(node)
+                |> nonNull "semanticModel.GetDeclaredSymbol(node)"
 
             let (fullSymbolName, symbolKind) =
-                getSymbolNameAndKind (Some semanticModel)
-                                     (Some nameSpan.Start)
-                                     symbol
+                getSymbolNameAndKind (Some semanticModel) (Some nameSpan.Start) symbol
 
             let lspRange = Range.fromTextSpan docText.Lines node.FullSpan
 
@@ -111,23 +99,31 @@ module DocumentSymbol =
                 | SymbolKind.Struct -> None
                 | _ -> Some fullSymbolName
 
-            let displayStyle = SymbolDisplayFormat(
-                typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
-                genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
-                memberOptions = (SymbolDisplayMemberOptions.IncludeParameters ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
-                parameterOptions = (SymbolDisplayParameterOptions.IncludeParamsRefOut ||| SymbolDisplayParameterOptions.IncludeExtensionThis ||| SymbolDisplayParameterOptions.IncludeType ||| SymbolDisplayParameterOptions.IncludeName ||| SymbolDisplayParameterOptions.IncludeDefaultValue),
-                miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+            let displayStyle =
+                SymbolDisplayFormat(
+                    typeQualificationStyle = SymbolDisplayTypeQualificationStyle.NameOnly,
+                    genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
+                    memberOptions =
+                        (SymbolDisplayMemberOptions.IncludeParameters
+                         ||| SymbolDisplayMemberOptions.IncludeExplicitInterface),
+                    parameterOptions =
+                        (SymbolDisplayParameterOptions.IncludeParamsRefOut
+                         ||| SymbolDisplayParameterOptions.IncludeExtensionThis
+                         ||| SymbolDisplayParameterOptions.IncludeType
+                         ||| SymbolDisplayParameterOptions.IncludeName
+                         ||| SymbolDisplayParameterOptions.IncludeDefaultValue),
+                    miscellaneousOptions = SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+                )
 
-            let docSymbol = {
-                Name           = SymbolName.fromSymbol displayStyle symbol
-                Detail         = symbolDetail
-                Kind           = symbolKind
-                Range          = lspRange
-                SelectionRange = selectionLspRange
-                Children       = None
-                Tags           = None
-                Deprecated     = None
-            }
+            let docSymbol =
+                { Name = SymbolName.fromSymbol displayStyle symbol
+                  Detail = symbolDetail
+                  Kind = symbolKind
+                  Range = lspRange
+                  SelectionRange = selectionLspRange
+                  Children = None
+                  Tags = None
+                  Deprecated = None }
 
             symbolStack <- docSymbol :: symbolStack
 
@@ -135,7 +131,7 @@ module DocumentSymbol =
             let symbolStack' =
                 match symbolStack with
                 | [] -> failwith "symbolStack is empty"
-                | [_] -> []
+                | [ _ ] -> []
                 | top :: restPastTop ->
                     match restPastTop with
                     | [] -> failwith "restPastTop is empty"
@@ -145,10 +141,11 @@ module DocumentSymbol =
                                 parent.Children
                                 |> Option.defaultValue Array.empty
                                 |> List.ofSeq
-                                |> fun xs -> xs @ [top]
+                                |> fun xs -> xs @ [ top ]
                                 |> Array.ofSeq
 
-                            { parent with Children = Some newChildren }
+                            { parent with
+                                Children = Some newChildren }
 
                         let poppedSymbolStack = parentWithTopAsChild :: restPastParent
 
@@ -157,26 +154,26 @@ module DocumentSymbol =
             symbolStack <- symbolStack'
 
         member __.Init(moduleName: string) =
-            let emptyRange = { Start={ Line=0u; Character=0u }
-                               End={ Line=0u; Character=0u } }
+            let emptyRange =
+                { Start = { Line = 0u; Character = 0u }
+                  End = { Line = 0u; Character = 0u } }
 
-            let root: DocumentSymbol = {
-                Name           = moduleName
-                Detail         = None
-                Kind           = SymbolKind.File
-                Range          = emptyRange
-                SelectionRange = emptyRange
-                Children       = None
-                Tags           = None
-                Deprecated     = None
-            }
+            let root: DocumentSymbol =
+                { Name = moduleName
+                  Detail = None
+                  Kind = SymbolKind.File
+                  Range = emptyRange
+                  SelectionRange = emptyRange
+                  Children = None
+                  Tags = None
+                  Deprecated = None }
 
-            symbolStack <- [root]
+            symbolStack <- [ root ]
 
-        member __.GetDocumentSymbols (clientSupportsDocSymbolHierarchy: bool) =
+        member __.GetDocumentSymbols(clientSupportsDocSymbolHierarchy: bool) =
             let root =
                 match symbolStack with
-                | [root] -> root
+                | [ root ] -> root
                 | _ -> Exception("symbolStack is not a single node") |> raise
 
             if clientSupportsDocSymbolHierarchy then
@@ -266,7 +263,8 @@ module DocumentSymbol =
 
         override __.VisitVariableDeclarator(node) =
             let grandparent =
-                node.Parent |> Option.ofObj
+                node.Parent
+                |> Option.ofObj
                 |> Option.bind (fun node -> node.Parent |> Option.ofObj)
             // Only show field variables and ignore local variables
             if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
@@ -281,34 +279,36 @@ module DocumentSymbol =
             base.VisitEventDeclaration(node)
             pop node
 
-    let provider (_: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
-        true |> U2.C1 |> Some
+    let provider (_: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option = true |> U2.C1 |> Some
 
-    let handle (context: ServerRequestContext)
-               (p: DocumentSymbolParams)
-            : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> = async {
-        let canEmitDocSymbolHierarchy =
-            context.ClientCapabilities.TextDocument
-            |> Option.bind (fun cc -> cc.DocumentSymbol)
-            |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
-            |> Option.defaultValue false
+    let handle
+        (context: ServerRequestContext)
+        (p: DocumentSymbolParams)
+        : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> =
+        async {
+            let canEmitDocSymbolHierarchy =
+                context.ClientCapabilities.TextDocument
+                |> Option.bind (fun cc -> cc.DocumentSymbol)
+                |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
+                |> Option.defaultValue false
 
-        match context.GetDocument p.TextDocument.Uri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            match context.GetDocument p.TextDocument.Uri with
+            | None -> return None |> LspResult.success
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-            let collector = DocumentSymbolCollector(docText, semanticModel)
-            collector.Init(doc.Name)
+                let collector = DocumentSymbolCollector(docText, semanticModel)
+                collector.Init(doc.Name)
 
-            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
-            collector.Visit(root)
+                let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+                collector.Visit(root)
 
-            return collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
-                   |> U2.C2
-                   |> Some
-                   |> LspResult.success
-    }
+                return
+                    collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
+                    |> U2.C2
+                    |> Some
+                    |> LspResult.success
+        }

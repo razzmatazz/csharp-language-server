@@ -18,8 +18,7 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
 
     let collect (node: SyntaxNode) (nameSpan: TextSpan) =
         match semanticModel.GetDeclaredSymbol(node) |> Option.ofObj with
-        | Some symbol ->
-            collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
+        | Some symbol -> collectedSymbols <- (symbol, nameSpan) :: collectedSymbols
         | _ -> ()
 
     member __.GetSymbols() =
@@ -29,8 +28,7 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
         collect node node.Identifier.Span
         base.VisitEnumDeclaration(node)
 
-    override __.VisitEnumMemberDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitEnumMemberDeclaration(node) = collect node node.Identifier.Span
 
     override __.VisitClassDeclaration(node) =
         collect node node.Identifier.Span
@@ -48,29 +46,21 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
         collect node node.Identifier.Span
         base.VisitInterfaceDeclaration(node)
 
-    override __.VisitDelegateDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitDelegateDeclaration(node) = collect node node.Identifier.Span
 
-    override __.VisitConstructorDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitConstructorDeclaration(node) = collect node node.Identifier.Span
 
-    override __.VisitDestructorDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitDestructorDeclaration(node) = collect node node.Identifier.Span
 
-    override __.VisitOperatorDeclaration(node) =
-        collect node node.OperatorToken.Span
+    override __.VisitOperatorDeclaration(node) = collect node node.OperatorToken.Span
 
-    override __.VisitIndexerDeclaration(node) =
-        collect node node.ThisKeyword.Span
+    override __.VisitIndexerDeclaration(node) = collect node node.ThisKeyword.Span
 
-    override __.VisitConversionOperatorDeclaration(node) =
-        collect node node.Type.Span
+    override __.VisitConversionOperatorDeclaration(node) = collect node node.Type.Span
 
-    override __.VisitMethodDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitMethodDeclaration(node) = collect node node.Identifier.Span
 
-    override __.VisitPropertyDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitPropertyDeclaration(node) = collect node node.Identifier.Span
 
     override __.VisitVariableDeclarator(node) =
         let grandparent =
@@ -81,27 +71,28 @@ type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
         if grandparent.IsSome && grandparent.Value :? FieldDeclarationSyntax then
             collect node node.Identifier.Span
 
-    override __.VisitEventDeclaration(node) =
-        collect node node.Identifier.Span
+    override __.VisitEventDeclaration(node) = collect node node.Identifier.Span
 
 [<RequireQualifiedAccess>]
 module CodeLens =
     type CodeLensData =
         { DocumentUri: string
           Position: Position }
+
         static member Default =
             { DocumentUri = ""
               Position = { Line = 0u; Character = 0u } }
 
     let provider (clientCapabilities: ClientCapabilities) : CodeLensOptions option =
-        Some { ResolveProvider = Some true
-               WorkDoneProgress = None }
+        Some
+            { ResolveProvider = Some true
+              WorkDoneProgress = None }
 
-    let handle (context: ServerRequestContext) (p: CodeLensParams): AsyncLspResult<CodeLens[] option> = async {
+    let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
         let docMaybe = context.GetDocument p.TextDocument.Uri
+
         match docMaybe with
-        | None ->
-            return None |> LspResult.success
+        | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -128,9 +119,7 @@ module CodeLens =
             return codeLens |> Array.ofSeq |> Some |> LspResult.success
     }
 
-    let resolve (context: ServerRequestContext)
-                (p: CodeLens)
-            : AsyncLspResult<CodeLens> = async {
+    let resolve (context: ServerRequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
 
         let lensData: CodeLensData =
             p.Data
@@ -139,8 +128,7 @@ module CodeLens =
             |> Option.defaultValue CodeLensData.Default
 
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
-        | None ->
-            return p |> LspResult.success
+        | None -> return p |> LspResult.success
         | Some symbol ->
             let! locations = context.FindReferences symbol false
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
@@ -158,6 +146,7 @@ module CodeLens =
                   WorkDoneToken = None
                   PartialResultToken = None
                   Context = { IncludeDeclaration = true } }
+
             let command =
                 { Title = title
                   Command = "textDocument/references"

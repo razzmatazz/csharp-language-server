@@ -8,8 +8,7 @@ open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module References =
-    let provider (_: ClientCapabilities) : U2<bool, ReferenceOptions> option =
-        Some (U2.C1 true)
+    let provider (_: ClientCapabilities) : U2<bool, ReferenceOptions> option = Some(U2.C1 true)
 
     let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         match! context.FindSymbol p.TextDocument.Uri p.Position with
