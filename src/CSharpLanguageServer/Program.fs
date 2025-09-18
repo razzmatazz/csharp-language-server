@@ -55,8 +55,7 @@ let entry args =
             { ServerSettings.Default with
                 SolutionPath = serverArgs.TryGetResult <@ Solution @>
                 LogLevel = logLevel
-                DebugMode = debugMode
-                ApplyFormattingOptions = failwith "Not Implemented" }
+                DebugMode = debugMode }
 
         Logging.setupLogging settings.LogLevel
 
