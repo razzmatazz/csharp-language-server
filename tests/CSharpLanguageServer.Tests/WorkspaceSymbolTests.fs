@@ -7,29 +7,27 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testWorkspaceSymbolWorks () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testWorkspaceSymbolWorks"
+    use client =
+        setupServerClient defaultClientProfile "TestData/testWorkspaceSymbolWorks"
+
     client.StartAndWaitForSolutionLoad()
 
     let serverCaps = client.GetState().ServerCapabilities.Value
 
-    Assert.AreEqual(
-        true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some,
-        serverCaps.WorkspaceSymbolProvider)
+    Assert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
 
     use classFile = client.Open("Project/Class.cs")
 
     let completionParams0: WorkspaceSymbolParams =
         { WorkDoneToken = None
           PartialResultToken = None
-          Query = "Class"
-        }
+          Query = "Class" }
 
-    let symbols0 : U2<SymbolInformation[], WorkspaceSymbol[]> option =
+    let symbols0: U2<SymbolInformation[], WorkspaceSymbol[]> option =
         client.Request("workspace/symbol", completionParams0)
 
     match symbols0 with
-    | Some (U2.C1 sis) ->
+    | Some(U2.C1 sis) ->
         Assert.AreEqual(1, sis.Length)
 
         let sym0 = sis[0]

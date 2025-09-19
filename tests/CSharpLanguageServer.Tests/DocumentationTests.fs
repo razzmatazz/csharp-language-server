@@ -6,32 +6,22 @@ open NUnit.Framework
 
 open CSharpLanguageServer.DocumentationUtil
 
-[<TestCase(
-    "",
-    "")>]
-[<TestCase(
-    "<summary>doc string</summary>",
-    "doc string")>]
-[<TestCase(
-    "<summary>\ndoc string\n\n</summary>",
-    "doc string")>]
-[<TestCase(
-    "<summary>doc string</summary>\n <param name=\"x\">y</param>",
-    """doc string
+[<TestCase("", "")>]
+[<TestCase("<summary>doc string</summary>", "doc string")>]
+[<TestCase("<summary>\ndoc string\n\n</summary>", "doc string")>]
+[<TestCase("<summary>doc string</summary>\n <param name=\"x\">y</param>",
+           """doc string
 
 Parameters:
 - ``x``: y""")>]
-[<TestCase(
-    "\n\
+[<TestCase("\n\
       <summary>Gets the standard error output stream.</summary>\n\
       <returns>A <see cref=\"T:System.IO.TextWriter\" /> that represents the standard error output stream.</returns>\n\
 ",
-    """Gets the standard error output stream.
+           """Gets the standard error output stream.
 
-Returns: A ``System.IO.TextWriter`` that represents the standard error output stream."""
-)>]
-[<TestCase(
-    "\n\
+Returns: A ``System.IO.TextWriter`` that represents the standard error output stream.""")>]
+[<TestCase("\n\
             <summary>\n\
             Asserts that a condition is true. If the condition is false the method throws\n\
             an <see cref=\"T:NUnit.Framework.AssertionException\" />.\n\
@@ -39,27 +29,24 @@ Returns: A ``System.IO.TextWriter`` that represents the standard error output st
             <param name=\"condition\">The evaluated condition</param>\n\
  \n\
     ",
-    """Asserts that a condition is true. If the condition is false the method throws an ``NUnit.Framework.AssertionException``.
+           """Asserts that a condition is true. If the condition is false the method throws an ``NUnit.Framework.AssertionException``.
 
 Parameters:
-- ``condition``: The evaluated condition"""
-)>]
-[<TestCase(
-    "\n\
+- ``condition``: The evaluated condition""")>]
+[<TestCase("\n\
       <summary>Writes a string to the text stream, followed by a line terminator.</summary>\n\
       <param name=\"value\">The string to write. If <paramref name=\"value\" /> is <see langword=\"null\" />, only the line terminator is written.</param>\n\
       <exception cref=\"T:System.ObjectDisposedException\">The <see cref=\"T:System.IO.TextWriter\" /> is closed.</exception>\n\
       <exception cref=\"T:System.IO.IOException\">An I/O error occurs.</exception>\n\
     ",
-    """Writes a string to the text stream, followed by a line terminator.
+           """Writes a string to the text stream, followed by a line terminator.
 
 Parameters:
 - ``value``: The string to write. If ``value`` is ``null``, only the line terminator is written.
 
 Exceptions:
 - ``System.ObjectDisposedException``: The ``System.IO.TextWriter`` is closed.
-- ``System.IO.IOException``: An I/O error occurs."""
-)>]
+- ``System.IO.IOException``: An I/O error occurs.""")>]
 [<TestCase("""
 <member name="M:csharp_test.Test.TestSomething2">
     <summary>
@@ -68,36 +55,25 @@ Exceptions:
     </summary>
 </member>
 """,
-    "Test method. Does another thing.")>]
-[<TestCase(
-    "<summary>test <c>xx</c></summary>",
-    "test ``xx``")>]
-[<TestCase(
-    "<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
-    "test contents-of-unknown-tag")>]
-[<TestCase(
-    "<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
-    "test contents-of-unknown-inline-tag")>]
-[<TestCase(
-    "<summary>summary</summary>\n
+           "Test method. Does another thing.")>]
+[<TestCase("<summary>test <c>xx</c></summary>", "test ``xx``")>]
+[<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
+           "test contents-of-unknown-tag")>]
+[<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
+           "test contents-of-unknown-inline-tag")>]
+[<TestCase("<summary>summary</summary>\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
-    "summary\n\
+           "summary\n\
 <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
-[<TestCase(
-    "<summary>summary</summary><remarks>remarks</remarks>",
-    "summary\n\nRemarks: remarks")>]
-[<TestCase(
-    "<summary>A</summary><returns></returns>",
-    "A")>]
-[<TestCase(
-    "<param name=\"x\">y</param><param name=\"a\">b</param>",
-    """
+[<TestCase("<summary>summary</summary><remarks>remarks</remarks>", "summary\n\nRemarks: remarks")>]
+[<TestCase("<summary>A</summary><returns></returns>", "A")>]
+[<TestCase("<param name=\"x\">y</param><param name=\"a\">b</param>",
+           """
 Parameters:
 - ``x``: y
 - ``a``: b""")>]
-[<TestCase(
-    "<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
-    """desc
+[<TestCase("<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
+           """desc
 
 Types:
 - ``x``: y""")>]
@@ -120,7 +96,7 @@ Types:
             </summary>
         </member>
     """,
-    """Adds a child ``node``. Nodes can have any number of children, but every child must have a unique name. Child nodes are automatically deleted when the parent node is deleted, so an entire scene can be removed by deleting its topmost node.
+           """Adds a child ``node``. Nodes can have any number of children, but every child must have a unique name. Child nodes are automatically deleted when the parent node is deleted, so an entire scene can be removed by deleting its topmost node.
 
 If ``forceReadableName`` is ``true``, improves the readability of the added ``node``. If not named, the ``node`` is renamed to its type, and if it shares ``Godot.Node.Name`` with a sibling, a number is suffixed more appropriately. This operation is very slow. As such, it is recommended leaving this to ``false``, which assigns a dummy name featuring ``@`` in both situations.
 
@@ -138,8 +114,7 @@ Note: If ``node`` already has a parent, this method will fail. Use ``Godot.Node.
 
 If you need the child node to be added below a specific node in the list of children, use ``Godot.Node.AddSibling(Godot.Node,System.Boolean)`` instead of this method.
 
-Note: If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for tool scripts and editor plugins. If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view."""
-)>]
+Note: If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for tool scripts and editor plugins. If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view.""")>]
 [<TestCase("""
 <summary>
 Upserts an item as an asynchronous operation in the Azure Cosmos service.
@@ -150,7 +125,8 @@ Upserts an item as an asynchronous operation in the Azure Cosmos service.
 <param name="cancellationToken">(Optional) <see cref="T:System.Threading.CancellationToken" /> representing request cancellation.</param>
 <returns>The <see cref="T:Microsoft.Azure.Cosmos.ItemResponse`1" /> that was upserted contained within a <see cref="T:System.Threading.Tasks.Task" /> object representing the service response for the asynchronous operation.</returns>
 <exception>https://aka.ms/cosmosdb-dot-net-exceptions#typed-api</exception>
-""", """Upserts an item as an asynchronous operation in the Azure Cosmos service.
+""",
+           """Upserts an item as an asynchronous operation in the Azure Cosmos service.
 
 Parameters:
 - ``item``: A JSON serializable object that must contain an id property. ``Microsoft.Azure.Cosmos.CosmosSerializer`` to implement a custom serializer

@@ -7,8 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testCompletionWorks () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testCompletionWorks"
+    use client = setupServerClient defaultClientProfile "TestData/testCompletionWorks"
     client.StartAndWaitForSolutionLoad()
 
     // resolve provider is necessary for lsp client to resolve
@@ -28,19 +27,19 @@ let testCompletionWorks () =
           Position = { Line = 4u; Character = 13u }
           WorkDoneToken = None
           PartialResultToken = None
-          Context = None
-        }
+          Context = None }
 
     let completion0: U2<CompletionItem array, CompletionList> option =
         client.Request("textDocument/completion", completionParams0)
 
     match completion0 with
-    | Some (U2.C2 cl) ->
+    | Some(U2.C2 cl) ->
         Assert.IsTrue(cl.IsIncomplete)
         Assert.IsFalse(cl.ItemDefaults.IsSome)
         Assert.AreEqual(6, cl.Items.Length)
 
         let methodAItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodA")
+
         match methodAItem with
         | None -> failwith "an item with Label 'MethodA' was expected for completion at this position"
         | Some item ->
@@ -63,6 +62,7 @@ let testCompletionWorks () =
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
         let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "GetHashCode")
+
         match getHashCodeItem with
         | None -> failwith "an item with Label 'GetHashCode' was expected for completion at this position"
         | Some item ->
@@ -85,19 +85,22 @@ let testCompletionWorks () =
             Assert.IsTrue(itemResolved.Documentation.IsSome)
 
             match itemResolved.Documentation with
-            | Some (U2.C2 markup) ->
+            | Some(U2.C2 markup) ->
                 Assert.AreEqual(MarkupKind.PlainText, markup.Kind)
                 Assert.AreEqual("Serves as the default hash function.", markup.Value)
             | _ -> failwith "Documentation w/ Kind=Markdown was expected for GetHashCode"
+
             ()
 
     | _ -> failwith "Some U2.C1 was expected"
+
     ()
 
 [<TestCase>]
 let testCompletionWorksForExtensionMethods () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testCompletionWorksForExtensionMethods"
+    use client =
+        setupServerClient defaultClientProfile "TestData/testCompletionWorksForExtensionMethods"
+
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
@@ -107,17 +110,17 @@ let testCompletionWorksForExtensionMethods () =
           Position = { Line = 4u; Character = 13u }
           WorkDoneToken = None
           PartialResultToken = None
-          Context = None
-        }
+          Context = None }
 
     let completion0: U2<CompletionItem array, CompletionList> option =
         client.Request("textDocument/completion", completionParams0)
 
     match completion0 with
-    | Some (U2.C2 cl) ->
+    | Some(U2.C2 cl) ->
         Assert.AreEqual(7, cl.Items.Length)
 
         let methodBItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodB")
+
         match methodBItem with
         | None -> failwith "an item with Label 'MethodB' was expected for completion at this position"
         | Some item ->

@@ -6,28 +6,28 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
-let testCodeActionOnMethodNameWorks() =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testCodeActionOnMethodNameWorks"
+let testCodeActionOnMethodNameWorks () =
+    use client =
+        setupServerClient defaultClientProfile "TestData/testCodeActionOnMethodNameWorks"
+
     client.StartAndWaitForSolutionLoad()
 
     use classFile = client.Open("Project/Class.cs")
 
     let caParams0: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }
-          Range = { Start = { Line = 2u; Character = 16u }
-                    End = { Line = 2u; Character = 16u }
-                  }
-          Context = { Diagnostics = [| |]
-                      Only = None
-                      TriggerKind = None
-                    }
+          Range =
+            { Start = { Line = 2u; Character = 16u }
+              End = { Line = 2u; Character = 16u } }
+          Context =
+            { Diagnostics = [||]
+              Only = None
+              TriggerKind = None }
           WorkDoneToken = None
-          PartialResultToken = None
-        }
+          PartialResultToken = None }
 
-    let caResult0 : TextDocumentCodeActionResult option =
-      client.Request("textDocument/codeAction", caParams0)
+    let caResult0: TextDocumentCodeActionResult option =
+        client.Request("textDocument/codeAction", caParams0)
 
     Assert.IsTrue(caResult0.IsSome)
 
