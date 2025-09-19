@@ -27,6 +27,9 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
 
+      - name: Run Fantomas check
+        run: dotnet fantomas --check .
+
       - name: Run Build
         run: dotnet build
 

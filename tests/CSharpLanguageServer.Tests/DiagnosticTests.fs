@@ -10,8 +10,9 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<TestCase>]
 let testPushDiagnosticsWork () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testPushDiagnosticsWork"
+    use client =
+        setupServerClient defaultClientProfile "TestData/testPushDiagnosticsWork"
+
     client.StartAndWaitForSolutionLoad()
 
     //
@@ -38,9 +39,11 @@ let testPushDiagnosticsWork () =
     Assert.AreEqual("; expected", diagnostic1.Message)
 
     let diagnostic2 = diagnosticList0.[2]
+
     Assert.AreEqual(
-      "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
-      diagnostic2.Message)
+        "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
+        diagnostic2.Message
+    )
 
     //
     // now change the file to contain no content (and thus no diagnostics)
@@ -60,8 +63,9 @@ let testPushDiagnosticsWork () =
 
 [<TestCase>]
 let testPullDiagnosticsWork () =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testPullDiagnosticsWork"
+    use client =
+        setupServerClient defaultClientProfile "TestData/testPullDiagnosticsWork"
+
     client.StartAndWaitForSolutionLoad()
 
     //
@@ -80,7 +84,7 @@ let testPullDiagnosticsWork () =
         client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report0 with
-    | Some (U2.C1 report) ->
+    | Some(U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
         Assert.AreEqual(None, report.ResultId)
         Assert.AreEqual(3, report.Items.Length)
@@ -90,17 +94,21 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(3, diagnostic0.Range.Start.Character)
         Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
         Assert.AreEqual("Identifier expected", diagnostic0.Message)
+
         Assert.AreEqual(
             "https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1001)",
-            diagnostic0.CodeDescription.Value.Href)
+            diagnostic0.CodeDescription.Value.Href
+        )
 
         let diagnostic1 = report.Items.[1]
         Assert.AreEqual("; expected", diagnostic1.Message)
 
         let diagnostic2 = report.Items.[2]
+
         Assert.AreEqual(
-        "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
-        diagnostic2.Message)
+            "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
+            diagnostic2.Message
+        )
     | _ -> failwith "U2.C1 is expected"
 
     //
@@ -112,18 +120,20 @@ let testPullDiagnosticsWork () =
         client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report1 with
-    | Some (U2.C1 report) ->
+    | Some(U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
         Assert.AreEqual(None, report.ResultId)
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
+
     ()
 
 
 [<TestCase>]
-let testWorkspaceDiagnosticsWork() =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testWorkspaceDiagnosticsWork"
+let testWorkspaceDiagnosticsWork () =
+    use client =
+        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
+
     client.StartAndWaitForSolutionLoad()
 
     let diagnosticParams: WorkspaceDiagnosticParams =
@@ -155,13 +165,13 @@ let testWorkspaceDiagnosticsWork() =
 
 
 [<TestCase>]
-let testWorkspaceDiagnosticsWorkWithStreaming() =
-    use client = setupServerClient defaultClientProfile
-                                   "TestData/testWorkspaceDiagnosticsWork"
+let testWorkspaceDiagnosticsWorkWithStreaming () =
+    use client =
+        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
+
     client.StartAndWaitForSolutionLoad()
 
-    let partialResultToken: ProgressToken =
-        System.Guid.NewGuid() |> string |> U2.C2
+    let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -174,8 +184,7 @@ let testWorkspaceDiagnosticsWorkWithStreaming() =
 
     // report should have 0 results, all of them streamed to lsp client via $/progress instead
     match report0 with
-    | Some report0 ->
-        Assert.AreEqual(0, report0.Items.Length)
+    | Some report0 -> Assert.AreEqual(0, report0.Items.Length)
     | _ -> failwith "'Some' was expected"
 
     let progress = client.GetProgressParams partialResultToken
@@ -196,5 +205,7 @@ let testWorkspaceDiagnosticsWorkWithStreaming() =
 
     | _ -> failwith "'U2.C1' was expected"
 
-    let report1 = progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
+    let report1 =
+        progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
+
     Assert.AreEqual(1, report1.Items.Length)
