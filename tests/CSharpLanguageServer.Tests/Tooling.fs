@@ -855,11 +855,8 @@ let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
 
     new ClientController(clientActor, actualTestDataDirName)
 
-module Text =
-    let normalizeLineEndings (s: string) =
-        Regex.Replace(s, @"\r\n|\n\r|\r|\n", "\n")
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with
-            NewText = s.NewText |> Text.normalizeLineEndings }
+            NewText = s.NewText.ReplaceLineEndings("\n") }

@@ -32,11 +32,12 @@ let testEditorConfigFormatting () =
     match textEdits with
     | Some tes ->
         let expectedClassContents =
-            File.ReadAllText(Path.Combine(client.ProjectDir, "Project", "ExpectedFormatting.cs.txt"))
-            |> Text.normalizeLineEndings
+            File
+                .ReadAllText(Path.Combine(client.ProjectDir, "Project", "ExpectedFormatting.cs.txt"))
+                .ReplaceLineEndings("\n")
 
         let actualClassContents =
-            classFile.GetFileContentsWithTextEditsApplied(tes) |> Text.normalizeLineEndings
+            classFile.GetFileContentsWithTextEditsApplied(tes).ReplaceLineEndings("\n")
 
         Assert.AreEqual(expectedClassContents, actualClassContents)
     | None -> failwith "Some TextEdit's were expected"
