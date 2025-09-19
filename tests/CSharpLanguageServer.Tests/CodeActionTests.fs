@@ -122,7 +122,7 @@ type CodeActionTests() =
         | Some { DocumentChanges = Some [| U4.C1 create; U4.C1 implement |] } ->
             match create.Edits, implement.Edits with
             | [| U2.C1 createEdits |], [| U2.C1 implementEdits |] ->
-                Assert.AreEqual(expectedCreateInterfaceEdits, createEdits.ReplaceLineEndings("\n"))
+                Assert.AreEqual(expectedCreateInterfaceEdits, createEdits |> TextEdit.normalizeNewText)
 
                 Assert.AreEqual(expectedImplementInterfaceEdits, implementEdits |> TextEdit.normalizeNewText)
 
