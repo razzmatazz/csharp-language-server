@@ -8,13 +8,17 @@ open CSharpLanguageServer.State
 
 [<RequireQualifiedAccess>]
 module CSharpMetadata =
-    let handle (context: ServerRequestContext) (metadataParams: CSharpMetadataParams): AsyncLspResult<CSharpMetadataResponse option> = async {
-        let uri = metadataParams.TextDocument.Uri
+    let handle
+        (context: ServerRequestContext)
+        (metadataParams: CSharpMetadataParams)
+        : AsyncLspResult<CSharpMetadataResponse option> =
+        async {
+            let uri = metadataParams.TextDocument.Uri
 
-        let metadataMaybe =
-            context.DecompiledMetadata
-            |> Map.tryFind uri
-            |> Option.map (fun x -> x.Metadata)
+            let metadataMaybe =
+                context.DecompiledMetadata
+                |> Map.tryFind uri
+                |> Option.map (fun x -> x.Metadata)
 
-        return metadataMaybe |> LspResult.success
-    }
+            return metadataMaybe |> LspResult.success
+        }

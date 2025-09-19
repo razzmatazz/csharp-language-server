@@ -29,9 +29,9 @@ module SignatureInformation =
               Value = DocumentationUtil.markdownDocForSymbol m }
             |> U2.C2
 
-        { Label           = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
-          Documentation   = Some documentation
-          Parameters      = Some parameters
+        { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
+          Documentation = Some documentation
+          Parameters = Some parameters
           ActiveParameter = None }
 
 [<RequireQualifiedAccess>]
@@ -62,8 +62,9 @@ module SignatureHelp =
           RetriggerCharacters = None }
         |> Some
 
-    let handle (context: ServerRequestContext) (p: SignatureHelpParams): AsyncLspResult<SignatureHelp option> = async {
+    let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
         let docMaybe = context.GetUserDocument p.TextDocument.Uri
+
         match docMaybe with
         | None -> return None |> LspResult.success
         | Some doc ->
@@ -76,12 +77,16 @@ module SignatureHelp =
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
-            let rec findInvocationContext (node: SyntaxNode): InvocationContext option =
+            let rec findInvocationContext (node: SyntaxNode) : InvocationContext option =
                 match node with
                 | :? InvocationExpressionSyntax as invocation when invocation.ArgumentList.Span.Contains(position) ->
-                    Some { Receiver      = invocation.Expression
-                           ArgumentTypes = invocation.ArgumentList.Arguments |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression)) |> List.ofSeq
-                           Separators    = invocation.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
+                    Some
+                        { Receiver = invocation.Expression
+                          ArgumentTypes =
+                            invocation.ArgumentList.Arguments
+                            |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                            |> List.ofSeq
+                          Separators = invocation.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
 
                 | :? BaseObjectCreationExpressionSyntax as objectCreation when
                     objectCreation.ArgumentList
@@ -91,14 +96,17 @@ module SignatureHelp =
                     ->
                     let argumentList = objectCreation.ArgumentList |> Option.ofObj
 
-                    Some { Receiver      = objectCreation
-                           ArgumentTypes = argumentList
-                                           |> Option.map (fun al -> al.Arguments |> List.ofSeq)
-                                           |> Option.defaultValue []
-                                           |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                           Separators    = argumentList
-                                           |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
-                                           |> Option.defaultValue [] }
+                    Some
+                        { Receiver = objectCreation
+                          ArgumentTypes =
+                            argumentList
+                            |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                            |> Option.defaultValue []
+                            |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                          Separators =
+                            argumentList
+                            |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                            |> Option.defaultValue [] }
 
                 | :? AttributeSyntax as attributeSyntax when
                     attributeSyntax.ArgumentList
@@ -108,14 +116,17 @@ module SignatureHelp =
                     ->
                     let argumentList = attributeSyntax.ArgumentList |> Option.ofObj
 
-                    Some { Receiver      = attributeSyntax
-                           ArgumentTypes = argumentList
-                                           |> Option.map (fun al -> al.Arguments |> List.ofSeq)
-                                           |> Option.defaultValue []
-                                           |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                           Separators    = argumentList
-                                           |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
-                                           |> Option.defaultValue [] }
+                    Some
+                        { Receiver = attributeSyntax
+                          ArgumentTypes =
+                            argumentList
+                            |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                            |> Option.defaultValue []
+                            |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                          Separators =
+                            argumentList
+                            |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                            |> Option.defaultValue [] }
 
                 | _ ->
                     node
@@ -143,7 +154,9 @@ module SignatureHelp =
 
                 let signatureHelpResult =
                     { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq
-                      ActiveSignature = matchingMethodMaybe |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
+                      ActiveSignature =
+                        matchingMethodMaybe
+                        |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
                       ActiveParameter = activeParameterMaybe }
 
                 return Some signatureHelpResult |> LspResult.success
