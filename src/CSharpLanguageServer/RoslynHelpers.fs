@@ -826,4 +826,3 @@ let makeDocumentFromMetadata
 
     let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
     mdDocument, text
-

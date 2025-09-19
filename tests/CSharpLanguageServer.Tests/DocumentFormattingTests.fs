@@ -34,9 +34,9 @@ let testEditorConfigFormatting () =
         let expectedClassContents =
             File.ReadAllText(Path.Combine(client.ProjectDir, "Project", "ExpectedFormatting.cs.txt"))
             |> Text.normalizeLineEndings
+
         let actualClassContents =
-            classFile.GetFileContentsWithTextEditsApplied(tes)
-            |> Text.normalizeLineEndings
+            classFile.GetFileContentsWithTextEditsApplied(tes) |> Text.normalizeLineEndings
 
         Assert.AreEqual(expectedClassContents, actualClassContents)
     | None -> failwith "Some TextEdit's were expected"
