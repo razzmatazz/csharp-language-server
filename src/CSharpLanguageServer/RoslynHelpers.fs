@@ -77,8 +77,7 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
         | _ -> ()
 
 
-        else if node :? EventDeclarationSyntax then
-            let eventDecl = node :?> EventDeclarationSyntax
+        base.Visit(node)
 
 type CleanCodeGenerationOptionsProviderInterceptor(_logMessage) =
     interface IInterceptor with
@@ -823,10 +822,8 @@ let makeDocumentFromMetadata
     let mdDocumentFilename =
         $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
 
-    let mdDocumentFilename =
-        $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
-
     let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
 
     let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
     mdDocument, text
+
