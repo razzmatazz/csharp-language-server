@@ -29,6 +29,7 @@
     <Compile Include="ProgressReporter.fs" />
     <Compile Include="RoslynHelpers.fs" />
     <Compile Include="DocumentationUtil.fs" />
+    <Compile Include="Diagnostics.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="State/ServerState.fs" />
     <Compile Include="State/ServerRequestContext.fs" />

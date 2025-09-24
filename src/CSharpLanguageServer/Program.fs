@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Program
 
+open System
 open System.Reflection
 
 open Argu
@@ -8,20 +9,34 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Diagnostics
+
 
 type CLIArguments =
     | [<AltCommandLine("-v")>] Version
     | [<AltCommandLine("-l")>] LogLevel of level: string
     | [<AltCommandLine("-s")>] Solution of solution: string
     | Debug
+    | Diagnose
 
     interface IArgParserTemplate with
         member s.Usage =
             match s with
-            | Version -> "display versioning information"
-            | Solution _ -> ".sln file to load (relative to CWD)"
-            | LogLevel _ -> "log level, <trace|debug|info|warning|error>; default is `info`"
-            | Debug -> "enable debug mode"
+            | Version -> "Display versioning information"
+            | Solution _ -> "Specify .sln file to load (relative to CWD)"
+            | LogLevel _ -> "Set log level, <trace|debug|info|warning|error>; default is `info`"
+            | Debug -> "Enable debug mode"
+            | Diagnose -> "Run diagnostics"
+
+
+let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
+    match logLevelArg with
+    | Some "error" -> LogLevel.Error
+    | Some "warning" -> LogLevel.Warning
+    | Some "info" -> LogLevel.Information
+    | Some "debug" -> LogLevel.Debug
+    | Some "trace" -> LogLevel.Trace
+    | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
 
 
 [<EntryPoint>]
@@ -39,27 +54,24 @@ let entry args =
             exit 0)
 
         let debugMode: bool = serverArgs.Contains Debug
-
-        let logLevelArg = serverArgs.TryGetResult <@ LogLevel @>
-
-        let logLevel =
-            match logLevelArg with
-            | Some "error" -> LogLevel.Error
-            | Some "warning" -> LogLevel.Warning
-            | Some "info" -> LogLevel.Information
-            | Some "debug" -> LogLevel.Debug
-            | Some "trace" -> LogLevel.Trace
-            | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
+        let logLevel = serverArgs.TryGetResult(<@ LogLevel @>) |> parseLogLevel debugMode
 
         let settings =
             { ServerSettings.Default with
+                DebugMode = debugMode
                 SolutionPath = serverArgs.TryGetResult <@ Solution @>
-                LogLevel = logLevel
-                DebugMode = debugMode }
+                LogLevel = logLevel }
 
-        Logging.setupLogging settings.LogLevel
+        let exitCode =
+            match serverArgs.TryGetResult <@ Diagnose @> with
+            | Some _ ->
+                Logging.setupLogging LogLevel.Trace
+                diagnose settings |> Async.RunSynchronously
+            | _ ->
+                Logging.setupLogging settings.LogLevel
+                Server.start settings
 
-        Server.start settings
+        exitCode
     with
     | :? ArguParseException as ex ->
         eprintfn "%s" ex.Message

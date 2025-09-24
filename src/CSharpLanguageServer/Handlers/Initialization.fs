@@ -4,7 +4,6 @@ open System
 open System.IO
 open System.Reflection
 
-open Microsoft.Build.Locator
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
@@ -15,6 +14,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module Initialization =
@@ -53,36 +53,7 @@ module Initialization =
                         serverName
                 )
 
-            let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
-            let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
-
-            if Seq.isEmpty vsInstanceList then
-                raise (
-                    InvalidOperationException(
-                        "No instances of MSBuild could be detected."
-                        + Environment.NewLine
-                        + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."
-                    )
-                )
-
-            // do! infoMessage "MSBuildLocator instances found:"
-            //
-            // for vsInstance in vsInstanceList do
-            //     do! infoMessage (sprintf "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-            //                              vsInstance.Name
-            //                              (string vsInstance.Version)
-            //                              vsInstance.MSBuildPath
-            //                              (string vsInstance.DiscoveryType))
-
-            let vsInstance = vsInstanceList |> Seq.head
-
-            logger.LogInformation(
-                "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance",
-                vsInstance.Name,
-                (string vsInstance.Version)
-            )
-
-            MSBuildLocator.RegisterInstance(vsInstance)
+            initializeMSBuild logger
 
             logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
             context.Emit(ClientCapabilityChange p.Capabilities)
