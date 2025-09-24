@@ -8,6 +8,8 @@ open System.Threading
 open System.Threading.Tasks
 open System.Collections.Immutable
 open System.Text.RegularExpressions
+
+open Microsoft.Build.Locator
 open Castle.DynamicProxy
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
@@ -834,3 +836,39 @@ let makeDocumentFromMetadata
 
     let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
     mdDocument, text
+
+
+let initializeMSBuild (logger: ILogger) : unit =
+    let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
+    let vsInstanceList = MSBuildLocator.QueryVisualStudioInstances(vsInstanceQueryOpt)
+
+    if Seq.isEmpty vsInstanceList then
+        raise (
+            InvalidOperationException(
+                "No instances of MSBuild could be detected."
+                + Environment.NewLine
+                + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."
+            )
+        )
+
+    logger.LogTrace("MSBuildLocator instances found:")
+
+    for vsInstance in vsInstanceList do
+        logger.LogTrace(
+            sprintf
+                "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+                vsInstance.Name
+                (string vsInstance.Version)
+                vsInstance.MSBuildPath
+                (string vsInstance.DiscoveryType)
+        )
+
+    let vsInstance = vsInstanceList |> Seq.head
+
+    logger.LogInformation(
+        "MSBuildLocator: will register \"{vsInstanceName}\", Version={vsInstanceVersion} as default instance",
+        vsInstance.Name,
+        (string vsInstance.Version)
+    )
+
+    MSBuildLocator.RegisterInstance(vsInstance)
