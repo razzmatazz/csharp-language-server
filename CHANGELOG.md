@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Add `--diagnose` command option to run basic diagnostics interactively
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/224
 * Fix `textDocument/codeAction` for extracting an interface
   - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/267
 * Will use static server capability registration, unless required (i.e. for workspace/didChangeWatchedFiles).
