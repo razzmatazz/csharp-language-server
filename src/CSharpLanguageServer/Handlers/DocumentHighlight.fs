@@ -49,9 +49,7 @@ module DocumentHighlight =
 
                 return
                     locations
-                    |> Seq.map Location.fromRoslynLocation
-                    |> Seq.filter _.IsSome
-                    |> Seq.map _.Value
+                    |> Seq.choose Location.fromRoslynLocation
                     |> Seq.map (fun l ->
                         { Range = l.Range
                           Kind = Some DocumentHighlightKind.Read })

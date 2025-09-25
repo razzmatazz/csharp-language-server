@@ -237,9 +237,7 @@ module SymbolInformation =
               Tags = None }
 
         symbol.Locations
-        |> Seq.map Location.fromRoslynLocation
-        |> Seq.filter _.IsSome
-        |> Seq.map _.Value
+        |> Seq.choose Location.fromRoslynLocation
         |> Seq.map toSymbolInformation
         |> Seq.toList
 
