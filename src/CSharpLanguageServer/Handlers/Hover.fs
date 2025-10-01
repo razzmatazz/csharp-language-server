@@ -13,7 +13,7 @@ module Hover =
     let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> LspResult.success
-        | Some(symbol, _) ->
+        | Some(symbol, _, _) ->
             let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol
 
             let hover =

@@ -3,15 +3,19 @@ namespace CSharpLanguageServer.State
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.RoslynHelpers
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Logging
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Solution
+
+    let logger = Logging.getLoggerByName "ServerRequestContext"
 
     member _.RequestId = requestId
     member _.State = state
@@ -130,7 +134,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
-    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Document) option> = async {
+    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
         match this.GetDocument uri with
         | None -> return None
         | Some doc ->
@@ -138,11 +142,11 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let position = Position.toRoslynPosition sourceText.Lines pos
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc)
+            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
     }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =
-        this.FindSymbol' uri pos |> Async.map (Option.map fst)
+        this.FindSymbol' uri pos |> Async.map (Option.map (fun (sym, _, _) -> sym))
 
     member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
         match state.Solution with
@@ -267,7 +271,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             let! ct = Async.CancellationToken
 
             let locationsFromReferencedSym (r: ReferencedSymbol) =
-                let locations = r.Locations |> Seq.map (fun rl -> rl.Location)
+                let locations = r.Locations |> Seq.map _.Location
 
                 match withDefinition with
                 | true -> locations |> Seq.append r.Definition.Locations

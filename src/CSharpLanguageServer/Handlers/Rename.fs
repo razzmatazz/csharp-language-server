@@ -144,13 +144,13 @@ module Rename =
     let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> LspResult.success
-        | Some(symbol, doc) ->
+        | Some(symbol, project, _) ->
             let! ct = Async.CancellationToken
-            let originalSolution = doc.Project.Solution
+            let originalSolution = project.Solution
 
             let! updatedSolution =
                 Renamer.RenameSymbolAsync(
-                    doc.Project.Solution,
+                    project.Solution,
                     symbol,
                     SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
                     p.NewName,
