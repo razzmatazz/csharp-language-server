@@ -33,14 +33,6 @@ module Uri =
           Name = Uri.UnescapeDataString(Uri(unescape uri).Segments |> Array.last) }
 
 
-module Path =
-    let toUri = Uri.fromPath
-
-    let fromUri = Uri.toPath
-
-    let toWorkspaceFolder = toUri >> Uri.toWorkspaceFolder
-
-
 module Position =
     let fromLinePosition (pos: LinePosition) : Position =
         { Line = uint32 pos.Line
@@ -74,7 +66,7 @@ module Range =
 module Location =
     let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location) : option<Location> =
         let toLspLocation (path: string) span : Location =
-            { Uri = path |> Path.toUri
+            { Uri = path |> Uri.fromPath
               Range = span |> Range.fromLinePositionSpan }
 
         match loc.Kind with

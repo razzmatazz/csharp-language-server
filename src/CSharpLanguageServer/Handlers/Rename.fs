@@ -52,7 +52,7 @@ module Rename =
                     |> Seq.map U2.C1
                     |> Array.ofSeq
 
-                let uri = originalDoc.FilePath |> Path.toUri
+                let uri = originalDoc.FilePath |> Uri.fromPath
 
                 let textEditDocument =
                     { Uri = uri

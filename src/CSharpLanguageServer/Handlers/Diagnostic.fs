@@ -71,7 +71,7 @@ module Diagnostic =
                         d.Location.SourceTree
                         |> Option.ofObj
                         |> Option.map _.FilePath
-                        |> Option.map Path.toUri
+                        |> Option.map Uri.fromPath
 
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)

@@ -226,8 +226,8 @@ module CodeAction =
                 match newDocFilePathMaybe with
                 | Some newDocFilePath ->
                     let textEditDocument =
-                        { Uri = newDocFilePath |> Path.toUri
-                          Version = newDocFilePath |> Path.toUri |> tryGetDocVersionByUri }
+                        { Uri = Uri.fromPath newDocFilePath
+                          Version = newDocFilePath |> Uri.fromPath |> tryGetDocVersionByUri }
 
                     docTextEdits.Add(
                         { TextDocument = textEditDocument
@@ -255,8 +255,8 @@ module CodeAction =
                         |> Array.ofSeq
 
                     let textEditDocument =
-                        { Uri = originalDoc.FilePath |> Path.toUri
-                          Version = originalDoc.FilePath |> Path.toUri |> tryGetDocVersionByUri }
+                        { Uri = originalDoc.FilePath |> Uri.fromPath
+                          Version = originalDoc.FilePath |> Uri.fromPath |> tryGetDocVersionByUri }
 
                     docTextEdits.Add(
                         { TextDocument = textEditDocument
