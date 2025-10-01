@@ -502,6 +502,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                             let diagnostics =
                                 semanticModel.GetDiagnostics()
                                 |> Seq.map Diagnostic.fromRoslynDiagnostic
+                                |> Seq.map fst
                                 |> Array.ofSeq
 
                             Ok(docUri, None, diagnostics)

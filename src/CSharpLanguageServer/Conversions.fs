@@ -252,19 +252,24 @@ module DiagnosticSeverity =
 
 
 module Diagnostic =
-    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic) : Diagnostic =
+    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic) : Diagnostic * string =
         let diagnosticCodeUrl = diagnostic.Descriptor.HelpLinkUri |> Option.ofObj
 
-        { Range = diagnostic.Location.GetLineSpan().Span |> Range.fromLinePositionSpan
-          Severity = Some(diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
-          Code = Some(U2.C2 diagnostic.Id)
-          CodeDescription = diagnosticCodeUrl |> Option.map (fun x -> { Href = x |> URI })
-          Source = Some "lsp"
-          Message = diagnostic.GetMessage()
-          RelatedInformation = None
-          // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
-          Tags = None
-          Data = None }
+        let mappedLineSpan = diagnostic.Location.GetMappedLineSpan()
+
+        let diagnostic =
+            { Range = mappedLineSpan.Span |> Range.fromLinePositionSpan
+              Severity = Some(diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
+              Code = Some(U2.C2 diagnostic.Id)
+              CodeDescription = diagnosticCodeUrl |> Option.map (fun x -> { Href = x |> URI })
+              Source = Some "lsp"
+              Message = diagnostic.GetMessage()
+              RelatedInformation = None
+              // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
+              Tags = None
+              Data = None }
+
+        (diagnostic, mappedLineSpan.Path |> Uri.fromPath)
 
 
 module CompletionContext =
