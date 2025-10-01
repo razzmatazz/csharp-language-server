@@ -19,7 +19,7 @@ module TypeDefinition =
         async {
             match! context.FindSymbol' p.TextDocument.Uri p.Position with
             | None -> return None |> LspResult.success
-            | Some(symbol, doc) ->
+            | Some(symbol, project, _) ->
                 let typeSymbol =
                     match symbol with
                     | :? ILocalSymbol as localSymbol -> [ localSymbol.Type ]
@@ -30,7 +30,7 @@ module TypeDefinition =
 
                 let! locations =
                     typeSymbol
-                    |> Seq.map (flip context.ResolveSymbolLocations (Some doc.Project))
+                    |> Seq.map (flip context.ResolveSymbolLocations (Some project))
                     |> Async.Parallel
                     |> Async.map (Seq.collect id >> Seq.toArray)
 

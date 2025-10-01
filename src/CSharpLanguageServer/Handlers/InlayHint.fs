@@ -250,9 +250,7 @@ module InlayHint =
 
             let inlayHints =
                 root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))
-                |> Seq.map (toInlayHint semanticModel sourceText.Lines)
-                |> Seq.filter Option.isSome
-                |> Seq.map Option.get
+                |> Seq.choose (toInlayHint semanticModel sourceText.Lines)
 
             return inlayHints |> Seq.toArray |> Some |> LspResult.success
     }

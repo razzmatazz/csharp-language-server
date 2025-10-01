@@ -52,7 +52,7 @@ module Rename =
                     |> Seq.map U2.C1
                     |> Array.ofSeq
 
-                let uri = originalDoc.FilePath |> Path.toUri
+                let uri = originalDoc.FilePath |> Uri.fromPath
 
                 let textEditDocument =
                     { Uri = uri
@@ -144,13 +144,13 @@ module Rename =
     let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
         | None -> return None |> LspResult.success
-        | Some(symbol, doc) ->
+        | Some(symbol, project, _) ->
             let! ct = Async.CancellationToken
-            let originalSolution = doc.Project.Solution
+            let originalSolution = project.Solution
 
             let! updatedSolution =
                 Renamer.RenameSymbolAsync(
-                    doc.Project.Solution,
+                    project.Solution,
                     symbol,
                     SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
                     p.NewName,

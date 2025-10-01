@@ -33,14 +33,6 @@ module Uri =
           Name = Uri.UnescapeDataString(Uri(unescape uri).Segments |> Array.last) }
 
 
-module Path =
-    let toUri = Uri.fromPath
-
-    let fromUri = Uri.toPath
-
-    let toWorkspaceFolder = toUri >> Uri.toWorkspaceFolder
-
-
 module Position =
     let fromLinePosition (pos: LinePosition) : Position =
         { Line = uint32 pos.Line
@@ -74,7 +66,7 @@ module Range =
 module Location =
     let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location) : option<Location> =
         let toLspLocation (path: string) span : Location =
-            { Uri = path |> Path.toUri
+            { Uri = path |> Uri.fromPath
               Range = span |> Range.fromLinePositionSpan }
 
         match loc.Kind with
@@ -237,9 +229,7 @@ module SymbolInformation =
               Tags = None }
 
         symbol.Locations
-        |> Seq.map Location.fromRoslynLocation
-        |> Seq.filter _.IsSome
-        |> Seq.map _.Value
+        |> Seq.choose Location.fromRoslynLocation
         |> Seq.map toSymbolInformation
         |> Seq.toList
 
@@ -254,19 +244,24 @@ module DiagnosticSeverity =
 
 
 module Diagnostic =
-    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic) : Diagnostic =
+    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic) : Diagnostic * string =
         let diagnosticCodeUrl = diagnostic.Descriptor.HelpLinkUri |> Option.ofObj
 
-        { Range = diagnostic.Location.GetLineSpan().Span |> Range.fromLinePositionSpan
-          Severity = Some(diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
-          Code = Some(U2.C2 diagnostic.Id)
-          CodeDescription = diagnosticCodeUrl |> Option.map (fun x -> { Href = x |> URI })
-          Source = Some "lsp"
-          Message = diagnostic.GetMessage()
-          RelatedInformation = None
-          // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
-          Tags = None
-          Data = None }
+        let mappedLineSpan = diagnostic.Location.GetMappedLineSpan()
+
+        let diagnostic =
+            { Range = mappedLineSpan.Span |> Range.fromLinePositionSpan
+              Severity = Some(diagnostic.Severity |> DiagnosticSeverity.fromRoslynDiagnosticSeverity)
+              Code = Some(U2.C2 diagnostic.Id)
+              CodeDescription = diagnosticCodeUrl |> Option.map (fun x -> { Href = x |> URI })
+              Source = Some "lsp"
+              Message = diagnostic.GetMessage()
+              RelatedInformation = None
+              // TODO: Convert diagnostic.Descriptor.CustomTags to Tags
+              Tags = None
+              Data = None }
+
+        (diagnostic, mappedLineSpan.Path |> Uri.fromPath)
 
 
 module CompletionContext =

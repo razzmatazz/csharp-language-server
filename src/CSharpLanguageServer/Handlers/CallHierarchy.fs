@@ -47,9 +47,7 @@ module CallHierarchy =
                     |> Seq.toArray
 
                 info.CallingSymbol.Locations
-                |> Seq.map Location.fromRoslynLocation
-                |> Seq.filter _.IsSome
-                |> Seq.map _.Value
+                |> Seq.choose Location.fromRoslynLocation
                 |> Seq.map (fun loc ->
                     { From = CallHierarchyItem.fromSymbolAndLocation (info.CallingSymbol) loc
                       FromRanges = fromRanges })

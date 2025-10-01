@@ -750,6 +750,17 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
+let getProjectForPathOnSolution (solution: Solution) (filePath: string) : Project option =
+    let docDir = Path.GetDirectoryName filePath
+
+    let fileOnProjectDir (p: Project) =
+        let projectDir = Path.GetDirectoryName p.FilePath
+        let projectDirWithDirSepChar = projectDir + string Path.DirectorySeparatorChar
+
+        docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
+
+    solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
+
 let tryAddDocument
     (logger: ILogger)
     (docFilePath: string)
@@ -757,24 +768,13 @@ let tryAddDocument
     (solution: Solution)
     : Async<Document option> =
     async {
-        let docDir = Path.GetDirectoryName docFilePath
-        //logMessage (sprintf "TextDocumentDidOpen: docFilename=%s docDir=%s" docFilename docDir)
-
-        let fileOnProjectDir (p: Project) =
-            let projectDir = Path.GetDirectoryName p.FilePath
-            let projectDirWithDirSepChar = projectDir + string Path.DirectorySeparatorChar
-
-            docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
-
-        let projectOnPath = solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
+        let projectOnPath = getProjectForPathOnSolution solution docFilePath
 
         let! newDocumentMaybe =
             match projectOnPath with
             | Some proj ->
                 let projectBaseDir = Path.GetDirectoryName proj.FilePath
                 let docName = docFilePath.Substring(projectBaseDir.Length + 1)
-
-                //logMessage (sprintf "Adding \"%s\" (\"%s\") to project %s" docName docFilePath proj.FilePath)
 
                 let newDoc =
                     proj.AddDocument(

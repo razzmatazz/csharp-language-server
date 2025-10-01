@@ -47,6 +47,7 @@ module Diagnostic =
                     let diagnostics =
                         semanticModel.GetDiagnostics()
                         |> Seq.map Diagnostic.fromRoslynDiagnostic
+                        |> Seq.map fst
                         |> Array.ofSeq
 
                     return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
@@ -70,7 +71,7 @@ module Diagnostic =
                         d.Location.SourceTree
                         |> Option.ofObj
                         |> Option.map _.FilePath
-                        |> Option.map Path.toUri
+                        |> Option.map Uri.fromPath
 
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)
@@ -79,11 +80,17 @@ module Diagnostic =
                         |> Seq.map (fun (uri, ds) -> (uri.Value, ds))
 
                     for (uri, docDiagnostics) in diagnosticsByDocument do
+                        let items =
+                            docDiagnostics
+                            |> Seq.map Diagnostic.fromRoslynDiagnostic
+                            |> Seq.map fst
+                            |> Array.ofSeq
+
                         let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
                             { Kind = "full"
                               ResultId = None
                               Uri = uri
-                              Items = docDiagnostics |> Seq.map Diagnostic.fromRoslynDiagnostic |> Array.ofSeq
+                              Items = items
                               Version = None }
 
                         let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport

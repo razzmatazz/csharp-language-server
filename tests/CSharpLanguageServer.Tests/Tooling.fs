@@ -369,7 +369,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
                 logMessage
                     "$/progress"
-                    (String.Format("({0}) \"{1}\"", value |> indexJToken "kind", value |> indexJToken "message"))
+                    (String.Format("{0} {1}", value |> indexJToken "kind", value |> indexJToken "message"))
 
                 state
             | "client/registerCapability" ->

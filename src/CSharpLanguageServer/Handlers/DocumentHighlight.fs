@@ -49,20 +49,19 @@ module DocumentHighlight =
 
                 return
                     locations
-                    |> Seq.map Location.fromRoslynLocation
-                    |> Seq.filter _.IsSome
-                    |> Seq.map _.Value
+                    |> Seq.choose Location.fromRoslynLocation
                     |> Seq.map (fun l ->
                         { Range = l.Range
                           Kind = Some DocumentHighlightKind.Read })
             }
 
             match! context.FindSymbol' p.TextDocument.Uri p.Position with
-            | None -> return None |> LspResult.success
-            | Some(symbol, doc) ->
+            | Some(symbol, _, Some doc) ->
                 if shouldHighlight symbol then
                     let! highlights = getHighlights symbol doc
                     return highlights |> Seq.toArray |> Some |> LspResult.success
                 else
                     return None |> LspResult.success
+
+            | _ -> return None |> LspResult.success
         }
