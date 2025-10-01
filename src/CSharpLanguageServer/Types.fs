@@ -40,10 +40,15 @@ type ICSharpLspClient =
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
 
-let defaultDocumentFilter: TextDocumentFilter =
-    { Language = None
+let csharpDocumentFilter: TextDocumentFilter =
+    { Language = Some "csharp"
       Scheme = Some "file"
       Pattern = Some "**/*.cs" }
+
+let razorCsharpDocumentFilter: TextDocumentFilter =
+    { Language = Some "razor-csharp"
+      Scheme = Some "file"
+      Pattern = Some "**/*.cshtml" }
 
 // Type abbreviations cannot have augmentations, extensions
 let defaultDocumentSelector: DocumentSelector = [| defaultDocumentFilter |> U2.C1 |]

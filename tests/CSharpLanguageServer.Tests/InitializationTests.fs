@@ -73,7 +73,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         { DocumentSelector =
             Some
                 [| U2.C1
-                       { Language = None
+                       { Language = Some "csharp"
                          Scheme = Some "file"
                          Pattern = Some "**/*.cs" } |]
           WorkDoneProgress = None
