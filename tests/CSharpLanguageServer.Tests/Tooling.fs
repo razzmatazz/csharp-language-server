@@ -310,14 +310,22 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                         let bytesRead: List<byte> = List<byte>()
 
                         while bytesRead.Count < header.ContentLength do
-                            let numBytesToReadInThisChunk = Math.Min(header.ContentLength - bytesRead.Count, 4096)
+                            let numBytesToReadInThisChunk =
+                                Math.Min(header.ContentLength - bytesRead.Count, 4096)
+
                             let chunk: byte[] = Array.zeroCreate numBytesToReadInThisChunk
                             let chunkBytesRead: int = stdout.Read(chunk)
-                            for i in 0 .. (chunkBytesRead-1) do
+
+                            for i in 0 .. (chunkBytesRead - 1) do
                                 bytesRead.Add(chunk[i])
 
                         if bytesRead.Count <> header.ContentLength then
-                            failwith (sprintf "readNextJsonRpcMessage: could not read the full content of response (bytesRead=%d; header.ContentLength=%d)" bytesRead.Count header.ContentLength)
+                            failwith (
+                                sprintf
+                                    "readNextJsonRpcMessage: could not read the full content of response (bytesRead=%d; header.ContentLength=%d)"
+                                    bytesRead.Count
+                                    header.ContentLength
+                            )
 
                         let msg = bytesRead |> _.ToArray() |> Encoding.UTF8.GetString |> JObject.Parse
 
