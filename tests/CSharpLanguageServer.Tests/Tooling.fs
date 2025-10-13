@@ -305,14 +305,21 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                     | None ->
                         logMessage "RpcMessageReceived" "readNextJsonRpcMessage: EOF received when reading header"
                         ()
+
                     | Some header ->
-                        let content: byte[] = Array.zeroCreate header.ContentLength
-                        let bytesRead = stdout.Read(content)
+                        let bytesRead: List<byte> = List<byte>()
 
-                        if bytesRead <> header.ContentLength then
-                            failwith "readNextJsonRpcMessage: could not read full content"
+                        while bytesRead.Count < header.ContentLength do
+                            let numBytesToReadInThisChunk = Math.Min(header.ContentLength - bytesRead.Count, 4096)
+                            let chunk: byte[] = Array.zeroCreate numBytesToReadInThisChunk
+                            let chunkBytesRead: int = stdout.Read(chunk)
+                            for i in 0 .. (chunkBytesRead-1) do
+                                bytesRead.Add(chunk[i])
 
-                        let msg = Encoding.UTF8.GetString(content) |> JObject.Parse
+                        if bytesRead.Count <> header.ContentLength then
+                            failwith (sprintf "readNextJsonRpcMessage: could not read the full content of response (bytesRead=%d; header.ContentLength=%d)" bytesRead.Count header.ContentLength)
+
+                        let msg = bytesRead |> _.ToArray() |> Encoding.UTF8.GetString |> JObject.Parse
 
                         post (RpcMessageReceived(Ok(Some msg)))
                 with ex ->
