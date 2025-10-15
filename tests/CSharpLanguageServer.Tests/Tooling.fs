@@ -10,7 +10,6 @@ open System.Threading
 open System.Runtime.InteropServices
 open System.Reflection
 
-open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
@@ -99,7 +98,8 @@ let makeServerProcessInfo projectTempDir =
         | PlatformID.Win32NT -> baseServerFileName + ".exe"
         | _ -> baseServerFileName
 
-    Assert.IsTrue(File.Exists(serverFileName))
+    if not (File.Exists(serverFileName)) then
+        failwithf "makeServerProcessInfo: no '%s' server executable present" serverFileName
 
     let processStartInfo = new ProcessStartInfo()
     processStartInfo.FileName <- serverFileName
@@ -215,14 +215,16 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return newState
 
     | ServerStopRequest rc ->
-        let p = state.ServerProcess.Value
-        logMessage "StopServer" "p.Kill().."
-        p.Kill()
-        logMessage "StopServer" "p.WaitForExit().."
-        p.WaitForExit()
-        logMessage "StopServer" "p.WaitForExit(): OK"
+        match state.ServerProcess with
+        | None -> ()
+        | Some serverProcess ->
+            logMessage "StopServer" "p.Kill().."
+            serverProcess.Kill()
+            logMessage "StopServer" "p.WaitForExit().."
+            serverProcess.WaitForExit()
+            logMessage "StopServer" "p.WaitForExit(): OK"
 
-        logMessage "StopServer" (sprintf "exit code=%d" p.ExitCode)
+            logMessage "StopServer" (sprintf "exit code=%d" serverProcess.ExitCode)
 
         rc.Reply(())
 

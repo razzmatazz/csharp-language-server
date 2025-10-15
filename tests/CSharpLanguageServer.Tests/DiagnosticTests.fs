@@ -6,14 +6,11 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 [<TestCase>]
 let testPushDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testPushDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = testDiagnosticsWorkFixture
 
     //
     // open Class.cs file and wait for diagnostics to be pushed
@@ -63,10 +60,7 @@ let testPushDiagnosticsWork () =
 
 [<TestCase>]
 let testPullDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testPullDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = testDiagnosticsWorkFixture
 
     //
     // open Class.cs file and pull diagnostics
@@ -131,10 +125,7 @@ let testPullDiagnosticsWork () =
 
 [<TestCase>]
 let testWorkspaceDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = testDiagnosticsWorkFixture
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -166,10 +157,7 @@ let testWorkspaceDiagnosticsWork () =
 
 [<TestCase>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = testDiagnosticsWorkFixture
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

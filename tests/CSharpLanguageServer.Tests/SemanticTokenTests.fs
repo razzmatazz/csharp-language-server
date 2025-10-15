@@ -4,7 +4,7 @@ open System
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 type DecodedToken =
     { Line: uint
@@ -68,12 +68,11 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] 
 
 [<TestCase>]
 let testSemanticTokens () =
-    use client = setupServerClient defaultClientProfile "TestData/testSemanticTokens"
-    client.StartAndWaitForSolutionLoad()
+    let client = testSemanticTokensFixture
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
-        |> Option.bind _.SemanticTokensProvider
+        |> Option.bind (fun c -> c.SemanticTokensProvider)
         |> Option.bind (fun s ->
             match s with
             | U2.C1 c1 -> Some c1
@@ -88,7 +87,7 @@ let testSemanticTokens () =
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
         semanticTokensOptions
-        |> Option.bind _.Full
+        |> Option.bind (fun c1 -> c1.Full)
         |> Option.bind (fun f ->
             match f with
             | U2.C1 full -> Some full
@@ -159,14 +158,11 @@ let testSemanticTokens () =
 
 [<TestCase>]
 let testSemanticTokensWithMultiLineLiteral () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testSemanticTokensWithMultiLineLiteral"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = testSemanticTokensFixture
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
-        |> Option.bind _.SemanticTokensProvider
+        |> Option.bind (fun c -> c.SemanticTokensProvider)
         |> Option.bind (fun s ->
             match s with
             | U2.C1 c1 -> Some c1

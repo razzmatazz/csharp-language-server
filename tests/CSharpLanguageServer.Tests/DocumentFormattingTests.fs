@@ -5,15 +5,11 @@ open System.IO
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
-[<TestCase>]
+[<Test>]
 let testEditorConfigFormatting () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testEditorConfigFormatting"
-
-    client.StartAndWaitForSolutionLoad()
-
+    let client = testEditorConfigFormattingFixture
     use classFile = client.Open("Project/Class.cs")
 
     let docFormattingParams0: DocumentFormattingParams =

@@ -4,11 +4,11 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
-[<TestCase>]
-let testCompletionWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testCompletionWorks"
-    client.StartAndWaitForSolutionLoad()
+[<Test>]
+let ``completion works in a .cs file`` () =
+    let client = testCompletionWorksFixture
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
@@ -96,14 +96,10 @@ let testCompletionWorks () =
 
     ()
 
-[<TestCase>]
-let testCompletionWorksForExtensionMethods () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testCompletionWorksForExtensionMethods"
-
-    client.StartAndWaitForSolutionLoad()
-
-    use classFile = client.Open("Project/Class.cs")
+[<Test>]
+let ``completion works for extension methods`` () =
+    let client = testCompletionWorksFixture
+    use classFile = client.Open("Project/ClassWithExtensionMethods.cs")
 
     let completionParams0: CompletionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -131,7 +127,7 @@ let testCompletionWorksForExtensionMethods () =
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            Assert.AreEqual(itemResolved.Detail, Some "(extension) string Class.MethodB()")
+            Assert.AreEqual(itemResolved.Detail, Some "(extension) string ClassWithExtensionMethods.MethodB()")
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
     | _ -> failwith "Some U2.C1 was expected"
