@@ -73,7 +73,7 @@ let testSemanticTokens () =
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
-        |> Option.bind (fun c -> c.SemanticTokensProvider)
+        |> Option.bind _.SemanticTokensProvider
         |> Option.bind (fun s ->
             match s with
             | U2.C1 c1 -> Some c1
@@ -88,7 +88,7 @@ let testSemanticTokens () =
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
         semanticTokensOptions
-        |> Option.bind (fun c1 -> c1.Full)
+        |> Option.bind _.Full
         |> Option.bind (fun f ->
             match f with
             | U2.C1 full -> Some full
@@ -166,7 +166,7 @@ let testSemanticTokensWithMultiLineLiteral () =
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
-        |> Option.bind (fun c -> c.SemanticTokensProvider)
+        |> Option.bind _.SemanticTokensProvider
         |> Option.bind (fun s ->
             match s with
             | U2.C1 c1 -> Some c1

@@ -14,8 +14,8 @@ let testCompletionWorks () =
     // detail and documentation props for a completion item
     let haveResolveProvider =
         client.GetState().ServerCapabilities
-        |> Option.bind (fun c -> c.CompletionProvider)
-        |> Option.bind (fun p -> p.ResolveProvider)
+        |> Option.bind _.CompletionProvider
+        |> Option.bind _.ResolveProvider
         |> Option.defaultValue false
 
     Assert.IsTrue(haveResolveProvider)
