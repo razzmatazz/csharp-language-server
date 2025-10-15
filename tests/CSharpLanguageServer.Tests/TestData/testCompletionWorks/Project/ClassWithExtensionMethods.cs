@@ -1,4 +1,4 @@
-class Class
+class ClassWithExtensionMethods
 {
     public void MethodA(string arg)
     {
@@ -8,7 +8,7 @@ class Class
 
 public static class ClassExtensions
 {
-    public static string MethodB(this Class input)
+    public static string MethodB(this ClassWithExtensionMethods input)
     {
         return "ok";
     }
