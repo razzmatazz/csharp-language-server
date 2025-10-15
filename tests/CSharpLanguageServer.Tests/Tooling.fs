@@ -10,7 +10,6 @@ open System.Threading
 open System.Runtime.InteropServices
 open System.Reflection
 
-open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
@@ -99,7 +98,8 @@ let makeServerProcessInfo projectTempDir =
         | PlatformID.Win32NT -> baseServerFileName + ".exe"
         | _ -> baseServerFileName
 
-    Assert.IsTrue(File.Exists(serverFileName))
+    if not (File.Exists(serverFileName)) then
+        failwithf "makeServerProcessInfo: no '%s' server executable present" serverFileName
 
     let processStartInfo = new ProcessStartInfo()
     processStartInfo.FileName <- serverFileName

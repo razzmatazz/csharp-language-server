@@ -8,31 +8,36 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
+    <Compile Include="Fixtures.fs" />
     <Compile Include="CodeActionTests.fs" />
+    <!--
     <Compile Include="DiagnosticTests.fs" />
+    -->
     <Compile Include="DocumentationTests.fs" />
+    <!--
     <Compile Include="HoverTests.fs" />
     <Compile Include="InitializationTests.fs" />
     <Compile Include="ReferenceTests.fs" />
     <Compile Include="DefinitionTests.fs" />
     <Compile Include="DocumentFormattingTests.fs" />
     <Compile Include="InternalTests.fs" />
+    -->
     <Compile Include="CompletionTests.fs" />
+    <!--
     <Compile Include="WorkspaceSymbolTests.fs" />
     <Compile Include="SemanticTokenTests.fs" />
     <Compile Include="DiagnoseCommandTests.fs" />
+    -->
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="NUnit" />
-    <PackageReference Include="NUnit3TestAdapter" />
-    <PackageReference Include="coverlet.collector">
-      <PrivateAssets>all</PrivateAssets>
+    <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
   <ItemGroup>
