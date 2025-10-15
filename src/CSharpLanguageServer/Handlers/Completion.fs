@@ -117,7 +117,7 @@ module Completion =
         member __.GetDescriptionAsync(doc, item, ct) =
             service.GetDescriptionAsync(doc, item, ct)
 
-    let provider (clientCapabilities: ClientCapabilities) : CompletionOptions option =
+    let provider (_cc: ClientCapabilities) : CompletionOptions option =
         Some
             { ResolveProvider = Some true
               TriggerCharacters = Some([| "."; "'" |])
