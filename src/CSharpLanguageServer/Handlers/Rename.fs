@@ -71,8 +71,8 @@ module Rename =
 
     let private prepareSupport (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
-        |> Option.bind (fun x -> x.Rename)
-        |> Option.bind (fun x -> x.PrepareSupport)
+        |> Option.bind _.Rename
+        |> Option.bind _.PrepareSupport
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, RenameOptions> option =

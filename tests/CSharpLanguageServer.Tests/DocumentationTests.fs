@@ -2,26 +2,27 @@ module CSharpLanguageServer.Tests.DocumentationTests
 
 open System
 
-open NUnit.Framework
+open Xunit
 
 open CSharpLanguageServer.DocumentationUtil
 
-[<TestCase("", "")>]
-[<TestCase("<summary>doc string</summary>", "doc string")>]
-[<TestCase("<summary>\ndoc string\n\n</summary>", "doc string")>]
-[<TestCase("<summary>doc string</summary>\n <param name=\"x\">y</param>",
+[<Theory>]
+[<InlineData("", "")>]
+[<InlineData("<summary>doc string</summary>", "doc string")>]
+[<InlineData("<summary>\ndoc string\n\n</summary>", "doc string")>]
+[<InlineData("<summary>doc string</summary>\n <param name=\"x\">y</param>",
            """doc string
 
 Parameters:
 - ``x``: y""")>]
-[<TestCase("\n\
+[<InlineData("\n\
       <summary>Gets the standard error output stream.</summary>\n\
       <returns>A <see cref=\"T:System.IO.TextWriter\" /> that represents the standard error output stream.</returns>\n\
 ",
            """Gets the standard error output stream.
 
 Returns: A ``System.IO.TextWriter`` that represents the standard error output stream.""")>]
-[<TestCase("\n\
+[<InlineData("\n\
             <summary>\n\
             Asserts that a condition is true. If the condition is false the method throws\n\
             an <see cref=\"T:NUnit.Framework.AssertionException\" />.\n\
@@ -33,7 +34,7 @@ Returns: A ``System.IO.TextWriter`` that represents the standard error output st
 
 Parameters:
 - ``condition``: The evaluated condition""")>]
-[<TestCase("\n\
+[<InlineData("\n\
       <summary>Writes a string to the text stream, followed by a line terminator.</summary>\n\
       <param name=\"value\">The string to write. If <paramref name=\"value\" /> is <see langword=\"null\" />, only the line terminator is written.</param>\n\
       <exception cref=\"T:System.ObjectDisposedException\">The <see cref=\"T:System.IO.TextWriter\" /> is closed.</exception>\n\
@@ -47,7 +48,7 @@ Parameters:
 Exceptions:
 - ``System.ObjectDisposedException``: The ``System.IO.TextWriter`` is closed.
 - ``System.IO.IOException``: An I/O error occurs.""")>]
-[<TestCase("""
+[<InlineData("""
 <member name="M:csharp_test.Test.TestSomething2">
     <summary>
       Test method.
@@ -56,28 +57,28 @@ Exceptions:
 </member>
 """,
            "Test method. Does another thing.")>]
-[<TestCase("<summary>test <c>xx</c></summary>", "test ``xx``")>]
-[<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
+[<InlineData("<summary>test <c>xx</c></summary>", "test ``xx``")>]
+[<InlineData("<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
            "test contents-of-unknown-tag")>]
-[<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
+[<InlineData("<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
            "test contents-of-unknown-inline-tag")>]
-[<TestCase("<summary>summary</summary>\n
+[<InlineData("<summary>summary</summary>\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
            "summary\n\
 <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>")>]
-[<TestCase("<summary>summary</summary><remarks>remarks</remarks>", "summary\n\nRemarks: remarks")>]
-[<TestCase("<summary>A</summary><returns></returns>", "A")>]
-[<TestCase("<param name=\"x\">y</param><param name=\"a\">b</param>",
+[<InlineData("<summary>summary</summary><remarks>remarks</remarks>", "summary\n\nRemarks: remarks")>]
+[<InlineData("<summary>A</summary><returns></returns>", "A")>]
+[<InlineData("<param name=\"x\">y</param><param name=\"a\">b</param>",
            """
 Parameters:
 - ``x``: y
 - ``a``: b""")>]
-[<TestCase("<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
+[<InlineData("<summary>desc</summary><typeparam name=\"x\">y</typeparam>",
            """desc
 
 Types:
 - ``x``: y""")>]
-[<TestCase("""
+[<InlineData("""
 <member name="M:Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)">
             <summary>
             <para>Adds a child <paramref name="node" />. Nodes can have any number of children, but every child must have a unique name. Child nodes are automatically deleted when the parent node is deleted, so an entire scene can be removed by deleting its topmost node.</para>
@@ -115,7 +116,7 @@ Note: If ``node`` already has a parent, this method will fail. Use ``Godot.Node.
 If you need the child node to be added below a specific node in the list of children, use ``Godot.Node.AddSibling(Godot.Node,System.Boolean)`` instead of this method.
 
 Note: If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for tool scripts and editor plugins. If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view.""")>]
-[<TestCase("""
+[<InlineData("""
 <summary>
 Upserts an item as an asynchronous operation in the Azure Cosmos service.
 </summary>
@@ -140,4 +141,4 @@ Exceptions:
 - ``(unspecified)``: https://aka.ms/cosmosdb-dot-net-exceptions#typed-api""")>]
 let testFormatDocXml (inputXml, expectedMD: string) =
     let resultMd = String.Join("\n", formatDocXml inputXml)
-    Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)
+    Assert.Equal(expectedMD.Replace("\r\n", "\n"), resultMd)

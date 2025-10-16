@@ -1,77 +1,82 @@
-module CSharpLanguageServer.Tests.HoverTests
+namespace CSharpLanguageServer.Tests
 
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
-let testHoverWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testHoverWorks"
-    client.StartAndWaitForSolutionLoad()
+[<TestFixture>]
+type HoverTests() =
+    static let client: ClientController =
+        setupServerClient defaultClientProfile "TestData/testHoverWorks"
 
-    use classFile = client.Open("Project/Class.cs")
+    [<OneTimeSetUp>]
+    member _.Setup() = client.StartAndWaitForSolutionLoad()
 
-    //
-    // check hover at method name
-    //
-    let hover0Params: HoverParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 2u; Character = 16u }
-          WorkDoneToken = None }
+    [<Test>]
+    member _.``hover works in .cs file``() =
+        use classFile = client.Open("Project/Class.cs")
 
-    let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
+        //
+        // check hover at method name
+        //
+        let hover0Params: HoverParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 2u; Character = 16u }
+              WorkDoneToken = None }
 
-    Assert.IsTrue(hover0.IsSome)
+        let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
 
-    match hover0 with
-    | Some hover ->
-        match hover.Contents with
-        | U3.C1 c ->
-            Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-            Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
-        | _ -> failwith "C1 was expected"
+        Assert.IsTrue(hover0.IsSome)
 
-        Assert.IsTrue(hover.Range.IsNone)
+        match hover0 with
+        | Some hover ->
+            match hover.Contents with
+            | U3.C1 c ->
+                Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+                Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
+            | _ -> failwith "C1 was expected"
 
-    | _ -> failwith "Some (U3.C1 c) was expected"
+            Assert.IsTrue(hover.Range.IsNone)
 
-    //
-    // check hover on `string` value (external System.String type)
-    //
-    let hover1Params: HoverParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 8u }
-          WorkDoneToken = None }
+        | _ -> failwith "Some (U3.C1 c) was expected"
 
-    let hover1: Hover option = client.Request("textDocument/hover", hover1Params)
+        //
+        // check hover on `string` value (external System.String type)
+        //
+        let hover1Params: HoverParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 4u; Character = 8u }
+              WorkDoneToken = None }
 
-    Assert.IsTrue(hover1.IsSome)
+        let hover1: Hover option = client.Request("textDocument/hover", hover1Params)
 
-    match hover1 with
-    | Some hover ->
-        match hover.Contents with
-        | U3.C1 c ->
-            Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+        Assert.IsTrue(hover1.IsSome)
 
-            Assert.AreEqual(
-                "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
-                c.Value.ReplaceLineEndings("\n")
-            )
-        | _ -> failwith "C1 was expected"
+        match hover1 with
+        | Some hover ->
+            match hover.Contents with
+            | U3.C1 c ->
+                Assert.AreEqual(MarkupKind.Markdown, c.Kind)
 
-        Assert.IsTrue(hover.Range.IsNone)
+                Assert.AreEqual(
+                    "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
+                    c.Value.ReplaceLineEndings("\n")
+                )
+            | _ -> failwith "C1 was expected"
 
-    | _ -> failwith "Some (U3.C1 c) was expected"
+            Assert.IsTrue(hover.Range.IsNone)
 
-    //
-    // check hover at beginning of the file (nothing should come up)
-    //
-    let hover2Params: HoverParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 0u; Character = 0u }
-          WorkDoneToken = None }
+        | _ -> failwith "Some (U3.C1 c) was expected"
 
-    let hover2: Hover option = client.Request("textDocument/hover", hover2Params)
+        //
+        // check hover at beginning of the file (nothing should come up)
+        //
+        let hover2Params: HoverParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 0u; Character = 0u }
+              WorkDoneToken = None }
 
-    Assert.IsTrue(hover2.IsNone)
+        let hover2: Hover option = client.Request("textDocument/hover", hover2Params)
+
+        Assert.IsTrue(hover2.IsNone)

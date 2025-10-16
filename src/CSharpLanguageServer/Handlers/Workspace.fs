@@ -26,8 +26,8 @@ module Workspace =
 
     let dynamicRegistrationForDidChangeWatchedFiles (clientCapabilities: ClientCapabilities) =
         clientCapabilities.Workspace
-        |> Option.bind (fun x -> x.DidChangeWatchedFiles)
-        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.bind _.DidChangeWatchedFiles
+        |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
     let didChangeWatchedFilesRegistration (clientCapabilities: ClientCapabilities) : Registration option =

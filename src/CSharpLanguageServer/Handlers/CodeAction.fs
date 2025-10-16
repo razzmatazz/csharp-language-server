@@ -313,8 +313,8 @@ module CodeAction =
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, CodeActionOptions> option =
         let literalSupport =
             clientCapabilities.TextDocument
-            |> Option.bind (fun x -> x.CodeAction)
-            |> Option.bind (fun x -> x.CodeActionLiteralSupport)
+            |> Option.bind _.CodeAction
+            |> Option.bind _.CodeActionLiteralSupport
 
         match literalSupport with
         | Some _ ->
@@ -341,8 +341,8 @@ module CodeAction =
 
                 let clientSupportsCodeActionEditResolveWithEditAndData =
                     context.ClientCapabilities.TextDocument
-                    |> Option.bind (fun x -> x.CodeAction)
-                    |> Option.bind (fun x -> x.ResolveSupport)
+                    |> Option.bind _.CodeAction
+                    |> Option.bind _.ResolveSupport
                     |> Option.map (fun resolveSupport -> resolveSupport.Properties |> Array.contains "edit")
                     |> Option.defaultValue false
 

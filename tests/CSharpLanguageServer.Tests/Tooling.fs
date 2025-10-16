@@ -10,7 +10,6 @@ open System.Threading
 open System.Runtime.InteropServices
 open System.Reflection
 
-open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
@@ -99,7 +98,8 @@ let makeServerProcessInfo projectTempDir =
         | PlatformID.Win32NT -> baseServerFileName + ".exe"
         | _ -> baseServerFileName
 
-    Assert.IsTrue(File.Exists(serverFileName))
+    if not (File.Exists(serverFileName)) then
+        failwithf "makeServerProcessInfo: no '%s' server executable present" serverFileName
 
     let processStartInfo = new ProcessStartInfo()
     processStartInfo.FileName <- serverFileName
@@ -215,14 +215,16 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return newState
 
     | ServerStopRequest rc ->
-        let p = state.ServerProcess.Value
-        logMessage "StopServer" "p.Kill().."
-        p.Kill()
-        logMessage "StopServer" "p.WaitForExit().."
-        p.WaitForExit()
-        logMessage "StopServer" "p.WaitForExit(): OK"
+        match state.ServerProcess with
+        | None -> ()
+        | Some serverProcess ->
+            logMessage "StopServer" "p.Kill().."
+            serverProcess.Kill()
+            logMessage "StopServer" "p.WaitForExit().."
+            serverProcess.WaitForExit()
+            logMessage "StopServer" "p.WaitForExit(): OK"
 
-        logMessage "StopServer" (sprintf "exit code=%d" p.ExitCode)
+            logMessage "StopServer" (sprintf "exit code=%d" serverProcess.ExitCode)
 
         rc.Reply(())
 
@@ -557,6 +559,7 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
 
     let fileFilter (file: FileInfo) =
         file.Name = ".editorconfig"
+        || file.Name = "global.json"
         || file.Extension = ".cs"
         || file.Extension = ".csproj"
         || file.Extension = ".sln"
@@ -878,3 +881,63 @@ module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with
             NewText = s.NewText.ReplaceLineEndings("\n") }
+
+module SemanticTokens =
+    type DecodedToken =
+        { Line: uint
+          StartChar: uint
+          Length: uint
+          TokenType: string
+          TokenModifiers: string[] }
+
+    let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] =
+        let decodeTokenWithLegend (legend: SemanticTokensLegend) (token: uint[]) : DecodedToken =
+            if token.Length <> 5 then
+                failwith "invalid size of `token`, must be 5!"
+
+            let bitIndexes (n: int) =
+                seq {
+                    let mutable x = n
+                    let mutable i = 0
+
+                    while x <> 0 do
+                        if (x &&& 1) <> 0 then
+                            yield i
+
+                        x <- x >>> 1
+                        i <- i + 1
+                }
+                |> Seq.toArray
+
+            let tokenModifiers =
+                token[4] |> int |> bitIndexes |> Array.map (fun i -> legend.TokenModifiers[i])
+
+            { Line = token[0]
+              StartChar = token[1]
+              Length = token[2]
+              TokenType = legend.TokenTypes[int token[3]]
+              TokenModifiers = tokenModifiers }
+
+        let offsetMappingFn (prevTok: option<DecodedToken>) (tok: DecodedToken) =
+            let mappedTok =
+                match prevTok with
+                | None -> tok
+                | Some prevTok ->
+                    match tok.Line with
+                    | 0u ->
+                        { tok with
+                            Line = prevTok.Line
+                            StartChar = prevTok.StartChar + tok.StartChar }
+                    | _ ->
+                        { tok with
+                            Line = prevTok.Line + tok.Line }
+
+            mappedTok, Some mappedTok
+
+        let tokens, _ =
+            semanticToken.Data
+            |> Seq.chunkBySize 5
+            |> Seq.map (decodeTokenWithLegend legend)
+            |> Seq.mapFold offsetMappingFn None
+
+        tokens |> Array.ofSeq

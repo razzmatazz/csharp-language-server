@@ -288,8 +288,8 @@ module DocumentSymbol =
         async {
             let canEmitDocSymbolHierarchy =
                 context.ClientCapabilities.TextDocument
-                |> Option.bind (fun cc -> cc.DocumentSymbol)
-                |> Option.bind (fun cc -> cc.HierarchicalDocumentSymbolSupport)
+                |> Option.bind _.DocumentSymbol
+                |> Option.bind _.HierarchicalDocumentSymbolSupport
                 |> Option.defaultValue false
 
             match context.GetDocument p.TextDocument.Uri with

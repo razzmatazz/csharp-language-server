@@ -46,7 +46,7 @@ let csharpDocumentFilter: TextDocumentFilter =
       Pattern = Some "**/*.cs" }
 
 let razorCsharpDocumentFilter: TextDocumentFilter =
-    { Language = Some "razor-csharp"
+    { Language = Some "razor"
       Scheme = Some "file"
       Pattern = Some "**/*.cshtml" }
 

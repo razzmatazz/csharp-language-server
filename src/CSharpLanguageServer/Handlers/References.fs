@@ -5,9 +5,12 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
 module References =
+    let private logger = Logging.getLoggerByName "References"
+
     let provider (_: ClientCapabilities) : U2<bool, ReferenceOptions> option = Some(U2.C1 true)
 
     let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
