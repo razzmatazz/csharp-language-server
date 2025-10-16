@@ -544,7 +544,7 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
         failwith (sprintf "%s does not exist!" (sourceTestDir.ToString()))
 
     let tempDir =
-        Path.Combine(Path.GetTempPath(), "CSharpLanguageServer.Tests." + System.DateTime.Now.Ticks.ToString())
+        Path.Combine(Path.GetTempPath(), sprintf "CSharpLanguageServer.Tests.%s" (Guid.NewGuid() |> string))
 
     // a hack for macOS
     let tempTestDirName =
@@ -865,10 +865,13 @@ let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
     let testAssemblyLocationDir =
         Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
 
-    let actualTestDataDirName =
+    let actualTestDataDir =
         DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", testDataDirName))
 
-    new ClientController(clientActor, actualTestDataDirName)
+    if not actualTestDataDir.Exists then
+        failwithf "setupServerClient: no such test data dir \"%s\"" actualTestDataDir.FullName
+
+    new ClientController(clientActor, actualTestDataDir)
 
 
 module TextEdit =
