@@ -3,11 +3,11 @@ module CSharpLanguageServer.Tests.DefinitionTests
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Tests.Fixtures
+open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testDefinitionWorks () =
-    let client = testDefinitionWorksFixture
+    let client = Fixtures.getShared "testDefinitionWorks"
     use classFile = client.Open("Project/Class.cs")
 
     let definitionParams0: DefinitionParams =
@@ -44,7 +44,7 @@ let testDefinitionWorks () =
 
 [<Test>]
 let testDefinitionWorksInAspNetProject () =
-    let client = testDefinitionWorksFixture
+    let client = Fixtures.getShared "testDefinitionWorks"
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
 

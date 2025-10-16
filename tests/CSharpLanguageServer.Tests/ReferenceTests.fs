@@ -5,12 +5,10 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase("TestData/testReferenceWorksDotnet9")>]
-[<TestCase("TestData/testReferenceWorksDotnet8")>]
-let testReferenceWorks (testDataDir: string) =
-    use client = setupServerClient defaultClientProfile testDataDir
-    client.StartAndWaitForSolutionLoad()
-
+[<TestCase("testReferenceWorksDotnet9")>]
+[<TestCase("testReferenceWorksDotnet8")>]
+let testReferenceWorks (fixtureName: string) =
+    use client = Fixtures.getShared fixtureName
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -78,10 +76,7 @@ let testReferenceWorks (testDataDir: string) =
 
 [<TestCase>]
 let testReferenceWorksToAspNetRazorPageReferencedValue () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testReferenceWorksToAspNetRazorPageReferencedValue"
-
-    client.StartAndWaitForSolutionLoad()
+    let client = Fixtures.getShared "testReferenceWorksToAspNetRazorPageReferencedValue"
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")

@@ -3,11 +3,11 @@ module CSharpLanguageServer.Tests.HoverTests
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Tests.Fixtures
+open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testHoverWorks () =
-    let client = testHoverWorksFixture
+    let client = Fixtures.getShared "testHoverWorks"
     use classFile = client.Open("Project/Class.cs")
 
     //

@@ -4,11 +4,10 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let ``completion works in a .cs file`` () =
-    let client = testCompletionWorksFixture
+    let client = Fixtures.getShared "testCompletionWorks"
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
@@ -98,7 +97,7 @@ let ``completion works in a .cs file`` () =
 
 [<Test>]
 let ``completion works for extension methods`` () =
-    let client = testCompletionWorksFixture
+    let client = Fixtures.getShared "testCompletionWorks"
     use classFile = client.Open("Project/ClassWithExtensionMethods.cs")
 
     let completionParams0: CompletionParams =

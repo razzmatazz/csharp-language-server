@@ -6,11 +6,12 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.Tests.Fixtures
+open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testPushDiagnosticsWork () =
-    let client = testDiagnosticsWorkFixture
+    // 'makeClientFixture' is used here to make sure we get a blank new server/client pair
+    use client = Fixtures.load "testDiagnosticsWork"
 
     //
     // open Class.cs file and wait for diagnostics to be pushed
@@ -58,9 +59,9 @@ let testPushDiagnosticsWork () =
     ()
 
 
-[<TestCase>]
+[<Test>]
 let testPullDiagnosticsWork () =
-    let client = testDiagnosticsWorkFixture
+    let client = Fixtures.getShared "testDiagnosticsWork"
 
     //
     // open Class.cs file and pull diagnostics
@@ -123,9 +124,9 @@ let testPullDiagnosticsWork () =
     ()
 
 
-[<TestCase>]
+[<Test>]
 let testWorkspaceDiagnosticsWork () =
-    let client = testDiagnosticsWorkFixture
+    let client = Fixtures.getShared "testDiagnosticsWork"
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -155,9 +156,9 @@ let testWorkspaceDiagnosticsWork () =
     | _ -> failwith "'Some' was expected"
 
 
-[<TestCase>]
+[<Test>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
-    let client = testDiagnosticsWorkFixture
+    let client = Fixtures.getShared "testDiagnosticsWork"
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

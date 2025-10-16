@@ -2,6 +2,7 @@ module CSharpLanguageServer.Tests.Tooling
 
 open System
 open System.Collections.Generic
+open System.Collections.Concurrent
 open System.IO
 open System.Diagnostics
 open System.Text
@@ -881,3 +882,26 @@ module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with
             NewText = s.NewText.ReplaceLineEndings("\n") }
+
+module Fixtures =
+    let private sharedFixtures = ConcurrentDictionary<string, Lazy<ClientController>>()
+
+    let numCpus = Environment.ProcessorCount
+    let private setupSemaphore = new SemaphoreSlim(numCpus, numCpus)
+
+    let load fixtureName =
+        setupSemaphore.Wait()
+
+        try
+            let projectDir = "Fixtures/" + fixtureName
+            let client = setupServerClient defaultClientProfile projectDir
+            client.StartAndWaitForSolutionLoad()
+            client
+        finally
+            setupSemaphore.Release() |> ignore
+
+    let getShared fixtureName : ClientController =
+        let lazyClient =
+            sharedFixtures.GetOrAdd(fixtureName, fun fixtureName -> lazy (load fixtureName))
+
+        lazyClient.Force()

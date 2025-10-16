@@ -4,7 +4,7 @@ open System
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Tests.Fixtures
+open CSharpLanguageServer.Tests.Tooling
 
 type DecodedToken =
     { Line: uint
@@ -66,9 +66,9 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] 
     tokens |> Array.ofSeq
 
 
-[<TestCase>]
+[<Test>]
 let testSemanticTokens () =
-    let client = testSemanticTokensFixture
+    let client = Fixtures.getShared "testSemanticTokens"
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
@@ -156,9 +156,9 @@ let testSemanticTokens () =
     )
 
 
-[<TestCase>]
+[<Test>]
 let testSemanticTokensWithMultiLineLiteral () =
-    let client = testSemanticTokensFixture
+    let client = Fixtures.getShared "testSemanticTokensWithMultiLineLiteral"
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
