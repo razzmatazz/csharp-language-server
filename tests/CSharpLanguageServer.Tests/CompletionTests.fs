@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let ``completion works in a .cs file`` () =
-    let client = Fixtures.getShared "testCompletionWorks"
+    let client = Fixtures.getShared "genericProject"
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
@@ -19,7 +19,7 @@ let ``completion works in a .cs file`` () =
 
     Assert.IsTrue(haveResolveProvider)
 
-    use classFile = client.Open("Project/Class.cs")
+    use classFile = client.Open("Project/ClassForCompletionTests.cs")
 
     let completionParams0: CompletionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -57,7 +57,7 @@ let ``completion works in a .cs file`` () =
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            Assert.AreEqual(itemResolved.Detail, Some "void Class.MethodA(string arg)")
+            Assert.AreEqual(itemResolved.Detail, Some "void ClassForCompletion.MethodA(string arg)")
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
         let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "GetHashCode")
@@ -97,8 +97,10 @@ let ``completion works in a .cs file`` () =
 
 [<Test>]
 let ``completion works for extension methods`` () =
-    let client = Fixtures.getShared "testCompletionWorks"
-    use classFile = client.Open("Project/ClassWithExtensionMethods.cs")
+    let client = Fixtures.getShared "genericProject"
+
+    use classFile =
+        client.Open("Project/ClassForCompletionTestsWithExtensionMethods.cs")
 
     let completionParams0: CompletionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -126,7 +128,11 @@ let ``completion works for extension methods`` () =
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            Assert.AreEqual(itemResolved.Detail, Some "(extension) string ClassWithExtensionMethods.MethodB()")
+            Assert.AreEqual(
+                itemResolved.Detail,
+                Some "(extension) string ClassForCompletionWithExtensionMethods.MethodB()"
+            )
+
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
     | _ -> failwith "Some U2.C1 was expected"

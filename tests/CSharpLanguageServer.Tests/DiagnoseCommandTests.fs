@@ -12,7 +12,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testDiagnoseCommandWorks () =
-    let fixtureDir = "testDiagnoseCommandWorks"
+    let fixtureDir = "genericProject"
 
     let testAssemblyLocationDir =
         Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
@@ -48,5 +48,5 @@ let testDiagnoseCommandWorks () =
 
     let stderr: string = stderrTask.Result
     Assert.IsTrue(stderr.Contains("diagnose: loading solution.."))
-    Assert.IsTrue(stderr.Contains("csharp-ls: loading project"))
+    Assert.IsTrue(stderr.Contains("csharp-ls: Loading solution"))
     Assert.IsTrue(stderr.Contains("diagnose: done"))

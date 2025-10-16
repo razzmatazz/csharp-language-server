@@ -68,7 +68,7 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] 
 
 [<Test>]
 let testSemanticTokens () =
-    let client = Fixtures.getShared "testSemanticTokens"
+    let client = Fixtures.getShared "genericProject"
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities
@@ -96,7 +96,8 @@ let testSemanticTokens () =
 
     Assert.IsTrue haveFullSemanticTokenCapability
 
-    use file = client.Open "Project/Program.cs"
+    use file = client.Open "Project/SemanticTokenTest.cs"
+    let fileContentsLen = file.GetFileContents().Length
 
     let semanticTokenParams: SemanticTokensParams =
         { PartialResultToken = None
@@ -108,8 +109,15 @@ let testSemanticTokens () =
 
     Assert.IsTrue(semanticToken.ResultId.IsNone)
 
+    // Test if anything is out-of-bound (that might indicates an underflow)
+    Assert.IsFalse(
+        semanticToken.Data
+        |> Array.chunkBySize 5
+        |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 fileContentsLen) false
+    )
+
     let tokens = semanticToken |> (decodeSemanticToken legend)
-    Assert.AreEqual(123, tokens.Length)
+    Assert.AreEqual(129, tokens.Length)
 
     Assert.AreEqual(
         [| { Line = 0u
@@ -154,73 +162,3 @@ let testSemanticTokens () =
              TokenModifiers = [||] } |],
         tokens |> Array.take 8
     )
-
-
-[<Test>]
-let testSemanticTokensWithMultiLineLiteral () =
-    let client = Fixtures.getShared "testSemanticTokensWithMultiLineLiteral"
-
-    let semanticTokensOptions =
-        client.GetState().ServerCapabilities
-        |> Option.bind (fun c -> c.SemanticTokensProvider)
-        |> Option.bind (fun s ->
-            match s with
-            | U2.C1 c1 -> Some c1
-            | _ -> None)
-
-    let legend = semanticTokensOptions.Value.Legend
-
-    use file = client.Open "Project/Program.cs"
-    let len = file.GetFileContents().Length
-
-    let semanticTokenParams: SemanticTokensParams =
-        { PartialResultToken = None
-          WorkDoneToken = None
-          TextDocument = { Uri = file.Uri } }
-
-    let semanticToken: SemanticTokens =
-        client.Request("textDocument/semanticTokens/full", semanticTokenParams)
-
-    // Test if anything is out-of-bound (that might indicates an underflow)
-    Assert.IsFalse(
-        semanticToken.Data
-        |> Array.chunkBySize 5
-        |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 len) false
-    )
-
-    let extraLF = uint (Environment.NewLine.Length - 1)
-
-    let expectedTokens =
-        [| { Line = 0u
-             StartChar = 0u
-             Length = 3u
-             TokenType = "keyword"
-             TokenModifiers = [||] }
-           { Line = 0u
-             StartChar = 4u
-             Length = 1u
-             TokenType = "variable"
-             TokenModifiers = [||] }
-           { Line = 0u
-             StartChar = 6u
-             Length = 1u
-             TokenType = "operator"
-             TokenModifiers = [||] }
-           { Line = 0u
-             StartChar = 8u
-             Length = 5u + extraLF
-             TokenType = "string"
-             TokenModifiers = [||] }
-           { Line = 1u
-             StartChar = 0u
-             Length = 24u + extraLF
-             TokenType = "string"
-             TokenModifiers = [||] }
-           { Line = 2u
-             StartChar = 15u
-             Length = 4u + extraLF
-             TokenType = "string"
-             TokenModifiers = [||] } |]
-
-    let tokens = semanticToken |> (decodeSemanticToken legend)
-    Assert.AreEqual(expectedTokens, tokens)

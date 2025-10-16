@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testHoverWorks () =
-    let client = Fixtures.getShared "testHoverWorks"
+    let client = Fixtures.getShared "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -27,7 +27,7 @@ let testHoverWorks () =
         match hover.Contents with
         | U3.C1 c ->
             Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-            Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
+            Assert.AreEqual("```csharp\nvoid Class.MethodA(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
         | _ -> failwith "C1 was expected"
 
         Assert.IsTrue(hover.Range.IsNone)

@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testWorkspaceSymbolWorks () =
-    let client = Fixtures.getShared "testWorkspaceSymbolWorks"
+    let client = Fixtures.getShared "genericProject"
 
     let serverCaps = client.GetState().ServerCapabilities.Value
     Assert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
@@ -24,7 +24,7 @@ let testWorkspaceSymbolWorks () =
 
     match symbols0 with
     | Some(U2.C1 sis) ->
-        Assert.AreEqual(1, sis.Length)
+        Assert.AreEqual(4, sis.Length)
 
         let sym0 = sis[0]
         Assert.AreEqual("Class", sym0.Name)
