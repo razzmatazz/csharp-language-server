@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  test:
     timeout-minutes: 10
     strategy:
       matrix:
