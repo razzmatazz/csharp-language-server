@@ -602,7 +602,7 @@ let rec deleteDirectory (path: string) =
         Directory.Delete(path)
 
 
-type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
+type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string, sharedFixture: bool) =
     let mutable fileContents: option<string> = None
 
     member __.FileName = filename
@@ -640,6 +640,9 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
         client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
 
     member this.DidChange(text: string) =
+        if sharedFixture then
+            failwith "cannot invoke FileController.DidChange, this is a shared fixture!"
+
         let didChangeParams: DidChangeTextDocumentParams =
             { TextDocument = { Uri = this.Uri; Version = 2 }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
@@ -665,7 +668,7 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
 
-type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo) =
+type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo, sharedFixture: bool) =
     let mutable projectDir: string option = None
     let mutable solutionLoaded: bool = false
 
@@ -854,11 +857,12 @@ type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: Direct
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string) : FileController =
-        let file = new FileController(client, projectDir.Value, filename)
+        let file = new FileController(client, projectDir.Value, filename, sharedFixture)
         file.Open()
         file
 
-let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
+
+let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) (sharedFixture: bool) =
     let initialState =
         { defaultClientState with
             LoggingEnabled = clientProfile.LoggingEnabled }
@@ -875,7 +879,7 @@ let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) =
     if not actualTestDataDir.Exists then
         failwithf "setupServerClient: no such test data dir \"%s\"" actualTestDataDir.FullName
 
-    new ClientController(clientActor, actualTestDataDir)
+    new ClientController(clientActor, actualTestDataDir, sharedFixture)
 
 
 module TextEdit =
@@ -889,19 +893,21 @@ module Fixtures =
     let numCpus = Environment.ProcessorCount
     let private setupSemaphore = new SemaphoreSlim(numCpus, numCpus)
 
-    let load fixtureName =
+    let private loadFixture sharedFixture fixtureName =
         setupSemaphore.Wait()
 
         try
             let projectDir = "Fixtures/" + fixtureName
-            let client = setupServerClient defaultClientProfile projectDir
+            let client = setupServerClient defaultClientProfile projectDir sharedFixture
             client.StartAndWaitForSolutionLoad()
             client
         finally
             setupSemaphore.Release() |> ignore
 
+    let load fixtureName = loadFixture false fixtureName
+
     let getShared fixtureName : ClientController =
         let lazyClient =
-            sharedFixtures.GetOrAdd(fixtureName, fun fixtureName -> lazy (load fixtureName))
+            sharedFixtures.GetOrAdd(fixtureName, fun fixtureName -> lazy (loadFixture true fixtureName))
 
         lazyClient.Force()

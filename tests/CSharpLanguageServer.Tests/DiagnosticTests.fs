@@ -61,7 +61,7 @@ let testPushDiagnosticsWork () =
 
 [<Test>]
 let testPullDiagnosticsWork () =
-    let client = Fixtures.getShared "testDiagnosticsWork"
+    use client = Fixtures.load "testDiagnosticsWork"
 
     //
     // open Class.cs file and pull diagnostics
