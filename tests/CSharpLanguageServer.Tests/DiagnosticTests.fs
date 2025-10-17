@@ -155,7 +155,7 @@ let testWorkspaceDiagnosticsWork () =
 let testWorkspaceDiagnosticsWorkWithStreaming () =
     use client = activateFixture "testDiagnosticsWork"
 
-    Thread.Sleep(500)
+    Thread.Sleep(1000)
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

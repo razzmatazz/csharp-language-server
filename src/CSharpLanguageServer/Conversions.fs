@@ -88,6 +88,8 @@ module Location =
                 |> Option.bind (fun filePath -> if File.Exists filePath then Some filePath else None)
                 |> Option.map (fun filePath -> toLspLocation filePath (loc.GetLineSpan().Span))
 
+            //Console.Error.WriteLine("loc={0}; mapped={1}; source={2}", loc, mappedSourceLocation, sourceLocation)
+
             mappedSourceLocation |> Option.orElse sourceLocation
 
         | _ -> None

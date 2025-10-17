@@ -3,19 +3,23 @@ namespace CSharpLanguageServer.Handlers
 open System
 open System.Reflection
 
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Text
 open Microsoft.Extensions.Caching.Memory
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.RoslynHelpers
 
 [<RequireQualifiedAccess>]
 module Completion =
-    let private _logger = Logging.getLoggerByName "Completion"
+    let private logger = Logging.getLoggerByName "Completion"
 
     let private completionItemMemoryCache = new MemoryCache(new MemoryCacheOptions())
 
@@ -180,13 +184,121 @@ module Completion =
             synopsis, documentationText
         | _, _ -> None, None
 
-    let handle
+    let getCompletionsForRazorDocument
+        (solution: Solution)
+        (p: CompletionParams)
+        : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
+        async {
+            match! getRazorDocumentForUri solution p.TextDocument.Uri with
+            | None -> return None
+            | Some(project, compilation, cshtmlPath, cshtmlTree) ->
+                let! ct = Async.CancellationToken
+                let! sourceText = cshtmlTree.GetTextAsync() |> Async.AwaitTask
+
+                let razorTextDocument =
+                    solution.Projects
+                    |> Seq.collect (fun p -> p.AdditionalDocuments)
+                    |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = Uri p.TextDocument.Uri)
+                    |> Seq.head
+
+                let! razorSourceText = razorTextDocument.GetTextAsync() |> Async.AwaitTask
+
+                //logger.LogInformation("razorSourceText={0}", razorSourceText)
+
+                //logger.LogInformation("doc={0}", sourceText)
+
+                let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
+                //logger.LogInformation("posInCshtml={posInCshtml=}", posInCshtml)
+                let pos = p.Position
+
+                let root = cshtmlTree.GetRoot()
+
+                let mutable position: int option = None
+                let mutable tokenForPosition: SyntaxToken option = None
+                let mutable debug: string option = None
+
+                for t in root.DescendantTokens() do
+                    let cshtmlSpan = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                    if
+                        cshtmlSpan.StartLinePosition.Line = (int pos.Line)
+                        && cshtmlSpan.EndLinePosition.Line = (int pos.Line)
+                        && cshtmlSpan.StartLinePosition.Character <= (int pos.Character)
+                    then
+                        let tokenStartCharacterOffset =
+                            (int pos.Character - cshtmlSpan.StartLinePosition.Character)
+
+                        position <- Some(t.Span.Start + tokenStartCharacterOffset)
+
+                        debug <-
+                            Some(
+                                String.Format(
+                                    "token={0}; pos.Character={1}; cshtmlSpan.StartLinePosition.Character={2}; offset={3}",
+                                    t,
+                                    pos.Character,
+                                    cshtmlSpan.StartLinePosition.Character,
+                                    tokenStartCharacterOffset
+                                )
+                            )
+
+                        tokenForPosition <- Some(t)
+
+                //logger.LogInformation(debug |> Option.defaultValue "")
+
+                //let position = Position.toRoslynPosition sourceText.Lines translatedPosition
+                //logger.LogInformation("position in .cs={position}", position)
+
+                let posInCS = sourceText.Lines.GetLinePosition(position.Value)
+                //logger.LogInformation("lineposition={x}", posInCS)
+
+                // a hack to make <span>@Model.|</span> autocompletion to work:
+                // - force a dot if present on .cscshtml but missing on .cs
+                let newSourceText =
+                    // TODO: check if the text in cshtml is '.', though!
+                    let cshtmlPosition = Position.toRoslynPosition razorSourceText.Lines p.Position
+                    let charInCshtml: char = razorSourceText[cshtmlPosition - 1]
+
+                    //logger.LogInformation("charInCshtml={0}", charInCshtml)
+
+                    if charInCshtml = '.' && string tokenForPosition <> "." then
+                        sourceText.WithChanges(new TextChange(new TextSpan(position.Value - 1, 0), "."))
+                    else
+                        sourceText
+
+                //logger.LogInformation("newSourceText={0}", newSourceText)
+
+                let! doc = tryAddDocument logger (cshtmlPath + ".cs") (newSourceText.ToString()) solution
+
+                let doc = doc.Value
+
+                //logger.LogError("handle: doc={doc}", doc)
+
+                let completionService =
+                    Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+                    |> RoslynCompletionServiceWrapper
+
+                let completionOptions =
+                    RoslynCompletionOptions.Default()
+                    |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
+                    |> _.WithBool("ShowNameSuggestions", false)
+
+                let completionTrigger = CompletionContext.toCompletionTrigger p.Context
+
+                let! roslynCompletions =
+                    completionService.GetCompletionsAsync(doc, position.Value, completionOptions, completionTrigger, ct)
+                    |> Async.map Option.ofObj
+
+                return roslynCompletions |> Option.map (fun rcl -> rcl, doc)
+        }
+
+    let getCompletionsForCSharpDocument
         (context: ServerRequestContext)
         (p: CompletionParams)
-        : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
+        : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
             match context.GetDocument p.TextDocument.Uri with
-            | None -> return None |> LspResult.success
+            | None -> return None
+
             | Some doc ->
                 let! ct = Async.CancellationToken
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -216,6 +328,23 @@ module Completion =
                     else
                         async.Return None
 
+                return roslynCompletions |> Option.map (fun rcl -> rcl, doc)
+        }
+
+    let handle
+        (context: ServerRequestContext)
+        (p: CompletionParams)
+        : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
+        async {
+            let! roslynCompletionsAndDoc =
+                if p.TextDocument.Uri.EndsWith(".cshtml") then
+                    getCompletionsForRazorDocument context.Solution p
+                else
+                    getCompletionsForCSharpDocument context p
+
+            match roslynCompletionsAndDoc with
+            | None -> return None |> LspResult.success
+            | Some(roslynCompletions, doc) ->
                 let toLspCompletionItemsWithCacheInfo (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
                     completions.ItemsList
                     |> Seq.map (fun item -> (item, Guid.NewGuid() |> string))
@@ -232,26 +361,26 @@ module Completion =
                     |> Array.ofSeq
 
                 let lspCompletionItemsWithCacheInfo =
-                    roslynCompletions |> Option.map toLspCompletionItemsWithCacheInfo
+                    roslynCompletions |> toLspCompletionItemsWithCacheInfo
 
                 // cache roslyn completion items
-                for (_, cacheItemId, roslynDoc, roslynItem) in
-                    (lspCompletionItemsWithCacheInfo |> Option.defaultValue Array.empty) do
+                for (_, cacheItemId, roslynDoc, roslynItem) in lspCompletionItemsWithCacheInfo do
                     completionItemMemoryCacheSet cacheItemId roslynDoc roslynItem
 
+                let items =
+                    lspCompletionItemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item)
+
                 return
-                    lspCompletionItemsWithCacheInfo
-                    |> Option.map (fun itemsWithCacheInfo ->
-                        itemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item))
-                    |> Option.map (fun items ->
-                        { IsIncomplete = true
-                          Items = items
-                          ItemDefaults = None })
-                    |> Option.map U2.C2
+                    { IsIncomplete = true
+                      Items = items
+                      ItemDefaults = None }
+                    |> U2.C2
+                    |> Some
                     |> LspResult.success
         }
 
     let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+
         let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize<string option>
@@ -259,6 +388,8 @@ module Completion =
 
         match roslynDocAndItemMaybe with
         | Some(doc, roslynCompletionItem) ->
+            logger.LogInformation("resolve, doc={0}, item={1}", doc, roslynCompletionItem)
+
             let completionService =
                 Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                 |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)"
