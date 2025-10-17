@@ -8,12 +8,9 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testPushDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testPushDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "testDiagnosticsWork"
 
     //
     // open Class.cs file and wait for diagnostics to be pushed
@@ -61,16 +58,9 @@ let testPushDiagnosticsWork () =
     ()
 
 
-[<TestCase>]
+[<Test>]
 let testPullDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testPullDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
-
-    //
-    // open Class.cs file and pull diagnostics
-    //
+    use client = activateFixture "testDiagnosticsWork"
     use classFile = client.Open("Project/Class.cs")
 
     let diagnosticParams: DocumentDiagnosticParams =
@@ -129,12 +119,9 @@ let testPullDiagnosticsWork () =
     ()
 
 
-[<TestCase>]
+[<Test>]
 let testWorkspaceDiagnosticsWork () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "testDiagnosticsWork"
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -164,12 +151,11 @@ let testWorkspaceDiagnosticsWork () =
     | _ -> failwith "'Some' was expected"
 
 
-[<TestCase>]
+[<Test>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testWorkspaceDiagnosticsWork"
+    use client = activateFixture "testDiagnosticsWork"
 
-    client.StartAndWaitForSolutionLoad()
+    Thread.Sleep(500)
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

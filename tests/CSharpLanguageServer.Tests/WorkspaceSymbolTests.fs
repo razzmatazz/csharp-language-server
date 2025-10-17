@@ -5,15 +5,11 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testWorkspaceSymbolWorks () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testWorkspaceSymbolWorks"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "genericProject"
 
     let serverCaps = client.GetState().ServerCapabilities.Value
-
     Assert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
 
     use classFile = client.Open("Project/Class.cs")
@@ -28,7 +24,7 @@ let testWorkspaceSymbolWorks () =
 
     match symbols0 with
     | Some(U2.C1 sis) ->
-        Assert.AreEqual(1, sis.Length)
+        Assert.AreEqual(4, sis.Length)
 
         let sym0 = sis[0]
         Assert.AreEqual("Class", sym0.Name)

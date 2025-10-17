@@ -54,6 +54,11 @@ namespace Project
 
             void Shout(string msg) => Console.WriteLine(msg.ToUpper());
             Shout("this is a local function!");
+
+            var a = $"""
+test for
+multiline token
+""";
         }
     }
 }

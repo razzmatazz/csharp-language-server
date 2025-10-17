@@ -5,22 +5,21 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
-let testCompletionWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testCompletionWorks"
-    client.StartAndWaitForSolutionLoad()
+[<Test>]
+let ``completion works in a .cs file`` () =
+    use client = activateFixture "genericProject"
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
     let haveResolveProvider =
         client.GetState().ServerCapabilities
-        |> Option.bind (fun c -> c.CompletionProvider)
-        |> Option.bind (fun p -> p.ResolveProvider)
+        |> Option.bind _.CompletionProvider
+        |> Option.bind _.ResolveProvider
         |> Option.defaultValue false
 
     Assert.IsTrue(haveResolveProvider)
 
-    use classFile = client.Open("Project/Class.cs")
+    use classFile = client.Open("Project/ClassForCompletionTests.cs")
 
     let completionParams0: CompletionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -58,7 +57,7 @@ let testCompletionWorks () =
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            Assert.AreEqual(itemResolved.Detail, Some "void Class.MethodA(string arg)")
+            Assert.AreEqual(itemResolved.Detail, Some "void ClassForCompletion.MethodA(string arg)")
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
         let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "GetHashCode")
@@ -96,14 +95,12 @@ let testCompletionWorks () =
 
     ()
 
-[<TestCase>]
-let testCompletionWorksForExtensionMethods () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testCompletionWorksForExtensionMethods"
+[<Test>]
+let ``completion works for extension methods`` () =
+    use client = activateFixture "genericProject"
 
-    client.StartAndWaitForSolutionLoad()
-
-    use classFile = client.Open("Project/Class.cs")
+    use classFile =
+        client.Open("Project/ClassForCompletionTestsWithExtensionMethods.cs")
 
     let completionParams0: CompletionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -131,7 +128,11 @@ let testCompletionWorksForExtensionMethods () =
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            Assert.AreEqual(itemResolved.Detail, Some "(extension) string Class.MethodB()")
+            Assert.AreEqual(
+                itemResolved.Detail,
+                Some "(extension) string ClassForCompletionWithExtensionMethods.MethodB()"
+            )
+
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
     | _ -> failwith "Some U2.C1 was expected"

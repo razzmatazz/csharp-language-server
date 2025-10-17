@@ -7,13 +7,9 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testEditorConfigFormatting () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testEditorConfigFormatting"
-
-    client.StartAndWaitForSolutionLoad()
-
+    use client = activateFixture "projectWithEditorConfig"
     use classFile = client.Open("Project/Class.cs")
 
     let docFormattingParams0: DocumentFormattingParams =

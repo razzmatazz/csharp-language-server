@@ -10,18 +10,18 @@ open NUnit.Framework
 open CSharpLanguageServer.Tests.Tooling
 
 
-[<TestCase>]
+[<Test>]
 let testDiagnoseCommandWorks () =
-    let testDataDirName = "testDiagnoseCommandWorks"
+    let fixtureDir = "genericProject"
 
     let testAssemblyLocationDir =
         Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
 
-    let actualTestDataDir =
-        DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", "TestData", testDataDirName))
+    let actualFixtureDir =
+        DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureDir))
         |> _.FullName
 
-    let processStartInfo = makeServerProcessInfo actualTestDataDir
+    let processStartInfo = makeServerProcessInfo actualFixtureDir
     processStartInfo.Arguments <- "--diagnose"
 
     let p = new Process()
@@ -48,5 +48,5 @@ let testDiagnoseCommandWorks () =
 
     let stderr: string = stderrTask.Result
     Assert.IsTrue(stderr.Contains("diagnose: loading solution.."))
-    Assert.IsTrue(stderr.Contains("csharp-ls: loading project"))
+    Assert.IsTrue(stderr.Contains("csharp-ls: Loading solution"))
     Assert.IsTrue(stderr.Contains("diagnose: done"))

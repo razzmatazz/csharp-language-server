@@ -5,11 +5,9 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testDefinitionWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testDefinitionWorks"
-    client.StartAndWaitForSolutionLoad()
-
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let definitionParams0: DefinitionParams =
@@ -44,12 +42,9 @@ let testDefinitionWorks () =
         Assert.AreEqual(expectedLocations1, declaration1Locations)
 
 
-[<TestCase>]
+[<Test>]
 let testDefinitionWorksInAspNetProject () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testDefinitionWorksInAspNetProject"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")

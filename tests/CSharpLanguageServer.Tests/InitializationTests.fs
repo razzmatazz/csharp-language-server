@@ -2,8 +2,9 @@ module CSharpLanguageServer.Tests.InitializationTests
 
 open NUnit.Framework
 
-open CSharpLanguageServer.Tests.Tooling
 open Ionide.LanguageServerProtocol.Types
+
+open CSharpLanguageServer.Tests.Tooling
 
 let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
     use classFile = client.Open(file)
@@ -24,12 +25,9 @@ let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
     | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
 
 
-[<TestCase>]
+[<Test>]
 let testServerRegistersCapabilitiesWithTheClient () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testServerRegistersCapabilitiesWithTheClient"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "genericProject"
 
     let serverInfo = client.GetState().ServerInfo.Value
     Assert.AreEqual("csharp-ls", serverInfo.Name)
@@ -131,10 +129,9 @@ let testServerRegistersCapabilitiesWithTheClient () =
     Assert.IsTrue(client.ServerDidRespondTo "initialized")
 
 
-[<TestCase>]
+[<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
-    use client = setupServerClient defaultClientProfile "TestData/testSlnx"
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "projectWithSlnx"
 
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
 
@@ -148,12 +145,9 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
         "```csharp\nvoid Class.MethodA(string arg)\n```"
 
 
-[<TestCase>]
+[<Test>]
 let testMultiTargetProjectLoads () =
-    use client =
-        setupServerClient defaultClientProfile "TestData/testMultiTargetProjectLoads"
-
-    client.StartAndWaitForSolutionLoad()
+    use client = activateFixture "multiTargetProject"
 
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
 

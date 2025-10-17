@@ -5,11 +5,9 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase>]
+[<Test>]
 let testHoverWorks () =
-    use client = setupServerClient defaultClientProfile "TestData/testHoverWorks"
-    client.StartAndWaitForSolutionLoad()
-
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -29,7 +27,7 @@ let testHoverWorks () =
         match hover.Contents with
         | U3.C1 c ->
             Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-            Assert.AreEqual("```csharp\nvoid Class.Method(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
+            Assert.AreEqual("```csharp\nvoid Class.MethodA(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
         | _ -> failwith "C1 was expected"
 
         Assert.IsTrue(hover.Range.IsNone)
