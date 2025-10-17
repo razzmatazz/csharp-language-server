@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testWorkspaceSymbolWorks () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
 
     let serverCaps = client.GetState().ServerCapabilities.Value
     Assert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)

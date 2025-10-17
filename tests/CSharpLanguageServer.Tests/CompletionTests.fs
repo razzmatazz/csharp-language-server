@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let ``completion works in a .cs file`` () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
@@ -97,7 +97,7 @@ let ``completion works in a .cs file`` () =
 
 [<Test>]
 let ``completion works for extension methods`` () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
 
     use classFile =
         client.Open("Project/ClassForCompletionTestsWithExtensionMethods.cs")

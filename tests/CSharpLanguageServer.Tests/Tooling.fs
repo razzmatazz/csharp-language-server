@@ -10,11 +10,12 @@ open System.Threading.Tasks
 open System.Threading
 open System.Runtime.InteropServices
 open System.Reflection
+open System.Text.RegularExpressions
 
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
-open System.Text.RegularExpressions
+open NUnit.Framework
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
@@ -602,7 +603,8 @@ let rec deleteDirectory (path: string) =
         Directory.Delete(path)
 
 
-type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string, sharedFixture: bool) =
+type FileController
+    (client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string, fixtureIsReadOnly: bool) =
     let mutable fileContents: option<string> = None
 
     member __.FileName = filename
@@ -640,8 +642,8 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
         client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
 
     member this.DidChange(text: string) =
-        if sharedFixture then
-            failwith "cannot invoke FileController.DidChange, this is a shared fixture!"
+        if fixtureIsReadOnly then
+            failwith "cannot invoke FileController.DidChange, this is a read-only fixture!"
 
         let didChangeParams: DidChangeTextDocumentParams =
             { TextDocument = { Uri = this.Uri; Version = 2 }
@@ -668,12 +670,18 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
 
-type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: DirectoryInfo, sharedFixture: bool) =
+type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string, fixtureIsReadOnly: bool) =
     let mutable projectDir: string option = None
     let mutable solutionLoaded: bool = false
 
     let logMessage m msg =
         client.Post(EmitLogMessage(DateTime.Now, (sprintf "ClientActorController.%s" m), msg))
+
+    let testAssemblyLocationDir =
+        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+
+    let sourceTestDataDir =
+        DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureName))
 
     interface IDisposable with
         member __.Dispose() =
@@ -697,16 +705,23 @@ type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: Direct
                 deleteDirectory projectDir
             | _ -> ()
 
+    member __.FixtureName = fixtureName
+    member __.FixtureIsReadOnly = fixtureIsReadOnly
     member __.ProjectDir: string = projectDir.Value
 
-    member this.StartAndWaitForSolutionLoad() =
+    member this.StartAndWaitForSolutionLoad(clientProfile: ClientProfile) =
+        if not sourceTestDataDir.Exists then
+            failwithf "ClientController.Prepare(): no such test data dir \"%s\"" sourceTestDataDir.FullName
+
+        client.Post(SetupWithProfile clientProfile)
+
         if solutionLoaded then
             failwith "Solution has already been loaded for this ClientController!"
 
         solutionLoaded <- true
 
         let log = logMessage "StartInitializeAndWaitForSolutionLoad"
-        projectDir <- Some(prepareTempTestDirFrom testDataDir)
+        projectDir <- Some(prepareTempTestDirFrom sourceTestDataDir)
 
         log "sending ServerStartRequest"
         let state = client.PostAndReply(fun rc -> ServerStartRequest(projectDir.Value, rc))
@@ -857,57 +872,37 @@ type ClientController(client: MailboxProcessor<ClientEvent>, testDataDir: Direct
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string) : FileController =
-        let file = new FileController(client, projectDir.Value, filename, sharedFixture)
+        let file = new FileController(client, projectDir.Value, filename, fixtureIsReadOnly)
         file.Open()
         file
 
 
-let setupServerClient (clientProfile: ClientProfile) (testDataDirName: string) (sharedFixture: bool) =
+let private activateClient (clientProfile: ClientProfile) (fixtureName: string) (readOnlyFixture: bool) =
     let initialState =
         { defaultClientState with
             LoggingEnabled = clientProfile.LoggingEnabled }
 
     let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
-    clientActor.Post(SetupWithProfile clientProfile)
 
-    let testAssemblyLocationDir =
-        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+    let client = new ClientController(clientActor, fixtureName, readOnlyFixture)
+    client.StartAndWaitForSolutionLoad(clientProfile)
+    client
 
-    let actualTestDataDir =
-        DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", testDataDirName))
 
-    if not actualTestDataDir.Exists then
-        failwithf "setupServerClient: no such test data dir \"%s\"" actualTestDataDir.FullName
+let activeClientsSemaphore =
+    new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
 
-    new ClientController(clientActor, actualTestDataDir, sharedFixture)
+
+let activateFixture fixtureName =
+    activeClientsSemaphore.Wait()
+
+    try
+        activateClient defaultClientProfile fixtureName false
+    finally
+        activeClientsSemaphore.Release() |> ignore
 
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with
             NewText = s.NewText.ReplaceLineEndings("\n") }
-
-module Fixtures =
-    let private sharedFixtures = ConcurrentDictionary<string, Lazy<ClientController>>()
-
-    let numCpus = Environment.ProcessorCount
-    let private setupSemaphore = new SemaphoreSlim(numCpus, numCpus)
-
-    let private loadFixture sharedFixture fixtureName =
-        setupSemaphore.Wait()
-
-        try
-            let projectDir = "Fixtures/" + fixtureName
-            let client = setupServerClient defaultClientProfile projectDir sharedFixture
-            client.StartAndWaitForSolutionLoad()
-            client
-        finally
-            setupSemaphore.Release() |> ignore
-
-    let load fixtureName = loadFixture false fixtureName
-
-    let getShared fixtureName : ClientController =
-        let lazyClient =
-            sharedFixtures.GetOrAdd(fixtureName, fun fixtureName -> lazy (loadFixture true fixtureName))
-
-        lazyClient.Force()

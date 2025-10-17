@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testReferenceWorks () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -72,11 +72,11 @@ let testReferenceWorks () =
                  End = { Line = 9u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
+
 
 [<Test>]
 let testReferenceWorksDotnet8 () =
-    let fixtureName = "testReferenceWorksDotnet8"
-    use client = Fixtures.load fixtureName
+    use client = activateFixture "testReferenceWorksDotnet8"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -142,9 +142,10 @@ let testReferenceWorksDotnet8 () =
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
+
 [<Test>]
 let testReferenceWorksToAspNetRazorPageReferencedValue () =
-    let client = Fixtures.getShared "aspnetProject"
+    use client = activateFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")

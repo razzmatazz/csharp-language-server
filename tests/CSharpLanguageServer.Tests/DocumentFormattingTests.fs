@@ -9,7 +9,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testEditorConfigFormatting () =
-    let client = Fixtures.getShared "projectWithEditorConfig"
+    use client = activateFixture "projectWithEditorConfig"
     use classFile = client.Open("Project/Class.cs")
 
     let docFormattingParams0: DocumentFormattingParams =

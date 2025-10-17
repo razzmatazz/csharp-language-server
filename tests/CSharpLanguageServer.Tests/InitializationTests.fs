@@ -27,7 +27,7 @@ let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
 
 [<Test>]
 let testServerRegistersCapabilitiesWithTheClient () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
 
     let serverInfo = client.GetState().ServerInfo.Value
     Assert.AreEqual("csharp-ls", serverInfo.Name)
@@ -131,7 +131,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
-    use client = Fixtures.load "projectWithSlnx"
+    use client = activateFixture "projectWithSlnx"
 
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
 
@@ -147,7 +147,7 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
 
 [<Test>]
 let testMultiTargetProjectLoads () =
-    use client = Fixtures.load "multiTargetProject"
+    use client = activateFixture "multiTargetProject"
 
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
 

@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testHoverWorks () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //

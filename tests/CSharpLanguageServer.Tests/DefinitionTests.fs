@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testDefinitionWorks () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let definitionParams0: DefinitionParams =
@@ -44,7 +44,8 @@ let testDefinitionWorks () =
 
 [<Test>]
 let testDefinitionWorksInAspNetProject () =
-    let client = Fixtures.getShared "aspnetProject"
+    use client = activateFixture "aspnetProject"
+
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
 

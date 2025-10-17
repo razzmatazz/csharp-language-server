@@ -68,7 +68,7 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] 
 
 [<Test>]
 let testSemanticTokens () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
 
     let semanticTokensOptions =
         client.GetState().ServerCapabilities

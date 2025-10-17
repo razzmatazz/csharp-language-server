@@ -7,7 +7,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let ``code action menu appears on request`` () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let caParams: CodeActionParams =
@@ -49,7 +49,7 @@ let ``code action menu appears on request`` () =
 
 [<Test>]
 let ``extract base class request extracts base class`` () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let caParams0: CodeActionParams =
@@ -76,7 +76,7 @@ let ``extract base class request extracts base class`` () =
 
 [<Test>]
 let ``extract interface code action should extract an interface`` () =
-    let client = Fixtures.getShared "genericProject"
+    use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let caArgs: CodeActionParams =

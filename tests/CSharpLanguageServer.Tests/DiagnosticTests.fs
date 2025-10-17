@@ -10,8 +10,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let testPushDiagnosticsWork () =
-    // 'makeClientFixture' is used here to make sure we get a blank new server/client pair
-    use client = Fixtures.load "testDiagnosticsWork"
+    use client = activateFixture "testDiagnosticsWork"
 
     //
     // open Class.cs file and wait for diagnostics to be pushed
@@ -61,11 +60,7 @@ let testPushDiagnosticsWork () =
 
 [<Test>]
 let testPullDiagnosticsWork () =
-    use client = Fixtures.load "testDiagnosticsWork"
-
-    //
-    // open Class.cs file and pull diagnostics
-    //
+    use client = activateFixture "testDiagnosticsWork"
     use classFile = client.Open("Project/Class.cs")
 
     let diagnosticParams: DocumentDiagnosticParams =
@@ -126,7 +121,7 @@ let testPullDiagnosticsWork () =
 
 [<Test>]
 let testWorkspaceDiagnosticsWork () =
-    let client = Fixtures.getShared "testDiagnosticsWork"
+    use client = activateFixture "testDiagnosticsWork"
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -158,7 +153,7 @@ let testWorkspaceDiagnosticsWork () =
 
 [<Test>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
-    let client = Fixtures.getShared "testDiagnosticsWork"
+    use client = activateFixture "testDiagnosticsWork"
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 
