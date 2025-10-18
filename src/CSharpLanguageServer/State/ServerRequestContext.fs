@@ -138,6 +138,21 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
+    member this.GetSemanticModel (uri: DocumentUri) : Async<SemanticModel option> = async {
+        if uri.EndsWith(".cshtml") then
+            match! getRazorDocumentForUri state.Solution.Value uri with
+            | None -> return None
+            | Some(project, compilation, cshtmlPath, cshtmlTree) ->
+                return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+        else
+            match this.GetDocument uri with
+            | None -> return None
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+                return semanticModel |> Option.ofObj
+    }
+
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
         if uri.EndsWith(".cshtml") then
             match! getRazorDocumentForUri state.Solution.Value uri with
