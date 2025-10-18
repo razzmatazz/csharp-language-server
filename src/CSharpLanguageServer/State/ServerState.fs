@@ -277,6 +277,106 @@ let processDumpAndResetRequestStats (logger: ILogger) state =
         LastStatsDumpTime = DateTime.Now }
 
 
+let processPushDiagnosticsProcessPendingDocumentsEvent (logger: ILogger) state postSelf _msg : Async<ServerState> = async {
+    match state.PushDiagnosticsCurrentDocTask with
+    | Some _ ->
+        // another document is still being processed, do nothing
+        return state
+
+    | None ->
+        // try pull next doc from the backlog to process
+        let nextDocUri, newBacklog =
+            match state.PushDiagnosticsDocumentBacklog with
+            | [] -> (None, [])
+            | uri :: remainder -> (Some uri, remainder)
+
+        // push diagnostic is enabled only if pull diagnostics is
+        // not reported to be supported by the client
+        let diagnosticPullSupported =
+            state.ClientCapabilities.TextDocument
+            |> Option.map _.Diagnostic
+            |> Option.map _.IsSome
+            |> Option.defaultValue false
+
+        match diagnosticPullSupported, nextDocUri with
+        | false, Some docUri ->
+            let newState =
+                { state with
+                    PushDiagnosticsDocumentBacklog = newBacklog }
+
+            let docAndTypeMaybe = docUri |> getDocumentForUriOfType state AnyDocument
+
+            match docAndTypeMaybe with
+            | None ->
+                match! getRazorDocumentForUri state.Solution.Value docUri with
+                | Some(_, compilation, cshtmlTree) ->
+                    let semanticModelMaybe = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+
+                    match semanticModelMaybe with
+                    | None ->
+                        Error(Exception("could not GetSemanticModelAsync"))
+                        |> PushDiagnosticsDocumentDiagnosticsResolution
+                        |> postSelf
+
+                    | Some semanticModel ->
+                        let diagnostics =
+                            semanticModel.GetDiagnostics()
+                            |> Seq.map Diagnostic.fromRoslynDiagnostic
+                            |> Seq.filter (fun (_, uri) -> uri = docUri)
+                            |> Seq.map fst
+                            |> Array.ofSeq
+
+                        Ok(docUri, None, diagnostics)
+                        |> PushDiagnosticsDocumentDiagnosticsResolution
+                        |> postSelf
+
+                | None ->
+                    // could not find document for this enqueued uri
+                    logger.LogDebug(
+                        "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
+                        string docUri
+                    )
+
+                    ()
+
+                return newState
+
+            | Some(doc, _docType) ->
+                let resolveDocumentDiagnostics () : Task = task {
+                    let! semanticModelMaybe = doc.GetSemanticModelAsync()
+
+                    match semanticModelMaybe |> Option.ofObj with
+                    | None ->
+                        Error(Exception("could not GetSemanticModelAsync"))
+                        |> PushDiagnosticsDocumentDiagnosticsResolution
+                        |> postSelf
+
+                    | Some semanticModel ->
+                        let diagnostics =
+                            semanticModel.GetDiagnostics()
+                            |> Seq.map Diagnostic.fromRoslynDiagnostic
+                            |> Seq.map fst
+                            |> Array.ofSeq
+
+                        Ok(docUri, None, diagnostics)
+                        |> PushDiagnosticsDocumentDiagnosticsResolution
+                        |> postSelf
+                }
+
+                let newTask = Task.Run(resolveDocumentDiagnostics)
+
+                let newState =
+                    { newState with
+                        PushDiagnosticsCurrentDocTask = Some(docUri, newTask) }
+
+                return newState
+
+        | _, _ ->
+            // backlog is empty or pull diagnostics is enabled instead,--nothing to do
+            return state
+}
+
+
 let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
     | SettingsChange newSettings ->
@@ -451,76 +551,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                 PushDiagnosticsDocumentBacklog = newBacklog }
 
     | PushDiagnosticsProcessPendingDocuments ->
-        match state.PushDiagnosticsCurrentDocTask with
-        | Some _ ->
-            // another document is still being processed, do nothing
-            return state
-        | None ->
-            // try pull next doc from the backlog to process
-            let nextDocUri, newBacklog =
-                match state.PushDiagnosticsDocumentBacklog with
-                | [] -> (None, [])
-                | uri :: remainder -> (Some uri, remainder)
-
-            // push diagnostic is enabled only if pull diagnostics is
-            // not reported to be supported by the client
-            let diagnosticPullSupported =
-                state.ClientCapabilities.TextDocument
-                |> Option.map _.Diagnostic
-                |> Option.map _.IsSome
-                |> Option.defaultValue false
-
-            match diagnosticPullSupported, nextDocUri with
-            | false, Some docUri ->
-                let newState =
-                    { state with
-                        PushDiagnosticsDocumentBacklog = newBacklog }
-
-                let docAndTypeMaybe = docUri |> getDocumentForUriOfType state AnyDocument
-
-                match docAndTypeMaybe with
-                | None ->
-                    // could not find document for this enqueued uri
-                    logger.LogDebug(
-                        "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
-                        string docUri
-                    )
-
-                    return newState
-
-                | Some(doc, _docType) ->
-                    let resolveDocumentDiagnostics () : Task = task {
-                        let! semanticModelMaybe = doc.GetSemanticModelAsync()
-
-                        match semanticModelMaybe |> Option.ofObj with
-                        | None ->
-                            Error(Exception("could not GetSemanticModelAsync"))
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
-
-                        | Some semanticModel ->
-                            let diagnostics =
-                                semanticModel.GetDiagnostics()
-                                |> Seq.map Diagnostic.fromRoslynDiagnostic
-                                |> Seq.map fst
-                                |> Array.ofSeq
-
-                            Ok(docUri, None, diagnostics)
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
-                    }
-
-                    let newTask = Task.Run(resolveDocumentDiagnostics)
-
-                    let newState =
-                        { newState with
-                            PushDiagnosticsCurrentDocTask = Some(docUri, newTask) }
-
-                    return newState
-
-            | _, _ ->
-                // backlog is empty or pull diagnostics is enabled instead,--nothing to do
-                return state
+        return! processPushDiagnosticsProcessPendingDocumentsEvent logger state postSelf msg
 
     | PushDiagnosticsDocumentDiagnosticsResolution result ->
         // enqueue processing for the next doc on the queue (if any)

@@ -1,5 +1,8 @@
 namespace CSharpLanguageServer.State
 
+open System
+open System.IO
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
@@ -33,7 +36,8 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
+    member this.GetDocumentForUriOfType docType uri =
+        getDocumentForUriOfType this.State docType uri
 
     member this.GetUserDocument(u: string) =
         this.GetDocumentForUriOfType UserDocument u |> Option.map fst
@@ -134,15 +138,62 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
-    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        match this.GetDocument uri with
+    member this.GetSemanticModel(uri: DocumentUri) : Async<SemanticModel option> = async {
+        match state.Solution with
         | None -> return None
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = Position.toRoslynPosition sourceText.Lines pos
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+        | Some solution ->
+            if uri.EndsWith(".cshtml") then
+                match! getRazorDocumentForUri solution uri with
+                | None -> return None
+                | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+            else
+                match this.GetDocument uri with
+                | None -> return None
+                | Some doc ->
+                    let! ct = Async.CancellationToken
+                    let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                    return semanticModel |> Option.ofObj
+    }
+
+    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
+        if uri.EndsWith(".cshtml") then
+            match! getRazorDocumentForUri state.Solution.Value uri with
+            | Some(project, compilation, cshtmlTree) ->
+                let model = compilation.GetSemanticModel(cshtmlTree)
+
+                let root = cshtmlTree.GetRoot()
+
+                let token =
+                    let cshtmlPath = uri |> Uri.toPath
+
+                    root.DescendantTokens()
+                    |> Seq.tryFind (fun t ->
+                        let span = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                        span.Path = cshtmlPath
+                        && span.StartLinePosition.Line <= (int pos.Line)
+                        && span.EndLinePosition.Line >= (int pos.Line)
+                        && span.StartLinePosition.Character <= (int pos.Character)
+                        && span.EndLinePosition.Character > (int pos.Character))
+
+                let symbol =
+                    token
+                    |> Option.bind (fun x -> x.Parent |> Option.ofObj)
+                    |> Option.map (fun parentToken -> model.GetSymbolInfo(parentToken))
+                    |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
+
+                return symbol |> Option.map (fun sym -> (sym, project, None))
+
+            | None -> return None
+        else
+            match this.GetDocument uri with
+            | None -> return None
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+                return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
     }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =

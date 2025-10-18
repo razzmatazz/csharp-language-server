@@ -124,5 +124,4 @@ let ``extract interface code action should extract an interface`` () =
             Assert.AreEqual(expectedImplementInterfaceEdits, implementEdits |> TextEdit.normalizeNewText)
 
         | _ -> failwith "Expected exactly one U2.C1 edit in both create/implement"
-
     | _ -> failwith "Unexpected edit structure"

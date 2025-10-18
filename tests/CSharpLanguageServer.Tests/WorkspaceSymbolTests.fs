@@ -4,6 +4,7 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open System.Threading
 
 [<Test>]
 let testWorkspaceSymbolWorks () =
@@ -24,7 +25,7 @@ let testWorkspaceSymbolWorks () =
 
     match symbols0 with
     | Some(U2.C1 sis) ->
-        Assert.AreEqual(4, sis.Length)
+        Assert.AreEqual(5, sis.Length)
 
         let sym0 = sis[0]
         Assert.AreEqual("Class", sym0.Name)
