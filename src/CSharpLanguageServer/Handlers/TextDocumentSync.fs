@@ -119,7 +119,7 @@ module TextDocumentSync =
                 match docFilePathMaybe with
                 | Some docFilePath -> async {
                     // ok, this document is not in solution, register a new document
-                    let! newDocMaybe = tryAddDocument logger docFilePath openParams.TextDocument.Text context.Solution
+                    let! newDocMaybe = tryAddDocument logger context.Solution docFilePath openParams.TextDocument.Text
 
                     match newDocMaybe with
                     | Some newDoc ->
@@ -221,7 +221,7 @@ module TextDocumentSync =
 
             | None -> async {
                 let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
-                let! newDocMaybe = tryAddDocument logger docFilePath saveParams.Text.Value context.Solution
+                let! newDocMaybe = tryAddDocument logger context.Solution docFilePath saveParams.Text.Value
 
                 match newDocMaybe with
                 | Some newDoc ->

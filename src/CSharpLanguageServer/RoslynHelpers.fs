@@ -763,9 +763,9 @@ let getProjectForPathOnSolution (solution: Solution) (filePath: string) : Projec
 
 let tryAddDocument
     (logger: ILogger)
+    (solution: Solution)
     (docFilePath: string)
     (text: string)
-    (solution: Solution)
     : Async<Document option> =
     async {
         let projectOnPath = getProjectForPathOnSolution solution docFilePath
