@@ -142,14 +142,14 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         if uri.EndsWith(".cshtml") then
             match! getRazorDocumentForUri state.Solution.Value uri with
             | None -> return None
-            | Some(project, compilation, cshtmlPath, cshtmlTree) ->
+            | Some(_, compilation, _, cshtmlTree) ->
                 return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
         else
             match this.GetDocument uri with
             | None -> return None
             | Some doc ->
                 let! ct = Async.CancellationToken
-                let! semanticModel = doc.GetSemanticModelAsync() |> Async.AwaitTask
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
                 return semanticModel |> Option.ofObj
     }
 

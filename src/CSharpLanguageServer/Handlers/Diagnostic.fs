@@ -11,9 +11,7 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let provider
-        (_cc: ClientCapabilities)
-        : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+    let provider (_cc: ClientCapabilities) : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         let registrationOptions: DiagnosticRegistrationOptions =
             { DocumentSelector = Some defaultDocumentSelector
               WorkDoneProgress = None

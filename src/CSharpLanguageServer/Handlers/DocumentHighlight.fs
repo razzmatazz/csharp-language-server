@@ -12,7 +12,7 @@ open CSharpLanguageServer.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
-    let provider (_: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option = Some(U2.C1 true)
+    let provider (_cc: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option = Some(U2.C1 true)
 
     let private shouldHighlight (symbol: ISymbol) =
         match symbol with
