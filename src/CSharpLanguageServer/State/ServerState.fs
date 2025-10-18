@@ -309,8 +309,7 @@ let processPushDiagnosticsProcessPendingDocumentsEvent (logger: ILogger) state p
             match docAndTypeMaybe with
             | None ->
                 match! getRazorDocumentForUri state.Solution.Value docUri with
-                | Some(_, compilation, cshtmlPath, cshtmlTree) ->
-                    let cshtmlUri = Uri.fromPath cshtmlPath
+                | Some(_, compilation, cshtmlTree) ->
                     let semanticModelMaybe = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
 
                     match semanticModelMaybe with
@@ -323,7 +322,7 @@ let processPushDiagnosticsProcessPendingDocumentsEvent (logger: ILogger) state p
                         let diagnostics =
                             semanticModel.GetDiagnostics()
                             |> Seq.map Diagnostic.fromRoslynDiagnostic
-                            |> Seq.filter (fun (_, uri) -> uri = cshtmlUri)
+                            |> Seq.filter (fun (_, uri) -> uri = docUri)
                             |> Seq.map fst
                             |> Array.ofSeq
 

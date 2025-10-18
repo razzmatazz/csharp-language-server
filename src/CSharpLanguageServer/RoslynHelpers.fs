@@ -874,48 +874,42 @@ let initializeMSBuild (logger: ILogger) : unit =
     MSBuildLocator.RegisterInstance(vsInstance)
 
 
-let getRazorDocumentForUri
-    (solution: Solution)
-    (uri: string)
-    : Async<(Project * Compilation * string * SyntaxTree) option> =
-    async {
-        let cshtmlPath = Uri.toPath uri
-        let cshtmlDirectory = Path.GetDirectoryName(cshtmlPath)
-        let normalizedTargetDir = Path.GetFullPath(cshtmlDirectory)
+let getRazorDocumentForUri (solution: Solution) (uri: string) : Async<(Project * Compilation * SyntaxTree) option> = async {
+    let cshtmlPath = uri |> Uri.toPath
+    let cshtmlDirectory = Path.GetDirectoryName(cshtmlPath)
+    let normalizedTargetDir = Path.GetFullPath(cshtmlDirectory)
 
-        let projectForPath =
-            solution.Projects
-            |> Seq.tryFind (fun project ->
-                let projectDirectory = Path.GetDirectoryName(project.FilePath)
-                let normalizedProjectDir = Path.GetFullPath(projectDirectory)
+    let projectForPath =
+        solution.Projects
+        |> Seq.tryFind (fun project ->
+            let projectDirectory = Path.GetDirectoryName(project.FilePath)
+            let normalizedProjectDir = Path.GetFullPath(projectDirectory)
 
-                normalizedTargetDir.StartsWith(
-                    normalizedProjectDir + Path.DirectorySeparatorChar.ToString(),
-                    StringComparison.OrdinalIgnoreCase
-                ))
+            normalizedTargetDir.StartsWith(
+                normalizedProjectDir + Path.DirectorySeparatorChar.ToString(),
+                StringComparison.OrdinalIgnoreCase
+            ))
 
-        let projectBaseDir = Path.GetDirectoryName(projectForPath.Value.FilePath)
+    let projectBaseDir = Path.GetDirectoryName(projectForPath.Value.FilePath)
 
-        let! compilation = projectForPath.Value.GetCompilationAsync() |> Async.AwaitTask
+    let! compilation = projectForPath.Value.GetCompilationAsync() |> Async.AwaitTask
 
-        let mutable cshtmlTree: SyntaxTree option = None
+    let mutable cshtmlTree: SyntaxTree option = None
 
-        let cshtmlPathTranslated =
-            Path.GetRelativePath(projectBaseDir, cshtmlPath)
-            |> _.Replace(".", "_")
-            |> _.Replace(Path.DirectorySeparatorChar, '_')
-            |> (fun s -> s + ".g.cs")
+    let cshtmlPathTranslated =
+        Path.GetRelativePath(projectBaseDir, cshtmlPath)
+        |> _.Replace(".", "_")
+        |> _.Replace(Path.DirectorySeparatorChar, '_')
+        |> (fun s -> s + ".g.cs")
 
-        for tree in compilation.SyntaxTrees do
-            let path = tree.FilePath
+    for tree in compilation.SyntaxTrees do
+        let path = tree.FilePath
 
-            if path.StartsWith(projectBaseDir) then
-                let relativePath = Path.GetRelativePath(projectBaseDir, path)
+        if path.StartsWith(projectBaseDir) then
+            let relativePath = Path.GetRelativePath(projectBaseDir, path)
 
-                if relativePath.EndsWith(cshtmlPathTranslated) then
-                    cshtmlTree <- Some tree
+            if relativePath.EndsWith(cshtmlPathTranslated) then
+                cshtmlTree <- Some tree
 
-        return
-            cshtmlTree
-            |> Option.map (fun cst -> (projectForPath.Value, compilation, cshtmlPath, cst))
-    }
+    return cshtmlTree |> Option.map (fun cst -> (projectForPath.Value, compilation, cst))
+}

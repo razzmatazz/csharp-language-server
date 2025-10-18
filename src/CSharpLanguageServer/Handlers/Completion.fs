@@ -191,7 +191,7 @@ module Completion =
         async {
             match! getRazorDocumentForUri solution p.TextDocument.Uri with
             | None -> return None
-            | Some(project, compilation, cshtmlPath, cshtmlTree) ->
+            | Some(project, compilation, cshtmlTree) ->
                 let! ct = Async.CancellationToken
                 let! sourceText = cshtmlTree.GetTextAsync() |> Async.AwaitTask
 
@@ -267,6 +267,7 @@ module Completion =
 
                 //logger.LogInformation("newSourceText={0}", newSourceText)
 
+                let cshtmlPath = Uri.toPath p.TextDocument.Uri
                 let! doc = tryAddDocument logger (cshtmlPath + ".cs") (newSourceText.ToString()) solution
 
                 let doc = doc.Value

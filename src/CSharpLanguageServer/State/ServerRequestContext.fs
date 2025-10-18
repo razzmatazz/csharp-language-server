@@ -138,12 +138,11 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
-    member this.GetSemanticModel (uri: DocumentUri) : Async<SemanticModel option> = async {
+    member this.GetSemanticModel(uri: DocumentUri) : Async<SemanticModel option> = async {
         if uri.EndsWith(".cshtml") then
             match! getRazorDocumentForUri state.Solution.Value uri with
             | None -> return None
-            | Some(_, compilation, _, cshtmlTree) ->
-                return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+            | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
         else
             match this.GetDocument uri with
             | None -> return None
@@ -156,12 +155,14 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
         if uri.EndsWith(".cshtml") then
             match! getRazorDocumentForUri state.Solution.Value uri with
-            | Some(project, compilation, cshtmlPath, cshtmlTree) ->
+            | Some(project, compilation, cshtmlTree) ->
                 let model = compilation.GetSemanticModel(cshtmlTree)
 
                 let root = cshtmlTree.GetRoot()
 
                 let token =
+                    let cshtmlPath = uri |> Uri.toPath
+
                     root.DescendantTokens()
                     |> Seq.tryFind (fun t ->
                         let span = cshtmlTree.GetMappedLineSpan(t.Span)
