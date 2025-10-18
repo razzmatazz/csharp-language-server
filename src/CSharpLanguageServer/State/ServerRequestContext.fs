@@ -139,17 +139,20 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         }
 
     member this.GetSemanticModel(uri: DocumentUri) : Async<SemanticModel option> = async {
-        if uri.EndsWith(".cshtml") then
-            match! getRazorDocumentForUri state.Solution.Value uri with
-            | None -> return None
-            | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
-        else
-            match this.GetDocument uri with
-            | None -> return None
-            | Some doc ->
-                let! ct = Async.CancellationToken
-                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-                return semanticModel |> Option.ofObj
+        match state.Solution with
+        | None -> return None
+        | Some solution ->
+            if uri.EndsWith(".cshtml") then
+                match! getRazorDocumentForUri solution uri with
+                | None -> return None
+                | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+            else
+                match this.GetDocument uri with
+                | None -> return None
+                | Some doc ->
+                    let! ct = Async.CancellationToken
+                    let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                    return semanticModel |> Option.ofObj
     }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
