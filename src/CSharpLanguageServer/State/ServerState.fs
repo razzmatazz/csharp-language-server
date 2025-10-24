@@ -286,7 +286,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
-            postSelf (SolutionReloadRequest(TimeSpan.FromMilliseconds(250)))
+            postSelf (SolutionReloadRequest(TimeSpan.FromMilliseconds(int64 250)))
 
         return newState
 
