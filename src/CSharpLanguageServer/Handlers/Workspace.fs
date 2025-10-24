@@ -11,7 +11,8 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 
@@ -61,7 +62,7 @@ module Workspace =
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
-                let! newDocMaybe = tryAddDocument logger docFilePath fileText context.Solution
+                let! newDocMaybe = solutionTryAddDocument docFilePath fileText context.Solution
 
                 match newDocMaybe with
                 | Some newDoc -> context.Emit(SolutionChange newDoc.Project.Solution)

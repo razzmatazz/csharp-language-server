@@ -14,7 +14,8 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Solution
+
 
 [<RequireQualifiedAccess>]
 module Initialization =
@@ -53,7 +54,7 @@ module Initialization =
                         serverName
                 )
 
-            initializeMSBuild logger
+            initializeMSBuild ()
 
             logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
             context.Emit(ClientCapabilityChange p.Capabilities)
