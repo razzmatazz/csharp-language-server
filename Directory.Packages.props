@@ -27,7 +27,6 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(RoslynPackageVersion)" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.9" />
