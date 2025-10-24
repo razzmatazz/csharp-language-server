@@ -11,7 +11,7 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types

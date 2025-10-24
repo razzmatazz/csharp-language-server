@@ -1,4 +1,4 @@
-module CSharpLanguageServer.RoslynHelpers
+module CSharpLanguageServer.Roslyn.Symbol
 
 open System
 open System.Collections.Generic
@@ -78,14 +78,14 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
         base.Visit node
 
 
-let getContainingTypeOrThis (symbol: ISymbol) : INamedTypeSymbol =
+let symbolGetContainingTypeOrThis (symbol: ISymbol) : INamedTypeSymbol =
     if symbol :? INamedTypeSymbol then
         symbol :?> INamedTypeSymbol
     else
         symbol.ContainingType
 
 
-let getFullReflectionName (containingType: INamedTypeSymbol) =
+let symbolGetFullReflectionName (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
     stack.Push containingType.MetadataName
     let mutable ns = containingType.ContainingNamespace

@@ -10,7 +10,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 

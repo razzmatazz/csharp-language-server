@@ -3,11 +3,10 @@ namespace CSharpLanguageServer.State
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.Util
@@ -64,7 +63,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                 let! ct = Async.CancellationToken
                 let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-                let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
+                let fullName = sym |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
                 let containingAssemblyName =
                     l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
