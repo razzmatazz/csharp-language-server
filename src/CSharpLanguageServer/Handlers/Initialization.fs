@@ -156,7 +156,7 @@ module Initialization =
             // start loading the solution
             //
             logger.LogDebug("handleInitialized: post SolutionReloadRequest")
-            stateActor.Post(SolutionReloadRequest(TimeSpan.FromMilliseconds(100)))
+            stateActor.Post(SolutionReloadRequest(TimeSpan.FromMilliseconds(int64 100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
