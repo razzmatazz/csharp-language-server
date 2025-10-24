@@ -3,7 +3,8 @@ module CSharpLanguageServer.Tests.InternalTests
 open System
 open NUnit.Framework
 
-open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Solution
+
 
 [<TestCase("1.csproj:net8.0", "net8.0")>]
 [<TestCase("1.csproj:net8.0,net10.0", "net10.0")>]
@@ -36,6 +37,7 @@ let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string 
     let props = Map.empty |> applyWorkspaceTargetFrameworkProp tfmsPerProject
 
     Assert.AreEqual(expectedTfm |> Option.ofObj, props |> Map.tryFind "TargetFramework")
+
 
 [<TestCase>]
 let testApplyWorkspaceTargetFrameworkPropWithEmptyMap () =

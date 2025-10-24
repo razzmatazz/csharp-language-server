@@ -11,6 +11,7 @@ open CSharpLanguageServer.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.RoslynHelpers
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
@@ -66,7 +67,7 @@ module TextDocumentSync =
             match docFilePathMaybe with
             | Some docFilePath -> async {
                 // ok, this document is not in solution, register a new document
-                let! newDocMaybe = tryAddDocument logger docFilePath openParams.TextDocument.Text context.Solution
+                let! newDocMaybe = solutionTryAddDocument docFilePath openParams.TextDocument.Text context.Solution
 
                 match newDocMaybe with
                 | Some newDoc ->
@@ -130,7 +131,7 @@ module TextDocumentSync =
 
         | None -> async {
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
-            let! newDocMaybe = tryAddDocument logger docFilePath saveParams.Text.Value context.Solution
+            let! newDocMaybe = solutionTryAddDocument docFilePath saveParams.Text.Value context.Solution
 
             match newDocMaybe with
             | Some newDoc ->
