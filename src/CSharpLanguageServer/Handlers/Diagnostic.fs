@@ -11,9 +11,7 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+    let provider (_cc: ClientCapabilities) : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         let registrationOptions: DiagnosticRegistrationOptions =
             { DocumentSelector = Some defaultDocumentSelector
               WorkDoneProgress = None
@@ -35,24 +33,18 @@ module Diagnostic =
                   Items = [||]
                   RelatedDocuments = None }
 
-            match context.GetDocument p.TextDocument.Uri with
-            | None -> return emptyReport |> U2.C1 |> LspResult.success
+            let! semanticModel = context.GetSemanticModel p.TextDocument.Uri
 
-            | Some doc ->
-                let! ct = Async.CancellationToken
-                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-
-                match semanticModelMaybe |> Option.ofObj with
+            let diagnostics =
+                match semanticModel with
+                | None -> [||]
                 | Some semanticModel ->
-                    let diagnostics =
-                        semanticModel.GetDiagnostics()
-                        |> Seq.map Diagnostic.fromRoslynDiagnostic
-                        |> Seq.map fst
-                        |> Array.ofSeq
+                    semanticModel.GetDiagnostics()
+                    |> Seq.map Diagnostic.fromRoslynDiagnostic
+                    |> Seq.map fst
+                    |> Array.ofSeq
 
-                    return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
-
-                | None -> return emptyReport |> U2.C1 |> LspResult.success
+            return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
         }
 
     let private getWorkspaceDiagnosticReports

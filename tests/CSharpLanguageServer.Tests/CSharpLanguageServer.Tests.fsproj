@@ -11,18 +11,19 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
     <Compile Include="CodeActionTests.fs" />
+    <Compile Include="CompletionTests.fs" />
+    <Compile Include="DefinitionTests.fs" />
+    <Compile Include="DiagnoseCommandTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
+    <Compile Include="DocumentFormattingTests.fs" />
+    <Compile Include="DocumentHighlightTests.fs" />
     <Compile Include="HoverTests.fs" />
     <Compile Include="InitializationTests.fs" />
-    <Compile Include="ReferenceTests.fs" />
-    <Compile Include="DefinitionTests.fs" />
-    <Compile Include="DocumentFormattingTests.fs" />
     <Compile Include="InternalTests.fs" />
-    <Compile Include="CompletionTests.fs" />
-    <Compile Include="WorkspaceSymbolTests.fs" />
+    <Compile Include="ReferenceTests.fs" />
     <Compile Include="SemanticTokenTests.fs" />
-    <Compile Include="DiagnoseCommandTests.fs" />
+    <Compile Include="WorkspaceSymbolTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
