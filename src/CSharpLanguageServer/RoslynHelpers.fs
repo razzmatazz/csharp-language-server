@@ -735,6 +735,7 @@ let getContainingTypeOrThis (symbol: ISymbol) : INamedTypeSymbol =
     else
         symbol.ContainingType
 
+
 let getFullReflectionName (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
     stack.Push containingType.MetadataName
@@ -750,6 +751,7 @@ let getFullReflectionName (containingType: INamedTypeSymbol) =
 
     String.Join(".", stack)
 
+
 let getProjectForPathOnSolution (solution: Solution) (filePath: string) : Project option =
     let docDir = Path.GetDirectoryName filePath
 
@@ -761,11 +763,12 @@ let getProjectForPathOnSolution (solution: Solution) (filePath: string) : Projec
 
     solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
 
-let tryAddDocument
+
+let solutionTryAddDocument
     (logger: ILogger)
+    (solution: Solution)
     (docFilePath: string)
     (text: string)
-    (solution: Solution)
     : Async<Document option> =
     async {
         let projectOnPath = getProjectForPathOnSolution solution docFilePath
@@ -872,3 +875,76 @@ let initializeMSBuild (logger: ILogger) : unit =
     )
 
     MSBuildLocator.RegisterInstance(vsInstance)
+
+
+let solutionGetRazorDocumentForUri (solution: Solution) (uri: string) : Async<(Project * Compilation * SyntaxTree) option> = async {
+    let cshtmlPath = uri |> Uri.toPath
+    let cshtmlDirectory = Path.GetDirectoryName(cshtmlPath)
+    let normalizedTargetDir = Path.GetFullPath(cshtmlDirectory)
+
+    let projectForPath =
+        solution.Projects
+        |> Seq.tryFind (fun project ->
+            let projectDirectory = Path.GetDirectoryName(project.FilePath)
+            let normalizedProjectDir = Path.GetFullPath(projectDirectory)
+
+            normalizedTargetDir.StartsWith(
+                normalizedProjectDir + Path.DirectorySeparatorChar.ToString(),
+                StringComparison.OrdinalIgnoreCase
+            ))
+
+    let projectBaseDir = Path.GetDirectoryName(projectForPath.Value.FilePath)
+
+    let! compilation = projectForPath.Value.GetCompilationAsync() |> Async.AwaitTask
+
+    let mutable cshtmlTree: SyntaxTree option = None
+
+    let cshtmlPathTranslated =
+        Path.GetRelativePath(projectBaseDir, cshtmlPath)
+        |> _.Replace(".", "_")
+        |> _.Replace(Path.DirectorySeparatorChar, '_')
+        |> (fun s -> s + ".g.cs")
+
+    for tree in compilation.SyntaxTrees do
+        let path = tree.FilePath
+
+        if path.StartsWith(projectBaseDir) then
+            let relativePath = Path.GetRelativePath(projectBaseDir, path)
+
+            if relativePath.EndsWith(cshtmlPathTranslated) then
+                cshtmlTree <- Some tree
+
+    return cshtmlTree |> Option.map (fun cst -> (projectForPath.Value, compilation, cst))
+}
+
+
+let solutionFindSymbolForRazorDocumentUri solution uri pos = async {
+    match! solutionGetRazorDocumentForUri solution uri with
+    | None -> return None
+
+    | Some(project, compilation, cshtmlTree) ->
+        let model = compilation.GetSemanticModel(cshtmlTree)
+
+        let root = cshtmlTree.GetRoot()
+
+        let token =
+            let cshtmlPath = uri |> Uri.toPath
+
+            root.DescendantTokens()
+            |> Seq.tryFind (fun t ->
+                let span = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                span.Path = cshtmlPath
+                && span.StartLinePosition.Line <= (int pos.Line)
+                && span.EndLinePosition.Line >= (int pos.Line)
+                && span.StartLinePosition.Character <= (int pos.Character)
+                && span.EndLinePosition.Character > (int pos.Character))
+
+        let symbol =
+            token
+            |> Option.bind (fun x -> x.Parent |> Option.ofObj)
+            |> Option.map (fun parentToken -> model.GetSymbolInfo(parentToken))
+            |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
+
+        return symbol |> Option.map (fun sym -> (sym, project, None))
+}

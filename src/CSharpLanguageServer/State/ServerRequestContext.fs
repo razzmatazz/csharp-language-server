@@ -1,5 +1,8 @@
 namespace CSharpLanguageServer.State
 
+open System
+open System.IO
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
@@ -33,7 +36,8 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
+    member this.GetDocumentForUriOfType docType uri =
+        getDocumentForUriOfType this.State docType uri
 
     member this.GetUserDocument(u: string) =
         this.GetDocumentForUriOfType UserDocument u |> Option.map fst
@@ -134,15 +138,42 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
-    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        match this.GetDocument uri with
+    member this.GetSemanticModel(uri: DocumentUri) : Async<SemanticModel option> = async {
+        match state.Solution with
         | None -> return None
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = Position.toRoslynPosition sourceText.Lines pos
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+        | Some solution ->
+            if uri.EndsWith(".cshtml") then
+                match! solutionGetRazorDocumentForUri solution uri with
+                | None -> return None
+                | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+            else
+                match this.GetDocument uri with
+                | None -> return None
+                | Some doc ->
+                    let! ct = Async.CancellationToken
+                    let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                    return semanticModel |> Option.ofObj
+    }
+
+    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
+        let findSymbolForCsharpDocumentUri uri pos = async {
+            match this.GetDocument uri with
+            | None -> return None
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+                return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+        }
+
+        match state.Solution with
+        | None -> return None
+        | Some solution ->
+            if uri.EndsWith(".cshtml") then
+                return! solutionFindSymbolForRazorDocumentUri solution uri pos
+            else
+                return! findSymbolForCsharpDocumentUri uri pos
     }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =
