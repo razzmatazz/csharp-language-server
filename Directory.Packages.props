@@ -6,7 +6,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <MSBuildPackageVersion>17.14.28</MSBuildPackageVersion>
-    <RoslynPackageVersion>4.14.0</RoslynPackageVersion>
+    <RoslynPackageVersion>5.0.0-2.final</RoslynPackageVersion>
     <MSBuildLocatorPackageVersion>1.9.1</MSBuildLocatorPackageVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -26,7 +26,6 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(RoslynPackageVersion)" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Features" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="$(RoslynPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.9" />
