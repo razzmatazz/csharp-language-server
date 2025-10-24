@@ -189,7 +189,7 @@ module Completion =
         (context: ServerRequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
-            match! getRazorDocumentForUri context.Solution p.TextDocument.Uri with
+            match! solutionGetRazorDocumentForUri context.Solution p.TextDocument.Uri with
             | None -> return None
             | Some(project, compilation, cshtmlTree) ->
                 let! ct = Async.CancellationToken
@@ -240,7 +240,7 @@ module Completion =
                             sourceText
 
                     let cshtmlPath = Uri.toPath p.TextDocument.Uri
-                    let! doc = tryAddDocument logger context.Solution (cshtmlPath + ".cs") (newSourceText.ToString())
+                    let! doc = solutionTryAddDocument logger context.Solution (cshtmlPath + ".cs") (newSourceText.ToString())
 
                     match doc with
                     | None -> return None

@@ -480,7 +480,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                 match docAndTypeMaybe with
                 | None ->
-                    match! getRazorDocumentForUri state.Solution.Value docUri with
+                    match! solutionGetRazorDocumentForUri state.Solution.Value docUri with
                     | Some(_, compilation, cshtmlTree) ->
                         let semanticModelMaybe = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
 

@@ -61,7 +61,7 @@ module Workspace =
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
-                let! newDocMaybe = tryAddDocument logger context.Solution docFilePath fileText
+                let! newDocMaybe = solutionTryAddDocument logger context.Solution docFilePath fileText
 
                 match newDocMaybe with
                 | Some newDoc -> context.Emit(SolutionChange newDoc.Project.Solution)

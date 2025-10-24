@@ -143,7 +143,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         | None -> return None
         | Some solution ->
             if uri.EndsWith(".cshtml") then
-                match! getRazorDocumentForUri solution uri with
+                match! solutionGetRazorDocumentForUri solution uri with
                 | None -> return None
                 | Some(_, compilation, cshtmlTree) -> return compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
             else
@@ -156,39 +156,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-
-        let findSymbolForRazorDocumentUri solution uri = async {
-            match! getRazorDocumentForUri solution uri with
-            | Some(project, compilation, cshtmlTree) ->
-                let model = compilation.GetSemanticModel(cshtmlTree)
-
-                let root = cshtmlTree.GetRoot()
-
-                let token =
-                    let cshtmlPath = uri |> Uri.toPath
-
-                    root.DescendantTokens()
-                    |> Seq.tryFind (fun t ->
-                        let span = cshtmlTree.GetMappedLineSpan(t.Span)
-
-                        span.Path = cshtmlPath
-                        && span.StartLinePosition.Line <= (int pos.Line)
-                        && span.EndLinePosition.Line >= (int pos.Line)
-                        && span.StartLinePosition.Character <= (int pos.Character)
-                        && span.EndLinePosition.Character > (int pos.Character))
-
-                let symbol =
-                    token
-                    |> Option.bind (fun x -> x.Parent |> Option.ofObj)
-                    |> Option.map (fun parentToken -> model.GetSymbolInfo(parentToken))
-                    |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
-
-                return symbol |> Option.map (fun sym -> (sym, project, None))
-
-            | None -> return None
-        }
-
-        let findSymbolForCsharpDocumentUri _solution uri = async {
+        let findSymbolForCsharpDocumentUri uri pos = async {
             match this.GetDocument uri with
             | None -> return None
             | Some doc ->
@@ -203,9 +171,9 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         | None -> return None
         | Some solution ->
             if uri.EndsWith(".cshtml") then
-                return! findSymbolForRazorDocumentUri solution uri
+                return! solutionFindSymbolForRazorDocumentUri solution uri pos
             else
-                return! findSymbolForCsharpDocumentUri solution uri
+                return! findSymbolForCsharpDocumentUri uri pos
     }
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =
