@@ -24,11 +24,11 @@
     <Compile Include="Logging.fs" />
     <Compile Include="Util.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="FormatUtil.fs" />
     <Compile Include="ProgressReporter.fs" />
     <Compile Include="Roslyn/Conversions.fs" />
     <Compile Include="Roslyn/WorkspaceServices.fs" />
     <Compile Include="Roslyn/Solution.fs" />
+    <Compile Include="Roslyn/Document.fs" />
     <Compile Include="Roslyn/Symbol.fs" />
     <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Diagnostics.fs" />
