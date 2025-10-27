@@ -17,6 +17,7 @@ open Microsoft.CodeAnalysis.Text
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.WorkspaceServices

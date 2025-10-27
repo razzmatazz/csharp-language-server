@@ -1,4 +1,4 @@
-namespace CSharpLanguageServer
+namespace CSharpLanguageServer.Lsp
 
 open System
 open Ionide.LanguageServerProtocol

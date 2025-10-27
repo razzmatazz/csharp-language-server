@@ -24,7 +24,7 @@
     <Compile Include="Logging.fs" />
     <Compile Include="Util.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="ProgressReporter.fs" />
+    <Compile Include="Lsp/ProgressReporter.fs" />
     <Compile Include="Roslyn/Conversions.fs" />
     <Compile Include="Roslyn/WorkspaceServices.fs" />
     <Compile Include="Roslyn/Solution.fs" />
