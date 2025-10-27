@@ -4,14 +4,13 @@ open System
 open System.IO
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Util
 
 module Uri =
-    // Unescape some necessary char before passing string to Uri.
+ // Unescape some necessary char before passing string to Uri.
     // Can't use Uri.UnescapeDataString here. For example, if uri is "file:///z%3a/src/c%23/ProjDir" ("%3a" is
     // ":" and "%23" is "#"), Uri.UnescapeDataString will unescape both "%3a" and "%23". Then Uri will think
     /// "#/ProjDir" is Fragment instead of part of LocalPath.
@@ -262,18 +261,3 @@ module Diagnostic =
               Data = None }
 
         (diagnostic, mappedLineSpan.Path |> Uri.fromPath)
-
-
-module CompletionContext =
-    let toCompletionTrigger (context: CompletionContext option) : CompletionTrigger =
-        context
-        |> Option.bind (fun ctx ->
-            match ctx.TriggerKind with
-            | CompletionTriggerKind.Invoked
-            | CompletionTriggerKind.TriggerForIncompleteCompletions -> Some CompletionTrigger.Invoke
-            | CompletionTriggerKind.TriggerCharacter ->
-                ctx.TriggerCharacter
-                |> Option.map Seq.head
-                |> Option.map CompletionTrigger.CreateInsertionTrigger
-            | _ -> None)
-        |> Option.defaultValue CompletionTrigger.Invoke
