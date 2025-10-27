@@ -8,9 +8,6 @@ open System.Text.RegularExpressions
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
-open ICSharpCode.Decompiler
-open ICSharpCode.Decompiler.CSharp
-open ICSharpCode.Decompiler.CSharp.Transforms
 open Microsoft.Build.Construction
 open Microsoft.Build.Exceptions
 open Microsoft.Build.Locator
@@ -396,47 +393,3 @@ let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMay
         do! lspClient.WindowLogMessage logMessage
         return! solutionFindAndLoadOnDir lspClient cwd
       }
-
-
-let solutionMakeDocumentFromMetadata
-    (compilation: Microsoft.CodeAnalysis.Compilation)
-    (project: Microsoft.CodeAnalysis.Project)
-    (l: Microsoft.CodeAnalysis.Location)
-    (fullName: string)
-    =
-    let mdLocation = l
-
-    let containingAssembly =
-        mdLocation.MetadataModule
-        |> nonNull "mdLocation.MetadataModule"
-        |> _.ContainingAssembly
-
-    let reference =
-        compilation.GetMetadataReference containingAssembly
-        |> nonNull "compilation.GetMetadataReference(containingAssembly)"
-
-    let peReference = reference :?> PortableExecutableReference |> Option.ofObj
-
-    let assemblyLocation =
-        peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
-
-    let decompilerSettings = DecompilerSettings()
-    decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
-
-    let decompiler = CSharpDecompiler(assemblyLocation, decompilerSettings)
-
-    // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
-    // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
-    decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
-
-    let fullTypeName = TypeSystem.FullTypeName fullName
-
-    let text = decompiler.DecompileTypeAsString fullTypeName
-
-    let mdDocumentFilename =
-        $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
-
-    let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
-
-    let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
-    mdDocument, text
