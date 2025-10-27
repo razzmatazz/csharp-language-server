@@ -103,6 +103,11 @@ module Async =
     let map f computation =
         async.Bind(computation, f >> async.Return)
 
+    let bindOption f computation =
+        async.Bind(computation, fun v -> match v with
+                                         | Some v -> f v
+                                         | None -> async.Return None)
+
 module Map =
     let union map1 map2 =
         Map.fold (fun acc key value -> Map.add key value acc) map1 map2

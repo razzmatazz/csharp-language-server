@@ -11,7 +11,7 @@ open CSharpLanguageServer.Util
 module Hover =
     let provider (_cc: ClientCapabilities) : U2<bool, HoverOptions> option = Some(U2.C1 true)
 
-    let makeHoverForSymbol symbol = async {
+    let makeHoverForSymbol symbol =
         let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol
 
         let hover =
@@ -21,10 +21,9 @@ module Hover =
                 |> U3.C1
               Range = None } // TODO: Support range
 
-        return hover |> Some
-    }
+        hover |> Some
 
     let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> =
         context.FindSymbol p.TextDocument.Uri p.Position
-        |> Async.bindOption makeHoverForSymbol
+        |> Async.bindOption (makeHoverForSymbol >> async.Return)
         |> Async.map LspResult.success
