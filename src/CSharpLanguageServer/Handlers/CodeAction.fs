@@ -18,7 +18,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 

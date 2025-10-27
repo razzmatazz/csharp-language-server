@@ -7,7 +7,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 
 [<RequireQualifiedAccess>]
 module DocumentRangeFormatting =

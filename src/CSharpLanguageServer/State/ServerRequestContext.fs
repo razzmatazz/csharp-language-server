@@ -8,7 +8,7 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
 
@@ -75,7 +75,8 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     match Map.tryFind uri state.DecompiledMetadata with
                     | Some value -> (value.Document, [])
                     | None ->
-                        let (documentFromMd, text) = solutionMakeDocumentFromMetadata compilation project l fullName
+                        let (documentFromMd, text) =
+                            solutionMakeDocumentFromMetadata compilation project l fullName
 
                         let csharpMetadata =
                             { ProjectName = project.Name

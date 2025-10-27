@@ -10,7 +10,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
@@ -207,7 +207,8 @@ module Completion =
                     |> Option.bind (fun ctx ->
                         match ctx.TriggerKind with
                         | CompletionTriggerKind.Invoked
-                        | CompletionTriggerKind.TriggerForIncompleteCompletions -> Some Microsoft.CodeAnalysis.Completion.CompletionTrigger.Invoke
+                        | CompletionTriggerKind.TriggerForIncompleteCompletions ->
+                            Some Microsoft.CodeAnalysis.Completion.CompletionTrigger.Invoke
                         | CompletionTriggerKind.TriggerCharacter ->
                             ctx.TriggerCharacter
                             |> Option.map Seq.head

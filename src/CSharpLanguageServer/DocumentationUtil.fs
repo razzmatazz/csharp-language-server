@@ -5,7 +5,7 @@ open System.Xml.Linq
 
 open Microsoft.CodeAnalysis
 
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 
 module DocumentationUtil =
     type TripleSlashComment =

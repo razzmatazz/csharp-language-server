@@ -22,7 +22,7 @@ open Microsoft.CodeAnalysis.Text
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
