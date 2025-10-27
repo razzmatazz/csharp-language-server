@@ -10,7 +10,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 
 [<RequireQualifiedAccess>]
@@ -202,7 +202,19 @@ module Completion =
                     |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
                     |> _.WithBool("ShowNameSuggestions", false)
 
-                let completionTrigger = CompletionContext.toCompletionTrigger p.Context
+                let completionTrigger =
+                    p.Context
+                    |> Option.bind (fun ctx ->
+                        match ctx.TriggerKind with
+                        | CompletionTriggerKind.Invoked
+                        | CompletionTriggerKind.TriggerForIncompleteCompletions ->
+                            Some Microsoft.CodeAnalysis.Completion.CompletionTrigger.Invoke
+                        | CompletionTriggerKind.TriggerCharacter ->
+                            ctx.TriggerCharacter
+                            |> Option.map Seq.head
+                            |> Option.map Microsoft.CodeAnalysis.Completion.CompletionTrigger.CreateInsertionTrigger
+                        | _ -> None)
+                    |> Option.defaultValue Microsoft.CodeAnalysis.Completion.CompletionTrigger.Invoke
 
                 let shouldTriggerCompletion =
                     p.Context

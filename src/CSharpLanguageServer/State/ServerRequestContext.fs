@@ -3,12 +3,13 @@ namespace CSharpLanguageServer.State
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Document
+open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
 
@@ -63,7 +64,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                 let! ct = Async.CancellationToken
                 let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-                let fullName = sym |> getContainingTypeOrThis |> getFullReflectionName
+                let fullName = sym |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
                 let containingAssemblyName =
                     l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
@@ -75,7 +76,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     match Map.tryFind uri state.DecompiledMetadata with
                     | Some value -> (value.Document, [])
                     | None ->
-                        let (documentFromMd, text) = makeDocumentFromMetadata compilation project l fullName
+                        let (documentFromMd, text) = documentFromMetadata compilation project l fullName
 
                         let csharpMetadata =
                             { ProjectName = project.Name

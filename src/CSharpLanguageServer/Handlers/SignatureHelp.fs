@@ -12,7 +12,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Types
 
 module SignatureInformation =

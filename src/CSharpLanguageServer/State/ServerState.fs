@@ -10,10 +10,11 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.RoslynHelpers
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
 type DecompiledMetadataDocument =
@@ -562,7 +563,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         match solutionReloadDeadline < DateTime.Now with
         | true ->
             let! newSolution =
-                loadSolutionOnSolutionPathOrDir state.LspClient.Value logger state.Settings.SolutionPath state.RootPath
+                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath state.RootPath
 
             return
                 { state with

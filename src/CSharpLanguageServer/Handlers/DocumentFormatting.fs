@@ -4,21 +4,30 @@ open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Util
+open CSharpLanguageServer.Roslyn.Document
 
 [<RequireQualifiedAccess>]
-module DocumentFormatting =
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentFormattingOptions> option =
-        Some(U2.C1 true)
 
-    let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        match context.GetUserDocument p.TextDocument.Uri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! options = FormatUtil.getFormattingOptions context.State.Settings doc p.Options
-            let! newDoc = Formatter.FormatAsync(doc, options, cancellationToken = ct) |> Async.AwaitTask
-            let! textEdits = FormatUtil.getChanges newDoc doc
-            return textEdits |> Some |> LspResult.success
+module DocumentFormatting =
+    let provider (_cc: ClientCapabilities) : U2<bool, DocumentFormattingOptions> option = Some(U2.C1 true)
+
+    let formatDocument lspFormattingOptions doc : Async<TextEdit array option> = async {
+        let! ct = Async.CancellationToken
+        let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
+        let! newDoc = Formatter.FormatAsync(doc, options, cancellationToken = ct) |> Async.AwaitTask
+        let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
+        return textEdits |> Some
     }
+
+    let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
+        let formatDocument =
+            p.Options
+            |> context.State.Settings.GetEffectiveFormattingOptions
+            |> formatDocument
+
+        context.GetUserDocument p.TextDocument.Uri
+        |> async.Return
+        |> Async.bindOption formatDocument
+        |> Async.map LspResult.success

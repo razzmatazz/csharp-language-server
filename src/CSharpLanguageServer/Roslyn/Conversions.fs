@@ -1,14 +1,14 @@
-namespace CSharpLanguageServer.Conversions
+module CSharpLanguageServer.Roslyn.Conversions
 
 open System
 open System.IO
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Completion
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Util
+
 
 module Uri =
     // Unescape some necessary char before passing string to Uri.
@@ -262,18 +262,3 @@ module Diagnostic =
               Data = None }
 
         (diagnostic, mappedLineSpan.Path |> Uri.fromPath)
-
-
-module CompletionContext =
-    let toCompletionTrigger (context: CompletionContext option) : CompletionTrigger =
-        context
-        |> Option.bind (fun ctx ->
-            match ctx.TriggerKind with
-            | CompletionTriggerKind.Invoked
-            | CompletionTriggerKind.TriggerForIncompleteCompletions -> Some CompletionTrigger.Invoke
-            | CompletionTriggerKind.TriggerCharacter ->
-                ctx.TriggerCharacter
-                |> Option.map Seq.head
-                |> Option.map CompletionTrigger.CreateInsertionTrigger
-            | _ -> None)
-        |> Option.defaultValue CompletionTrigger.Invoke

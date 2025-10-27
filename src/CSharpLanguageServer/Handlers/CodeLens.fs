@@ -9,7 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 
 type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)

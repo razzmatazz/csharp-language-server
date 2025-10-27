@@ -12,7 +12,7 @@ open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]

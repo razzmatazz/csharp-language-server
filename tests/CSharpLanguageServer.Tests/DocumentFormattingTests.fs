@@ -29,7 +29,7 @@ let testEditorConfigFormatting () =
     | Some tes ->
         let expectedClassContents =
             File
-                .ReadAllText(Path.Combine(client.ProjectDir, "Project", "ExpectedFormatting.cs.txt"))
+                .ReadAllText(Path.Combine(client.ProjectDir, "Project", "Class.cs.formatted.txt"))
                 .ReplaceLineEndings("\n")
 
         let actualClassContents =

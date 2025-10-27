@@ -7,9 +7,9 @@ open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer
 open CSharpLanguageServer.State
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Roslyn.Document
 
 [<RequireQualifiedAccess>]
 module DocumentOnTypeFormatting =
@@ -42,10 +42,16 @@ module DocumentOnTypeFormatting =
             | _ -> None
 
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+        let lspFormattingOptions =
+            if context.State.Settings.ApplyFormattingOptions then
+                Some p.Options
+            else
+                None
+
         match context.GetUserDocument p.TextDocument.Uri with
         | None -> return None |> LspResult.success
         | Some doc ->
-            let! options = FormatUtil.getFormattingOptions context.State.Settings doc p.Options
+            let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let pos = Position.toRoslynPosition sourceText.Lines p.Position
@@ -69,7 +75,7 @@ module DocumentOnTypeFormatting =
                         )
                         |> Async.AwaitTask
 
-                    let! textEdits = FormatUtil.getChanges newDoc doc
+                    let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
                     return textEdits |> Some |> LspResult.success
             | _ -> return None |> LspResult.success
     }

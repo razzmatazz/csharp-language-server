@@ -9,7 +9,7 @@ open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Conversions
+open CSharpLanguageServer.Roslyn.Conversions
 
 [<RequireQualifiedAccess>]
 module SemanticTokens =
