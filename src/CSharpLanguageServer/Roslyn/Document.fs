@@ -72,34 +72,30 @@ let getDocumentDiffAsLspTextEdits (doc: Document) (oldDoc: Document) : Async<Tex
 }
 
 
-let getDocumentFormattingOptionSet
-    (doc: Document)
-    (lspFormattingOptions: FormattingOptions option)
-    : Async<OptionSet> =
-    async {
-        let! docOptions = doc.GetOptionsAsync() |> Async.AwaitTask
+let getDocumentFormattingOptionSet (doc: Document) (lspFormattingOptions: FormattingOptions option) : Async<OptionSet> = async {
+    let! docOptions = doc.GetOptionsAsync() |> Async.AwaitTask
 
-        return
-            match lspFormattingOptions with
-            | None -> docOptions
-            | Some lspFormattingOptions ->
-                docOptions
-                |> _.WithChangedOption(
-                    FormattingOptions.IndentationSize,
-                    LanguageNames.CSharp,
-                    int lspFormattingOptions.TabSize
-                )
-                |> _.WithChangedOption(
-                    FormattingOptions.UseTabs,
-                    LanguageNames.CSharp,
-                    not lspFormattingOptions.InsertSpaces
-                )
-                |> match lspFormattingOptions.InsertFinalNewline with
-                   | Some insertFinalNewline ->
-                       _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
-                   | None -> id
-                |> match lspFormattingOptions.TrimFinalNewlines with
-                   | Some trimFinalNewlines ->
-                       _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
-                   | None -> id
-    }
+    return
+        match lspFormattingOptions with
+        | None -> docOptions
+        | Some lspFormattingOptions ->
+            docOptions
+            |> _.WithChangedOption(
+                FormattingOptions.IndentationSize,
+                LanguageNames.CSharp,
+                int lspFormattingOptions.TabSize
+            )
+            |> _.WithChangedOption(
+                FormattingOptions.UseTabs,
+                LanguageNames.CSharp,
+                not lspFormattingOptions.InsertSpaces
+            )
+            |> match lspFormattingOptions.InsertFinalNewline with
+               | Some insertFinalNewline ->
+                   _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
+               | None -> id
+            |> match lspFormattingOptions.TrimFinalNewlines with
+               | Some trimFinalNewlines ->
+                   _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
+               | None -> id
+}

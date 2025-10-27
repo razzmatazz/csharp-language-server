@@ -12,10 +12,7 @@ type ServerSettings =
       DebugMode: bool }
 
     member this.GetEffectiveFormattingOptions options =
-        if this.ApplyFormattingOptions then
-            Some options
-        else
-            None
+        if this.ApplyFormattingOptions then Some options else None
 
     static member Default: ServerSettings =
         { SolutionPath = None

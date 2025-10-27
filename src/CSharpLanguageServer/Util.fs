@@ -104,9 +104,13 @@ module Async =
         async.Bind(computation, f >> async.Return)
 
     let bindOption f computation =
-        async.Bind(computation, fun v -> match v with
-                                         | Some v -> f v
-                                         | None -> async.Return None)
+        async.Bind(
+            computation,
+            fun v ->
+                match v with
+                | Some v -> f v
+                | None -> async.Return None
+        )
 
 module Map =
     let union map1 map2 =
