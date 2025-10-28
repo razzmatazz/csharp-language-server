@@ -376,27 +376,6 @@ let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
 }
 
 
-let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMaybe: string option) (cwd: string) =
-    match solutionPathMaybe with
-    | Some solutionPath -> async {
-        let rootedSolutionPath =
-            match Path.IsPathRooted solutionPath with
-            | true -> solutionPath
-            | false -> Path.Combine(cwd, solutionPath)
-
-        return! solutionTryLoadOnPath lspClient rootedSolutionPath
-      }
-
-    | None -> async {
-        let logMessage: LogMessageParams =
-            { Type = MessageType.Info
-              Message = sprintf "csharp-ls: attempting to find and load solution based on cwd (\"%s\").." cwd }
-
-        do! lspClient.WindowLogMessage logMessage
-        return! solutionFindAndLoadOnDir lspClient cwd
-      }
-
-
 let solutionGetRazorDocumentForUri
     (solution: Solution)
     (uri: string)

@@ -14,12 +14,9 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.State.Codebase
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
-
-type DecompiledMetadataDocument =
-    { Metadata: CSharpMetadataInformation
-      Document: Document }
 
 type ServerRequestMode =
     | ReadOnly
@@ -56,9 +53,8 @@ and ServerState =
       RootPath: string
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
-      Solution: Solution option
+      Codebase: Codebase option
       OpenDocs: Map<string, ServerOpenDocInfo>
-      DecompiledMetadata: Map<string, DecompiledMetadataDocument>
       LastRequestId: int
       PendingRequests: ServerRequest list
       RunningRequests: Map<int, ServerRequest>
@@ -73,9 +69,8 @@ and ServerState =
           RootPath = Directory.GetCurrentDirectory()
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
-          Solution = None
+          Codebase = None
           OpenDocs = Map.empty
-          DecompiledMetadata = Map.empty
           LastRequestId = 0
           PendingRequests = []
           RunningRequests = Map.empty
