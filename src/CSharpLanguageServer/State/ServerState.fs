@@ -481,11 +481,36 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                 match docAndTypeMaybe with
                 | None ->
-                    // could not find document for this enqueued uri
-                    logger.LogDebug(
-                        "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
-                        string docUri
-                    )
+                    match! solutionGetRazorDocumentForUri state.Solution.Value docUri with
+                    | Some(_, compilation, cshtmlTree) ->
+                        let semanticModelMaybe = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+
+                        match semanticModelMaybe with
+                        | None ->
+                            Error(Exception("could not GetSemanticModelAsync"))
+                            |> PushDiagnosticsDocumentDiagnosticsResolution
+                            |> postSelf
+
+                        | Some semanticModel ->
+                            let diagnostics =
+                                semanticModel.GetDiagnostics()
+                                |> Seq.map Diagnostic.fromRoslynDiagnostic
+                                |> Seq.filter (fun (_, uri) -> uri = docUri)
+                                |> Seq.map fst
+                                |> Array.ofSeq
+
+                            Ok(docUri, None, diagnostics)
+                            |> PushDiagnosticsDocumentDiagnosticsResolution
+                            |> postSelf
+
+                    | None ->
+                        // could not find document for this enqueued uri
+                        logger.LogDebug(
+                            "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
+                            string docUri
+                        )
+
+                        ()
 
                     return newState
 
