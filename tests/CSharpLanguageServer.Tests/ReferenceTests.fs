@@ -165,17 +165,21 @@ let testReferenceWorksToAspNetRazorPageReferencedValue () =
     Assert.AreEqual(2, locations0.Value.Length)
 
     let expectedLocations0: Location array =
-        [| { Uri = testControllerCsFile.Uri
-             Range =
-               { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } }
-
-           { Uri = viewsTestIndexCshtmlFile.Uri
+        [| { Uri = viewsTestIndexCshtmlFile.Uri
              Range =
                { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } } |]
+                 End = { Line = 1u; Character = 13u } } }
 
-    Assert.AreEqual(expectedLocations0, locations0.Value)
+           { Uri = testControllerCsFile.Uri
+             Range =
+               { Start = { Line = 11u; Character = 12u }
+                 End = { Line = 11u; Character = 18u } } } |]
+
+    let sortedLocations0 =
+        locations0.Value
+        |> Array.sortBy (fun f -> (f.Range.Start.Line, f.Range.Start.Character))
+
+    Assert.AreEqual(expectedLocations0, sortedLocations0)
 
     //
     // do same but with IncludeDeclaration=true
