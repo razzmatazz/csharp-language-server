@@ -56,7 +56,9 @@ module Initialization =
 
             initializeMSBuild ()
 
-            logger.LogDebug("handleInitialize: p.Capabilities={caps}", serialize p.Capabilities)
+            logger.LogDebug("handleInitialize: p.ClientInfo: {clientInfo}", p.ClientInfo |> Option.map serialize)
+
+            logger.LogDebug("handleInitialize: p.Capabilities: {caps}", serialize p.Capabilities)
             context.Emit(ClientCapabilityChange p.Capabilities)
 
             // TODO use p.RootUri
