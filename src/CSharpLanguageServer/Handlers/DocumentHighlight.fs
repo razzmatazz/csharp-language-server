@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
