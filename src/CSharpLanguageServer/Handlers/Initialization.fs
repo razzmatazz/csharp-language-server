@@ -15,6 +15,7 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Util
 
 
 [<RequireQualifiedAccess>]
@@ -61,8 +62,34 @@ module Initialization =
             logger.LogDebug("handleInitialize: p.Capabilities: {caps}", serialize p.Capabilities)
             context.Emit(ClientCapabilityChange p.Capabilities)
 
-            // TODO use p.RootUri
-            let rootPath = Directory.GetCurrentDirectory()
+            logger.LogDebug(
+                "handleInitialize: p.RootPath={rootPath}, p.RootUri={rootUri}, p.WorkspaceFolders={wf}",
+                p.RootPath,
+                p.RootUri,
+                p.WorkspaceFolders
+            )
+
+            // TODO use p.WorkspaceFolders
+            let rootPath, rootPathSource =
+                p.RootUri
+                |> Option.map (fun rootUri -> (Uri.toPath rootUri, "InitializeParams.rootUri"))
+                |> Option.orElse (
+                    p.RootPath
+                    |> Option.map (fun rootPath -> (rootPath, "InitializeParams.rootPath"))
+                )
+                |> Option.defaultValue (Directory.GetCurrentDirectory(), "Process CWD")
+
+            do!
+                windowShowMessage (
+                    sprintf "csharp-ls: will use \"%s\" (%s) as workspace root path" rootPath rootPathSource
+                )
+
+            logger.LogDebug(
+                "handleInitialize: using rootPath \"{rootPath}\" from {rootPathSource}",
+                rootPath,
+                rootPathSource
+            )
+
             context.Emit(RootPathChange rootPath)
 
             // setup timer so actors get period ticks
