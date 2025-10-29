@@ -132,34 +132,6 @@ type ServerStateEvent =
     | DumpAndResetRequestStats
 
 
-let getDocumentForUriOfType (state: ServerState) docType (u: string) =
-    let uri = Uri(u.Replace("%3A", ":", true, null))
-
-    match state.Workspace.Solution with
-    | Some solution ->
-        let matchingUserDocuments =
-            solution.Projects
-            |> Seq.collect (fun p -> p.Documents)
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-            |> List.ofSeq
-
-        let matchingUserDocumentMaybe =
-            match matchingUserDocuments with
-            | [ d ] -> Some(d, UserDocument)
-            | _ -> None
-
-        let matchingDecompiledDocumentMaybe =
-            state.Workspace.SingletonFolder.DecompiledMetadata
-            |> Map.tryFind u
-            |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-        match docType with
-        | UserDocument -> matchingUserDocumentMaybe
-        | DecompiledDocument -> matchingDecompiledDocumentMaybe
-        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-    | None -> None
-
-
 let processFinishRequest postSelf state request =
     request.Semaphore.Dispose()
 
@@ -285,7 +257,8 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         return state
 
     | GetDocumentOfTypeForUri(docType, uri, replyChannel) ->
-        let documentAndTypeMaybe = getDocumentForUriOfType state docType uri
+        let documentAndTypeMaybe = uri |> workspaceDocument state.Workspace docType
+
         replyChannel.Reply(documentAndTypeMaybe |> Option.map fst)
 
         return state
@@ -473,7 +446,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     { state with
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docAndTypeMaybe = docUri |> getDocumentForUriOfType state AnyDocument
+                let docAndTypeMaybe = docUri |> workspaceDocument state.Workspace AnyDocument
 
                 match docAndTypeMaybe with
                 | None ->

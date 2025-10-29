@@ -70,3 +70,31 @@ type LspWorkspace =
 
     member this.WithSolution(solution: Solution option) =
         this.WithSingletonFolderUpdated(fun f -> { f with Solution = solution })
+
+
+let workspaceDocument (workspace: LspWorkspace) docType (u: string) =
+    let uri = Uri(u.Replace("%3A", ":", true, null))
+
+    match workspace.Solution with
+    | Some solution ->
+        let matchingUserDocuments =
+            solution.Projects
+            |> Seq.collect (fun p -> p.Documents)
+            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+            |> List.ofSeq
+
+        let matchingUserDocumentMaybe =
+            match matchingUserDocuments with
+            | [ d ] -> Some(d, UserDocument)
+            | _ -> None
+
+        let matchingDecompiledDocumentMaybe =
+            workspace.SingletonFolder.DecompiledMetadata
+            |> Map.tryFind u
+            |> Option.map (fun x -> (x.Document, DecompiledDocument))
+
+        match docType with
+        | UserDocument -> matchingUserDocumentMaybe
+        | DecompiledDocument -> matchingDecompiledDocumentMaybe
+        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+    | None -> None
