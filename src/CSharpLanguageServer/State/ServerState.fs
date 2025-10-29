@@ -18,10 +18,6 @@ open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
-type DecompiledMetadataDocument =
-    { Metadata: CSharpMetadataInformation
-      Document: Document }
-
 type ServerRequestMode =
     | ReadOnly
     | ReadWrite
@@ -58,7 +54,6 @@ and ServerState =
       ClientCapabilities: ClientCapabilities
       Workspace: LspWorkspace
       OpenDocs: Map<string, ServerOpenDocInfo>
-      DecompiledMetadata: Map<string, DecompiledMetadataDocument>
       LastRequestId: int
       PendingRequests: ServerRequest list
       RunningRequests: Map<int, ServerRequest>
@@ -74,7 +69,6 @@ and ServerState =
           ClientCapabilities = emptyClientCapabilities
           Workspace = LspWorkspace.Empty
           OpenDocs = Map.empty
-          DecompiledMetadata = Map.empty
           LastRequestId = 0
           PendingRequests = []
           RunningRequests = Map.empty
@@ -114,11 +108,6 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-type ServerDocumentType =
-    | UserDocument // user Document from solution, on disk
-    | DecompiledDocument // Document decompiled from metadata, readonly
-    | AnyDocument
-
 
 type ServerStateEvent =
     | SettingsChange of ServerSettings
@@ -126,12 +115,12 @@ type ServerStateEvent =
     | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities
     | SolutionChange of Solution
-    | DecompiledMetadataAdd of string * DecompiledMetadataDocument
+    | DecompiledMetadataAdd of string * LspWorkspaceDecompiledMetadataDocument
     | OpenDocAdd of string * int * DateTime
     | OpenDocRemove of string
     | OpenDocTouch of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
-    | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
+    | GetDocumentOfTypeForUri of LspWorkspaceDocumentType * string * AsyncReplyChannel<Document option>
     | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
@@ -160,7 +149,8 @@ let getDocumentForUriOfType (state: ServerState) docType (u: string) =
             | _ -> None
 
         let matchingDecompiledDocumentMaybe =
-            Map.tryFind u state.DecompiledMetadata
+            state.Workspace.SingletonFolder.DecompiledMetadata
+            |> Map.tryFind u
             |> Option.map (fun x -> (x.Document, DecompiledDocument))
 
         match docType with
@@ -387,11 +377,12 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                 Workspace = state.Workspace.WithSolution(Some s) }
 
     | DecompiledMetadataAdd(uri, md) ->
-        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
-
-        return
+        let updatedState =
             { state with
-                DecompiledMetadata = newDecompiledMd }
+                Workspace =
+                    state.Workspace.WithSingletonFolderUpdated(workspaceFolderWithDecompiledMetadataAdded uri md) }
+
+        return updatedState
 
     | OpenDocAdd(doc, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
