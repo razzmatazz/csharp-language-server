@@ -39,9 +39,7 @@ module Diagnostic =
                   RelatedDocuments = None }
 
             let docForUri =
-                p.TextDocument.Uri
-                |> workspaceDocument context.Workspace AnyDocument
-                |> Option.map fst
+                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with
             | None -> return emptyReport |> U2.C1 |> LspResult.success

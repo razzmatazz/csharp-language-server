@@ -48,7 +48,8 @@ module TextDocumentSync =
 
     let didOpen (context: ServerRequestContext) (openParams: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
         let docAndDocTypeForUri =
-            openParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+            openParams.TextDocument.Uri
+            |> workspaceDocumentDetails context.Workspace AnyDocument
 
         match docAndDocTypeForUri with
         | Some(doc, docType) ->
@@ -88,9 +89,7 @@ module TextDocumentSync =
 
     let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
         let docMaybe =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace UserDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docMaybe with
         | None -> ()

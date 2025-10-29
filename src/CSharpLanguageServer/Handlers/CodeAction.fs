@@ -332,9 +332,7 @@ module CodeAction =
         : AsyncLspResult<TextDocumentCodeActionResult option> =
         async {
             let docForUri =
-                p.TextDocument.Uri
-                |> workspaceDocument context.Workspace AnyDocument
-                |> Option.map fst
+                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with
             | None -> return None |> LspResult.success
@@ -409,7 +407,6 @@ module CodeAction =
         let docForUri =
             resolutionData.Value.TextDocumentUri
             |> workspaceDocument context.Workspace AnyDocument
-            |> Option.map fst
 
         match docForUri with
         | None -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))

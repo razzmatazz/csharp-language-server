@@ -129,8 +129,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        let docForUri =
-            uri |> workspaceDocument this.Workspace AnyDocument |> Option.map fst
+        let docForUri = uri |> workspaceDocument this.Workspace AnyDocument
 
         match docForUri with
         | None -> return None

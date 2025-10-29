@@ -187,9 +187,7 @@ module Completion =
         : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
         async {
             let docForUri =
-                p.TextDocument.Uri
-                |> workspaceDocument context.Workspace AnyDocument
-                |> Option.map fst
+                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with
             | None -> return None |> LspResult.success
