@@ -14,7 +14,7 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
-    let mutable solutionMaybe = state.Solution
+    let mutable solutionMaybe = state.Workspace.Solution
 
     let logger = Logging.getLoggerByName "ServerRequestContext"
 
@@ -150,7 +150,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         this.FindSymbol' uri pos |> Async.map (Option.map (fun (sym, _, _) -> sym))
 
     member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -165,7 +165,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         (transitive: bool)
         : Async<INamedTypeSymbol seq> =
         async {
-            match state.Solution with
+            match state.Workspace.Solution with
             | None -> return []
             | Some currentSolution ->
                 let! ct = Async.CancellationToken
@@ -176,7 +176,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         }
 
     member __.FindImplementations(symbol: ISymbol) : Async<ISymbol seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -187,7 +187,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member __.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -210,7 +210,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         this._FindDerivedInterfaces symbol transitive
 
     member __.FindCallers(symbol: ISymbol) : Async<SymbolCallerInfo seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -258,7 +258,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                         cancellationToken = ct
                     )
 
-        match this.State.Solution with
+        match this.State.Workspace.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken
@@ -266,7 +266,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member this.FindReferences (symbol: ISymbol) (withDefinition: bool) : Async<Microsoft.CodeAnalysis.Location seq> = async {
-        match this.State.Solution with
+        match this.State.Workspace.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken

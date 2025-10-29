@@ -54,10 +54,8 @@ type ServerRequest =
 
 and ServerState =
     { Settings: ServerSettings
-      RootPath: string
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
-      Solution: Solution option
       Workspace: LspWorkspace
       OpenDocs: Map<string, ServerOpenDocInfo>
       DecompiledMetadata: Map<string, DecompiledMetadataDocument>
@@ -72,10 +70,8 @@ and ServerState =
 
     static member Empty =
         { Settings = ServerSettings.Default
-          RootPath = Directory.GetCurrentDirectory()
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
-          Solution = None
           Workspace = LspWorkspace.Empty
           OpenDocs = Map.empty
           DecompiledMetadata = Map.empty
@@ -147,10 +143,10 @@ type ServerStateEvent =
     | DumpAndResetRequestStats
 
 
-let getDocumentForUriOfType state docType (u: string) =
+let getDocumentForUriOfType (state: ServerState) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
-    match state.Solution with
+    match state.Workspace.Solution with
     | Some solution ->
         let matchingUserDocuments =
             solution.Projects
@@ -374,7 +370,10 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                     newState
 
-    | RootPathChange rootPath -> return { state with RootPath = rootPath }
+    | RootPathChange rootPath ->
+        return
+            { state with
+                Workspace = state.Workspace.WithRootPath(rootPath) }
 
     | ClientChange lspClient -> return { state with LspClient = lspClient }
 
@@ -382,7 +381,10 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | SolutionChange s ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
-        return { state with Solution = Some s }
+
+        return
+            { state with
+                Workspace = state.Workspace.WithSolution(Some s) }
 
     | DecompiledMetadataAdd(uri, md) ->
         let newDecompiledMd = Map.add uri md state.DecompiledMetadata
@@ -566,11 +568,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         match solutionReloadDeadline < DateTime.Now with
         | true ->
             let! newSolution =
-                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath state.RootPath
+                solutionLoadSolutionWithPathOrOnCwd
+                    state.LspClient.Value
+                    state.Settings.SolutionPath
+                    state.Workspace.RootPath
 
             return
                 { state with
-                    Solution = newSolution
+                    Workspace = state.Workspace.WithSolution(newSolution)
                     SolutionReloadPending = None }
 
         | false -> return state
