@@ -8,11 +8,9 @@ open Microsoft.CodeAnalysis
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 
-
 type LspWorkspaceDecompiledMetadataDocument =
     { Metadata: CSharpMetadataInformation
       Document: Document }
-
 
 type LspWorkspaceFolder =
     { Uri: string
@@ -21,19 +19,16 @@ type LspWorkspaceFolder =
       Solution: Solution option
       DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
 
-
 type LspWorkspaceDocumentType =
     | UserDocument // user Document from solution, on disk
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
-
 
 let workspaceFolderWithDecompiledMetadataAdded uri md folder =
     let newDecompiledMd = Map.add uri md folder.DecompiledMetadata
 
     { folder with
         DecompiledMetadata = newDecompiledMd }
-
 
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list }
@@ -71,8 +66,7 @@ type LspWorkspace =
     member this.WithSolution(solution: Solution option) =
         this.WithSingletonFolderUpdated(fun f -> { f with Solution = solution })
 
-
-let workspaceDocument (workspace: LspWorkspace) docType (u: string) =
+let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
     match workspace.Solution with
@@ -98,3 +92,6 @@ let workspaceDocument (workspace: LspWorkspace) docType (u: string) =
         | DecompiledDocument -> matchingDecompiledDocumentMaybe
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
     | None -> None
+
+let workspaceDocument workspace docType u =
+    workspaceDocumentDetails workspace docType u |> Option.map fst

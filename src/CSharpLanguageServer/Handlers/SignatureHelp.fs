@@ -68,9 +68,7 @@ module SignatureHelp =
 
     let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
         let docMaybe =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace UserDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docMaybe with
         | None -> return None |> LspResult.success

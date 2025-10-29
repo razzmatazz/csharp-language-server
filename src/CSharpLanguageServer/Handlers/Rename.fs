@@ -90,9 +90,7 @@ module Rename =
     let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
 
         let docForUri =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace UserDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with
         | None -> return None |> LspResult.success

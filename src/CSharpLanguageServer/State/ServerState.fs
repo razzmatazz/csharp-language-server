@@ -78,7 +78,6 @@ and ServerState =
           RequestStats = Map.empty
           LastStatsDumpTime = DateTime.MinValue }
 
-
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
     | [] -> (None, [])
@@ -108,7 +107,6 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-
 type ServerStateEvent =
     | SettingsChange of ServerSettings
     | RootPathChange of string
@@ -130,7 +128,6 @@ type ServerStateEvent =
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PeriodicTimerTick
     | DumpAndResetRequestStats
-
 
 let processFinishRequest postSelf state request =
     request.Semaphore.Dispose()
@@ -188,7 +185,6 @@ let processFinishRequest postSelf state request =
     postSelf ProcessRequestQueue
     newState
 
-
 let processDumpAndResetRequestStats (logger: ILogger) state =
     let formatStats stats =
         let calculateRequestStatsMetrics (name, metrics) =
@@ -238,7 +234,6 @@ let processDumpAndResetRequestStats (logger: ILogger) state =
         RequestStats = Map.empty
         LastStatsDumpTime = DateTime.Now }
 
-
 let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
     | SettingsChange newSettings ->
@@ -257,7 +252,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         return state
 
     | GetDocumentOfTypeForUri(docType, uri, replyChannel) ->
-        let docForUri = uri |> workspaceDocument state.Workspace docType |> Option.map fst
+        let docForUri = uri |> workspaceDocument state.Workspace docType
 
         replyChannel.Reply(docForUri)
 
@@ -446,9 +441,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     { state with
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docAndTypeForUri = docUri |> workspaceDocument state.Workspace AnyDocument
+                let docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
 
-                match docAndTypeForUri with
+                match docForUri with
                 | None ->
                     // could not find document for this enqueued uri
                     logger.LogDebug(
@@ -458,7 +453,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                     return newState
 
-                | Some(doc, _docType) ->
+                | Some doc ->
                     let resolveDocumentDiagnostics () : Task = task {
                         let! semanticModelMaybe = doc.GetSemanticModelAsync()
 

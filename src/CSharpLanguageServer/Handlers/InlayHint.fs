@@ -242,9 +242,7 @@ module InlayHint =
 
     let handle (context: ServerRequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
         let docForUri =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace UserDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with
         | None -> return None |> LspResult.success

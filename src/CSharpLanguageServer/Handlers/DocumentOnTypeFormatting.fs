@@ -51,9 +51,7 @@ module DocumentOnTypeFormatting =
                 None
 
         let docForUri =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace UserDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with
         | None -> return None |> LspResult.success

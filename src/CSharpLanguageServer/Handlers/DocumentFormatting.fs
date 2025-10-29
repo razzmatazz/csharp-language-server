@@ -30,7 +30,6 @@ module DocumentFormatting =
 
         p.TextDocument.Uri
         |> workspaceDocument context.Workspace UserDocument
-        |> Option.map fst
         |> async.Return
         |> Async.bindOption formatDocument
         |> Async.map LspResult.success

@@ -294,9 +294,7 @@ module DocumentSymbol =
                 |> Option.defaultValue false
 
             let docForUri =
-                p.TextDocument.Uri
-                |> workspaceDocument context.Workspace AnyDocument
-                |> Option.map fst
+                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with
             | None -> return None |> LspResult.success

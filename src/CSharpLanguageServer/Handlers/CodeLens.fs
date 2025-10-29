@@ -91,9 +91,7 @@ module CodeLens =
 
     let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
         let docForUri =
-            p.TextDocument.Uri
-            |> workspaceDocument context.Workspace AnyDocument
-            |> Option.map fst
+            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
         match docForUri with
         | None -> return None |> LspResult.success

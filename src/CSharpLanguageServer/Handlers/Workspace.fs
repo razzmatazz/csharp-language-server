@@ -52,7 +52,7 @@ module Workspace =
 
 
     let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
-        let doc = uri |> workspaceDocument context.Workspace UserDocument |> Option.map fst
+        let doc = uri |> workspaceDocument context.Workspace UserDocument
 
         match doc with
         | Some doc ->
@@ -78,7 +78,7 @@ module Workspace =
 
 
     let private removeDocument (context: ServerRequestContext) uri =
-        let doc = uri |> workspaceDocument context.Workspace UserDocument |> Option.map fst
+        let doc = uri |> workspaceDocument context.Workspace UserDocument
 
         match doc with
         | Some existingDoc ->
