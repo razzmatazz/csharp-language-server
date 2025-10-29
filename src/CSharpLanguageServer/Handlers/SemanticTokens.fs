@@ -10,6 +10,8 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module SemanticTokens =
@@ -113,7 +115,8 @@ module SemanticTokens =
         (range: Range option)
         : AsyncLspResult<SemanticTokens option> =
         async {
-            let docMaybe = context.GetUserDocument uri
+            let docMaybe =
+                uri |> workspaceDocument context.Workspace UserDocument |> Option.map fst
 
             match docMaybe with
             | None -> return None |> LspResult.success

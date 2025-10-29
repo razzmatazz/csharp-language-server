@@ -14,6 +14,8 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp.Workspace
+
 
 module SignatureInformation =
     let internal fromMethod (m: IMethodSymbol) =
@@ -56,14 +58,19 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map (uncurry score) |> Seq.sum
 
+
     let provider (_: ClientCapabilities) : SignatureHelpOptions option =
         { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
           WorkDoneProgress = None
           RetriggerCharacters = None }
         |> Some
 
+
     let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
-        let docMaybe = context.GetUserDocument p.TextDocument.Uri
+        let docMaybe =
+            p.TextDocument.Uri
+            |> workspaceDocument context.Workspace UserDocument
+            |> Option.map fst
 
         match docMaybe with
         | None -> return None |> LspResult.success

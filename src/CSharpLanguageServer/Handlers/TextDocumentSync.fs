@@ -86,8 +86,11 @@ module TextDocumentSync =
 
             | None -> Ok() |> async.Return
 
-    let didChange (context: ServerRequestContext) (changeParams: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let docMaybe = context.GetUserDocument changeParams.TextDocument.Uri
+    let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
+        let docMaybe =
+            p.TextDocument.Uri
+            |> workspaceDocument context.Workspace UserDocument
+            |> Option.map fst
 
         match docMaybe with
         | None -> ()
@@ -98,8 +101,7 @@ module TextDocumentSync =
             //logMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
 
             let updatedSourceText =
-                sourceText
-                |> applyLspContentChangesOnRoslynSourceText changeParams.ContentChanges
+                sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
             let updatedDoc = doc.WithText(updatedSourceText)
 
@@ -108,7 +110,7 @@ module TextDocumentSync =
             let updatedSolution = updatedDoc.Project.Solution
 
             context.Emit(SolutionChange updatedSolution)
-            context.Emit(OpenDocAdd(changeParams.TextDocument.Uri, changeParams.TextDocument.Version, DateTime.Now))
+            context.Emit(OpenDocAdd(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
         return Ok()
     }
