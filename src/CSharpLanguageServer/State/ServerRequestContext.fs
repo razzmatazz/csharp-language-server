@@ -8,8 +8,8 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Roslyn.Symbol
-open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
@@ -22,6 +22,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
     member _.RequestId = requestId
     member _.State = state
+    member _.Workspace = state.Workspace
     member _.ClientCapabilities = state.ClientCapabilities
     member _.Solution = solutionMaybe.Value
 
@@ -34,13 +35,11 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
-
     member this.GetUserDocument(u: string) =
-        this.GetDocumentForUriOfType UserDocument u |> Option.map fst
+        u |> workspaceDocument state.Workspace UserDocument |> Option.map fst
 
     member this.GetDocument(u: string) =
-        this.GetDocumentForUriOfType AnyDocument u |> Option.map fst
+        u |> workspaceDocument state.Workspace AnyDocument |> Option.map fst
 
     member _.Emit ev =
         match ev with
@@ -258,7 +257,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                         cancellationToken = ct
                     )
 
-        match this.State.Workspace.Solution with
+        match this.Workspace.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken
@@ -266,7 +265,9 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member this.FindReferences (symbol: ISymbol) (withDefinition: bool) : Async<Microsoft.CodeAnalysis.Location seq> = async {
-        match this.State.Workspace.Solution with
+        let workspaceFolder = this.Workspace.SingletonFolder
+
+        match workspaceFolder.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken

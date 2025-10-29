@@ -10,8 +10,8 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
 
@@ -47,7 +47,10 @@ module TextDocumentSync =
 
 
     let didOpen (context: ServerRequestContext) (openParams: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
-        match context.GetDocumentForUriOfType AnyDocument openParams.TextDocument.Uri with
+        let docAndDocType =
+            openParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+
+        match docAndDocType with
         | Some(doc, docType) ->
             match docType with
             | UserDocument ->
@@ -125,14 +128,18 @@ module TextDocumentSync =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
     let didSave (context: ServerRequestContext) (saveParams: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
-        // we need to add this file to solution if not already
-        let doc = context.GetDocument saveParams.TextDocument.Uri
+        let docAndType =
+            saveParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-        match doc with
-        | Some _ -> Ok() |> async.Return
+        let haveExistingDocForUri = docAndType.IsSome
 
-        | None -> async {
+        match haveExistingDocForUri with
+        | true -> Ok() |> async.Return
+
+        | false -> async {
             let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
+
+            // we need to add this file to solution if not already
             let! newDocMaybe = solutionTryAddDocument docFilePath saveParams.Text.Value context.Solution
 
             match newDocMaybe with

@@ -107,7 +107,7 @@ module Diagnostic =
             let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
                 { Items = Array.empty }
 
-            match context.State.Workspace.Solution, p.PartialResultToken with
+            match context.Workspace.Solution, p.PartialResultToken with
             | None, _ -> return emptyWorkspaceDiagnosticReport |> LspResult.success
 
             | Some solution, None ->
