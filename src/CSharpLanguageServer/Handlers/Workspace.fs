@@ -11,10 +11,11 @@ open Microsoft.CodeAnalysis.Text
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module Workspace =
@@ -25,11 +26,13 @@ module Workspace =
           FileOperations = None }
         |> Some
 
+
     let dynamicRegistrationForDidChangeWatchedFiles (clientCapabilities: ClientCapabilities) =
         clientCapabilities.Workspace
         |> Option.bind _.DidChangeWatchedFiles
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
+
 
     let didChangeWatchedFilesRegistration (clientCapabilities: ClientCapabilities) : Registration option =
         match dynamicRegistrationForDidChangeWatchedFiles clientCapabilities with
@@ -47,8 +50,11 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
+
     let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
-        match context.GetUserDocument uri with
+        let doc = uri |> workspaceDocument context.Workspace UserDocument |> Option.map fst
+
+        match doc with
         | Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
@@ -70,14 +76,18 @@ module Workspace =
             | None -> ()
     }
 
+
     let private removeDocument (context: ServerRequestContext) uri =
-        match context.GetUserDocument uri with
+        let doc = uri |> workspaceDocument context.Workspace UserDocument |> Option.map fst
+
+        match doc with
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             context.Emit(SolutionChange updatedProject.Solution)
             context.Emit(OpenDocRemove uri)
         | None -> ()
+
 
     let didChangeWatchedFiles
         (context: ServerRequestContext)
@@ -106,6 +116,7 @@ module Workspace =
 
             return Ok()
         }
+
 
     let didChangeConfiguration
         (context: ServerRequestContext)

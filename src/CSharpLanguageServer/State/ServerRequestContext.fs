@@ -35,9 +35,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member this.GetUserDocument(u: string) =
-        u |> workspaceDocument state.Workspace UserDocument |> Option.map fst
-
     member _.Emit ev =
         match ev with
         | SolutionChange newSolution -> solutionMaybe <- Some newSolution

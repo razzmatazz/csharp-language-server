@@ -10,6 +10,8 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Document
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module DocumentOnTypeFormatting =
@@ -48,7 +50,12 @@ module DocumentOnTypeFormatting =
             else
                 None
 
-        match context.GetUserDocument p.TextDocument.Uri with
+        let docForUri =
+            p.TextDocument.Uri
+            |> workspaceDocument context.Workspace UserDocument
+            |> Option.map fst
+
+        match docForUri with
         | None -> return None |> LspResult.success
         | Some doc ->
             let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
