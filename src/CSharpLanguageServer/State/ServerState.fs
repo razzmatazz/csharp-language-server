@@ -14,6 +14,7 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
@@ -57,6 +58,7 @@ and ServerState =
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       Solution: Solution option
+      Workspace: LspWorkspace
       OpenDocs: Map<string, ServerOpenDocInfo>
       DecompiledMetadata: Map<string, DecompiledMetadataDocument>
       LastRequestId: int
@@ -74,6 +76,7 @@ and ServerState =
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
           Solution = None
+          Workspace = LspWorkspace.Empty
           OpenDocs = Map.empty
           DecompiledMetadata = Map.empty
           LastRequestId = 0
