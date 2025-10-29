@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Actually ingest InitializeParams.rootPath and .rootUri to determine workspace root:
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/283
 * Add `--diagnose` command option to run basic diagnostics interactively
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/224
 * Fix `textDocument/codeAction` for extracting an interface
