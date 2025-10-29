@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
 
 type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -89,9 +90,12 @@ module CodeLens =
               WorkDoneProgress = None }
 
     let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
-        let docMaybe = context.GetDocument p.TextDocument.Uri
+        let docForUri =
+            p.TextDocument.Uri
+            |> workspaceDocument context.Workspace AnyDocument
+            |> Option.map fst
 
-        match docMaybe with
+        match docForUri with
         | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken

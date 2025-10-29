@@ -21,6 +21,7 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 
 type CSharpCodeActionResolutionData =
@@ -330,7 +331,12 @@ module CodeAction =
         (p: CodeActionParams)
         : AsyncLspResult<TextDocumentCodeActionResult option> =
         async {
-            match context.GetDocument p.TextDocument.Uri with
+            let docForUri =
+                p.TextDocument.Uri
+                |> workspaceDocument context.Workspace AnyDocument
+                |> Option.map fst
+
+            match docForUri with
             | None -> return None |> LspResult.success
             | Some doc ->
                 let! ct = Async.CancellationToken
@@ -400,7 +406,12 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        match context.GetDocument resolutionData.Value.TextDocumentUri with
+        let docForUri =
+            resolutionData.Value.TextDocumentUri
+            |> workspaceDocument context.Workspace AnyDocument
+            |> Option.map fst
+
+        match docForUri with
         | None -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
         | Some doc ->
             let! ct = Async.CancellationToken

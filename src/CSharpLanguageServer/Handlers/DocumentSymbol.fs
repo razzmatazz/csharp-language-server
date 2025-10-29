@@ -12,6 +12,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module DocumentSymbol =
@@ -292,7 +293,12 @@ module DocumentSymbol =
                 |> Option.bind _.HierarchicalDocumentSymbolSupport
                 |> Option.defaultValue false
 
-            match context.GetDocument p.TextDocument.Uri with
+            let docForUri =
+                p.TextDocument.Uri
+                |> workspaceDocument context.Workspace AnyDocument
+                |> Option.map fst
+
+            match docForUri with
             | None -> return None |> LspResult.success
             | Some doc ->
                 let! ct = Async.CancellationToken
