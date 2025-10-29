@@ -12,6 +12,8 @@ open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Lsp.Workspace
+
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Workspace.Solution
@@ -22,8 +24,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     member _.State = state
     member _.ClientCapabilities = state.ClientCapabilities
     member _.Solution = solutionMaybe.Value
-    member _.OpenDocs = state.OpenDocs
-    member _.DecompiledMetadata = state.DecompiledMetadata
 
     member _.WindowShowMessage(m: string) =
         match state.LspClient with
@@ -73,7 +73,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
 
                 let mdDocument, stateChanges =
-                    match Map.tryFind uri state.DecompiledMetadata with
+                    match Map.tryFind uri state.Workspace.SingletonFolder.DecompiledMetadata with
                     | Some value -> (value.Document, [])
                     | None ->
                         let (documentFromMd, text) = documentFromMetadata compilation project l fullName
@@ -286,4 +286,4 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member this.GetDocumentVersion(uri: DocumentUri) : int option =
-        Uri.unescape uri |> this.OpenDocs.TryFind |> Option.map _.Version
+        Uri.unescape uri |> this.State.OpenDocs.TryFind |> Option.map _.Version

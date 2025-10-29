@@ -160,7 +160,7 @@ module Rename =
 
             let! docTextEdit =
                 lspDocChangesFromSolutionDiff ct originalSolution updatedSolution (fun uri ->
-                    context.OpenDocs.TryFind uri |> Option.map _.Version)
+                    context.State.OpenDocs.TryFind uri |> Option.map _.Version)
 
             return
                 WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)

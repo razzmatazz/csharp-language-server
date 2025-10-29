@@ -6,19 +6,20 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 
+
 [<RequireQualifiedAccess>]
 module CSharpMetadata =
     let handle
         (context: ServerRequestContext)
-        (metadataParams: CSharpMetadataParams)
+        (p: CSharpMetadataParams)
         : AsyncLspResult<CSharpMetadataResponse option> =
         async {
-            let uri = metadataParams.TextDocument.Uri
+            let workspaceFolder = context.State.Workspace.SingletonFolder
 
             let metadataMaybe =
-                context.DecompiledMetadata
-                |> Map.tryFind uri
-                |> Option.map (fun x -> x.Metadata)
+                workspaceFolder.DecompiledMetadata
+                |> Map.tryFind p.TextDocument.Uri
+                |> Option.map _.Metadata
 
             return metadataMaybe |> LspResult.success
         }

@@ -9,11 +9,30 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 
 
+type LspWorkspaceDecompiledMetadataDocument =
+    { Metadata: CSharpMetadataInformation
+      Document: Document }
+
+
 type LspWorkspaceFolder =
     { Uri: string
       Name: string option
       RoslynWorkspace: Workspace option
-      Solution: Solution option }
+      Solution: Solution option
+      DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
+
+
+type LspWorkspaceDocumentType =
+    | UserDocument // user Document from solution, on disk
+    | DecompiledDocument // Document decompiled from metadata, readonly
+    | AnyDocument
+
+
+let workspaceFolderWithDecompiledMetadataAdded uri md folder =
+    let newDecompiledMd = Map.add uri md folder.DecompiledMetadata
+
+    { folder with
+        DecompiledMetadata = newDecompiledMd }
 
 
 type LspWorkspace =
@@ -32,7 +51,8 @@ type LspWorkspace =
             { Uri = Directory.GetCurrentDirectory() |> Uri.fromPath
               Name = None
               RoslynWorkspace = None
-              Solution = None }
+              Solution = None
+              DecompiledMetadata = Map.empty }
 
         let updatedFolders =
             this.Folders

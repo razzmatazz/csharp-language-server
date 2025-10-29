@@ -13,6 +13,8 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
