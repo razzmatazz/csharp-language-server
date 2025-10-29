@@ -8,6 +8,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
