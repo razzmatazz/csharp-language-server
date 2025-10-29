@@ -12,6 +12,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -185,7 +186,12 @@ module Completion =
         (p: CompletionParams)
         : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
         async {
-            match context.GetDocument p.TextDocument.Uri with
+            let docForUri =
+                p.TextDocument.Uri
+                |> workspaceDocument context.Workspace AnyDocument
+                |> Option.map fst
+
+            match docForUri with
             | None -> return None |> LspResult.success
             | Some doc ->
                 let! ct = Async.CancellationToken

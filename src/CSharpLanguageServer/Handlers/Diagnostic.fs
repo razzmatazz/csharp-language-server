@@ -9,6 +9,8 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
@@ -36,7 +38,12 @@ module Diagnostic =
                   Items = [||]
                   RelatedDocuments = None }
 
-            match context.GetDocument p.TextDocument.Uri with
+            let docForUri =
+                p.TextDocument.Uri
+                |> workspaceDocument context.Workspace AnyDocument
+                |> Option.map fst
+
+            match docForUri with
             | None -> return emptyReport |> U2.C1 |> LspResult.success
 
             | Some doc ->

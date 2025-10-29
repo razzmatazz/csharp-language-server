@@ -38,9 +38,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     member this.GetUserDocument(u: string) =
         u |> workspaceDocument state.Workspace UserDocument |> Option.map fst
 
-    member this.GetDocument(u: string) =
-        u |> workspaceDocument state.Workspace AnyDocument |> Option.map fst
-
     member _.Emit ev =
         match ev with
         | SolutionChange newSolution -> solutionMaybe <- Some newSolution
@@ -135,7 +132,10 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        match this.GetDocument uri with
+        let docForUri =
+            uri |> workspaceDocument this.Workspace AnyDocument |> Option.map fst
+
+        match docForUri with
         | None -> return None
         | Some doc ->
             let! ct = Async.CancellationToken

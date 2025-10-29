@@ -47,10 +47,10 @@ module TextDocumentSync =
 
 
     let didOpen (context: ServerRequestContext) (openParams: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
-        let docAndDocType =
+        let docAndDocTypeForUri =
             openParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-        match docAndDocType with
+        match docAndDocTypeForUri with
         | Some(doc, docType) ->
             match docType with
             | UserDocument ->
@@ -128,10 +128,10 @@ module TextDocumentSync =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
     let didSave (context: ServerRequestContext) (saveParams: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
-        let docAndType =
+        let docAndTypeForUri =
             saveParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-        let haveExistingDocForUri = docAndType.IsSome
+        let haveExistingDocForUri = docAndTypeForUri.IsSome
 
         match haveExistingDocForUri with
         | true -> Ok() |> async.Return

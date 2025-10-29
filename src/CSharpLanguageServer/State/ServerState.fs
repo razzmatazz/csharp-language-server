@@ -257,9 +257,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         return state
 
     | GetDocumentOfTypeForUri(docType, uri, replyChannel) ->
-        let documentAndTypeMaybe = uri |> workspaceDocument state.Workspace docType
+        let docForUri = uri |> workspaceDocument state.Workspace docType |> Option.map fst
 
-        replyChannel.Reply(documentAndTypeMaybe |> Option.map fst)
+        replyChannel.Reply(docForUri)
 
         return state
 
@@ -446,9 +446,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     { state with
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docAndTypeMaybe = docUri |> workspaceDocument state.Workspace AnyDocument
+                let docAndTypeForUri = docUri |> workspaceDocument state.Workspace AnyDocument
 
-                match docAndTypeMaybe with
+                match docAndTypeForUri with
                 | None ->
                     // could not find document for this enqueued uri
                     logger.LogDebug(
