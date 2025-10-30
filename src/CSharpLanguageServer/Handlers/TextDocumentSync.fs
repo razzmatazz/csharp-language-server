@@ -46,10 +46,9 @@ module TextDocumentSync =
         |> Some
 
 
-    let didOpen (context: ServerRequestContext) (openParams: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
+    let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
         let docAndDocTypeForUri =
-            openParams.TextDocument.Uri
-            |> workspaceDocumentDetails context.Workspace AnyDocument
+            p.TextDocument.Uri |> workspaceDocumentDetails context.Workspace AnyDocument
 
         match docAndDocTypeForUri with
         | Some(doc, docType) ->
@@ -58,27 +57,27 @@ module TextDocumentSync =
                 // we want to load the document in case it has been changed since we have the solution loaded
                 // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
                 // went out of sync with editor
-                let updatedDoc = SourceText.From(openParams.TextDocument.Text) |> doc.WithText
+                let updatedDoc = SourceText.From(p.TextDocument.Text) |> doc.WithText
 
-                context.Emit(OpenDocAdd(openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
-                context.Emit(SolutionChange updatedDoc.Project.Solution)
+                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                context.Emit(WorkspaceFolderSolutionChanged updatedDoc.Project.Solution)
 
                 Ok() |> async.Return
 
             | _ -> Ok() |> async.Return
 
         | None ->
-            let docFilePathMaybe = Util.tryParseFileUri openParams.TextDocument.Uri
+            let docFilePathMaybe = Util.tryParseFileUri p.TextDocument.Uri
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
                 // ok, this document is not in solution, register a new document
-                let! newDocMaybe = solutionTryAddDocument docFilePath openParams.TextDocument.Text context.Solution
+                let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text context.Solution
 
                 match newDocMaybe with
                 | Some newDoc ->
-                    context.Emit(OpenDocAdd(openParams.TextDocument.Uri, openParams.TextDocument.Version, DateTime.Now))
-                    context.Emit(SolutionChange newDoc.Project.Solution)
+                    context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                    context.Emit(WorkspaceFolderSolutionChanged newDoc.Project.Solution)
 
                 | None -> ()
 
@@ -108,14 +107,14 @@ module TextDocumentSync =
 
             let updatedSolution = updatedDoc.Project.Solution
 
-            context.Emit(SolutionChange updatedSolution)
-            context.Emit(OpenDocAdd(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+            context.Emit(WorkspaceFolderSolutionChanged updatedSolution)
+            context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
         return Ok()
     }
 
-    let didClose (context: ServerRequestContext) (closeParams: DidCloseTextDocumentParams) : Async<LspResult<unit>> =
-        context.Emit(OpenDocRemove closeParams.TextDocument.Uri)
+    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> =
+        context.Emit(DocumentClosed p.TextDocument.Uri)
         Ok() |> async.Return
 
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
@@ -128,9 +127,9 @@ module TextDocumentSync =
         : AsyncLspResult<TextEdit[] option> =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
-    let didSave (context: ServerRequestContext) (saveParams: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
+    let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
         let docAndTypeForUri =
-            saveParams.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
         let haveExistingDocForUri = docAndTypeForUri.IsSome
 
@@ -138,15 +137,15 @@ module TextDocumentSync =
         | true -> Ok() |> async.Return
 
         | false -> async {
-            let docFilePath = Util.parseFileUri saveParams.TextDocument.Uri
+            let docFilePath = Util.parseFileUri p.TextDocument.Uri
 
             // we need to add this file to solution if not already
-            let! newDocMaybe = solutionTryAddDocument docFilePath saveParams.Text.Value context.Solution
+            let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value context.Solution
 
             match newDocMaybe with
             | Some newDoc ->
-                context.Emit(OpenDocTouch(saveParams.TextDocument.Uri, DateTime.Now))
-                context.Emit(SolutionChange newDoc.Project.Solution)
+                context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
+                context.Emit(WorkspaceFolderSolutionChanged newDoc.Project.Solution)
 
             | None -> ()
 

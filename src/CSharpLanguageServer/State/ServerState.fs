@@ -57,7 +57,7 @@ and ServerState =
       LastRequestId: int
       PendingRequests: ServerRequest list
       RunningRequests: Map<int, ServerRequest>
-      SolutionReloadPending: DateTime option
+      WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
       RequestStats: Map<string, RequestMetrics>
@@ -72,7 +72,7 @@ and ServerState =
           LastRequestId = 0
           PendingRequests = []
           RunningRequests = Map.empty
-          SolutionReloadPending = None
+          WorkspaceReloadPending = None
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
           RequestStats = Map.empty
@@ -112,16 +112,16 @@ type ServerStateEvent =
     | RootPathChange of string
     | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities
-    | SolutionChange of Solution
+    | WorkspaceFolderSolutionChanged of Solution
     | DecompiledMetadataAdd of string * LspWorkspaceDecompiledMetadataDocument
-    | OpenDocAdd of string * int * DateTime
-    | OpenDocRemove of string
-    | OpenDocTouch of string * DateTime
+    | DocumentOpened of string * int * DateTime
+    | DocumentClosed of string
+    | DocumentTouched of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
     | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
-    | SolutionReloadRequest of TimeSpan
+    | WorkspaceReloadRequested of TimeSpan
     | PushDiagnosticsDocumentBacklogUpdate
     | PushDiagnosticsProcessPendingDocuments
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
@@ -242,7 +242,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
-            postSelf (SolutionReloadRequest(TimeSpan.FromMilliseconds(250)))
+            postSelf (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(250)))
 
         return newState
 
@@ -329,7 +329,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | ClientCapabilityChange cc -> return { state with ClientCapabilities = cc }
 
-    | SolutionChange s ->
+    | WorkspaceFolderSolutionChanged s ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         return
@@ -344,14 +344,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return updatedState
 
-    | OpenDocAdd(doc, ver, timestamp) ->
+    | DocumentOpened(uri, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = { Version = ver; Touched = timestamp }
-        let newOpenDocs = state.OpenDocs |> Map.add doc openDocInfo
+        let newOpenDocs = state.OpenDocs |> Map.add uri openDocInfo
         return { state with OpenDocs = newOpenDocs }
 
-    | OpenDocRemove uri ->
+    | DocumentClosed uri ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         let newOpenDocVersions = state.OpenDocs |> Map.remove uri
@@ -360,7 +360,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             { state with
                 OpenDocs = newOpenDocVersions }
 
-    | OpenDocTouch(uri, timestamp) ->
+    | DocumentTouched(uri, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = state.OpenDocs |> Map.tryFind uri
@@ -375,13 +375,13 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                 { state with
                     OpenDocs = newOpenDocVersions }
 
-    | SolutionReloadRequest reloadNoLaterThanIn ->
+    | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
         // can buffer many incoming requests at once
         let newSolutionReloadDeadline =
             let suggestedDeadline = DateTime.Now + reloadNoLaterThanIn
 
-            match state.SolutionReloadPending with
+            match state.WorkspaceReloadPending with
             | Some currentDeadline ->
                 if (suggestedDeadline < currentDeadline) then
                     suggestedDeadline
@@ -391,7 +391,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return
             { state with
-                SolutionReloadPending = newSolutionReloadDeadline |> Some }
+                WorkspaceReloadPending = newSolutionReloadDeadline |> Some }
 
     | PushDiagnosticsDocumentBacklogUpdate ->
         // here we build new backlog for background diagnostics processing
@@ -514,7 +514,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             postSelf DumpAndResetRequestStats
 
         let solutionReloadDeadline =
-            state.SolutionReloadPending |> Option.defaultValue (DateTime.Now.AddDays(1))
+            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays(1))
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
@@ -527,7 +527,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             return
                 { state with
                     Workspace = state.Workspace.WithSolution(newSolution)
-                    SolutionReloadPending = None }
+                    WorkspaceReloadPending = None }
 
         | false -> return state
 
