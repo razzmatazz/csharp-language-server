@@ -19,6 +19,13 @@ type LspWorkspaceFolder =
       Solution: Solution option
       DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
 
+    static member Empty =
+        { Uri = Directory.GetCurrentDirectory() |> Uri.fromPath
+          Name = None
+          RoslynWorkspace = None
+          Solution = None
+          DecompiledMetadata = Map.empty }
+
 type LspWorkspaceDocumentType =
     | UserDocument // user Document from solution, on disk
     | DecompiledDocument // Document decompiled from metadata, readonly
@@ -30,10 +37,13 @@ let workspaceFolderWithDecompiledMetadataAdded uri md folder =
     { folder with
         DecompiledMetadata = newDecompiledMd }
 
-type LspWorkspace =
-    { Folders: LspWorkspaceFolder list }
+type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
-    static member Empty = { Folders = [] }
+type LspWorkspace =
+    { Folders: LspWorkspaceFolder list
+      OpenDocs: Map<string, LspWorkspaceOpenDocInfo> }
+
+    static member Empty = { Folders = []; OpenDocs = Map.empty }
 
     member this.SingletonFolder = this.Folders |> Seq.exactlyOne
 
@@ -42,17 +52,10 @@ type LspWorkspace =
     member this.Solution = this.Folders |> Seq.tryExactlyOne |> Option.bind _.Solution
 
     member this.WithSingletonFolderUpdated(update: LspWorkspaceFolder -> LspWorkspaceFolder) =
-        let emptyFolder =
-            { Uri = Directory.GetCurrentDirectory() |> Uri.fromPath
-              Name = None
-              RoslynWorkspace = None
-              Solution = None
-              DecompiledMetadata = Map.empty }
-
         let updatedFolders =
             this.Folders
             |> Seq.tryExactlyOne
-            |> Option.defaultValue emptyFolder
+            |> Option.defaultValue LspWorkspaceFolder.Empty
             |> update
             |> List.singleton
 

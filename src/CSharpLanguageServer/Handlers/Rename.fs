@@ -164,9 +164,10 @@ module Rename =
                 )
                 |> Async.AwaitTask
 
-            let! docTextEdit =
-                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution (fun uri ->
-                    context.State.OpenDocs.TryFind uri |> Option.map _.Version)
+            let documentVersionForUri =
+                context.Workspace.OpenDocs.TryFind >> Option.map _.Version
+
+            let! docTextEdit = lspDocChangesFromSolutionDiff ct originalSolution updatedSolution documentVersionForUri
 
             return
                 WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)

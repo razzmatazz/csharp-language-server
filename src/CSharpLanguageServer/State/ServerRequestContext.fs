@@ -283,4 +283,4 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     }
 
     member this.GetDocumentVersion(uri: DocumentUri) : int option =
-        Uri.unescape uri |> this.State.OpenDocs.TryFind |> Option.map _.Version
+        Uri.unescape uri |> this.Workspace.OpenDocs.TryFind |> Option.map _.Version

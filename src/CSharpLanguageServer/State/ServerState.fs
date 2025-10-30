@@ -22,8 +22,6 @@ type ServerRequestMode =
     | ReadOnly
     | ReadWrite
 
-type ServerOpenDocInfo = { Version: int; Touched: DateTime }
-
 type RequestMetrics =
     { Count: int
       TotalDuration: TimeSpan
@@ -53,7 +51,6 @@ and ServerState =
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       Workspace: LspWorkspace
-      OpenDocs: Map<string, ServerOpenDocInfo>
       LastRequestId: int
       PendingRequests: ServerRequest list
       RunningRequests: Map<int, ServerRequest>
@@ -68,7 +65,6 @@ and ServerState =
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
           Workspace = LspWorkspace.Empty
-          OpenDocs = Map.empty
           LastRequestId = 0
           PendingRequests = []
           RunningRequests = Map.empty
@@ -348,32 +344,35 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = { Version = ver; Touched = timestamp }
-        let newOpenDocs = state.OpenDocs |> Map.add uri openDocInfo
-        return { state with OpenDocs = newOpenDocs }
+        let newOpenDocs = state.Workspace.OpenDocs |> Map.add uri openDocInfo
+
+        return
+            { state with
+                Workspace.OpenDocs = newOpenDocs }
 
     | DocumentClosed uri ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
-        let newOpenDocVersions = state.OpenDocs |> Map.remove uri
+        let newOpenDocVersions = state.Workspace.OpenDocs |> Map.remove uri
 
         return
             { state with
-                OpenDocs = newOpenDocVersions }
+                Workspace.OpenDocs = newOpenDocVersions }
 
     | DocumentTouched(uri, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = state.OpenDocs |> Map.tryFind uri
+        let openDocInfo = state.Workspace.OpenDocs |> Map.tryFind uri
 
         match openDocInfo with
         | None -> return state
         | Some openDocInfo ->
             let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
-            let newOpenDocVersions = state.OpenDocs |> Map.add uri updatedOpenDocInfo
+            let newOpenDocVersions = state.Workspace.OpenDocs |> Map.add uri updatedOpenDocInfo
 
             return
                 { state with
-                    OpenDocs = newOpenDocVersions }
+                    Workspace.OpenDocs = newOpenDocVersions }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
@@ -398,7 +397,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         // which will consider documents by their last modification date
         // for processing first
         let newBacklog =
-            state.OpenDocs
+            state.Workspace.OpenDocs
             |> Seq.sortByDescending (fun kv -> kv.Value.Touched)
             |> Seq.map (fun kv -> kv.Key)
             |> List.ofSeq
