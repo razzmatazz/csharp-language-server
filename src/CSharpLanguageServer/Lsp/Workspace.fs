@@ -47,8 +47,6 @@ type LspWorkspace =
 
     member this.SingletonFolder = this.Folders |> Seq.exactlyOne
 
-    member this.RootPath = this.Folders |> Seq.exactlyOne |> _.Uri |> Uri.toPath
-
     member this.Solution = this.Folders |> Seq.tryExactlyOne |> Option.bind _.Solution
 
     member this.WithSingletonFolderUpdated(update: LspWorkspaceFolder -> LspWorkspaceFolder) =
