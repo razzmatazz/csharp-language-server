@@ -8,22 +8,19 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Roslyn.Symbol
-open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Logging
+
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
-    let mutable solutionMaybe = state.Solution
-
-    let logger = Logging.getLoggerByName "ServerRequestContext"
+    let mutable solutionMaybe = state.Workspace.Solution
 
     member _.RequestId = requestId
     member _.State = state
+    member _.Workspace = state.Workspace
     member _.ClientCapabilities = state.ClientCapabilities
     member _.Solution = solutionMaybe.Value
-    member _.OpenDocs = state.OpenDocs
-    member _.DecompiledMetadata = state.DecompiledMetadata
 
     member _.WindowShowMessage(m: string) =
         match state.LspClient with
@@ -34,17 +31,9 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member this.GetDocumentForUriOfType = getDocumentForUriOfType this.State
-
-    member this.GetUserDocument(u: string) =
-        this.GetDocumentForUriOfType UserDocument u |> Option.map fst
-
-    member this.GetDocument(u: string) =
-        this.GetDocumentForUriOfType AnyDocument u |> Option.map fst
-
     member _.Emit ev =
         match ev with
-        | SolutionChange newSolution -> solutionMaybe <- Some newSolution
+        | WorkspaceFolderSolutionChanged newSolution -> solutionMaybe <- Some newSolution
         | _ -> ()
 
         emitServerEvent ev
@@ -73,7 +62,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
 
                 let mdDocument, stateChanges =
-                    match Map.tryFind uri state.DecompiledMetadata with
+                    match Map.tryFind uri state.Workspace.SingletonFolder.DecompiledMetadata with
                     | Some value -> (value.Document, [])
                     | None ->
                         let (documentFromMd, text) = documentFromMetadata compilation project l fullName
@@ -136,7 +125,9 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         }
 
     member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        match this.GetDocument uri with
+        let docForUri = uri |> workspaceDocument this.Workspace AnyDocument
+
+        match docForUri with
         | None -> return None
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -150,7 +141,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         this.FindSymbol' uri pos |> Async.map (Option.map (fun (sym, _, _) -> sym))
 
     member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -165,7 +156,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         (transitive: bool)
         : Async<INamedTypeSymbol seq> =
         async {
-            match state.Solution with
+            match state.Workspace.Solution with
             | None -> return []
             | Some currentSolution ->
                 let! ct = Async.CancellationToken
@@ -175,19 +166,8 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     |> Async.AwaitTask
         }
 
-    member __.FindImplementations(symbol: ISymbol) : Async<ISymbol seq> = async {
-        match state.Solution with
-        | None -> return []
-        | Some currentSolution ->
-            let! ct = Async.CancellationToken
-
-            return!
-                SymbolFinder.FindImplementationsAsync(symbol, currentSolution, cancellationToken = ct)
-                |> Async.AwaitTask
-    }
-
     member __.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -210,7 +190,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         this._FindDerivedInterfaces symbol transitive
 
     member __.FindCallers(symbol: ISymbol) : Async<SymbolCallerInfo seq> = async {
-        match state.Solution with
+        match state.Workspace.Solution with
         | None -> return []
         | Some currentSolution ->
             let! ct = Async.CancellationToken
@@ -258,32 +238,9 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                         cancellationToken = ct
                     )
 
-        match this.State.Solution with
+        match this.Workspace.Solution with
         | None -> return []
         | Some solution ->
             let! ct = Async.CancellationToken
             return! findTask ct solution |> Async.AwaitTask
     }
-
-    member this.FindReferences (symbol: ISymbol) (withDefinition: bool) : Async<Microsoft.CodeAnalysis.Location seq> = async {
-        match this.State.Solution with
-        | None -> return []
-        | Some solution ->
-            let! ct = Async.CancellationToken
-
-            let locationsFromReferencedSym (r: ReferencedSymbol) =
-                let locations = r.Locations |> Seq.map _.Location
-
-                match withDefinition with
-                | true -> locations |> Seq.append r.Definition.Locations
-                | false -> locations
-
-            let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
-                |> Async.AwaitTask
-
-            return refs |> Seq.collect locationsFromReferencedSym
-    }
-
-    member this.GetDocumentVersion(uri: DocumentUri) : int option =
-        Uri.unescape uri |> this.OpenDocs.TryFind |> Option.map _.Version

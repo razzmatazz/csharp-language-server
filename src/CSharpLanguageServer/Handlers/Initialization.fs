@@ -69,28 +69,22 @@ module Initialization =
                 p.WorkspaceFolders
             )
 
-            // TODO use p.WorkspaceFolders
-            let rootPath, rootPathSource =
+            let workspaceFoldersFallbackUri: DocumentUri =
                 p.RootUri
-                |> Option.map (fun rootUri -> (Uri.toPath rootUri, "InitializeParams.rootUri"))
-                |> Option.orElse (
-                    p.RootPath
-                    |> Option.map (fun rootPath -> (rootPath, "InitializeParams.rootPath"))
-                )
-                |> Option.defaultValue (Directory.GetCurrentDirectory(), "Process CWD")
+                |> Option.orElse (p.RootPath |> Option.map Uri.fromPath)
+                |> Option.defaultValue (Directory.GetCurrentDirectory() |> Uri.fromPath)
 
-            do!
-                windowShowMessage (
-                    sprintf "csharp-ls: will use \"%s\" (%s) as workspace root path" rootPath rootPathSource
-                )
+            let workspaceFolders =
+                p.WorkspaceFolders
+                |> Option.defaultValue Array.empty
+                |> Seq.append
+                    [ { Uri = workspaceFoldersFallbackUri
+                        Name = "root" } ]
+                |> List.ofSeq
 
-            logger.LogDebug(
-                "handleInitialize: using rootPath \"{rootPath}\" from {rootPathSource}",
-                rootPath,
-                rootPathSource
-            )
+            logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 
-            context.Emit(RootPathChange rootPath)
+            context.Emit(WorkspaceConfigurationChanged workspaceFolders)
 
             // setup timer so actors get period ticks
             setupTimer ()
@@ -183,10 +177,9 @@ module Initialization =
                 )
 
             //
-            // start loading the solution
+            // start loading workspace
             //
-            logger.LogDebug("handleInitialized: post SolutionReloadRequest")
-            stateActor.Post(SolutionReloadRequest(TimeSpan.FromMilliseconds(100)))
+            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(100)))
 
             logger.LogDebug("handleInitialized: Ok")
 

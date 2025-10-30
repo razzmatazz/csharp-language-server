@@ -1,7 +1,6 @@
 module CSharpLanguageServer.State.ServerState
 
 open System
-open System.IO
 open System.Threading
 open System.Threading.Tasks
 
@@ -13,19 +12,13 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
-open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
-
-type DecompiledMetadataDocument =
-    { Metadata: CSharpMetadataInformation
-      Document: Document }
 
 type ServerRequestMode =
     | ReadOnly
     | ReadWrite
-
-type ServerOpenDocInfo = { Version: int; Touched: DateTime }
 
 type RequestMetrics =
     { Count: int
@@ -53,16 +46,13 @@ type ServerRequest =
 
 and ServerState =
     { Settings: ServerSettings
-      RootPath: string
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
-      Solution: Solution option
-      OpenDocs: Map<string, ServerOpenDocInfo>
-      DecompiledMetadata: Map<string, DecompiledMetadataDocument>
+      Workspace: LspWorkspace
       LastRequestId: int
       PendingRequests: ServerRequest list
       RunningRequests: Map<int, ServerRequest>
-      SolutionReloadPending: DateTime option
+      WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
       RequestStats: Map<string, RequestMetrics>
@@ -70,21 +60,17 @@ and ServerState =
 
     static member Empty =
         { Settings = ServerSettings.Default
-          RootPath = Directory.GetCurrentDirectory()
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
-          Solution = None
-          OpenDocs = Map.empty
-          DecompiledMetadata = Map.empty
+          Workspace = LspWorkspace.Empty
           LastRequestId = 0
           PendingRequests = []
           RunningRequests = Map.empty
-          SolutionReloadPending = None
+          WorkspaceReloadPending = None
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
           RequestStats = Map.empty
           LastStatsDumpTime = DateTime.MinValue }
-
 
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
@@ -115,61 +101,26 @@ let pullNextRequestMaybe requestQueue =
 
         (Some nextRequest, queueRemainder)
 
-type ServerDocumentType =
-    | UserDocument // user Document from solution, on disk
-    | DecompiledDocument // Document decompiled from metadata, readonly
-    | AnyDocument
-
-
 type ServerStateEvent =
-    | SettingsChange of ServerSettings
-    | RootPathChange of string
-    | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities
-    | SolutionChange of Solution
-    | DecompiledMetadataAdd of string * DecompiledMetadataDocument
-    | OpenDocAdd of string * int * DateTime
-    | OpenDocRemove of string
-    | OpenDocTouch of string * DateTime
-    | GetState of AsyncReplyChannel<ServerState>
-    | GetDocumentOfTypeForUri of ServerDocumentType * string * AsyncReplyChannel<Document option>
-    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
-    | FinishRequest of int
-    | ProcessRequestQueue
-    | SolutionReloadRequest of TimeSpan
-    | PushDiagnosticsDocumentBacklogUpdate
-    | PushDiagnosticsProcessPendingDocuments
-    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
-    | PeriodicTimerTick
+    | ClientChange of ILspClient option
+    | DecompiledMetadataAdd of string * LspWorkspaceDecompiledMetadataDocument
+    | DocumentClosed of string
+    | DocumentOpened of string * int * DateTime
+    | DocumentTouched of string * DateTime
     | DumpAndResetRequestStats
-
-
-let getDocumentForUriOfType state docType (u: string) =
-    let uri = Uri(u.Replace("%3A", ":", true, null))
-
-    match state.Solution with
-    | Some solution ->
-        let matchingUserDocuments =
-            solution.Projects
-            |> Seq.collect (fun p -> p.Documents)
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-            |> List.ofSeq
-
-        let matchingUserDocumentMaybe =
-            match matchingUserDocuments with
-            | [ d ] -> Some(d, UserDocument)
-            | _ -> None
-
-        let matchingDecompiledDocumentMaybe =
-            Map.tryFind u state.DecompiledMetadata
-            |> Option.map (fun x -> (x.Document, DecompiledDocument))
-
-        match docType with
-        | UserDocument -> matchingUserDocumentMaybe
-        | DecompiledDocument -> matchingDecompiledDocumentMaybe
-        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-    | None -> None
-
+    | FinishRequest of int
+    | GetState of AsyncReplyChannel<ServerState>
+    | PeriodicTimerTick
+    | ProcessRequestQueue
+    | PushDiagnosticsDocumentBacklogUpdate
+    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
+    | PushDiagnosticsProcessPendingDocuments
+    | SettingsChange of ServerSettings
+    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceFolderSolutionChanged of Solution
+    | WorkspaceReloadRequested of TimeSpan
 
 let processFinishRequest postSelf state request =
     request.Semaphore.Dispose()
@@ -227,7 +178,6 @@ let processFinishRequest postSelf state request =
     postSelf ProcessRequestQueue
     newState
 
-
 let processDumpAndResetRequestStats (logger: ILogger) state =
     let formatStats stats =
         let calculateRequestStatsMetrics (name, metrics) =
@@ -277,7 +227,6 @@ let processDumpAndResetRequestStats (logger: ILogger) state =
         RequestStats = Map.empty
         LastStatsDumpTime = DateTime.Now }
 
-
 let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
     match msg with
     | SettingsChange newSettings ->
@@ -287,18 +236,12 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
-            postSelf (SolutionReloadRequest(TimeSpan.FromMilliseconds(250)))
+            postSelf (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(250)))
 
         return newState
 
     | GetState replyChannel ->
         replyChannel.Reply(state)
-        return state
-
-    | GetDocumentOfTypeForUri(docType, uri, replyChannel) ->
-        let documentAndTypeMaybe = getDocumentForUriOfType state docType uri
-        replyChannel.Reply(documentAndTypeMaybe |> Option.map fst)
-
         return state
 
     | StartRequest(name, requestMode, requestPriority, replyChannel) ->
@@ -371,61 +314,70 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                     newState
 
-    | RootPathChange rootPath -> return { state with RootPath = rootPath }
+    | WorkspaceConfigurationChanged workspaceFolders ->
+        let newWorkspace = workspaceFrom workspaceFolders
+        return { state with Workspace = newWorkspace }
 
     | ClientChange lspClient -> return { state with LspClient = lspClient }
 
     | ClientCapabilityChange cc -> return { state with ClientCapabilities = cc }
 
-    | SolutionChange s ->
+    | WorkspaceFolderSolutionChanged s ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
-        return { state with Solution = Some s }
-
-    | DecompiledMetadataAdd(uri, md) ->
-        let newDecompiledMd = Map.add uri md state.DecompiledMetadata
 
         return
             { state with
-                DecompiledMetadata = newDecompiledMd }
+                Workspace = state.Workspace.WithSolution(Some s) }
 
-    | OpenDocAdd(doc, ver, timestamp) ->
+    | DecompiledMetadataAdd(uri, md) ->
+        let updatedState =
+            { state with
+                Workspace =
+                    state.Workspace.WithSingletonFolderUpdated(workspaceFolderWithDecompiledMetadataAdded uri md) }
+
+        return updatedState
+
+    | DocumentOpened(uri, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = { Version = ver; Touched = timestamp }
-        let newOpenDocs = state.OpenDocs |> Map.add doc openDocInfo
-        return { state with OpenDocs = newOpenDocs }
-
-    | OpenDocRemove uri ->
-        postSelf PushDiagnosticsDocumentBacklogUpdate
-
-        let newOpenDocVersions = state.OpenDocs |> Map.remove uri
+        let newOpenDocs = state.Workspace.OpenDocs |> Map.add uri openDocInfo
 
         return
             { state with
-                OpenDocs = newOpenDocVersions }
+                Workspace.OpenDocs = newOpenDocs }
 
-    | OpenDocTouch(uri, timestamp) ->
+    | DocumentClosed uri ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = state.OpenDocs |> Map.tryFind uri
+        let newOpenDocVersions = state.Workspace.OpenDocs |> Map.remove uri
+
+        return
+            { state with
+                Workspace.OpenDocs = newOpenDocVersions }
+
+    | DocumentTouched(uri, timestamp) ->
+        postSelf PushDiagnosticsDocumentBacklogUpdate
+
+        let openDocInfo = state.Workspace.OpenDocs |> Map.tryFind uri
 
         match openDocInfo with
         | None -> return state
         | Some openDocInfo ->
             let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
-            let newOpenDocVersions = state.OpenDocs |> Map.add uri updatedOpenDocInfo
+            let newOpenDocVersions = state.Workspace.OpenDocs |> Map.add uri updatedOpenDocInfo
 
             return
                 { state with
-                    OpenDocs = newOpenDocVersions }
+                    Workspace.OpenDocs = newOpenDocVersions }
 
-    | SolutionReloadRequest reloadNoLaterThanIn ->
+    | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
         // can buffer many incoming requests at once
         let newSolutionReloadDeadline =
             let suggestedDeadline = DateTime.Now + reloadNoLaterThanIn
 
-            match state.SolutionReloadPending with
+            match state.WorkspaceReloadPending with
             | Some currentDeadline ->
                 if (suggestedDeadline < currentDeadline) then
                     suggestedDeadline
@@ -435,14 +387,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return
             { state with
-                SolutionReloadPending = newSolutionReloadDeadline |> Some }
+                WorkspaceReloadPending = newSolutionReloadDeadline |> Some }
 
     | PushDiagnosticsDocumentBacklogUpdate ->
         // here we build new backlog for background diagnostics processing
         // which will consider documents by their last modification date
         // for processing first
         let newBacklog =
-            state.OpenDocs
+            state.Workspace.OpenDocs
             |> Seq.sortByDescending (fun kv -> kv.Value.Touched)
             |> Seq.map (fun kv -> kv.Key)
             |> List.ofSeq
@@ -477,9 +429,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     { state with
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docAndTypeMaybe = docUri |> getDocumentForUriOfType state AnyDocument
+                let docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
 
-                match docAndTypeMaybe with
+                match docForUri with
                 | None ->
                     // could not find document for this enqueued uri
                     logger.LogDebug(
@@ -489,7 +441,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                     return newState
 
-                | Some(doc, _docType) ->
+                | Some doc ->
                     let resolveDocumentDiagnostics () : Task = task {
                         let! semanticModelMaybe = doc.GetSemanticModelAsync()
 
@@ -558,17 +510,22 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             postSelf DumpAndResetRequestStats
 
         let solutionReloadDeadline =
-            state.SolutionReloadPending |> Option.defaultValue (DateTime.Now.AddDays(1))
+            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays(1))
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
+            let workspaceFolder = state.Workspace.SingletonFolder
+
             let! newSolution =
-                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath state.RootPath
+                solutionLoadSolutionWithPathOrOnCwd
+                    state.LspClient.Value
+                    state.Settings.SolutionPath
+                    (workspaceFolder.Uri |> Uri.toPath)
 
             return
                 { state with
-                    Solution = newSolution
-                    SolutionReloadPending = None }
+                    Workspace = state.Workspace.WithSolution(newSolution)
+                    WorkspaceReloadPending = None }
 
         | false -> return state
 

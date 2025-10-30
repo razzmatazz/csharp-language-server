@@ -7,9 +7,10 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Document
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
-
 module DocumentFormatting =
     let provider (_cc: ClientCapabilities) : U2<bool, DocumentFormattingOptions> option = Some(U2.C1 true)
 
@@ -27,7 +28,8 @@ module DocumentFormatting =
             |> context.State.Settings.GetEffectiveFormattingOptions
             |> formatDocument
 
-        context.GetUserDocument p.TextDocument.Uri
+        p.TextDocument.Uri
+        |> workspaceDocument context.Workspace UserDocument
         |> async.Return
         |> Async.bindOption formatDocument
         |> Async.map LspResult.success

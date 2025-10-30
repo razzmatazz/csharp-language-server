@@ -13,6 +13,8 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module InlayHint =
@@ -239,7 +241,10 @@ module InlayHint =
         Some(U3.C2 inlayHintOptions)
 
     let handle (context: ServerRequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
-        match context.GetUserDocument p.TextDocument.Uri with
+        let docForUri =
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+
+        match docForUri with
         | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken

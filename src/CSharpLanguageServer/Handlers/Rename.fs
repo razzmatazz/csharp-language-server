@@ -14,6 +14,8 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
+
 
 [<RequireQualifiedAccess>]
 module Rename =
@@ -86,7 +88,11 @@ module Rename =
         | false -> Some(U2.C1 true)
 
     let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
-        match context.GetUserDocument p.TextDocument.Uri with
+
+        let docForUri =
+            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+
+        match docForUri with
         | None -> return None |> LspResult.success
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -158,9 +164,13 @@ module Rename =
                 )
                 |> Async.AwaitTask
 
+
             let! docTextEdit =
-                lspDocChangesFromSolutionDiff ct originalSolution updatedSolution (fun uri ->
-                    context.OpenDocs.TryFind uri |> Option.map _.Version)
+                lspDocChangesFromSolutionDiff
+                    ct
+                    originalSolution
+                    updatedSolution
+                    (workspaceDocumentVersion context.Workspace)
 
             return
                 WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)

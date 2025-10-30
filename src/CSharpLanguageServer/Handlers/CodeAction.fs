@@ -21,6 +21,7 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 
 type CSharpCodeActionResolutionData =
@@ -330,7 +331,10 @@ module CodeAction =
         (p: CodeActionParams)
         : AsyncLspResult<TextDocumentCodeActionResult option> =
         async {
-            match context.GetDocument p.TextDocument.Uri with
+            let docForUri =
+                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+
+            match docForUri with
             | None -> return None |> LspResult.success
             | Some doc ->
                 let! ct = Async.CancellationToken
@@ -376,7 +380,7 @@ module CodeAction =
                             let! maybeLspCa =
                                 roslynCodeActionToResolvedLspCodeAction
                                     doc.Project.Solution
-                                    context.GetDocumentVersion
+                                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
                                     doc
                                     ct
                                     ca
@@ -400,7 +404,11 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        match context.GetDocument resolutionData.Value.TextDocumentUri with
+        let docForUri =
+            resolutionData.Value.TextDocumentUri
+            |> workspaceDocument context.Workspace AnyDocument
+
+        match docForUri with
         | None -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -414,7 +422,11 @@ module CodeAction =
                 roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = p.Title)
 
             let toResolvedLspCodeAction =
-                roslynCodeActionToResolvedLspCodeAction doc.Project.Solution context.GetDocumentVersion doc ct
+                roslynCodeActionToResolvedLspCodeAction
+                    doc.Project.Solution
+                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
+                    doc
+                    ct
 
             let! lspCodeAction =
                 match selectedCodeAction with
