@@ -11,7 +11,6 @@ open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Logging
 
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =

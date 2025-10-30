@@ -86,11 +86,16 @@ let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
     { LspWorkspace.Empty with
         Folders = folders }
 
+let workspaceFolder (workspace: LspWorkspace) _uri = Some workspace.SingletonFolder
+
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
-    match workspace.Solution with
-    | Some solution ->
+    let wf = workspaceFolder workspace uri
+    let solution = wf |> Option.bind _.Solution
+
+    match wf, solution with
+    | Some wf, Some solution ->
         let matchingUserDocuments =
             solution.Projects
             |> Seq.collect (fun p -> p.Documents)
@@ -103,7 +108,7 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
             | _ -> None
 
         let matchingDecompiledDocumentMaybe =
-            workspace.SingletonFolder.DecompiledMetadata
+            wf.DecompiledMetadata
             |> Map.tryFind u
             |> Option.map (fun x -> x.Document, DecompiledDocument)
 
@@ -111,7 +116,8 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
         | UserDocument -> matchingUserDocumentMaybe
         | DecompiledDocument -> matchingDecompiledDocumentMaybe
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-    | None -> None
+
+    | _, _ -> None
 
 let workspaceDocument workspace docType u =
     workspaceDocumentDetails workspace docType u |> Option.map fst
