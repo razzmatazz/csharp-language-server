@@ -12,13 +12,10 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Lsp.Workspace
 
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Workspace.Solution
-
-    let logger = Logging.getLoggerByName "ServerRequestContext"
 
     member _.RequestId = requestId
     member _.State = state
@@ -281,6 +278,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
             return refs |> Seq.collect locationsFromReferencedSym
     }
-
-    member this.GetDocumentVersion(uri: DocumentUri) : int option =
-        Uri.unescape uri |> this.Workspace.OpenDocs.TryFind |> Option.map _.Version
