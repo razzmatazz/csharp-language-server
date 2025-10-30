@@ -118,7 +118,6 @@ type ServerStateEvent =
     | OpenDocRemove of string
     | OpenDocTouch of string * DateTime
     | GetState of AsyncReplyChannel<ServerState>
-    | GetDocumentOfTypeForUri of LspWorkspaceDocumentType * string * AsyncReplyChannel<Document option>
     | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | FinishRequest of int
     | ProcessRequestQueue
@@ -249,13 +248,6 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | GetState replyChannel ->
         replyChannel.Reply(state)
-        return state
-
-    | GetDocumentOfTypeForUri(docType, uri, replyChannel) ->
-        let docForUri = uri |> workspaceDocument state.Workspace docType
-
-        replyChannel.Reply(docForUri)
-
         return state
 
     | StartRequest(name, requestMode, requestPriority, replyChannel) ->
