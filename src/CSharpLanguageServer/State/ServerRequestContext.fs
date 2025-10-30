@@ -255,25 +255,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             let! ct = Async.CancellationToken
             return! findTask ct solution |> Async.AwaitTask
     }
-
-    member this.FindReferences (symbol: ISymbol) (withDefinition: bool) : Async<Microsoft.CodeAnalysis.Location seq> = async {
-        let workspaceFolder = this.Workspace.SingletonFolder
-
-        match workspaceFolder.Solution with
-        | None -> return []
-        | Some solution ->
-            let! ct = Async.CancellationToken
-
-            let locationsFromReferencedSym (r: ReferencedSymbol) =
-                let locations = r.Locations |> Seq.map _.Location
-
-                match withDefinition with
-                | true -> locations |> Seq.append r.Definition.Locations
-                | false -> locations
-
-            let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
-                |> Async.AwaitTask
-
-            return refs |> Seq.collect locationsFromReferencedSym
-    }

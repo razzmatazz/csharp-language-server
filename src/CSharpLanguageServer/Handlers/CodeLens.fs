@@ -4,6 +4,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.Text
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
@@ -122,6 +123,7 @@ module CodeLens =
     }
 
     let resolve (context: ServerRequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
+        let! ct = Async.CancellationToken
 
         let lensData: CodeLensData =
             p.Data
@@ -132,11 +134,16 @@ module CodeLens =
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
         | None -> return p |> LspResult.success
         | Some symbol ->
-            let! locations = context.FindReferences symbol false
+            let! refs =
+                SymbolFinder.FindReferencesAsync(symbol, context.Solution, cancellationToken = ct)
+                |> Async.AwaitTask
+
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
             // (l.SourceTree.FilePath, l.SourceSpan)
             let refNum =
-                locations
+                refs
+                |> Seq.collect _.Locations
+                |> Seq.map _.Location
                 |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
                 |> Seq.length
 
