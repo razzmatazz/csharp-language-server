@@ -183,10 +183,9 @@ module Initialization =
                 )
 
             //
-            // start loading the solution
+            // start loading workspace
             //
-            logger.LogDebug("handleInitialized: post SolutionReloadRequest")
-            stateActor.Post(SolutionReloadRequest(TimeSpan.FromMilliseconds(100)))
+            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
