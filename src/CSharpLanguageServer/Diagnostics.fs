@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Roslyn.Codebase
 
 module Diagnostics =
     let private logger = Logging.getLoggerByName "Diagnostics"
@@ -64,7 +65,7 @@ module Diagnostics =
 
         let lspClient = new LspClientStub()
         let cwd = string (Directory.GetCurrentDirectory())
-        let! _sln = solutionLoadSolutionWithPathOrOnCwd lspClient None cwd
+        let! codebase = Codebase.solutionLoadSolutionWithPathOrOnCwd lspClient None cwd
 
         logger.LogDebug("diagnose: done")
 

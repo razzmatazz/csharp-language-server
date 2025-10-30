@@ -17,7 +17,6 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <ChangelogFile>CHANGELOG.md</ChangelogFile>
     <Nullable>enable</Nullable>
-    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,10 +30,11 @@
     <Compile Include="Roslyn/Document.fs" />
     <Compile Include="Roslyn/Symbol.fs" />
     <Compile Include="DocumentationUtil.fs" />
-    <Compile Include="Diagnostics.fs" />
     <Compile Include="Lsp/Client.fs" />
+    <Compile Include="State/Codebase.fs" />
     <Compile Include="State/ServerState.fs" />
     <Compile Include="State/ServerRequestContext.fs" />
+    <Compile Include="Diagnostics.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />
     <Compile Include="Handlers/CodeAction.fs" />

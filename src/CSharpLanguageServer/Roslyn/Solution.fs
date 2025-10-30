@@ -20,6 +20,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 
 
@@ -375,22 +376,80 @@ let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
 }
 
 
-let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMaybe: string option) (cwd: string) =
-    match solutionPathMaybe with
-    | Some solutionPath -> async {
-        let rootedSolutionPath =
-            match Path.IsPathRooted solutionPath with
-            | true -> solutionPath
-            | false -> Path.Combine(cwd, solutionPath)
+let solutionGetRazorDocumentForUri
+    (solution: Solution)
+    (uri: string)
+    : Async<(Project * Compilation * SyntaxTree) option> =
+    async {
+        let cshtmlPath = uri |> Uri.toPath
+        let normalizedTargetDir = cshtmlPath |> Path.GetDirectoryName |> Path.GetFullPath
 
-        return! solutionTryLoadOnPath lspClient rootedSolutionPath
-      }
+        let projectForPath =
+            solution.Projects
+            |> Seq.tryFind (fun project ->
+                let projectDirectory = Path.GetDirectoryName(project.FilePath)
+                let normalizedProjectDir = Path.GetFullPath(projectDirectory)
 
-    | None -> async {
-        let logMessage: LogMessageParams =
-            { Type = MessageType.Info
-              Message = sprintf "csharp-ls: attempting to find and load solution based on cwd (\"%s\").." cwd }
+                normalizedTargetDir.StartsWith(
+                    normalizedProjectDir + Path.DirectorySeparatorChar.ToString(),
+                    StringComparison.OrdinalIgnoreCase
+                ))
 
-        do! lspClient.WindowLogMessage logMessage
-        return! solutionFindAndLoadOnDir lspClient cwd
-      }
+        match projectForPath with
+        | None -> return None
+        | Some project ->
+            let projectBaseDir = Path.GetDirectoryName(project.FilePath)
+
+            let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
+
+            let mutable cshtmlTree: SyntaxTree option = None
+
+            let cshtmlPathTranslated =
+                Path.GetRelativePath(projectBaseDir, cshtmlPath)
+                |> _.Replace(".", "_")
+                |> _.Replace(Path.DirectorySeparatorChar, '_')
+                |> (fun s -> s + ".g.cs")
+
+            for tree in compilation.SyntaxTrees do
+                let path = tree.FilePath
+
+                if path.StartsWith(projectBaseDir) then
+                    let relativePath = Path.GetRelativePath(projectBaseDir, path)
+
+                    if relativePath.EndsWith(cshtmlPathTranslated) then
+                        cshtmlTree <- Some tree
+
+            return cshtmlTree |> Option.map (fun cst -> (project, compilation, cst))
+    }
+
+
+let solutionFindSymbolForRazorDocumentUri solution uri pos = async {
+    match! solutionGetRazorDocumentForUri solution uri with
+    | None -> return None
+
+    | Some(project, compilation, cshtmlTree) ->
+        let model = compilation.GetSemanticModel(cshtmlTree)
+
+        let root = cshtmlTree.GetRoot()
+
+        let token =
+            let cshtmlPath = uri |> Uri.toPath
+
+            root.DescendantTokens()
+            |> Seq.tryFind (fun t ->
+                let span = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                span.Path = cshtmlPath
+                && span.StartLinePosition.Line <= (int pos.Line)
+                && span.EndLinePosition.Line >= (int pos.Line)
+                && span.StartLinePosition.Character <= (int pos.Character)
+                && span.EndLinePosition.Character > (int pos.Character))
+
+        let symbol =
+            token
+            |> Option.bind (fun x -> x.Parent |> Option.ofObj)
+            |> Option.map (fun parentToken -> model.GetSymbolInfo(parentToken))
+            |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
+
+        return symbol |> Option.map (fun sym -> (sym, project, None))
+}
