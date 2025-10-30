@@ -166,17 +166,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                     |> Async.AwaitTask
         }
 
-    member __.FindImplementations(symbol: ISymbol) : Async<ISymbol seq> = async {
-        match state.Workspace.Solution with
-        | None -> return []
-        | Some currentSolution ->
-            let! ct = Async.CancellationToken
-
-            return!
-                SymbolFinder.FindImplementationsAsync(symbol, currentSolution, cancellationToken = ct)
-                |> Async.AwaitTask
-    }
-
     member __.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
         match state.Workspace.Solution with
         | None -> return []
