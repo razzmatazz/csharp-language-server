@@ -13,8 +13,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 csharp-ls is MIT-licensed (see [LICENSE](LICENSE)) and is provided with no
 warranty of any kind.
 
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/razzmatazz)
-
 # Quick Start
 
 csharp-ls requires the .NET 9 SDK or later to be installed on your machine.
