@@ -4,9 +4,14 @@ open System
 open System.IO
 
 open Microsoft.CodeAnalysis
+open Ionide.LanguageServerProtocol.Types
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Logging
+
+let logger = Logging.getLoggerByName "Lsp.Workspace"
 
 type LspWorkspaceDecompiledMetadataDocument =
     { Metadata: CSharpMetadataInformation
@@ -14,14 +19,14 @@ type LspWorkspaceDecompiledMetadataDocument =
 
 type LspWorkspaceFolder =
     { Uri: string
-      Name: string option
+      Name: string
       RoslynWorkspace: Workspace option
       Solution: Solution option
       DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
 
     static member Empty =
         { Uri = Directory.GetCurrentDirectory() |> Uri.fromPath
-          Name = None
+          Name = "(no name)"
           RoslynWorkspace = None
           Solution = None
           DecompiledMetadata = Map.empty }
@@ -59,13 +64,27 @@ type LspWorkspace =
 
         { this with Folders = updatedFolders }
 
-    member this.WithRootPath(rootPath: string) =
-        this.WithSingletonFolderUpdated(fun f ->
-            { f with
-                Uri = rootPath |> Uri.fromPath })
-
     member this.WithSolution(solution: Solution option) =
         this.WithSingletonFolderUpdated(fun f -> { f with Solution = solution })
+
+let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
+    // TODO: currently only the first workspace folder is taken into account (see Seq.take 1)
+    match workspaceFolders.Length with
+    | 0 -> failwith "workspaceFrom: at least 1 workspace folder must be provided!"
+    | 1 -> ()
+    | _ -> logger.LogWarning("workspaceFrom: only the first WorkspaceFolder will be loaded!")
+
+    let folders =
+        workspaceFolders
+        |> Seq.take 1
+        |> Seq.map (fun f ->
+            { LspWorkspaceFolder.Empty with
+                Uri = f.Uri
+                Name = f.Name })
+        |> List.ofSeq
+
+    { LspWorkspace.Empty with
+        Folders = folders }
 
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
@@ -86,7 +105,7 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
         let matchingDecompiledDocumentMaybe =
             workspace.SingletonFolder.DecompiledMetadata
             |> Map.tryFind u
-            |> Option.map (fun x -> (x.Document, DecompiledDocument))
+            |> Option.map (fun x -> x.Document, DecompiledDocument)
 
         match docType with
         | UserDocument -> matchingUserDocumentMaybe
