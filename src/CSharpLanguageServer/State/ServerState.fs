@@ -1,7 +1,6 @@
 module CSharpLanguageServer.State.ServerState
 
 open System
-open System.IO
 open System.Threading
 open System.Threading.Tasks
 
@@ -13,7 +12,6 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
-open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
@@ -105,7 +103,7 @@ let pullNextRequestMaybe requestQueue =
 
 type ServerStateEvent =
     | SettingsChange of ServerSettings
-    | RootPathChange of string
+    | WorkspaceConfigurationChanged of WorkspaceFolder list
     | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities
     | WorkspaceFolderSolutionChanged of Solution
@@ -316,10 +314,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                     newState
 
-    | RootPathChange rootPath ->
-        return
-            { state with
-                Workspace = state.Workspace.WithRootPath(rootPath) }
+    | WorkspaceConfigurationChanged workspaceFolders ->
+        let newWorkspace = workspaceFrom workspaceFolders
+        return { state with Workspace = newWorkspace }
 
     | ClientChange lspClient -> return { state with LspClient = lspClient }
 
