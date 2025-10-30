@@ -39,9 +39,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                     Settings = settings }
         )
 
-    let getDocumentForUriFromCurrentState docType uri =
-        stateActor.PostAndAsyncReply(fun rc -> GetDocumentOfTypeForUri(docType, uri, rc))
-
     let mutable timer: Threading.Timer option = None
 
     let setupTimer () =
