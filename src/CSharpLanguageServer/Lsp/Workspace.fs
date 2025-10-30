@@ -98,3 +98,6 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
 
 let workspaceDocument workspace docType u =
     workspaceDocumentDetails workspace docType u |> Option.map fst
+
+let workspaceDocumentVersion workspace uri =
+    uri |> workspace.OpenDocs.TryFind |> Option.map _.Version

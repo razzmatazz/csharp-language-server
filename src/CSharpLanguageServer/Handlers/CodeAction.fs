@@ -380,7 +380,7 @@ module CodeAction =
                             let! maybeLspCa =
                                 roslynCodeActionToResolvedLspCodeAction
                                     doc.Project.Solution
-                                    context.GetDocumentVersion
+                                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
                                     doc
                                     ct
                                     ca
@@ -422,7 +422,11 @@ module CodeAction =
                 roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = p.Title)
 
             let toResolvedLspCodeAction =
-                roslynCodeActionToResolvedLspCodeAction doc.Project.Solution context.GetDocumentVersion doc ct
+                roslynCodeActionToResolvedLspCodeAction
+                    doc.Project.Solution
+                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
+                    doc
+                    ct
 
             let! lspCodeAction =
                 match selectedCodeAction with
