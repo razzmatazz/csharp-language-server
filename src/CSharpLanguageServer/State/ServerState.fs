@@ -102,25 +102,25 @@ let pullNextRequestMaybe requestQueue =
         (Some nextRequest, queueRemainder)
 
 type ServerStateEvent =
-    | SettingsChange of ServerSettings
-    | WorkspaceConfigurationChanged of WorkspaceFolder list
-    | ClientChange of ILspClient option
     | ClientCapabilityChange of ClientCapabilities
-    | WorkspaceFolderSolutionChanged of Solution
+    | ClientChange of ILspClient option
     | DecompiledMetadataAdd of string * LspWorkspaceDecompiledMetadataDocument
-    | DocumentOpened of string * int * DateTime
     | DocumentClosed of string
+    | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
-    | GetState of AsyncReplyChannel<ServerState>
-    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
-    | FinishRequest of int
-    | ProcessRequestQueue
-    | WorkspaceReloadRequested of TimeSpan
-    | PushDiagnosticsDocumentBacklogUpdate
-    | PushDiagnosticsProcessPendingDocuments
-    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
-    | PeriodicTimerTick
     | DumpAndResetRequestStats
+    | FinishRequest of int
+    | GetState of AsyncReplyChannel<ServerState>
+    | PeriodicTimerTick
+    | ProcessRequestQueue
+    | PushDiagnosticsDocumentBacklogUpdate
+    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
+    | PushDiagnosticsProcessPendingDocuments
+    | SettingsChange of ServerSettings
+    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceFolderSolutionChanged of Solution
+    | WorkspaceReloadRequested of TimeSpan
 
 let processFinishRequest postSelf state request =
     request.Semaphore.Dispose()
