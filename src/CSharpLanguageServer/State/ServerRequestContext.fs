@@ -38,10 +38,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
         emitServerEvent ev
 
-    member this.EmitMany es =
-        for e in es do
-            this.Emit e
-
     member this.ResolveSymbolLocations
         (symbol: Microsoft.CodeAnalysis.ISymbol)
         (project: Microsoft.CodeAnalysis.Project option)
