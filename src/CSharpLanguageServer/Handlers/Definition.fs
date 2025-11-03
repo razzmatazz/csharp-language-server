@@ -4,6 +4,8 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module Definition =
@@ -16,7 +18,10 @@ module Definition =
         async {
             match! context.FindSymbol' p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
-                let! locations = context.ResolveSymbolLocations symbol (Some project)
+                let! locations, updatedWf = workspaceFolderSymbolLocations symbol (Some project) wf
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+
                 return locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success
 
             | _, _ -> return None |> LspResult.success

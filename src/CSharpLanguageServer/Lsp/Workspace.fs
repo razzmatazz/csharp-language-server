@@ -108,6 +108,26 @@ let workspaceFolderResolveSymbolLocation
         | _, _, _ -> return [], folder
     }
 
+/// The process of retrieving locations may update LspWorkspaceFolder itself,
+/// thus return value is a pair of symbol location list * LspWorkspaceFolder
+let workspaceFolderSymbolLocations
+    (symbol: Microsoft.CodeAnalysis.ISymbol)
+    (project: Microsoft.CodeAnalysis.Project option)
+    folder
+    =
+    async {
+        let mutable wf = folder
+        let mutable aggregatedLspLocations = []
+
+        for l in symbol.Locations do
+            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation project symbol l wf
+
+            aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
+            wf <- updatedWf
+
+        return aggregatedLspLocations, wf
+    }
+
 type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
 type LspWorkspace =

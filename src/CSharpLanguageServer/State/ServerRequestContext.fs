@@ -7,7 +7,6 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
-open CSharpLanguageServer.Util
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     member _.RequestId = requestId
@@ -31,17 +30,10 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         (project: Microsoft.CodeAnalysis.Project option)
         =
         async {
-            let mutable wf = this.Workspace.SingletonFolder
-            let mutable aggregatedLspLocations = []
-
-            for l in symbol.Locations do
-                let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation project symbol l wf
-
-                aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
-                wf <- updatedWf
+            let! aggregatedLspLocations, wf =
+                workspaceFolderSymbolLocations symbol project this.Workspace.SingletonFolder
 
             this.Emit(WorkspaceFolderChange wf)
-
             return aggregatedLspLocations
         }
 
