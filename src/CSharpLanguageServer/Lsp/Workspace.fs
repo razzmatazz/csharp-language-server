@@ -138,8 +138,6 @@ type LspWorkspace =
 
     member this.SingletonFolder = this.Folders |> Seq.exactlyOne
 
-    member this.Solution = this.Folders |> Seq.tryExactlyOne |> Option.bind _.Solution
-
     member this.WithSingletonFolderUpdated(update: LspWorkspaceFolder -> LspWorkspaceFolder) =
         let updatedFolders =
             this.Folders

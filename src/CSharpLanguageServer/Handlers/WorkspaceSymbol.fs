@@ -12,7 +12,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
-    let provider (_: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option = Some(U2.C1 true)
+    let provider (_cc: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option = Some(U2.C1 true)
 
     let handle
         (context: ServerRequestContext)
@@ -24,7 +24,7 @@ module WorkspaceSymbol =
             let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
 
             let! symbols =
-                match context.Workspace.Solution with
+                match context.Workspace.SingletonFolder.Solution with
                 | None -> async.Return Seq.empty
                 | Some solution ->
                     match pattern with
