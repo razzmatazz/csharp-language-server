@@ -54,14 +54,14 @@ module SemanticTokens =
         classificationTypeMap
         |> Map.values
         |> Seq.distinct
-        |> flip Seq.zip (Seq.initInfinite uint32)
+        |> (fun x -> Seq.zip x (Seq.initInfinite uint32))
         |> Map.ofSeq
 
     let private semanticTokenModifierMap =
         classificationModifierMap
         |> Map.values
         |> Seq.distinct
-        |> flip Seq.zip (Seq.initInfinite uint32)
+        |> (fun x -> Seq.zip x (Seq.initInfinite uint32))
         |> Map.ofSeq
 
     let private semanticTokenTypes =
@@ -77,12 +77,12 @@ module SemanticTokens =
     let private getSemanticTokenIdFromClassification (classification: string) =
         classificationTypeMap
         |> Map.tryFind classification
-        |> Option.bind (flip Map.tryFind semanticTokenTypeMap)
+        |> Option.bind (fun x -> Map.tryFind x semanticTokenTypeMap)
 
     let private getSemanticTokenModifierFlagFromClassification (classification: string) =
         classificationModifierMap
         |> Map.tryFind classification
-        |> Option.bind (flip Map.tryFind semanticTokenModifierMap)
+        |> Option.bind (fun x -> Map.tryFind x semanticTokenModifierMap)
         |> Option.defaultValue 0u
         |> int32
         |> (<<<) 1u

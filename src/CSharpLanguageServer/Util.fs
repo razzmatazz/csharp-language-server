@@ -62,10 +62,6 @@ let rec unpackException (exn: Exception) =
         | None -> exn
     | _ -> exn
 
-// flip f takes its (first) two arguments in the reverse order of f, just like
-// the function with the same name in Haskell.
-let flip f x y = f y x
-
 let curry f x y = f (x, y)
 let uncurry f (x, y) = f x y
 
