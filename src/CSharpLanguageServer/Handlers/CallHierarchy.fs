@@ -29,7 +29,7 @@ module CallHierarchy =
         : AsyncLspResult<CallHierarchyItem[] option> =
         async {
             match! context.FindSymbol p.TextDocument.Uri p.Position with
-            | Some symbol when isCallableSymbol symbol ->
+            | Some(wf), Some(symbol) when isCallableSymbol symbol ->
                 let! itemList = CallHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
                 return itemList |> List.toArray |> Some |> LspResult.success
             | _ -> return None |> LspResult.success
@@ -55,10 +55,9 @@ module CallHierarchy =
                       FromRanges = fromRanges })
 
             match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | None -> return None |> LspResult.success
-            | Some symbol ->
+            | Some(wf), Some(symbol) ->
                 let! callers =
-                    SymbolFinder.FindCallersAsync(symbol, context.Solution, cancellationToken = ct)
+                    SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
@@ -71,6 +70,8 @@ module CallHierarchy =
                     |> Seq.toArray
                     |> Some
                     |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
 
     let outgoingCalls

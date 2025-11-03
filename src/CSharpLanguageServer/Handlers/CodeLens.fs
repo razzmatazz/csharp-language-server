@@ -91,7 +91,7 @@ module CodeLens =
               WorkDoneProgress = None }
 
     let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
-        let docForUri =
+        let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
         match docForUri with
@@ -132,10 +132,9 @@ module CodeLens =
             |> Option.defaultValue CodeLensData.Default
 
         match! context.FindSymbol lensData.DocumentUri lensData.Position with
-        | None -> return p |> LspResult.success
-        | Some symbol ->
+        | Some wf, Some symbol ->
             let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, context.Solution, cancellationToken = ct)
+                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                 |> Async.AwaitTask
 
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
@@ -162,4 +161,6 @@ module CodeLens =
                   Arguments = Some [| arg |> serialize |] }
 
             return { p with Command = Some command } |> LspResult.success
+
+        | _, _ -> return p |> LspResult.success
     }

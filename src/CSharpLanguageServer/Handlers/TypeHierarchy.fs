@@ -25,10 +25,11 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             match! context.FindSymbol p.TextDocument.Uri p.Position with
-            | Some symbol when isTypeSymbol symbol ->
+            | Some wf, Some symbol when isTypeSymbol symbol ->
                 let! itemList = TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
                 return itemList |> List.toArray |> Some |> LspResult.success
-            | _ -> return None |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
 
     let supertypes
@@ -37,7 +38,7 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | Some symbol when isTypeSymbol symbol ->
+            | Some wf, Some symbol when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
 
                 let baseType =
@@ -55,7 +56,8 @@ module TypeHierarchy =
                     |> Async.Parallel
 
                 return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
-            | _ -> return None |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
 
     let subtypes
@@ -66,25 +68,25 @@ module TypeHierarchy =
             let! ct = Async.CancellationToken
 
             match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | Some symbol when isTypeSymbol symbol ->
+            | Some wf, Some symbol when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
                 // We only want immediately derived classes/interfaces/implementations here (we only need
                 // subclasses not subclasses' subclasses)
                 let findDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindDerivedClassesAsync(symbol, context.Solution, transitive, cancellationToken = ct)
+                    SymbolFinder.FindDerivedClassesAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let findDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
                     SymbolFinder.FindDerivedInterfacesAsync(
                         symbol,
-                        context.Solution,
+                        wf.Solution.Value,
                         transitive,
                         cancellationToken = ct
                     )
                     |> Async.AwaitTask
 
                 let findImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindImplementationsAsync(symbol, context.Solution, transitive, cancellationToken = ct)
+                    SymbolFinder.FindImplementationsAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let! subtypes =
@@ -100,5 +102,6 @@ module TypeHierarchy =
                     |> Async.Parallel
 
                 return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
-            | _ -> return None |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }

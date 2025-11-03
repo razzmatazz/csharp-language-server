@@ -23,7 +23,10 @@ module Hover =
 
         hover |> Some
 
-    let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> =
-        context.FindSymbol p.TextDocument.Uri p.Position
-        |> Async.bindOption (makeHoverForSymbol >> async.Return)
-        |> Async.map LspResult.success
+    let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+        let! wf, sym = context.FindSymbol p.TextDocument.Uri p.Position
+
+        match sym with
+        | Some sym -> return makeHoverForSymbol sym |> LspResult.success
+        | None -> return None |> LspResult.success
+    }

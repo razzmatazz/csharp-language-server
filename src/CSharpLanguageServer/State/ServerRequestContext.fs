@@ -10,13 +10,10 @@ open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
-    let mutable solutionMaybe = state.Workspace.Solution
-
     member _.RequestId = requestId
     member _.State = state
     member _.Workspace = state.Workspace
     member _.ClientCapabilities = state.ClientCapabilities
-    member _.Solution = solutionMaybe.Value
 
     member _.WindowShowMessage(m: string) =
         match state.LspClient with
@@ -27,12 +24,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             )
         | None -> async.Return()
 
-    member _.Emit ev =
-        match ev with
-        | WorkspaceFolderChange wf -> solutionMaybe <- wf.Solution
-        | _ -> ()
-
-        emitServerEvent ev
+    member _.Emit ev = emitServerEvent ev
 
     member this.ResolveSymbolLocations
         (symbol: Microsoft.CodeAnalysis.ISymbol)
@@ -53,18 +45,28 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
             return aggregatedLspLocations
         }
 
-    member this.FindSymbol' (uri: DocumentUri) (pos: Position) : Async<(ISymbol * Project * Document option) option> = async {
-        let docForUri = uri |> workspaceDocument this.Workspace AnyDocument
+    member this.FindSymbol' (uri: DocumentUri) (pos: Position) = async {
+        let wf, docForUri = uri |> workspaceDocument this.Workspace AnyDocument
 
-        match docForUri with
-        | None -> return None
-        | Some doc ->
+        match wf, docForUri with
+        | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let position = Position.toRoslynPosition sourceText.Lines pos
             let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-            return symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+            let symbolInfo =
+                symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+            return Some wf, symbolInfo
+
+        | wf, _ -> return (wf, None)
     }
 
-    member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =
-        this.FindSymbol' uri pos |> Async.map (Option.map (fun (sym, _, _) -> sym))
+    member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<option<LspWorkspaceFolder> * option<ISymbol>> = async {
+        let! wf, symbolInfo = this.FindSymbol' uri pos
+
+        match symbolInfo with
+        | Some(sym, _, _) -> return (wf, Some sym)
+        | None -> return (wf, None)
+    }

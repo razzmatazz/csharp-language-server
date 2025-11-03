@@ -47,11 +47,11 @@ module TextDocumentSync =
 
 
     let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
-        let docAndDocTypeForUri =
+        let wf, docAndDocTypeForUri =
             p.TextDocument.Uri |> workspaceDocumentDetails context.Workspace AnyDocument
 
-        match docAndDocTypeForUri with
-        | Some(wf, doc, docType) ->
+        match wf, docAndDocTypeForUri with
+        | Some(wf), Some(doc, docType) ->
             match docType with
             | UserDocument ->
                 // we want to load the document in case it has been changed since we have the solution loaded
@@ -71,14 +71,13 @@ module TextDocumentSync =
 
             | _ -> Ok() |> async.Return
 
-        | None ->
+        | Some wf, None ->
             let docFilePathMaybe = Util.tryParseFileUri p.TextDocument.Uri
-            let wf = context.Workspace.SingletonFolder
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
                 // ok, this document is not in solution, register a new document
-                let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text context.Solution
+                let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text wf.Solution.Value
 
                 match newDocMaybe with
                 | Some newDoc ->
@@ -97,14 +96,14 @@ module TextDocumentSync =
 
             | None -> Ok() |> async.Return
 
+        | _, _ -> Ok() |> async.Return
+
     let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let docMaybe =
+        let wf, docMaybe =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
-        match docMaybe with
-        | None -> ()
-        | Some doc ->
-            let wf = context.Workspace.SingletonFolder
+        match wf, docMaybe with
+        | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
@@ -124,6 +123,8 @@ module TextDocumentSync =
             context.Emit(WorkspaceFolderChange updatedWf)
             context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
+        | _, _ -> ()
+
         return Ok()
     }
 
@@ -142,20 +143,16 @@ module TextDocumentSync =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
     let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
-        let docAndTypeForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-        let haveExistingDocForUri = docAndTypeForUri.IsSome
+        match wf, doc with
+        | Some _, Some doc -> Ok() |> async.Return
 
-        match haveExistingDocForUri with
-        | true -> Ok() |> async.Return
-
-        | false -> async {
-            let wf = context.Workspace.SingletonFolder
+        | Some wf, None -> async {
             let docFilePath = Util.parseFileUri p.TextDocument.Uri
 
             // we need to add this file to solution if not already
-            let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value context.Solution
+            let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
 
             match newDocMaybe with
             | Some newDoc ->
@@ -170,3 +167,5 @@ module TextDocumentSync =
 
             return Ok()
           }
+
+        | _, _ -> Ok() |> async.Return

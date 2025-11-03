@@ -17,19 +17,26 @@ module Implementation =
         (context: ServerRequestContext)
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
+        async {
 
-        let findImplementationsOfSymbol (sym: ISymbol) = async {
-            let! ct = Async.CancellationToken
+            let findImplementationsOfSymbol sln (sym: ISymbol) = async {
+                let! ct = Async.CancellationToken
 
-            let! impls =
-                SymbolFinder.FindImplementationsAsync(sym, context.Solution, cancellationToken = ct)
-                |> Async.AwaitTask
+                let! impls =
+                    SymbolFinder.FindImplementationsAsync(sym, sln, cancellationToken = ct)
+                    |> Async.AwaitTask
 
-            let! locations = impls |> Seq.map (flip context.ResolveSymbolLocations None) |> Async.Parallel
+                let! locations = impls |> Seq.map (flip context.ResolveSymbolLocations None) |> Async.Parallel
 
-            return locations |> Array.collect List.toArray |> Declaration.C2 |> U2.C1 |> Some
+                return locations |> Array.collect List.toArray |> Declaration.C2 |> U2.C1 |> Some
+            }
+
+            let! wf, sym = context.FindSymbol p.TextDocument.Uri p.Position
+
+            match wf, sym with
+            | Some wf, Some sym ->
+                let! impls = findImplementationsOfSymbol wf.Solution.Value sym
+                return impls |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
-
-        context.FindSymbol p.TextDocument.Uri p.Position
-        |> Async.bindOption findImplementationsOfSymbol
-        |> Async.map LspResult.success
