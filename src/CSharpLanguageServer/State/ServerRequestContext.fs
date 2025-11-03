@@ -136,32 +136,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                 SymbolFinder.FindCallersAsync(symbol, currentSolution, cancellationToken = ct)
                 |> Async.AwaitTask
     }
-
-    member this.FindSymbols(pattern: string option) : Async<Microsoft.CodeAnalysis.ISymbol seq> = async {
-        let findTask ct =
-            match pattern with
-            | Some pat ->
-                fun (sln: Solution) ->
-                    SymbolFinder.FindSourceDeclarationsWithPatternAsync(
-                        sln,
-                        pat,
-                        SymbolFilter.TypeAndMember,
-                        cancellationToken = ct
-                    )
-            | None ->
-                let true' = System.Func<string, bool>(fun _ -> true)
-
-                fun (sln: Solution) ->
-                    SymbolFinder.FindSourceDeclarationsAsync(
-                        sln,
-                        true',
-                        SymbolFilter.TypeAndMember,
-                        cancellationToken = ct
-                    )
-
-        match this.Workspace.Solution with
-        | None -> return []
-        | Some solution ->
-            let! ct = Async.CancellationToken
-            return! findTask ct solution |> Async.AwaitTask
-    }
