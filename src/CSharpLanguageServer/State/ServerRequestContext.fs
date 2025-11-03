@@ -5,13 +5,9 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Types
-open CSharpLanguageServer.Roslyn.Document
-open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
-
 
 type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
     let mutable solutionMaybe = state.Workspace.Solution
@@ -72,52 +68,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
     member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<ISymbol option> =
         this.FindSymbol' uri pos |> Async.map (Option.map (fun (sym, _, _) -> sym))
-
-    member private __._FindDerivedClasses (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Workspace.Solution with
-        | None -> return []
-        | Some currentSolution ->
-            let! ct = Async.CancellationToken
-
-            return!
-                SymbolFinder.FindDerivedClassesAsync(symbol, currentSolution, transitive, cancellationToken = ct)
-                |> Async.AwaitTask
-    }
-
-    member private __._FindDerivedInterfaces
-        (symbol: INamedTypeSymbol)
-        (transitive: bool)
-        : Async<INamedTypeSymbol seq> =
-        async {
-            match state.Workspace.Solution with
-            | None -> return []
-            | Some currentSolution ->
-                let! ct = Async.CancellationToken
-
-                return!
-                    SymbolFinder.FindDerivedInterfacesAsync(symbol, currentSolution, transitive, cancellationToken = ct)
-                    |> Async.AwaitTask
-        }
-
-    member __.FindImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> = async {
-        match state.Workspace.Solution with
-        | None -> return []
-        | Some currentSolution ->
-            let! ct = Async.CancellationToken
-
-            return!
-                SymbolFinder.FindImplementationsAsync(symbol, currentSolution, transitive, cancellationToken = ct)
-                |> Async.AwaitTask
-    }
-
-    member this.FindDerivedClasses(symbol: INamedTypeSymbol) : Async<INamedTypeSymbol seq> =
-        this._FindDerivedClasses symbol true
-
-    member this.FindDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-        this._FindDerivedClasses symbol transitive
-
-    member this.FindDerivedInterfaces(symbol: INamedTypeSymbol) : Async<INamedTypeSymbol seq> =
-        this._FindDerivedInterfaces symbol true
-
-    member this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-        this._FindDerivedInterfaces symbol transitive
