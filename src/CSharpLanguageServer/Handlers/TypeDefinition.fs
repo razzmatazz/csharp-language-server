@@ -29,7 +29,7 @@ module TypeDefinition =
 
                 let! locations =
                     typeSymbol
-                    |> Seq.map (flip context.ResolveSymbolLocations (Some project))
+                    |> Seq.map (fun sym -> context.ResolveSymbolLocations sym (Some project))
                     |> Async.Parallel
                     |> Async.map (Seq.collect id >> Seq.toArray)
 
