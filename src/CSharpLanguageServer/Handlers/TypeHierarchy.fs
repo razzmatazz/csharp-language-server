@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -62,15 +63,34 @@ module TypeHierarchy =
         (p: TypeHierarchySubtypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
+            let! ct = Async.CancellationToken
+
             match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
             | Some symbol when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
                 // We only want immediately derived classes/interfaces/implementations here (we only need
                 // subclasses not subclasses' subclasses)
+                let findDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
+                    SymbolFinder.FindDerivedClassesAsync(symbol, context.Solution, transitive, cancellationToken = ct)
+                    |> Async.AwaitTask
+
+                let findDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
+                    SymbolFinder.FindDerivedInterfacesAsync(
+                        symbol,
+                        context.Solution,
+                        transitive,
+                        cancellationToken = ct
+                    )
+                    |> Async.AwaitTask
+
+                let findImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
+                    SymbolFinder.FindImplementationsAsync(symbol, context.Solution, transitive, cancellationToken = ct)
+                    |> Async.AwaitTask
+
                 let! subtypes =
-                    [ context.FindDerivedClasses' typeSymbol false
-                      context.FindDerivedInterfaces' typeSymbol false
-                      context.FindImplementations' typeSymbol false ]
+                    [ findDerivedClasses' typeSymbol false
+                      findDerivedInterfaces' typeSymbol false
+                      findImplementations' typeSymbol false ]
                     |> Async.Parallel
                     |> Async.map (Seq.collect id >> Seq.toList)
 
