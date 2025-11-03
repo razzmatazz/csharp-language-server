@@ -38,7 +38,7 @@ module Diagnostic =
                   Items = [||]
                   RelatedDocuments = None }
 
-            let docForUri =
+            let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with

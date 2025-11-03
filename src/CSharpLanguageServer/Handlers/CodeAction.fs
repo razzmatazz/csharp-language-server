@@ -331,7 +331,7 @@ module CodeAction =
         (p: CodeActionParams)
         : AsyncLspResult<TextDocumentCodeActionResult option> =
         async {
-            let docForUri =
+            let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with
@@ -404,7 +404,7 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let docForUri =
+        let wf, docForUri =
             resolutionData.Value.TextDocumentUri
             |> workspaceDocument context.Workspace AnyDocument
 

@@ -52,11 +52,10 @@ module Workspace =
 
 
     let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
-        let doc = uri |> workspaceDocument context.Workspace UserDocument
-        let wf = context.Workspace.SingletonFolder
+        let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
-        match doc with
-        | Some doc ->
+        match wf, doc with
+        | Some wf, Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
@@ -66,14 +65,14 @@ module Workspace =
 
             context.Emit(WorkspaceFolderChange updatedWf)
 
-        | None ->
+        | Some wf, None ->
             let docFilePathMaybe = uri |> Util.tryParseFileUri
 
             match docFilePathMaybe with
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
-                let! newDocMaybe = solutionTryAddDocument docFilePath fileText context.Solution
+                let! newDocMaybe = solutionTryAddDocument docFilePath fileText wf.Solution.Value
 
                 match newDocMaybe with
                 | Some newDoc ->
@@ -84,15 +83,16 @@ module Workspace =
                     context.Emit(WorkspaceFolderChange updatedWf)
                 | None -> ()
             | None -> ()
+
+        | _, _ -> ()
     }
 
 
     let private removeDocument (context: ServerRequestContext) uri =
-        let doc = uri |> workspaceDocument context.Workspace UserDocument
-        let wf = context.Workspace.SingletonFolder
+        let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
-        match doc with
-        | Some existingDoc ->
+        match wf, doc with
+        | Some wf, Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             let updatedWf =
@@ -101,7 +101,8 @@ module Workspace =
 
             context.Emit(WorkspaceFolderChange updatedWf)
             context.Emit(DocumentClosed uri)
-        | None -> ()
+
+        | _, _ -> ()
 
 
     let didChangeWatchedFiles

@@ -18,7 +18,7 @@ module DocumentRangeFormatting =
         let lspFormattingOptions =
             p.Options |> context.State.Settings.GetEffectiveFormattingOptions
 
-        let docForUri =
+        let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with

@@ -18,8 +18,7 @@ module TypeDefinition =
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
             match! context.FindSymbol' p.TextDocument.Uri p.Position with
-            | None -> return None |> LspResult.success
-            | Some(symbol, project, _) ->
+            | Some wf, Some(symbol, project, _) ->
                 let typeSymbol =
                     match symbol with
                     | :? ILocalSymbol as localSymbol -> [ localSymbol.Type ]
@@ -35,4 +34,5 @@ module TypeDefinition =
                     |> Async.map (Seq.collect id >> Seq.toArray)
 
                 return locations |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+            | _, _ -> return None |> LspResult.success
         }

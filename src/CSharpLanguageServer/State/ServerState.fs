@@ -422,7 +422,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                     { state with
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
-                let docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
+                let wf, docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
 
                 match docForUri with
                 | None ->

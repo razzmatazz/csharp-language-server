@@ -241,7 +241,7 @@ module InlayHint =
         Some(U3.C2 inlayHintOptions)
 
     let handle (context: ServerRequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
-        let docForUri =
+        let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with

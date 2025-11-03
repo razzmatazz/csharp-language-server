@@ -89,7 +89,7 @@ module Rename =
 
     let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
 
-        let docForUri =
+        let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
         match docForUri with
@@ -149,8 +149,7 @@ module Rename =
 
     let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
         match! context.FindSymbol' p.TextDocument.Uri p.Position with
-        | None -> return None |> LspResult.success
-        | Some(symbol, project, _) ->
+        | Some wf, Some(symbol, project, _) ->
             let! ct = Async.CancellationToken
             let originalSolution = project.Solution
 
@@ -176,4 +175,6 @@ module Rename =
                 WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)
                 |> Some
                 |> LspResult.success
+
+        | _, _ -> return None |> LspResult.success
     }

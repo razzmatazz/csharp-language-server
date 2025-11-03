@@ -17,10 +17,9 @@ module References =
         let! ct = Async.CancellationToken
 
         match! context.FindSymbol p.TextDocument.Uri p.Position with
-        | None -> return None |> LspResult.success
-        | Some symbol ->
+        | Some wf, Some symbol ->
             let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, context.Solution, cancellationToken = ct)
+                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                 |> Async.AwaitTask
 
             let locationsFromReferencedSym (r: ReferencedSymbol) =
@@ -38,4 +37,5 @@ module References =
                 |> Seq.toArray
                 |> Some
                 |> LspResult.success
+        | _, _ -> return None |> LspResult.success
     }

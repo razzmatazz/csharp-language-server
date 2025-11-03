@@ -293,7 +293,7 @@ module DocumentSymbol =
                 |> Option.bind _.HierarchicalDocumentSymbolSupport
                 |> Option.defaultValue false
 
-            let docForUri =
+            let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match docForUri with

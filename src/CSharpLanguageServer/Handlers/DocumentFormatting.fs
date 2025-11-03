@@ -26,8 +26,9 @@ module DocumentFormatting =
         let lspFormattingOptions =
             p.Options |> context.State.Settings.GetEffectiveFormattingOptions
 
-        p.TextDocument.Uri
-        |> workspaceDocument context.Workspace UserDocument
+        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+
+        doc
         |> async.Return
         |> Async.bindOption (formatDocument lspFormattingOptions)
         |> Async.map LspResult.success

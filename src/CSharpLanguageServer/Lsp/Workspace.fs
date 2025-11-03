@@ -160,34 +160,38 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let wf = workspaceFolder workspace uri
     let solution = wf |> Option.bind _.Solution
 
-    match wf, solution with
-    | Some wf, Some solution ->
-        let matchingUserDocuments =
-            solution.Projects
-            |> Seq.collect (fun p -> p.Documents)
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-            |> List.ofSeq
+    let docAndDocType =
+        match wf, solution with
+        | Some wf, Some solution ->
+            let matchingUserDocuments =
+                solution.Projects
+                |> Seq.collect (fun p -> p.Documents)
+                |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+                |> List.ofSeq
 
-        let matchingUserDocumentMaybe =
-            match matchingUserDocuments with
-            | [ d ] -> Some(wf, d, UserDocument)
-            | _ -> None
+            let matchingUserDocumentMaybe =
+                match matchingUserDocuments with
+                | [ d ] -> Some(d, UserDocument)
+                | _ -> None
 
-        let matchingDecompiledDocumentMaybe =
-            wf.DecompiledMetadata
-            |> Map.tryFind u
-            |> Option.map (fun x -> wf, x.Document, DecompiledDocument)
+            let matchingDecompiledDocumentMaybe =
+                wf.DecompiledMetadata
+                |> Map.tryFind u
+                |> Option.map (fun x -> (x.Document, DecompiledDocument))
 
-        match docType with
-        | UserDocument -> matchingUserDocumentMaybe
-        | DecompiledDocument -> matchingDecompiledDocumentMaybe
-        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+            match docType with
+            | UserDocument -> matchingUserDocumentMaybe
+            | DecompiledDocument -> matchingDecompiledDocumentMaybe
+            | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
 
-    | _, _ -> None
+        | _, _ -> None
+
+    wf, docAndDocType
 
 let workspaceDocument workspace docType u =
-    workspaceDocumentDetails workspace docType u
-    |> Option.map (fun (_, doc, _) -> doc)
+    let wf, docAndType = workspaceDocumentDetails workspace docType u
+    let doc = docAndType |> Option.map fst
+    wf, doc
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
