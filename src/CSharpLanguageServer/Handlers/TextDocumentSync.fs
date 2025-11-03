@@ -51,7 +51,7 @@ module TextDocumentSync =
             p.TextDocument.Uri |> workspaceDocumentDetails context.Workspace AnyDocument
 
         match docAndDocTypeForUri with
-        | Some(doc, docType) ->
+        | Some(wf, doc, docType) ->
             match docType with
             | UserDocument ->
                 // we want to load the document in case it has been changed since we have the solution loaded
@@ -60,7 +60,12 @@ module TextDocumentSync =
                 let updatedDoc = SourceText.From(p.TextDocument.Text) |> doc.WithText
 
                 context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-                context.Emit(WorkspaceFolderSolutionChanged updatedDoc.Project.Solution)
+
+                context.Emit(
+                    WorkspaceFolderChange
+                        { wf with
+                            Solution = Some updatedDoc.Project.Solution }
+                )
 
                 Ok() |> async.Return
 
@@ -68,6 +73,7 @@ module TextDocumentSync =
 
         | None ->
             let docFilePathMaybe = Util.tryParseFileUri p.TextDocument.Uri
+            let wf = context.Workspace.SingletonFolder
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
@@ -77,7 +83,12 @@ module TextDocumentSync =
                 match newDocMaybe with
                 | Some newDoc ->
                     context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-                    context.Emit(WorkspaceFolderSolutionChanged newDoc.Project.Solution)
+
+                    context.Emit(
+                        WorkspaceFolderChange
+                            { wf with
+                                Solution = Some newDoc.Project.Solution }
+                    )
 
                 | None -> ()
 
@@ -93,6 +104,7 @@ module TextDocumentSync =
         match docMaybe with
         | None -> ()
         | Some doc ->
+            let wf = context.Workspace.SingletonFolder
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
@@ -105,9 +117,11 @@ module TextDocumentSync =
 
             //logMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
 
-            let updatedSolution = updatedDoc.Project.Solution
+            let updatedWf =
+                { wf with
+                    Solution = Some updatedDoc.Project.Solution }
 
-            context.Emit(WorkspaceFolderSolutionChanged updatedSolution)
+            context.Emit(WorkspaceFolderChange updatedWf)
             context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
         return Ok()
@@ -137,6 +151,7 @@ module TextDocumentSync =
         | true -> Ok() |> async.Return
 
         | false -> async {
+            let wf = context.Workspace.SingletonFolder
             let docFilePath = Util.parseFileUri p.TextDocument.Uri
 
             // we need to add this file to solution if not already
@@ -144,8 +159,12 @@ module TextDocumentSync =
 
             match newDocMaybe with
             | Some newDoc ->
+                let updatedWf =
+                    { wf with
+                        Solution = Some newDoc.Project.Solution }
+
                 context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
-                context.Emit(WorkspaceFolderSolutionChanged newDoc.Project.Solution)
+                context.Emit(WorkspaceFolderChange updatedWf)
 
             | None -> ()
 
