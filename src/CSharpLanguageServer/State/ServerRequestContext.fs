@@ -121,14 +121,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
     member this.FindDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
         this._FindDerivedInterfaces symbol transitive
-
-    member __.FindCallers(symbol: ISymbol) : Async<SymbolCallerInfo seq> = async {
-        match state.Workspace.Solution with
-        | None -> return []
-        | Some currentSolution ->
-            let! ct = Async.CancellationToken
-
-            return!
-                SymbolFinder.FindCallersAsync(symbol, currentSolution, cancellationToken = ct)
-                |> Async.AwaitTask
-    }

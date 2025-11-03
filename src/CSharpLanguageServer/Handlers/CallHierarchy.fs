@@ -40,6 +40,8 @@ module CallHierarchy =
         (p: CallHierarchyIncomingCallsParams)
         : AsyncLspResult<CallHierarchyIncomingCall[] option> =
         async {
+            let! ct = Async.CancellationToken
+
             let toCallHierarchyIncomingCalls (info: SymbolCallerInfo) : CallHierarchyIncomingCall seq =
                 let fromRanges =
                     info.Locations
@@ -55,7 +57,10 @@ module CallHierarchy =
             match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
             | None -> return None |> LspResult.success
             | Some symbol ->
-                let! callers = context.FindCallers symbol
+                let! callers =
+                    SymbolFinder.FindCallersAsync(symbol, context.Solution, cancellationToken = ct)
+                    |> Async.AwaitTask
+
                 // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
                 // we will miss many callers. Maybe it should have some change in LSP protocol.
                 return
