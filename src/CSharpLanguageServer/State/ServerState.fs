@@ -118,7 +118,6 @@ type ServerStateEvent =
     | SettingsChange of ServerSettings
     | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | WorkspaceConfigurationChanged of WorkspaceFolder list
-    | WorkspaceFolderSolutionChanged of Solution
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
 
@@ -330,13 +329,6 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         return
             { state with
                 Workspace.Folders = updatedWorkspaceFolderList }
-
-    | WorkspaceFolderSolutionChanged s ->
-        postSelf PushDiagnosticsDocumentBacklogUpdate
-
-        return
-            { state with
-                Workspace = state.Workspace.WithSolution(Some s) }
 
     | DocumentOpened(uri, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate

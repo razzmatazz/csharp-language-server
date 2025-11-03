@@ -53,13 +53,18 @@ module Workspace =
 
     let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
         let doc = uri |> workspaceDocument context.Workspace UserDocument
+        let wf = context.Workspace.SingletonFolder
 
         match doc with
         | Some doc ->
             let fileText = uri |> Util.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
-            context.Emit(WorkspaceFolderSolutionChanged updatedDoc.Project.Solution)
+            let updatedWf =
+                { wf with
+                    Solution = Some updatedDoc.Project.Solution }
+
+            context.Emit(WorkspaceFolderChange updatedWf)
 
         | None ->
             let docFilePathMaybe = uri |> Util.tryParseFileUri
@@ -71,7 +76,12 @@ module Workspace =
                 let! newDocMaybe = solutionTryAddDocument docFilePath fileText context.Solution
 
                 match newDocMaybe with
-                | Some newDoc -> context.Emit(WorkspaceFolderSolutionChanged newDoc.Project.Solution)
+                | Some newDoc ->
+                    let updatedWf =
+                        { wf with
+                            Solution = Some newDoc.Project.Solution }
+
+                    context.Emit(WorkspaceFolderChange updatedWf)
                 | None -> ()
             | None -> ()
     }
@@ -79,12 +89,17 @@ module Workspace =
 
     let private removeDocument (context: ServerRequestContext) uri =
         let doc = uri |> workspaceDocument context.Workspace UserDocument
+        let wf = context.Workspace.SingletonFolder
 
         match doc with
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            context.Emit(WorkspaceFolderSolutionChanged updatedProject.Solution)
+            let updatedWf =
+                { wf with
+                    Solution = Some updatedProject.Solution }
+
+            context.Emit(WorkspaceFolderChange updatedWf)
             context.Emit(DocumentClosed uri)
         | None -> ()
 

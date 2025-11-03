@@ -170,13 +170,13 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
 
         let matchingUserDocumentMaybe =
             match matchingUserDocuments with
-            | [ d ] -> Some(d, UserDocument)
+            | [ d ] -> Some(wf, d, UserDocument)
             | _ -> None
 
         let matchingDecompiledDocumentMaybe =
             wf.DecompiledMetadata
             |> Map.tryFind u
-            |> Option.map (fun x -> x.Document, DecompiledDocument)
+            |> Option.map (fun x -> wf, x.Document, DecompiledDocument)
 
         match docType with
         | UserDocument -> matchingUserDocumentMaybe
@@ -186,7 +186,8 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     | _, _ -> None
 
 let workspaceDocument workspace docType u =
-    workspaceDocumentDetails workspace docType u |> Option.map fst
+    workspaceDocumentDetails workspace docType u
+    |> Option.map (fun (_, doc, _) -> doc)
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version

@@ -29,7 +29,7 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
 
     member _.Emit ev =
         match ev with
-        | WorkspaceFolderSolutionChanged newSolution -> solutionMaybe <- Some newSolution
+        | WorkspaceFolderChange wf -> solutionMaybe <- wf.Solution
         | _ -> ()
 
         emitServerEvent ev
