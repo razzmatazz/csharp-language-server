@@ -45,10 +45,7 @@ module DocumentOnTypeFormatting =
 
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         let lspFormattingOptions =
-            if context.State.Settings.ApplyFormattingOptions then
-                Some p.Options
-            else
-                None
+            p.Options |> context.State.Settings.GetEffectiveFormattingOptions
 
         let docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
