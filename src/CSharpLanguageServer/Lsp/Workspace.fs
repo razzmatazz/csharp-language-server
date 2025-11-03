@@ -10,6 +10,9 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Roslyn.Document
+open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Roslyn.Conversions
 
 let logger = Logging.getLoggerByName "Lsp.Workspace"
 
@@ -36,11 +39,74 @@ type LspWorkspaceDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
-let workspaceFolderWithDecompiledMetadataAdded uri md folder =
-    let newDecompiledMd = Map.add uri md folder.DecompiledMetadata
+let workspaceFolderResolveSymbolLocation
+    (project: Microsoft.CodeAnalysis.Project option)
+    sym
+    (l: Microsoft.CodeAnalysis.Location)
+    (folder: LspWorkspaceFolder)
+    =
+    async {
+        match l.IsInMetadata, l.IsInSource, project with
+        | true, _, Some project ->
+            let! ct = Async.CancellationToken
+            let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-    { folder with
-        DecompiledMetadata = newDecompiledMd }
+            let fullName = sym |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
+
+            let containingAssemblyName =
+                l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
+
+            let uri =
+                $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
+
+            let mdDocument, folder =
+                match Map.tryFind uri folder.DecompiledMetadata with
+                | Some value -> (value.Document, folder)
+                | None ->
+                    let (documentFromMd, text) = documentFromMetadata compilation project l fullName
+
+                    let csharpMetadata =
+                        { ProjectName = project.Name
+                          AssemblyName = containingAssemblyName
+                          SymbolName = fullName
+                          Source = text }
+
+                    let md =
+                        { Metadata = csharpMetadata
+                          Document = documentFromMd }
+
+                    let updatedFolder =
+                        { folder with
+                            DecompiledMetadata = Map.add uri md folder.DecompiledMetadata }
+
+                    (documentFromMd, updatedFolder)
+
+            // figure out location on the document (approx implementation)
+            let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+
+            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym)
+            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            collector.Visit(root)
+
+            let fallbackLocationInMetadata =
+                { Uri = uri
+                  Range =
+                    { Start = { Line = 0u; Character = 0u }
+                      End = { Line = 0u; Character = 1u } } }
+
+            return
+                match collector.GetLocations() with
+                | [] -> [ fallbackLocationInMetadata ], folder
+                | ls -> ls, folder
+
+        | false, true, _ ->
+            return
+                match (Location.fromRoslynLocation l) with
+                | Some loc -> [ loc ], folder
+                | None -> [], folder
+
+        | _, _, _ -> return [], folder
+    }
 
 type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 

@@ -104,7 +104,6 @@ let pullNextRequestMaybe requestQueue =
 type ServerStateEvent =
     | ClientCapabilityChange of ClientCapabilities
     | ClientChange of ILspClient option
-    | DecompiledMetadataAdd of string * LspWorkspaceDecompiledMetadataDocument
     | DocumentClosed of string
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
@@ -120,6 +119,7 @@ type ServerStateEvent =
     | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderSolutionChanged of Solution
+    | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
 
 let processFinishRequest postSelf state request =
@@ -322,20 +322,21 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | ClientCapabilityChange cc -> return { state with ClientCapabilities = cc }
 
+    | WorkspaceFolderChange updatedWf ->
+        let updatedWorkspaceFolderList =
+            state.Workspace.Folders
+            |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
+
+        return
+            { state with
+                Workspace.Folders = updatedWorkspaceFolderList }
+
     | WorkspaceFolderSolutionChanged s ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
 
         return
             { state with
                 Workspace = state.Workspace.WithSolution(Some s) }
-
-    | DecompiledMetadataAdd(uri, md) ->
-        let updatedState =
-            { state with
-                Workspace =
-                    state.Workspace.WithSingletonFolderUpdated(workspaceFolderWithDecompiledMetadataAdded uri md) }
-
-        return updatedState
 
     | DocumentOpened(uri, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
