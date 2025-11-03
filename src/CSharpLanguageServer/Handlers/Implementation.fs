@@ -26,7 +26,10 @@ module Implementation =
                     SymbolFinder.FindImplementationsAsync(sym, sln, cancellationToken = ct)
                     |> Async.AwaitTask
 
-                let! locations = impls |> Seq.map (fun i -> context.ResolveSymbolLocations i None) |> Async.Parallel
+                let! locations =
+                    impls
+                    |> Seq.map (fun i -> context.ResolveSymbolLocations i None)
+                    |> Async.Parallel
 
                 return locations |> Array.collect List.toArray |> Declaration.C2 |> U2.C1 |> Some
             }

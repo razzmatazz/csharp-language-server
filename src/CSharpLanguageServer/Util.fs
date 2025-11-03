@@ -62,9 +62,6 @@ let rec unpackException (exn: Exception) =
         | None -> exn
     | _ -> exn
 
-let curry f x y = f (x, y)
-let uncurry f (x, y) = f x y
-
 
 let formatInColumns (data: list<list<string>>) : string =
     if List.isEmpty data then

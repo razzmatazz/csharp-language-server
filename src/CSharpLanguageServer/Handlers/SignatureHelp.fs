@@ -45,7 +45,7 @@ module SignatureHelp =
 
     // Algorithm from omnisharp-roslyn (https://github.com/OmniSharp/omnisharp-roslyn/blob/2d582b05839dbd23baf6e78fa2279163723a824c/src/OmniSharp.Roslyn.CSharp/Services/Signatures/SignatureHelpService.cs#L139C1-L166C10)
     let private methodScore (types: TypeInfo list) (m: IMethodSymbol) =
-        let score (invocation: TypeInfo) (definition: IParameterSymbol) =
+        let score (invocation: TypeInfo, definition: IParameterSymbol) =
             if isNull invocation.ConvertedType then
                 1
             else if SymbolEqualityComparer.Default.Equals(invocation.ConvertedType, definition.Type) then
@@ -56,7 +56,7 @@ module SignatureHelp =
         if m.Parameters.Length < types.Length then
             Microsoft.FSharp.Core.int.MinValue
         else
-            Seq.zip types m.Parameters |> Seq.map (uncurry score) |> Seq.sum
+            Seq.zip types m.Parameters |> Seq.map score |> Seq.sum
 
 
     let provider (_: ClientCapabilities) : SignatureHelpOptions option =
