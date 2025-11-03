@@ -3,6 +3,7 @@ namespace CSharpLanguageServer.Handlers
 open System
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -18,9 +19,33 @@ module WorkspaceSymbol =
         (p: WorkspaceSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> =
         async {
+            let! ct = Async.CancellationToken
+
             let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
 
-            let! symbols = context.FindSymbols pattern
+            let! symbols =
+                match context.Workspace.Solution with
+                | None -> async.Return Seq.empty
+                | Some solution ->
+                    match pattern with
+                    | Some pat ->
+                        SymbolFinder.FindSourceDeclarationsWithPatternAsync(
+                            solution,
+                            pat,
+                            SymbolFilter.TypeAndMember,
+                            cancellationToken = ct
+                        )
+                        |> Async.AwaitTask
+                    | None ->
+                        let true' = System.Func<string, bool>(fun _ -> true)
+
+                        SymbolFinder.FindSourceDeclarationsAsync(
+                            solution,
+                            true',
+                            SymbolFilter.TypeAndMember,
+                            cancellationToken = ct
+                        )
+                        |> Async.AwaitTask
 
             return
                 symbols
