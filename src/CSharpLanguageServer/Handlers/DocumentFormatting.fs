@@ -23,13 +23,11 @@ module DocumentFormatting =
     }
 
     let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
-        let formatDocument =
-            p.Options
-            |> context.State.Settings.GetEffectiveFormattingOptions
-            |> formatDocument
+        let lspFormattingOptions =
+            p.Options |> context.State.Settings.GetEffectiveFormattingOptions
 
         p.TextDocument.Uri
         |> workspaceDocument context.Workspace UserDocument
         |> async.Return
-        |> Async.bindOption formatDocument
+        |> Async.bindOption (formatDocument lspFormattingOptions)
         |> Async.map LspResult.success
