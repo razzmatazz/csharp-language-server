@@ -42,84 +42,21 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
         for e in es do
             this.Emit e
 
-    member private this.ResolveSymbolLocation
-        (project: Microsoft.CodeAnalysis.Project option)
-        sym
-        (l: Microsoft.CodeAnalysis.Location)
-        =
-        async {
-            match l.IsInMetadata, l.IsInSource, project with
-            | true, _, Some project ->
-                let! ct = Async.CancellationToken
-                let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
-
-                let fullName = sym |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
-
-                let containingAssemblyName =
-                    l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
-
-                let uri =
-                    $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
-
-                let mdDocument, stateChanges =
-                    match Map.tryFind uri state.Workspace.SingletonFolder.DecompiledMetadata with
-                    | Some value -> (value.Document, [])
-                    | None ->
-                        let (documentFromMd, text) = documentFromMetadata compilation project l fullName
-
-                        let csharpMetadata =
-                            { ProjectName = project.Name
-                              AssemblyName = containingAssemblyName
-                              SymbolName = fullName
-                              Source = text }
-
-                        (documentFromMd,
-                         [ DecompiledMetadataAdd(
-                               uri,
-                               { Metadata = csharpMetadata
-                                 Document = documentFromMd }
-                           ) ])
-
-                this.EmitMany stateChanges
-
-                // figure out location on the document (approx implementation)
-                let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-
-                let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym)
-                let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
-                collector.Visit(root)
-
-                let fallbackLocationInMetadata =
-                    { Uri = uri
-                      Range =
-                        { Start = { Line = 0u; Character = 0u }
-                          End = { Line = 0u; Character = 1u } } }
-
-                return
-                    match collector.GetLocations() with
-                    | [] -> [ fallbackLocationInMetadata ]
-                    | ls -> ls
-
-            | false, true, _ ->
-                return
-                    match (Location.fromRoslynLocation l) with
-                    | Some loc -> [ loc ]
-                    | None -> []
-
-            | _, _, _ -> return []
-        }
-
     member this.ResolveSymbolLocations
         (symbol: Microsoft.CodeAnalysis.ISymbol)
         (project: Microsoft.CodeAnalysis.Project option)
         =
         async {
+            let mutable wf = this.Workspace.SingletonFolder
             let mutable aggregatedLspLocations = []
 
             for l in symbol.Locations do
-                let! symLspLocations = this.ResolveSymbolLocation project symbol l
+                let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation project symbol l wf
 
                 aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
+                wf <- updatedWf
+
+            this.Emit(WorkspaceFolderChange wf)
 
             return aggregatedLspLocations
         }
@@ -199,22 +136,6 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
                 SymbolFinder.FindCallersAsync(symbol, currentSolution, cancellationToken = ct)
                 |> Async.AwaitTask
     }
-
-    member this.ResolveTypeSymbolLocations
-        (project: Microsoft.CodeAnalysis.Project)
-        (symbols: Microsoft.CodeAnalysis.ITypeSymbol list)
-        =
-        async {
-            let mutable aggregatedLspLocations = []
-
-            for sym in symbols do
-                for l in sym.Locations do
-                    let! symLspLocations = this.ResolveSymbolLocation (Some project) sym l
-
-                    aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
-
-            return aggregatedLspLocations
-        }
 
     member this.FindSymbols(pattern: string option) : Async<Microsoft.CodeAnalysis.ISymbol seq> = async {
         let findTask ct =
