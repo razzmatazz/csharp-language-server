@@ -24,6 +24,7 @@
     <Compile Include="SemanticTokenTests.fs" />
     <Compile Include="DiagnoseCommandTests.fs" />
     <Compile Include="SignatureHelpTests.fs" />
+    <Compile Include="TypeDefinitionTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
