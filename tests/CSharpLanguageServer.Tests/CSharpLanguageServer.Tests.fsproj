@@ -23,6 +23,7 @@
     <Compile Include="WorkspaceSymbolTests.fs" />
     <Compile Include="SemanticTokenTests.fs" />
     <Compile Include="DiagnoseCommandTests.fs" />
+    <Compile Include="SignatureHelpTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
