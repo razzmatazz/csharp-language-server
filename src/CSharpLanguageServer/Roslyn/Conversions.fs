@@ -149,13 +149,6 @@ module CallHierarchyItem =
           SelectionRange = location.Range
           Data = None }
 
-    let fromSymbol
-        (wmResolveSymbolLocations: ISymbol -> Project option -> Async<list<Location>>)
-        (symbol: ISymbol)
-        : Async<CallHierarchyItem list> =
-        wmResolveSymbolLocations symbol None
-        |> Async.map (List.map (fromSymbolAndLocation symbol))
-
 module TypeHierarchyItem =
     let private displayStyle =
         SymbolDisplayFormat(
