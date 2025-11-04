@@ -8,7 +8,7 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 
-type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent) =
+type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent: ServerStateEvent -> unit) =
     member _.RequestId = requestId
     member _.State = state
     member _.Workspace = state.Workspace
