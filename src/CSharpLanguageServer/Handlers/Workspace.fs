@@ -109,16 +109,26 @@ module Workspace =
         (context: ServerRequestContext)
         (p: DidChangeWatchedFilesParams)
         : Async<LspResult<unit>> =
+
+        let windowShowMessage (m: string) =
+            match context.State.LspClient with
+            | Some lspClient ->
+                lspClient.WindowShowMessage(
+                    { Type = MessageType.Info
+                      Message = sprintf "csharp-ls: %s" m }
+                )
+            | None -> async.Return()
+
         async {
             for change in p.Changes do
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
-                    do! context.WindowShowMessage "change to .csproj detected, will reload solution"
+                    do! windowShowMessage "change to .csproj detected, will reload solution"
                     context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
                 | ".sln"
                 | ".slnx" ->
-                    do! context.WindowShowMessage "change to .sln detected, will reload solution"
+                    do! windowShowMessage "change to .sln detected, will reload solution"
                     context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
                 | ".cs" ->
