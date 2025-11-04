@@ -1,11 +1,8 @@
 namespace CSharpLanguageServer.Handlers
 
-open System
-
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -13,9 +10,7 @@ open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
-
 
 module SignatureInformation =
     let internal fromMethod (m: IMethodSymbol) =
@@ -58,13 +53,11 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map score |> Seq.sum
 
-
-    let provider (_: ClientCapabilities) : SignatureHelpOptions option =
+    let provider (_cc: ClientCapabilities) : SignatureHelpOptions option =
         { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
           WorkDoneProgress = None
           RetriggerCharacters = None }
         |> Some
-
 
     let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
         let wf, docMaybe =
@@ -77,7 +70,7 @@ module SignatureHelp =
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
-            let position = Position.toRoslynPosition sourceText.Lines p.Position
+            let position = p.Position |> Position.toRoslynPosition sourceText.Lines
 
             let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
             let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
