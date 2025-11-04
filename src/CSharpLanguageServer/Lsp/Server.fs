@@ -70,7 +70,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
             let! state = stateActor.PostAndAsyncReply GetState
 
-            let context = ServerRequestContext(requestId, state, stateActor.Post)
+            let context = ServerRequestContext(state, stateActor.Post)
 
             return! handlerFn context param
         }
