@@ -41,18 +41,19 @@ type LspWorkspaceDocumentType =
     | AnyDocument
 
 let workspaceFolderResolveSymbolLocation
-    (project: Microsoft.CodeAnalysis.Project option)
-    sym
+    (project: Microsoft.CodeAnalysis.Project)
+    (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
     (folder: LspWorkspaceFolder)
     =
     async {
-        match l.IsInMetadata, l.IsInSource, project with
-        | true, _, Some project ->
+        match l.IsInMetadata, l.IsInSource with
+        | true, _ ->
             let! ct = Async.CancellationToken
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-            let fullName = sym |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
+            let fullName =
+                symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
             let containingAssemblyName =
                 l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
@@ -85,7 +86,7 @@ let workspaceFolderResolveSymbolLocation
             // figure out location on the document (approx implementation)
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, sym)
+            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, symbol)
             let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
             collector.Visit(root)
 
@@ -100,20 +101,20 @@ let workspaceFolderResolveSymbolLocation
                 | [] -> [ fallbackLocationInMetadata ], folder
                 | ls -> ls, folder
 
-        | false, true, _ ->
+        | false, true ->
             return
                 match (Location.fromRoslynLocation l) with
                 | Some loc -> [ loc ], folder
                 | None -> [], folder
 
-        | _, _, _ -> return [], folder
+        | _, _ -> return [], folder
     }
 
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
 let workspaceFolderSymbolLocations
     (symbol: Microsoft.CodeAnalysis.ISymbol)
-    (project: Microsoft.CodeAnalysis.Project option)
+    (project: Microsoft.CodeAnalysis.Project)
     folder
     =
     async {
