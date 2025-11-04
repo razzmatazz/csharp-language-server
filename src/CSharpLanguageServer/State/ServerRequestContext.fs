@@ -8,22 +8,12 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 
-type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent: ServerStateEvent -> unit) =
+type ServerRequestContext(requestId: int, state: ServerState, emit: ServerStateEvent -> unit) =
     member _.RequestId = requestId
     member _.State = state
     member _.Workspace = state.Workspace
     member _.ClientCapabilities = state.ClientCapabilities
-
-    member _.WindowShowMessage(m: string) =
-        match state.LspClient with
-        | Some lspClient ->
-            lspClient.WindowShowMessage(
-                { Type = MessageType.Info
-                  Message = sprintf "csharp-ls: %s" m }
-            )
-        | None -> async.Return()
-
-    member _.Emit ev = emitServerEvent ev
+    member _.Emit = emit
 
     member this.ResolveSymbolLocations
         (symbol: Microsoft.CodeAnalysis.ISymbol)
