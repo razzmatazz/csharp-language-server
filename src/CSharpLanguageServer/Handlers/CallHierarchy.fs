@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 
@@ -19,9 +20,7 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Event
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U3<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions> option =
+    let provider (_cc: ClientCapabilities) : U3<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions> option =
         Some(U3.C1 true)
 
     let prepare
@@ -30,9 +29,18 @@ module CallHierarchy =
         : AsyncLspResult<CallHierarchyItem[] option> =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some(wf), Some(symbol, _, _) when isCallableSymbol symbol ->
-                let! itemList = CallHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
-                return itemList |> List.toArray |> Some |> LspResult.success
+            | Some wf, Some(symbol, _, _) when isCallableSymbol symbol ->
+                let! locations, updatedWf = workspaceFolderSymbolLocations symbol None wf
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+
+                return
+                    locations
+                    |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
+                    |> Seq.toArray
+                    |> Some
+                    |> LspResult.success
+
             | _ -> return None |> LspResult.success
         }
 
@@ -52,11 +60,11 @@ module CallHierarchy =
                 info.CallingSymbol.Locations
                 |> Seq.choose Location.fromRoslynLocation
                 |> Seq.map (fun loc ->
-                    { From = CallHierarchyItem.fromSymbolAndLocation (info.CallingSymbol) loc
+                    { From = CallHierarchyItem.fromSymbolAndLocation info.CallingSymbol loc
                       FromRanges = fromRanges })
 
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some(wf), Some(symbol, _, _) ->
+            | Some wf, Some(symbol, _, _) ->
                 let! callers =
                     SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                     |> Async.AwaitTask
