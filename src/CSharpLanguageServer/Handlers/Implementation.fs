@@ -15,7 +15,7 @@ module Implementation =
     let provider (_cc: ClientCapabilities) : U3<bool, ImplementationOptions, ImplementationRegistrationOptions> option =
         Some(U3.C1 true)
 
-    let findImplLocationsOfSymbol wf (sym: ISymbol) = async {
+    let findImplLocationsOfSymbol wf project (sym: ISymbol) = async {
         let! ct = Async.CancellationToken
 
         let! impls =
@@ -27,7 +27,7 @@ module Implementation =
         let locations = System.Collections.Generic.List<Location>()
 
         for i in impls do
-            let! implLocations, wf = workspaceFolderSymbolLocations i None updatedWf
+            let! implLocations, wf = workspaceFolderSymbolLocations i project updatedWf
 
             locations.AddRange(implLocations)
             updatedWf <- wf
@@ -43,8 +43,8 @@ module Implementation =
             let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
             match wf, symInfo with
-            | Some wf, Some(sym, _, _) ->
-                let! impls, updatedWf = findImplLocationsOfSymbol wf sym
+            | Some wf, Some(sym, project, _) ->
+                let! impls, updatedWf = findImplLocationsOfSymbol wf project sym
                 context.Emit(WorkspaceFolderChange updatedWf)
 
                 return impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success

@@ -34,7 +34,7 @@ module TypeDefinition =
                     match typeSymbol with
                     | None -> async.Return([], wf)
                     | Some symbol -> async {
-                        let! aggregatedLspLocations, updatedWf = workspaceFolderSymbolLocations symbol (Some project) wf
+                        let! aggregatedLspLocations, updatedWf = workspaceFolderSymbolLocations symbol project wf
 
                         context.Emit(WorkspaceFolderChange updatedWf)
                         return (aggregatedLspLocations, updatedWf)

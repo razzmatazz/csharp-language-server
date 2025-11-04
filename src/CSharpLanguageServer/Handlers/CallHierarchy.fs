@@ -29,8 +29,8 @@ module CallHierarchy =
         : AsyncLspResult<CallHierarchyItem[] option> =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, _, _) when isCallableSymbol symbol ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations symbol None wf
+            | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
+                let! locations, updatedWf = workspaceFolderSymbolLocations symbol project wf
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 
