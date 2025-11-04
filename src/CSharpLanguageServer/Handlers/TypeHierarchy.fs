@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
@@ -26,9 +27,17 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
-                let! itemList = TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
-                return itemList |> List.toArray |> Some |> LspResult.success
+            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
+                let! symLocations, updatedWf = workspaceFolderSymbolLocations symbol (Some project) wf
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+
+                return
+                    symLocations
+                    |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
+                    |> Seq.toArray
+                    |> Some
+                    |> LspResult.success
 
             | _, _ -> return None |> LspResult.success
         }
@@ -39,7 +48,7 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
+            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
 
                 let baseType =
@@ -51,12 +60,22 @@ module TypeHierarchy =
                 let interfaces = Seq.toList typeSymbol.Interfaces
                 let supertypes = baseType @ interfaces
 
-                let! items =
-                    supertypes
-                    |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations)
-                    |> Async.Parallel
+                let items = System.Collections.Generic.List<TypeHierarchyItem>()
+                let mutable updatedWf = wf
 
-                return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
+                for typeSym in supertypes do
+                    let! locations, wf = workspaceFolderSymbolLocations typeSym (Some project) updatedWf
+
+                    let typeSymItems =
+                        locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
+
+                    items.AddRange(typeSymItems)
+
+                    updatedWf <- wf
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+
+                return items |> Seq.toArray |> Some |> LspResult.success
 
             | _, _ -> return None |> LspResult.success
         }
@@ -69,7 +88,7 @@ module TypeHierarchy =
             let! ct = Async.CancellationToken
 
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
+            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
                 // We only want immediately derived classes/interfaces/implementations here (we only need
                 // subclasses not subclasses' subclasses)
@@ -97,12 +116,22 @@ module TypeHierarchy =
                     |> Async.Parallel
                     |> Async.map (Seq.collect id >> Seq.toList)
 
-                let! items =
-                    subtypes
-                    |> Seq.map (TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations)
-                    |> Async.Parallel
+                let items = System.Collections.Generic.List<TypeHierarchyItem>()
+                let mutable updatedWf = wf
 
-                return items |> Seq.collect id |> Seq.toArray |> Some |> LspResult.success
+                for typeSym in subtypes do
+                    let! locations, wf = workspaceFolderSymbolLocations typeSym (Some project) updatedWf
+
+                    let typeSymItems =
+                        locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
+
+                    items.AddRange(typeSymItems)
+
+                    updatedWf <- wf
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+
+                return items |> Seq.toArray |> Some |> LspResult.success
 
             | _, _ -> return None |> LspResult.success
         }
