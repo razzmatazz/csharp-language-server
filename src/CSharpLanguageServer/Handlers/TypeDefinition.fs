@@ -5,34 +5,42 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let provider (_: ClientCapabilities) : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
+    let provider (_cc: ClientCapabilities) : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
         Some(U3.C1 true)
 
     let handle
         (context: ServerRequestContext)
         (p: TypeDefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
+
         async {
             match! context.FindSymbol' p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
                 let typeSymbol =
                     match symbol with
-                    | :? ILocalSymbol as localSymbol -> [ localSymbol.Type ]
-                    | :? IFieldSymbol as fieldSymbol -> [ fieldSymbol.Type ]
-                    | :? IPropertySymbol as propertySymbol -> [ propertySymbol.Type ]
-                    | :? IParameterSymbol as parameterSymbol -> [ parameterSymbol.Type ]
-                    | _ -> []
+                    | :? ILocalSymbol as localSymbol -> Some localSymbol.Type
+                    | :? IFieldSymbol as fieldSymbol -> Some fieldSymbol.Type
+                    | :? IPropertySymbol as propertySymbol -> Some propertySymbol.Type
+                    | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
+                    | _ -> None
 
-                let! locations =
-                    typeSymbol
-                    |> Seq.map (fun sym -> context.ResolveSymbolLocations sym (Some project))
-                    |> Async.Parallel
-                    |> Async.map (Seq.collect id >> Seq.toArray)
+                let! locations, wf =
+                    match typeSymbol with
+                    | None -> async.Return([], wf)
+                    | Some symbol -> async {
+                        let! aggregatedLspLocations, updatedWf = workspaceFolderSymbolLocations symbol (Some project) wf
 
-                return locations |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+                        context.Emit(WorkspaceFolderChange updatedWf)
+                        return (aggregatedLspLocations, updatedWf)
+                      }
+
+                return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+
             | _, _ -> return None |> LspResult.success
         }
