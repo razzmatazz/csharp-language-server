@@ -10,10 +10,11 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
-    let provider (_: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option = Some(U2.C1 true)
+    let provider (_cc: ClientCapabilities) : U2<bool, DocumentHighlightOptions> option = Some(U2.C1 true)
 
     let private shouldHighlight (symbol: ISymbol) =
         match symbol with
@@ -56,7 +57,7 @@ module DocumentHighlight =
                           Kind = Some DocumentHighlightKind.Read })
             }
 
-            match! context.FindSymbol' p.TextDocument.Uri p.Position with
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, _, Some doc) ->
                 if shouldHighlight symbol then
                     let! highlights = getHighlights symbol doc

@@ -4,6 +4,7 @@ open System
 open System.IO
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.Extensions.Logging
 
@@ -206,10 +207,28 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
 
     wf, docAndDocType
 
-let workspaceDocument workspace docType u =
+let workspaceDocument workspace docType (u: string) =
     let wf, docAndType = workspaceDocumentDetails workspace docType u
     let doc = docAndType |> Option.map fst
     wf, doc
+
+let workspaceDocumentSymbol workspace docType (uri: DocumentUri) (pos: Ionide.LanguageServerProtocol.Types.Position) = async {
+    let wf, docForUri = uri |> workspaceDocument workspace AnyDocument
+
+    match wf, docForUri with
+    | Some wf, Some doc ->
+        let! ct = Async.CancellationToken
+        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+        let position = Position.toRoslynPosition sourceText.Lines pos
+        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+        let symbolInfo =
+            symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+        return Some wf, symbolInfo
+
+    | wf, _ -> return (wf, None)
+}
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version

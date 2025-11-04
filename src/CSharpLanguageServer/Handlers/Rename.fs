@@ -148,7 +148,7 @@ module Rename =
     }
 
     let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
-        match! context.FindSymbol' p.TextDocument.Uri p.Position with
+        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
         | Some wf, Some(symbol, project, _) ->
             let! ct = Async.CancellationToken
             let originalSolution = project.Solution

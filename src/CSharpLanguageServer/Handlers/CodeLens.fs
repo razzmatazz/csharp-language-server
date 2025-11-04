@@ -131,8 +131,8 @@ module CodeLens =
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
-        match! context.FindSymbol lensData.DocumentUri lensData.Position with
-        | Some wf, Some symbol ->
+        match! workspaceDocumentSymbol context.Workspace AnyDocument lensData.DocumentUri lensData.Position with
+        | Some wf, Some(symbol, _, _) ->
             let! refs =
                 SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                 |> Async.AwaitTask

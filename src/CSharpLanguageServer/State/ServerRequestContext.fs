@@ -36,29 +36,3 @@ type ServerRequestContext(requestId: int, state: ServerState, emitServerEvent: S
             this.Emit(WorkspaceFolderChange wf)
             return aggregatedLspLocations
         }
-
-    member this.FindSymbol' (uri: DocumentUri) (pos: Position) = async {
-        let wf, docForUri = uri |> workspaceDocument this.Workspace AnyDocument
-
-        match wf, docForUri with
-        | Some wf, Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let position = Position.toRoslynPosition sourceText.Lines pos
-            let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
-
-            let symbolInfo =
-                symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
-
-            return Some wf, symbolInfo
-
-        | wf, _ -> return (wf, None)
-    }
-
-    member this.FindSymbol (uri: DocumentUri) (pos: Position) : Async<option<LspWorkspaceFolder> * option<ISymbol>> = async {
-        let! wf, symbolInfo = this.FindSymbol' uri pos
-
-        match symbolInfo with
-        | Some(sym, _, _) -> return (wf, Some sym)
-        | None -> return (wf, None)
-    }

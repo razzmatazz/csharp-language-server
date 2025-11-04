@@ -7,6 +7,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module CallHierarchy =
@@ -28,8 +29,8 @@ module CallHierarchy =
         (p: CallHierarchyPrepareParams)
         : AsyncLspResult<CallHierarchyItem[] option> =
         async {
-            match! context.FindSymbol p.TextDocument.Uri p.Position with
-            | Some(wf), Some(symbol) when isCallableSymbol symbol ->
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
+            | Some(wf), Some(symbol, _, _) when isCallableSymbol symbol ->
                 let! itemList = CallHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
                 return itemList |> List.toArray |> Some |> LspResult.success
             | _ -> return None |> LspResult.success
@@ -54,8 +55,8 @@ module CallHierarchy =
                     { From = CallHierarchyItem.fromSymbolAndLocation (info.CallingSymbol) loc
                       FromRanges = fromRanges })
 
-            match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | Some(wf), Some(symbol) ->
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
+            | Some(wf), Some(symbol, _, _) ->
                 let! callers =
                     SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                     |> Async.AwaitTask
