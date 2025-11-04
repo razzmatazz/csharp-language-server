@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
@@ -14,33 +15,39 @@ module Implementation =
     let provider (_cc: ClientCapabilities) : U3<bool, ImplementationOptions, ImplementationRegistrationOptions> option =
         Some(U3.C1 true)
 
+    let findImplLocationsOfSymbol wf (sym: ISymbol) = async {
+        let! ct = Async.CancellationToken
+
+        let! impls =
+            SymbolFinder.FindImplementationsAsync(sym, wf.Solution.Value, cancellationToken = ct)
+            |> Async.AwaitTask
+
+        let mutable updatedWf = wf
+
+        let locations = System.Collections.Generic.List<Location>()
+
+        for i in impls do
+            let! implLocations, wf = workspaceFolderSymbolLocations i None updatedWf
+
+            locations.AddRange(implLocations)
+            updatedWf <- wf
+
+        return locations |> Seq.toArray, updatedWf
+    }
+
     let handle
         (context: ServerRequestContext)
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
-
-            let findImplementationsOfSymbol sln (sym: ISymbol) = async {
-                let! ct = Async.CancellationToken
-
-                let! impls =
-                    SymbolFinder.FindImplementationsAsync(sym, sln, cancellationToken = ct)
-                    |> Async.AwaitTask
-
-                let! locations =
-                    impls
-                    |> Seq.map (fun i -> context.ResolveSymbolLocations i None)
-                    |> Async.Parallel
-
-                return locations |> Array.collect List.toArray |> Declaration.C2 |> U2.C1 |> Some
-            }
-
             let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
             match wf, symInfo with
             | Some wf, Some(sym, _, _) ->
-                let! impls = findImplementationsOfSymbol wf.Solution.Value sym
-                return impls |> LspResult.success
+                let! impls, updatedWf = findImplLocationsOfSymbol wf sym
+                context.Emit(WorkspaceFolderChange updatedWf)
+
+                return impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
 
             | _, _ -> return None |> LspResult.success
         }
