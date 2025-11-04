@@ -8,6 +8,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module TypeHierarchy =
@@ -24,8 +25,8 @@ module TypeHierarchy =
         (p: TypeHierarchyPrepareParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
-            match! context.FindSymbol p.TextDocument.Uri p.Position with
-            | Some wf, Some symbol when isTypeSymbol symbol ->
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
+            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
                 let! itemList = TypeHierarchyItem.fromSymbol context.ResolveSymbolLocations symbol
                 return itemList |> List.toArray |> Some |> LspResult.success
 
@@ -37,8 +38,8 @@ module TypeHierarchy =
         (p: TypeHierarchySupertypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
-            match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some symbol when isTypeSymbol symbol ->
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
+            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
 
                 let baseType =
@@ -67,8 +68,8 @@ module TypeHierarchy =
         async {
             let! ct = Async.CancellationToken
 
-            match! context.FindSymbol p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some symbol when isTypeSymbol symbol ->
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
+            | Some wf, Some(symbol, _, _) when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
                 // We only want immediately derived classes/interfaces/implementations here (we only need
                 // subclasses not subclasses' subclasses)

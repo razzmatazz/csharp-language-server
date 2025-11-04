@@ -7,6 +7,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module Implementation =
@@ -34,10 +35,10 @@ module Implementation =
                 return locations |> Array.collect List.toArray |> Declaration.C2 |> U2.C1 |> Some
             }
 
-            let! wf, sym = context.FindSymbol p.TextDocument.Uri p.Position
+            let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
-            match wf, sym with
-            | Some wf, Some sym ->
+            match wf, symInfo with
+            | Some wf, Some(sym, _, _) ->
                 let! impls = findImplementationsOfSymbol wf.Solution.Value sym
                 return impls |> LspResult.success
 

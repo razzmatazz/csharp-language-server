@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 
@@ -16,8 +17,8 @@ module References =
     let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         let! ct = Async.CancellationToken
 
-        match! context.FindSymbol p.TextDocument.Uri p.Position with
-        | Some wf, Some symbol ->
+        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
+        | Some wf, Some(symbol, _, _) ->
             let! refs =
                 SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                 |> Async.AwaitTask

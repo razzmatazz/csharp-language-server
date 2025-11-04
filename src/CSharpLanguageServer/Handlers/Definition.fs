@@ -16,7 +16,7 @@ module Definition =
         (p: DefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
-            match! context.FindSymbol' p.TextDocument.Uri p.Position with
+            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
                 let! locations, updatedWf = workspaceFolderSymbolLocations symbol (Some project) wf
 
