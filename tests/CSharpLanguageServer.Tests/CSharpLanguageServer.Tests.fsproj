@@ -13,6 +13,7 @@
     <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
+    <Compile Include="DocumentHighlightTests.fs" />
     <Compile Include="HoverTests.fs" />
     <Compile Include="InitializationTests.fs" />
     <Compile Include="ReferenceTests.fs" />
