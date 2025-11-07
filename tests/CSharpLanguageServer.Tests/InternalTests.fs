@@ -5,7 +5,6 @@ open NUnit.Framework
 
 open CSharpLanguageServer.Roslyn.Solution
 
-
 [<TestCase("1.csproj:net8.0", "net8.0")>]
 [<TestCase("1.csproj:net8.0,net10.0", "net10.0")>]
 [<TestCase("1.csproj:net8.0,netstandard2.0", "net8.0")>]
@@ -16,6 +15,8 @@ open CSharpLanguageServer.Roslyn.Solution
 [<TestCase("1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", null)>]
 [<TestCase("1.csproj:net8.0,net10.0 2.csproj:net8.0,net10.0", "net10.0")>]
 [<TestCase("1.csproj:net8.0 2.csproj:net8.0,net10.0", "net8.0")>]
+[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", "net9.0-windows")>]
+[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", "net9.0-windows")>]
 let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string | null) =
 
     let parseTfmList (projectEntry: string) : string * list<string> =
@@ -37,7 +38,6 @@ let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string 
     let props = Map.empty |> applyWorkspaceTargetFrameworkProp tfmsPerProject
 
     Assert.AreEqual(expectedTfm |> Option.ofObj, props |> Map.tryFind "TargetFramework")
-
 
 [<TestCase>]
 let testApplyWorkspaceTargetFrameworkPropWithEmptyMap () =
