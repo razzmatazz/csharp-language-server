@@ -15,16 +15,13 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.MSBuild
 open Microsoft.CodeAnalysis.Text
 open Microsoft.Extensions.Logging
+open NuGet.Frameworks
 
-open CSharpLanguageServer
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 
-
 let private logger = Logging.getLoggerByName "Roslyn.Solution"
-
 
 let initializeMSBuild () : unit =
     let vsInstanceQueryOpt = VisualStudioInstanceQueryOptions.Default
@@ -61,7 +58,6 @@ let initializeMSBuild () : unit =
 
     MSBuildLocator.RegisterInstance(vsInstance)
 
-
 let solutionLoadProjectFilenames (solutionPath: string) =
     assert Path.IsPathRooted solutionPath
     let projectFilenames = new List<string>()
@@ -73,49 +69,6 @@ let solutionLoadProjectFilenames (solutionPath: string) =
             projectFilenames.Add project.AbsolutePath
 
     projectFilenames |> Set.ofSeq
-
-
-type TfmCategory =
-    | NetFramework of Version
-    | NetStandard of Version
-    | NetCoreApp of Version
-    | Net of Version
-    | Unknown
-
-
-let selectLatestTfm (tfms: string seq) : string option =
-    let parseTfm (tfm: string) : TfmCategory =
-        let patterns =
-            [ @"^net(?<major>\d)(?<minor>\d)?(?<build>\d)?$", NetFramework
-              @"^netstandard(?<major>\d+)\.(?<minor>\d+)$", NetStandard
-              @"^netcoreapp(?<major>\d+)\.(?<minor>\d+)$", NetCoreApp
-              @"^net(?<major>\d+)\.(?<minor>\d+)$", Net ]
-
-        let matchingTfmCategory (pat, categoryCtor) =
-            let m = Regex.Match(tfm.ToLowerInvariant(), pat)
-
-            if m.Success then
-                let readVersionNum (groupName: string) =
-                    let group = m.Groups.[groupName]
-                    if group.Success then int group.Value else 0
-
-                Version(readVersionNum "major", readVersionNum "minor", readVersionNum "build")
-                |> categoryCtor
-                |> Some
-            else
-                None
-
-        patterns |> List.tryPick matchingTfmCategory |> Option.defaultValue Unknown
-
-    let rankTfm =
-        function
-        | Net v -> 3000 + v.Major * 10 + v.Minor
-        | NetCoreApp v -> 2000 + v.Major * 10 + v.Minor
-        | NetStandard v -> 1000 + v.Major * 10 + v.Minor
-        | NetFramework v -> 0 + v.Major * 10 + v.Minor
-        | Unknown -> -1
-
-    tfms |> Seq.sortByDescending (parseTfm >> rankTfm) |> Seq.tryHead
 
 
 let loadProjectTfms (projs: string seq) : Map<string, list<string>> =
@@ -156,6 +109,38 @@ let loadProjectTfms (projs: string seq) : Map<string, list<string>> =
 
     projectTfms
 
+let compatibleTfmsOfTwoSets afxs bfxs = seq {
+    for a in afxs |> Seq.map NuGetFramework.Parse do
+        for b in bfxs |> Seq.map NuGetFramework.Parse do
+            if DefaultCompatibilityProvider.Instance.IsCompatible(a, b) then
+                yield a.GetShortFolderName()
+            else if DefaultCompatibilityProvider.Instance.IsCompatible(b, a) then
+                yield b.GetShortFolderName()
+}
+
+let compatibleTfmSet (fxSets: list<Set<string>>) : Set<string> =
+    match fxSets.Length with
+    | 0 -> Set.empty
+    | 1 -> fxSets |> List.head
+    | _ ->
+        let firstSet = fxSets |> List.head
+
+        fxSets |> List.skip 1 |> Seq.fold compatibleTfmsOfTwoSets firstSet |> Set.ofSeq
+
+let bestTfm (frameworks: string seq) : string option =
+    let frameworks = frameworks |> Seq.map NuGetFramework.Parse |> List.ofSeq
+
+    match frameworks with
+    | [] -> None
+    | fxes ->
+        let compatibleWithAllOtherFxes candidate =
+            fxes
+            |> Seq.forall (fun f -> DefaultCompatibilityProvider.Instance.IsCompatible(candidate, f))
+
+        fxes
+        |> Seq.maxBy (fun fx -> compatibleWithAllOtherFxes fx, fx.HasPlatform, fx.Version)
+        |> _.GetShortFolderName()
+        |> Some
 
 let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>) props : Map<string, string> =
     let selectedTfm =
@@ -164,13 +149,13 @@ let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>
         | _ ->
             tfmsPerProject.Values
             |> Seq.map Set.ofSeq
-            |> Set.intersectMany
-            |> selectLatestTfm
+            |> List.ofSeq
+            |> compatibleTfmSet
+            |> bestTfm
 
     match selectedTfm with
     | Some tfm -> props |> Map.add "TargetFramework" tfm
     | None -> props
-
 
 let resolveDefaultWorkspaceProps projs : Map<string, string> =
     let tfmsPerProject = loadProjectTfms projs
@@ -187,7 +172,6 @@ let solutionGetProjectForPath (solution: Solution) (filePath: string) : Project 
         docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
 
     solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
-
 
 let solutionTryAddDocument (docFilePath: string) (text: string) (solution: Solution) : Async<Document option> = async {
     let projectOnPath = solutionGetProjectForPath solution docFilePath
@@ -211,7 +195,6 @@ let solutionTryAddDocument (docFilePath: string) (text: string) (solution: Solut
     return newDocumentMaybe
 }
 
-
 let selectPreferredSolution (slnFiles: string list) : option<string> =
     let getProjectCount (slnPath: string) =
         try
@@ -228,7 +211,6 @@ let selectPreferredSolution (slnFiles: string list) : option<string> =
         |> Seq.sortByDescending fst
         |> Seq.map snd
         |> Seq.tryHead
-
 
 let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
     assert Path.IsPathRooted solutionPath
@@ -282,7 +264,6 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
             return None
     }
 
-
 let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string -> Async<unit>) (projs: string list) =
     let progress = ProgressReporter lspClient
 
@@ -323,7 +304,6 @@ let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string 
         //workspace <- Some(msbuildWorkspace :> Workspace)
         return Some msbuildWorkspace.CurrentSolution
     }
-
 
 let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
     let fileNotOnNodeModules (filename: string) =
@@ -373,7 +353,6 @@ let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
 
     | Some solutionPath -> return! solutionTryLoadOnPath lspClient solutionPath
 }
-
 
 let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMaybe: string option) (cwd: string) =
     match solutionPathMaybe with
