@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Actually selected the most optimal fx for multiple projects when loading a solution:
+  - By @razzmatazz inhttps://github.com/razzmatazz/csharp-language-server/pull/286
+  - Reported by @badly-drawn-wizards in https://github.com/razzmatazz/csharp-language-server/issues/280
 * Actually ingest InitializeParams.rootPath and .rootUri to determine workspace root:
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/283
 * Add `--diagnose` command option to run basic diagnostics interactively
