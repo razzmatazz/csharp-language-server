@@ -178,7 +178,7 @@ let workspaceFolder (workspace: LspWorkspace) (uri: string) =
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
-    let wf = workspaceFolder workspace (string uri)
+    let wf = workspaceFolder workspace u
     let solution = wf |> Option.bind _.Solution
 
     let docAndDocType =
