@@ -4,7 +4,6 @@ open System
 open System.IO
 open System.Threading
 open System.Collections.Generic
-open System.Text.RegularExpressions
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
@@ -109,33 +108,35 @@ let loadProjectTfms (projs: string seq) : Map<string, list<string>> =
 
     projectTfms
 
+let frameworkIsCompatible a b =
+    DefaultCompatibilityProvider.Instance.IsCompatible(a, b)
+
 let compatibleTfmsOfTwoSets afxs bfxs = seq {
     for a in afxs |> Seq.map NuGetFramework.Parse do
         for b in bfxs |> Seq.map NuGetFramework.Parse do
-            if DefaultCompatibilityProvider.Instance.IsCompatible(a, b) then
+            if frameworkIsCompatible a b then
                 yield a.GetShortFolderName()
-            else if DefaultCompatibilityProvider.Instance.IsCompatible(b, a) then
+            else if frameworkIsCompatible b a then
                 yield b.GetShortFolderName()
 }
 
-let compatibleTfmSet (fxSets: list<Set<string>>) : Set<string> =
-    match fxSets.Length with
+let compatibleTfmSet (tfmSets: list<Set<string>>) : Set<string> =
+    match tfmSets.Length with
     | 0 -> Set.empty
-    | 1 -> fxSets |> List.head
+    | 1 -> tfmSets |> List.head
     | _ ->
-        let firstSet = fxSets |> List.head
+        let firstSet = tfmSets |> List.head
 
-        fxSets |> List.skip 1 |> Seq.fold compatibleTfmsOfTwoSets firstSet |> Set.ofSeq
+        tfmSets |> List.skip 1 |> Seq.fold compatibleTfmsOfTwoSets firstSet |> Set.ofSeq
 
-let bestTfm (frameworks: string seq) : string option =
-    let frameworks = frameworks |> Seq.map NuGetFramework.Parse |> List.ofSeq
+let bestTfm (tfms: string seq) : string option =
+    let frameworks = tfms |> Seq.map NuGetFramework.Parse |> List.ofSeq
 
     match frameworks with
     | [] -> None
     | fxes ->
         let compatibleWithAllOtherFxes candidate =
-            fxes
-            |> Seq.forall (fun f -> DefaultCompatibilityProvider.Instance.IsCompatible(candidate, f))
+            fxes |> Seq.forall (frameworkIsCompatible candidate)
 
         fxes
         |> Seq.maxBy (fun fx -> compatibleWithAllOtherFxes fx, fx.HasPlatform, fx.Version)
