@@ -172,12 +172,13 @@ let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
     { LspWorkspace.Empty with
         Folders = folders }
 
-let workspaceFolder (workspace: LspWorkspace) _uri = Some workspace.SingletonFolder
+let workspaceFolder (workspace: LspWorkspace) (uri: string) =
+    workspace.Folders |> Seq.tryFind (fun wf -> uri.StartsWith wf.Uri)
 
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
-    let wf = workspaceFolder workspace uri
+    let wf = workspaceFolder workspace (string uri)
     let solution = wf |> Option.bind _.Solution
 
     let docAndDocType =
