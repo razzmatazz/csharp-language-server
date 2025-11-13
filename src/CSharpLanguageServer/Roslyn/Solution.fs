@@ -35,17 +35,21 @@ let initializeMSBuild () : unit =
             )
         )
 
-    logger.LogTrace("MSBuildLocator instances found:")
-
-    for vsInstance in vsInstanceList do
-        logger.LogTrace(
-            sprintf
-                "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
-                vsInstance.Name
-                (string vsInstance.Version)
-                vsInstance.MSBuildPath
-                (string vsInstance.DiscoveryType)
+    let sdkInstanceInfo =
+        "SDK instances found, as reported by MSBuild:\n"
+        + String.Join(
+            "\n",
+            vsInstanceList
+            |> Seq.map (fun vsInstance ->
+                sprintf
+                    "- SDK=\"%s\", Version=%s, MSBuildPath=\"%s\", DiscoveryType=%s"
+                    vsInstance.Name
+                    (string vsInstance.Version)
+                    vsInstance.MSBuildPath
+                    (string vsInstance.DiscoveryType))
         )
+
+    logger.LogInformation(sdkInstanceInfo)
 
     let vsInstance = vsInstanceList |> Seq.head
 
@@ -235,9 +239,7 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
 
             let projs = solutionLoadProjectFilenames solutionPath
             let workspaceProps = resolveDefaultWorkspaceProps projs
-
-            if workspaceProps.Count > 0 then
-                logger.LogInformation("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
+            logger.LogInformation("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
 
             let msbuildWorkspace =
                 MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
@@ -273,9 +275,7 @@ let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string 
         let loadedProj = ref 0
 
         let workspaceProps = resolveDefaultWorkspaceProps projs
-
-        if workspaceProps.Count > 0 then
-            logger.LogDebug("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
+        logger.LogDebug("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
 
         let msbuildWorkspace =
             MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
