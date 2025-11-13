@@ -36,12 +36,4 @@ let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string 
         |> Array.map parseTfmList
         |> Map.ofArray
 
-    let props = Map.empty |> applyWorkspaceTargetFrameworkProp tfmsPerProject
-
-    Assert.AreEqual(expectedTfm |> Option.ofObj, props |> Map.tryFind "TargetFramework")
-
-[<TestCase>]
-let testApplyWorkspaceTargetFrameworkPropWithEmptyMap () =
-    let props = Map.empty |> applyWorkspaceTargetFrameworkProp Map.empty
-
-    Assert.AreEqual(None, props |> Map.tryFind "TargetFramework")
+    Assert.AreEqual(expectedTfm |> Option.ofObj, workspaceTargetFramework tfmsPerProject)

@@ -147,25 +147,23 @@ let bestTfm (tfms: string seq) : string option =
         |> _.GetShortFolderName()
         |> Some
 
-let applyWorkspaceTargetFrameworkProp (tfmsPerProject: Map<string, list<string>>) props : Map<string, string> =
-    let selectedTfm =
-        match tfmsPerProject.Count with
-        | 0 -> None
-        | _ ->
-            tfmsPerProject.Values
-            |> Seq.map Set.ofSeq
-            |> List.ofSeq
-            |> compatibleTfmSet
-            |> bestTfm
+let workspaceTargetFramework (tfmsPerProject: Map<string, string list>) : option<string> =
+    match tfmsPerProject.Count with
+    | 0 -> None
+    | _ ->
+        tfmsPerProject.Values
+        |> Seq.map Set.ofSeq
+        |> List.ofSeq
+        |> compatibleTfmSet
+        |> bestTfm
 
-    match selectedTfm with
-    | Some tfm -> props |> Map.add "TargetFramework" tfm
-    | None -> props
+let resolveDefaultWorkspaceProps (targetFramework: string option) : Map<string, string> =
+    let applyTargetFrameworkProp props =
+        match targetFramework with
+        | Some tfm -> props |> Map.add "TargetFramework" tfm
+        | None -> props
 
-let resolveDefaultWorkspaceProps projs : Map<string, string> =
-    let tfmsPerProject = loadProjectTfms projs
-
-    Map.empty |> applyWorkspaceTargetFrameworkProp tfmsPerProject
+    Map.empty |> applyTargetFrameworkProp
 
 let solutionGetProjectForPath (solution: Solution) (filePath: string) : Project option =
     let docDir = Path.GetDirectoryName filePath
@@ -238,8 +236,11 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
             do! logMessage beginMessage
 
             let projs = solutionLoadProjectFilenames solutionPath
-            let workspaceProps = resolveDefaultWorkspaceProps projs
-            logger.LogInformation("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
+
+            let tfmsPerProject = loadProjectTfms projs
+            let tfmToUse = workspaceTargetFramework tfmsPerProject
+            let workspaceProps = resolveDefaultWorkspaceProps tfmToUse
+            logger.LogInformation("Will use MSBuild props: {workspaceProps}", string workspaceProps)
 
             let msbuildWorkspace =
                 MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
@@ -274,8 +275,10 @@ let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string 
         do! progress.Begin($"Loading {projs.Length} project(s)...", false, $"0/{projs.Length}", 0u)
         let loadedProj = ref 0
 
-        let workspaceProps = resolveDefaultWorkspaceProps projs
-        logger.LogDebug("Will use these MSBuild props: {workspaceProps}", string workspaceProps)
+        let tfmsPerProject = loadProjectTfms projs
+        let tmfToUse = workspaceTargetFramework tfmsPerProject
+        let workspaceProps = resolveDefaultWorkspaceProps tmfToUse
+        logger.LogInformation("Will use MSBuild props: {workspaceProps}", string workspaceProps)
 
         let msbuildWorkspace =
             MSBuildWorkspace.Create(workspaceProps, CSharpLspHostServices())
