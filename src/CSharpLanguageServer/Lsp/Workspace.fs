@@ -13,6 +13,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
 
 let logger = Logging.getLoggerByName "Lsp.Workspace"
@@ -214,23 +215,55 @@ let workspaceDocument workspace docType (u: string) =
     let doc = docAndType |> Option.map fst
     wf, doc
 
-let workspaceDocumentSymbol workspace docType (uri: DocumentUri) (pos: Ionide.LanguageServerProtocol.Types.Position) = async {
-    let wf, docForUri = uri |> workspaceDocument workspace AnyDocument
+let workspaceDocumentSemanticModel (workspace: LspWorkspace) (uri: DocumentUri) = async {
+    if uri.EndsWith ".cshtml" then
+        let wf = workspace.SingletonFolder
 
-    match wf, docForUri with
-    | Some wf, Some doc ->
-        let! ct = Async.CancellationToken
-        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-        let position = Position.toRoslynPosition sourceText.Lines pos
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+        match! solutionGetRazorDocumentForUri workspace.SingletonFolder.Solution.Value uri with
+        | None -> return Some wf, None
+        | Some(_, compilation, cshtmlTree) ->
+            let semanticModel = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+            return Some wf, semanticModel
+    else
+        let wf, docAndType = workspaceDocumentDetails workspace AnyDocument uri
 
-        let symbolInfo =
-            symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+        match docAndType with
+        | Some(doc, _) ->
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask |> Async.map Option.ofObj
+            return wf, semanticModel
 
-        return Some wf, symbolInfo
-
-    | wf, _ -> return (wf, None)
+        | None -> return wf, None
 }
+
+let workspaceDocumentSymbol
+    (workspace: LspWorkspace)
+    docType
+    (uri: DocumentUri)
+    (pos: Ionide.LanguageServerProtocol.Types.Position)
+    =
+    async {
+        if uri.EndsWith ".cshtml" then
+            let wf = workspace.SingletonFolder
+            let! symbolInfo = solutionFindSymbolForRazorDocumentUri wf.Solution.Value uri pos
+            return (Some wf, symbolInfo)
+        else
+            let wf, docForUri = uri |> workspaceDocument workspace docType
+
+            match wf, docForUri with
+            | Some wf, Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+                let symbolInfo =
+                    symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+                return Some wf, symbolInfo
+
+            | wf, _ -> return (wf, None)
+    }
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
