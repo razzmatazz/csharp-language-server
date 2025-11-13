@@ -114,7 +114,6 @@ let makeServerProcessInfo projectTempDir =
 
     processStartInfo
 
-
 type ClientServerRpcRequestInfo =
     { Method: string
       RpcRequestMsg: JObject
@@ -526,7 +525,6 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return state
 }
 
-
 let clientEventLoop (initialState: ClientState) (inbox: MailboxProcessor<ClientEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
@@ -541,7 +539,6 @@ let clientEventLoop (initialState: ClientState) (inbox: MailboxProcessor<ClientE
             Console.Error.WriteLine("clientEventLoop: failed {0}", ex)
             raise ex
     }
-
 
 let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
     if not sourceTestDir.Exists then
@@ -590,7 +587,6 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
 
     copyDirWithFilter sourceTestDir tempTestDir |> string
 
-
 let rec deleteDirectory (path: string) =
     if Directory.Exists(path) then
         Directory.GetFileSystemEntries(path)
@@ -602,7 +598,6 @@ let rec deleteDirectory (path: string) =
 
         Directory.Delete(path)
 
-
 type FileController
     (client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string, fixtureIsReadOnly: bool) =
     let mutable fileContents: option<string> = None
@@ -613,7 +608,6 @@ type FileController
         match Environment.OSVersion.Platform with
         | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
         | _ -> "file://" + projectDir + "/" + filename
-
 
     interface IDisposable with
         member this.Dispose() =
@@ -668,7 +662,6 @@ type FileController
             + c.Substring(indexOfPos c te.Range.End)
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
-
 
 type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string, fixtureIsReadOnly: bool) =
     let mutable projectDir: string option = None
@@ -727,9 +720,11 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
         let state = client.PostAndReply(fun rc -> ServerStartRequest(projectDir.Value, rc))
 
         let initializeParams: InitializeParams =
+            let rootUri = Uri(projectDir.Value) |> string |> DocumentUri
+
             { RootPath = None
+              RootUri = Some rootUri
               ProcessId = (Process.GetCurrentProcess().Id) |> int |> Some
-              RootUri = (sprintf "file://%s" projectDir.Value) |> Some
               Capabilities = state.ClientProfile.ClientCapabilities
               WorkDoneToken = None
               ClientInfo = None
@@ -876,7 +871,6 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
         file.Open()
         file
 
-
 let private activateClient (clientProfile: ClientProfile) (fixtureName: string) (readOnlyFixture: bool) =
     let initialState =
         { defaultClientState with
@@ -888,10 +882,8 @@ let private activateClient (clientProfile: ClientProfile) (fixtureName: string) 
     client.StartAndWaitForSolutionLoad(clientProfile)
     client
 
-
 let activeClientsSemaphore =
     new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
-
 
 let activateFixture fixtureName =
     activeClientsSemaphore.Wait()
@@ -900,7 +892,6 @@ let activateFixture fixtureName =
         activateClient defaultClientProfile fixtureName false
     finally
         activeClientsSemaphore.Release() |> ignore
-
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =
