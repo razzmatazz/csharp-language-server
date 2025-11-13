@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.20.0] - 2025-11-13 / Kulautuva
 * Actually selected the most optimal fx for multiple projects when loading a solution:
   - By @razzmatazz inhttps://github.com/razzmatazz/csharp-language-server/pull/286
   - Reported by @badly-drawn-wizards in https://github.com/razzmatazz/csharp-language-server/issues/280
@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By @onion108 in https://github.com/razzmatazz/csharp-language-server/pull/261
 * Print request stats in debug mode.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/258
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.19.0...0.20.0
 
 ## [0.19.0] - 2025-08-20 / Kapčiamiestis
 * Select common target framework when multiple projects are found
@@ -36,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @prashanthbabu07 in https://github.com/razzmatazz/csharp-language-server/issues/247
   - Fixed in https://github.com/razzmatazz/csharp-language-server/pull/248
 
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.18.0...0.19.0
+
 ## [0.18.0] - 2025-06-23 / Pabradė
 * Upgrade Roslyn to 4.14.0
 * Use diagnostic url from Roslyn
@@ -48,6 +52,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - https://github.com/razzmatazz/csharp-language-server/pull/205
 * Implement workspace diagnostics
   - https://github.com/razzmatazz/csharp-language-server/pull/235
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.17.0...0.18.0
 
 ## [0.17.0] - 2025-04-30 / Krokšlys
 * Upgrade Roslyn to 4.13.0
