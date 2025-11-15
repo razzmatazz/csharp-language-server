@@ -18,7 +18,7 @@ warranty of any kind.
 
 # Quick Start
 
-csharp-ls requires the .NET 9 SDK or later to be installed on your machine.
+csharp-ls requires the .NET 10 SDK or later to be installed on your machine.
 Please head to [Download .NET](https://dotnet.microsoft.com/en-us/download) to
 download it.
 
