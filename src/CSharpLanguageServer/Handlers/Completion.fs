@@ -80,7 +80,7 @@ module Completion =
             let defaultCo: obj =
                 coType.GetField("Default")
                 |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionOptions.Default"
-                |> _.GetValue()
+                |> _.GetValue(null)
 
             { Object = defaultCo
               CompletionOptionsType = coType }
