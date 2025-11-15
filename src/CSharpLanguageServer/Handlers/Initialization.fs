@@ -179,7 +179,7 @@ module Initialization =
             //
             // start loading workspace
             //
-            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(100)))
+            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
