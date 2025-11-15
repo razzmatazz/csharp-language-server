@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+* csharp-ls will now use and require the .NET 10 runtime/SDK
+
 ## [0.20.0] - 2025-11-13 / Kulautuva
 * Actually selected the most optimal fx for multiple projects when loading a solution:
   - By @razzmatazz inhttps://github.com/razzmatazz/csharp-language-server/pull/286
