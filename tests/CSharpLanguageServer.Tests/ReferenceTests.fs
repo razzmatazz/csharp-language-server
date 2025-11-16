@@ -144,13 +144,12 @@ let testReferenceWorksDotnet8 () =
 
 
 [<Test>]
-[<Ignore("not working w/ .net 10 for the moment")>]
 let testReferenceWorksToAspNetRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
-    use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
-    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
-    use viewsTestIndexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+    use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
+    use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
+    use viewsTestIndexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }

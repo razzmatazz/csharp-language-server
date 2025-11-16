@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Upgrade Roslyn libs to 5.0.0
 * csharp-ls will now use and require the .NET 10 runtime/SDK
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.20.0...main
 
 ## [0.20.0] - 2025-11-13 / Kulautuva
 * Actually selected the most optimal fx for multiple projects when loading a solution:
