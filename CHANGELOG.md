@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Fix go-to-definition in metadata, csharp/metadata endpoint
+  - https://github.com/razzmatazz/csharp-language-server/pull/293
+  - Reported by @samwcoulter in https://github.com/razzmatazz/csharp-language-server/issues/289
 * Upgrade Roslyn libs to 5.0.0
 * csharp-ls will now use and require the .NET 10 runtime/SDK
 
@@ -11,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.20.0] - 2025-11-13 / Kulautuva
 * Actually selected the most optimal fx for multiple projects when loading a solution:
-  - By @razzmatazz inhttps://github.com/razzmatazz/csharp-language-server/pull/286
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/286
   - Reported by @badly-drawn-wizards in https://github.com/razzmatazz/csharp-language-server/issues/280
 * Actually ingest InitializeParams.rootPath and .rootUri to determine workspace root:
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/283
