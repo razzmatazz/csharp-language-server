@@ -40,11 +40,17 @@ type LspWorkspaceDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
+let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
+    wf.Uri
+    |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
+    |> _.TrimEnd('/')
+    |> sprintf "csharp:/%s/$metadata$"
+
 let workspaceFolderResolveSymbolLocation
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
-    (folder: LspWorkspaceFolder)
+    (wf: LspWorkspaceFolder)
     =
     async {
         match l.IsInMetadata, l.IsInSource with
@@ -52,25 +58,31 @@ let workspaceFolderResolveSymbolLocation
             let! ct = Async.CancellationToken
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-            let fullName =
+            let symbolFullName =
                 symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
             let containingAssemblyName =
                 l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
 
             let uri =
-                $"csharp:/metadata/projects/{project.Name}/assemblies/{containingAssemblyName}/symbols/{fullName}.cs"
+                sprintf
+                    "%s/projects/%s/assemblies/%s/symbols/%s.cs"
+                    (workspaceFolderMetadataUriBase wf)
+                    project.Name
+                    containingAssemblyName
+                    symbolFullName
 
             let mdDocument, folder =
-                match Map.tryFind uri folder.DecompiledMetadata with
-                | Some value -> (value.Document, folder)
+                match Map.tryFind uri wf.DecompiledMetadata with
+                | Some value -> (value.Document, wf)
                 | None ->
-                    let (documentFromMd, text) = documentFromMetadata compilation project l fullName
+                    let (documentFromMd, text) =
+                        documentFromMetadata compilation project l symbolFullName
 
                     let csharpMetadata =
                         { ProjectName = project.Name
                           AssemblyName = containingAssemblyName
-                          SymbolName = fullName
+                          SymbolName = symbolFullName
                           Source = text }
 
                     let md =
@@ -78,8 +90,8 @@ let workspaceFolderResolveSymbolLocation
                           Document = documentFromMd }
 
                     let updatedFolder =
-                        { folder with
-                            DecompiledMetadata = Map.add uri md folder.DecompiledMetadata }
+                        { wf with
+                            DecompiledMetadata = Map.add uri md wf.DecompiledMetadata }
 
                     (documentFromMd, updatedFolder)
 
@@ -104,10 +116,10 @@ let workspaceFolderResolveSymbolLocation
         | false, true ->
             return
                 match (Location.fromRoslynLocation l) with
-                | Some loc -> [ loc ], folder
-                | None -> [], folder
+                | Some loc -> [ loc ], wf
+                | None -> [], wf
 
-        | _, _ -> return [], folder
+        | _, _ -> return [], wf
     }
 
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
@@ -173,7 +185,10 @@ let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
         Folders = folders }
 
 let workspaceFolder (workspace: LspWorkspace) (uri: string) =
-    workspace.Folders |> Seq.tryFind (fun wf -> uri.StartsWith wf.Uri)
+    let workspaceFolderMatchesUri wf =
+        uri.StartsWith wf.Uri || uri.StartsWith(workspaceFolderMetadataUriBase wf)
+
+    workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
 
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
