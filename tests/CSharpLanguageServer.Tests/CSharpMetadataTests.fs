@@ -49,3 +49,29 @@ let ``test csharp/metadata works`` () =
         Assert.IsTrue(metadata0.Source.StartsWith("using System"))
 
     | _ -> failwith "Some CSharpMetadataResponse was expected"
+
+[<Test>]
+let ``test csharp/metadata works with no prior LSP request`` () =
+    use client = activateFixture "genericProject"
+    use classFile = client.Open "Project/Class.cs"
+
+    let csharpUriForSystemString =
+        Uri(client.ProjectDir)
+        |> string
+        |> _.Substring("file:///".Length)
+        |> sprintf "csharp:/%s/$metadata$/projects/Project/assemblies/System.Runtime/symbols/System.String.cs"
+
+    let metadataParams0: CSharpMetadataParams =
+        { TextDocument = { Uri = csharpUriForSystemString } }
+
+    let metadata0: CSharpMetadataResponse option =
+        client.Request("csharp/metadata", metadataParams0)
+
+    match metadata0 with
+    | Some metadata0 ->
+        Assert.AreEqual("System.Runtime", metadata0.AssemblyName)
+        Assert.AreEqual("Project", metadata0.ProjectName)
+        Assert.AreEqual("System.String", metadata0.SymbolName)
+        Assert.IsTrue(metadata0.Source.StartsWith("using System"))
+
+    | _ -> failwith "Some CSharpMetadataResponse was expected"
