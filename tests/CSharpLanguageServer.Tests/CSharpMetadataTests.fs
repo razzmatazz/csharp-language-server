@@ -1,14 +1,15 @@
-module CSharpLanguageServer.Tests.TypeDefinitionTests
+module CSharpLanguageServer.Tests.CSharpMetadataTests
 
 open System
 
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
+open CSharpLanguageServer.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
-let ``test textDocument/typeDefinition works`` () =
+let ``test csharp/metadata works`` () =
     use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
@@ -30,15 +31,21 @@ let ``test textDocument/typeDefinition works`` () =
     match typeDefinition0 with
     | Some(U2.C1(U2.C2 ls)) ->
         Assert.AreEqual(1, ls.Length)
-
-        let expectedTypeDefLocationsForStringArg =
-            [| { Uri = csharpUriForSystemString
-                 Range =
-                   { Start = { Line = 12u; Character = 20u }
-                     End = { Line = 12u; Character = 26u } } } |]
-
-        Assert.AreEqual(expectedTypeDefLocationsForStringArg, ls)
+        Assert.AreEqual(csharpUriForSystemString, ls[0].Uri)
 
     | _ -> failwith "Some U2.C1 (U2.C2) was expected"
 
-    ()
+    let metadataParams0: CSharpMetadataParams =
+        { TextDocument = { Uri = csharpUriForSystemString } }
+
+    let metadata0: CSharpMetadataResponse option =
+        client.Request("csharp/metadata", metadataParams0)
+
+    match metadata0 with
+    | Some metadata0 ->
+        Assert.AreEqual("System.Runtime", metadata0.AssemblyName)
+        Assert.AreEqual("Project", metadata0.ProjectName)
+        Assert.AreEqual("System.String", metadata0.SymbolName)
+        Assert.IsTrue(metadata0.Source.StartsWith("using System"))
+
+    | _ -> failwith "Some CSharpMetadataResponse was expected"
