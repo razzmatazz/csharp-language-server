@@ -4,14 +4,17 @@ open System
 open System.IO
 
 open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.Extensions.Logging
+open ICSharpCode.Decompiler
+open ICSharpCode.Decompiler.CSharp
+open ICSharpCode.Decompiler.CSharp.Transforms
 
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Conversions
 
@@ -54,6 +57,89 @@ let workspaceFolderMetadataUri wf projectName containingAssemblyName symbolFullN
         containingAssemblyName
         symbolFullName
 
+let documentFromMetadata
+    (project: Microsoft.CodeAnalysis.Project)
+    (containingAssembly: Microsoft.CodeAnalysis.IAssemblySymbol)
+    (fullName: string)
+    =
+    async {
+        let! ct = Async.CancellationToken
+        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+
+        let reference =
+            compilation.GetMetadataReference containingAssembly
+            |> nonNull "compilation.GetMetadataReference(containingAssembly)"
+
+        let peReference = reference :?> PortableExecutableReference |> Option.ofObj
+
+        let assemblyLocation =
+            peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+
+        let decompilerSettings = DecompilerSettings()
+        decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
+
+        let decompiler = CSharpDecompiler(assemblyLocation, decompilerSettings)
+
+        // Escape invalid identifiers to prevent Roslyn from failing to parse the generated code.
+        // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
+        decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
+
+        let fullTypeName = TypeSystem.FullTypeName fullName
+
+        let text = decompiler.DecompileTypeAsString fullTypeName
+
+        let mdDocumentFilename =
+            $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
+
+        let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
+
+        let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
+        return mdDocument, text
+    }
+
+let workspaceFolderWithDocumentFromMetadata
+    wf
+    (project: Microsoft.CodeAnalysis.Project)
+    (symbol: Microsoft.CodeAnalysis.ISymbol)
+    (l: Microsoft.CodeAnalysis.Location)
+    =
+    async {
+        let containingAssembly: IAssemblySymbol =
+            l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly
+
+        let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
+            match symbol with
+            | :? INamedTypeSymbol as namedType -> namedType
+            | _ -> symbol.ContainingType
+
+        let symbolFullName =
+            symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
+
+        let metadataUri =
+            workspaceFolderMetadataUri wf project.Name containingAssembly.Name symbolFullName
+
+        match Map.tryFind metadataUri wf.DecompiledMetadata with
+        | Some md -> return wf, metadataUri, md.Document
+        | None ->
+            let! documentFromMd, text = documentFromMetadata project containingAssembly symbolFullName
+
+            let csharpMetadata =
+                { ProjectName = project.Name
+                  AssemblyName = containingAssembly.Name
+                  SymbolName = symbolFullName
+                  Source = text }
+
+            let md =
+                { Metadata = csharpMetadata
+                  Document = documentFromMd }
+
+            let updatedFolder =
+                { wf with
+                    DecompiledMetadata = Map.add metadataUri md wf.DecompiledMetadata }
+
+            return updatedFolder, metadataUri, documentFromMd
+    }
+
 let workspaceFolderResolveSymbolLocation
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
@@ -64,44 +150,8 @@ let workspaceFolderResolveSymbolLocation
         match l.IsInMetadata, l.IsInSource with
         | true, _ ->
             let! ct = Async.CancellationToken
-            let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-            let symbolGetContainingTypeOrThis (symbol: ISymbol) =
-                match symbol with
-                | :? INamedTypeSymbol as namedType -> namedType
-                | _ -> symbol.ContainingType
-
-            let symbolFullName =
-                symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
-
-            let containingAssemblyName =
-                l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
-
-            let metadataUri =
-                workspaceFolderMetadataUri wf project.Name containingAssemblyName symbolFullName
-
-            let mdDocument, updatedWf =
-                match Map.tryFind metadataUri wf.DecompiledMetadata with
-                | Some value -> (value.Document, wf)
-                | None ->
-                    let (documentFromMd, text) =
-                        documentFromMetadata compilation project l symbolFullName
-
-                    let csharpMetadata =
-                        { ProjectName = project.Name
-                          AssemblyName = containingAssemblyName
-                          SymbolName = symbolFullName
-                          Source = text }
-
-                    let md =
-                        { Metadata = csharpMetadata
-                          Document = documentFromMd }
-
-                    let updatedFolder =
-                        { wf with
-                            DecompiledMetadata = Map.add metadataUri md wf.DecompiledMetadata }
-
-                    (documentFromMd, updatedFolder)
+            let! (updatedWf, metadataUri, mdDocument) = workspaceFolderWithDocumentFromMetadata wf project symbol l
 
             // figure out location on the document (approx implementation)
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
