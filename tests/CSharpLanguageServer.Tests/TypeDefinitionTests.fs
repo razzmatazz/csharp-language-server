@@ -21,12 +21,18 @@ let ``test textDocument/typeDefinition works`` () =
     let typeDefinition0: U2<Definition, DefinitionLink array> option =
         client.Request("textDocument/typeDefinition", typeDefinitionParams0)
 
+    let csharpUriForSystemString =
+        Uri(client.ProjectDir)
+        |> string
+        |> _.Substring("file:///".Length)
+        |> sprintf "csharp:/%s/$metadata$/projects/Project/assemblies/System.Runtime/symbols/System.String.cs"
+
     match typeDefinition0 with
     | Some(U2.C1(U2.C2 ls)) ->
         Assert.AreEqual(1, ls.Length)
 
         let expectedTypeDefLocationsForStringArg =
-            [| { Uri = "csharp:/metadata/projects/Project/assemblies/System.Runtime/symbols/System.String.cs"
+            [| { Uri = csharpUriForSystemString
                  Range =
                    { Start = { Line = 12u; Character = 20u }
                      End = { Line = 12u; Character = 26u } } } |]

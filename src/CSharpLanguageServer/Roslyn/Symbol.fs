@@ -77,14 +77,6 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
 
         base.Visit node
 
-
-let symbolGetContainingTypeOrThis (symbol: ISymbol) : INamedTypeSymbol =
-    if symbol :? INamedTypeSymbol then
-        symbol :?> INamedTypeSymbol
-    else
-        symbol.ContainingType
-
-
 let symbolGetFullReflectionName (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
     stack.Push containingType.MetadataName
