@@ -58,6 +58,11 @@ let workspaceFolderResolveSymbolLocation
             let! ct = Async.CancellationToken
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
+            let symbolGetContainingTypeOrThis (symbol: ISymbol) =
+                match symbol with
+                | :? INamedTypeSymbol as namedType -> namedType
+                | _ -> symbol.ContainingType
+
             let symbolFullName =
                 symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
