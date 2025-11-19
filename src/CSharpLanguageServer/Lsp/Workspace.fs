@@ -46,6 +46,14 @@ let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
     |> _.TrimEnd('/')
     |> sprintf "csharp:/%s/$metadata$"
 
+let workspaceFolderMetadataUri wf projectName containingAssemblyName symbolFullName =
+    sprintf
+        "%s/projects/%s/assemblies/%s/symbols/%s.cs"
+        (workspaceFolderMetadataUriBase wf)
+        projectName
+        containingAssemblyName
+        symbolFullName
+
 let workspaceFolderResolveSymbolLocation
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
@@ -58,22 +66,22 @@ let workspaceFolderResolveSymbolLocation
             let! ct = Async.CancellationToken
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
+            let symbolGetContainingTypeOrThis (symbol: ISymbol) =
+                match symbol with
+                | :? INamedTypeSymbol as namedType -> namedType
+                | _ -> symbol.ContainingType
+
             let symbolFullName =
                 symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
 
             let containingAssemblyName =
                 l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly.Name
 
-            let uri =
-                sprintf
-                    "%s/projects/%s/assemblies/%s/symbols/%s.cs"
-                    (workspaceFolderMetadataUriBase wf)
-                    project.Name
-                    containingAssemblyName
-                    symbolFullName
+            let metadataUri =
+                workspaceFolderMetadataUri wf project.Name containingAssemblyName symbolFullName
 
-            let mdDocument, folder =
-                match Map.tryFind uri wf.DecompiledMetadata with
+            let mdDocument, updatedWf =
+                match Map.tryFind metadataUri wf.DecompiledMetadata with
                 | Some value -> (value.Document, wf)
                 | None ->
                     let (documentFromMd, text) =
@@ -91,27 +99,27 @@ let workspaceFolderResolveSymbolLocation
 
                     let updatedFolder =
                         { wf with
-                            DecompiledMetadata = Map.add uri md wf.DecompiledMetadata }
+                            DecompiledMetadata = Map.add metadataUri md wf.DecompiledMetadata }
 
                     (documentFromMd, updatedFolder)
 
             // figure out location on the document (approx implementation)
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-            let collector = DocumentSymbolCollectorForMatchingSymbolName(uri, symbol)
+            let collector = DocumentSymbolCollectorForMatchingSymbolName(metadataUri, symbol)
             let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
             collector.Visit(root)
 
             let fallbackLocationInMetadata =
-                { Uri = uri
+                { Uri = metadataUri
                   Range =
                     { Start = { Line = 0u; Character = 0u }
                       End = { Line = 0u; Character = 1u } } }
 
             return
                 match collector.GetLocations() with
-                | [] -> [ fallbackLocationInMetadata ], folder
-                | ls -> ls, folder
+                | [] -> [ fallbackLocationInMetadata ], updatedWf
+                | ls -> ls, updatedWf
 
         | false, true ->
             return
