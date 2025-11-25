@@ -885,13 +885,16 @@ let private activateClient (clientProfile: ClientProfile) (fixtureName: string) 
 let activeClientsSemaphore =
     new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
 
-let activateFixture fixtureName =
+let activateFixtureWithClientProfile fixtureName clientProfile =
     activeClientsSemaphore.Wait()
 
     try
-        activateClient defaultClientProfile fixtureName false
+        activateClient clientProfile fixtureName false
     finally
         activeClientsSemaphore.Release() |> ignore
+
+let activateFixture fixtureName =
+    activateFixtureWithClientProfile fixtureName defaultClientProfile
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =

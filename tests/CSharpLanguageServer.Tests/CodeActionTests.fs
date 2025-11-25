@@ -46,7 +46,6 @@ let ``code action menu appears on request`` () =
 
     | _ -> failwith "Not all code actions were matched as expected"
 
-
 [<Test>]
 let ``extract base class request extracts base class`` () =
     use client = activateFixture "genericProject"
@@ -126,3 +125,52 @@ let ``extract interface code action should extract an interface`` () =
         | _ -> failwith "Expected exactly one U2.C1 edit in both create/implement"
 
     | _ -> failwith "Unexpected edit structure"
+
+[<Test>]
+let ``code actions are listed when activated on a string literal`` () =
+    use client = activateFixtureWithClientProfile "genericProject" defaultClientProfile
+    use classFile = client.Open "Project/Class.cs"
+
+    let caParams: CodeActionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Range =
+            { Start = { Line = 4u; Character = 20u }
+              End = { Line = 4u; Character = 20u } }
+          Context =
+            { Diagnostics = [||]
+              Only = None
+              TriggerKind = None }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let caResult: TextDocumentCodeActionResult =
+        match client.Request("textDocument/codeAction", caParams) with
+        | Some caResult -> caResult
+        | None -> failwith "Some TextDocumentCodeActionResult was expected"
+
+    Assert.AreEqual(10, caResult.Length)
+
+    let assertCAHasTitle (ca: CodeAction, title: string) = Assert.AreEqual(title, ca.Title)
+
+    match caResult with
+    | [| U2.C2 introduceConstant
+         U2.C2 introduceConstantForAllOccurences
+         U2.C2 introduceLocalConstant
+         U2.C2 introduceLocalConstantForAllOccurences
+         U2.C2 andUpdateCallSitesDirectly
+         U2.C2 _
+         U2.C2 _
+         U2.C2 _
+         U2.C2 _
+         U2.C2 _ |] ->
+        assertCAHasTitle (introduceConstant, "Introduce constant for '\"\"'")
+        assertCAHasTitle (introduceConstantForAllOccurences, "Introduce constant for all occurrences of '\"\"'")
+        assertCAHasTitle (introduceLocalConstant, "Introduce local constant for '\"\"'")
+        assertCAHasTitle (introduceLocalConstantForAllOccurences, "Introduce local constant for all occurrences of '\"\"'")
+
+        // TODO: this looks wrong
+        assertCAHasTitle (andUpdateCallSitesDirectly, "and update call sites directly")
+
+    | _ -> failwith "Not all code actions were matched as expected"
+
+    ()
