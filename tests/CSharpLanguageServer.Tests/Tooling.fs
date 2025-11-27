@@ -598,8 +598,8 @@ let rec deleteDirectory (path: string) =
 
         Directory.Delete(path)
 
-type FileController
-    (client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string, fixtureIsReadOnly: bool) =
+type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
+
     let mutable fileContents: option<string> = None
 
     member __.FileName = filename
@@ -636,9 +636,6 @@ type FileController
         client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
 
     member this.DidChange(text: string) =
-        if fixtureIsReadOnly then
-            failwith "cannot invoke FileController.DidChange, this is a read-only fixture!"
-
         let didChangeParams: DidChangeTextDocumentParams =
             { TextDocument = { Uri = this.Uri; Version = 2 }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
@@ -663,18 +660,12 @@ type FileController
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
-type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string, fixtureIsReadOnly: bool) =
+type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string) =
     let mutable projectDir: string option = None
     let mutable solutionLoaded: bool = false
 
     let logMessage m msg =
         client.Post(EmitLogMessage(DateTime.Now, (sprintf "ClientActorController.%s" m), msg))
-
-    let testAssemblyLocationDir =
-        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
-
-    let sourceTestDataDir =
-        DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureName))
 
     interface IDisposable with
         member __.Dispose() =
@@ -698,11 +689,14 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
                 deleteDirectory projectDir
             | _ -> ()
 
-    member __.FixtureName = fixtureName
-    member __.FixtureIsReadOnly = fixtureIsReadOnly
-    member __.ProjectDir: string = projectDir.Value
-
     member this.StartAndWaitForSolutionLoad(clientProfile: ClientProfile) =
+        let testAssemblyLocationDir =
+            Assembly.GetExecutingAssembly().Location |> Path.GetDirectoryName
+
+        let sourceTestDataDir =
+            Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureName)
+            |> DirectoryInfo
+
         if not sourceTestDataDir.Exists then
             failwithf "ClientController.Prepare(): no such test data dir \"%s\"" sourceTestDataDir.FullName
 
@@ -867,18 +861,18 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string) : FileController =
-        let file = new FileController(client, projectDir.Value, filename, fixtureIsReadOnly)
+        let file = new FileController(client, projectDir.Value, filename)
         file.Open()
         file
 
-let private activateClient (clientProfile: ClientProfile) (fixtureName: string) (readOnlyFixture: bool) =
+let private activateClient (clientProfile: ClientProfile) (fixtureName: string) =
     let initialState =
         { defaultClientState with
             LoggingEnabled = clientProfile.LoggingEnabled }
 
     let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
 
-    let client = new ClientController(clientActor, fixtureName, readOnlyFixture)
+    let client = new ClientController(clientActor, fixtureName)
     client.StartAndWaitForSolutionLoad(clientProfile)
     client
 
@@ -889,7 +883,7 @@ let activateFixtureWithClientProfile fixtureName clientProfile =
     activeClientsSemaphore.Wait()
 
     try
-        activateClient clientProfile fixtureName false
+        activateClient clientProfile fixtureName
     finally
         activeClientsSemaphore.Release() |> ignore
 
