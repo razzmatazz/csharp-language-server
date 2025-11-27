@@ -2,20 +2,18 @@ module CSharpLanguageServer.Tests.Tooling
 
 open System
 open System.Collections.Generic
-open System.Collections.Concurrent
-open System.IO
 open System.Diagnostics
-open System.Text
-open System.Threading.Tasks
-open System.Threading
-open System.Runtime.InteropServices
+open System.IO
 open System.Reflection
-open System.Text.RegularExpressions
+open System.Runtime.InteropServices
+open System.Text
+open System.Threading
+open System.Threading.Tasks
+open System.Xml.Linq
 
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
-open NUnit.Framework
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
@@ -144,7 +142,7 @@ type ClientState =
       ServerCapabilities: ServerCapabilities option
       PushDiagnostics: Map<string, int option * Diagnostic[]> }
 
-let defaultClientState =
+let initialClientState =
     { ClientProfile =
         { LoggingEnabled = false
           ClientCapabilities = emptyClientCapabilities }
@@ -163,9 +161,8 @@ let defaultClientState =
       PushDiagnostics = Map.empty }
 
 type ClientEvent =
-    | SetupWithProfile of ClientProfile
     | UpdateState of (ClientState -> ClientState)
-    | ServerStartRequest of string * AsyncReplyChannel<ClientState>
+    | ServerStartRequest of ClientProfile * string * AsyncReplyChannel<ClientState>
     | ServerStopRequest of AsyncReplyChannel<unit>
     | GetState of AsyncReplyChannel<ClientState>
     | ServerStderrLineRead of string option
@@ -185,19 +182,20 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         post (EmitLogMessage(DateTime.Now, logger, msg))
 
     match msg with
-    | SetupWithProfile clientProfile ->
-        return
-            { state with
-                SetupTimestamp = DateTime.Now
-                ClientProfile = clientProfile }
-
     | UpdateState stateUpdateFn -> return stateUpdateFn (state)
 
-    | ServerStartRequest(projectDir, rc) ->
+    | ServerStartRequest(clientProfile, projectDir, rc) ->
+        let state =
+            { state with
+                SetupTimestamp = DateTime.Now
+                ClientProfile = clientProfile
+                LoggingEnabled = clientProfile.LoggingEnabled }
+
         let processStartInfo = makeServerProcessInfo projectDir
 
         let p = new Process()
         p.StartInfo <- processStartInfo
+
         logMessage "ServerStartRequest" "StartServer: p.Start().."
         let startResult = p.Start()
         logMessage "ServerStartRequest" (String.Format("StartServer: p.Start(): {0}, {1}", startResult, p.Id))
@@ -205,15 +203,15 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         post (RpcMessageReceived(Ok None))
         post (ServerStderrLineRead None)
 
-        let newState =
+        let state =
             { state with
                 ProjectDir = Some projectDir
                 ProcessStartInfo = Some processStartInfo
                 ServerProcess = Some p }
 
-        rc.Reply(newState)
+        rc.Reply(state)
 
-        return newState
+        return state
 
     | ServerStopRequest rc ->
         match state.ServerProcess with
@@ -660,12 +658,14 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
-type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string) =
-    let mutable projectDir: string option = None
+type ClientController(clientProfile: ClientProfile) =
+    let client = MailboxProcessor.Start(clientEventLoop initialClientState)
+
+    let mutable solutionDir: string option = None
     let mutable solutionLoaded: bool = false
 
     let logMessage m msg =
-        client.Post(EmitLogMessage(DateTime.Now, (sprintf "ClientActorController.%s" m), msg))
+        client.Post(EmitLogMessage(DateTime.Now, sprintf "ClientActorController.%s" m, msg))
 
     interface IDisposable with
         member __.Dispose() =
@@ -683,13 +683,24 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
                 |> Option.map (fun v -> v = "true")
                 |> Option.defaultValue false
 
-            match projectDir, runningInGithubActions with
-            | Some projectDir, false ->
-                logMessage "Dispose" (sprintf "Removing files on project dir \"%s\".." projectDir)
-                deleteDirectory projectDir
+            match solutionDir, runningInGithubActions with
+            | Some solutionDir, false ->
+                logMessage "Dispose" (sprintf "Removing files on solution dir \"%s\".." solutionDir)
+                deleteDirectory solutionDir
             | _ -> ()
 
-    member this.StartAndWaitForSolutionLoad(clientProfile: ClientProfile) =
+    member __.SolutionDir: string = solutionDir.Value
+
+    member this.LoadSolution(fixtureName: string, patchSolutionDir: string -> unit) =
+        let log = logMessage "LoadSolution"
+
+        // solution can only be loaded once for ClientController instance
+        if solutionLoaded then
+            failwith "Solution has already been loaded for this ClientController!"
+
+        solutionLoaded <- true
+
+        // prepare temp dir and copy in solution contents
         let testAssemblyLocationDir =
             Assembly.GetExecutingAssembly().Location |> Path.GetDirectoryName
 
@@ -700,25 +711,22 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
         if not sourceTestDataDir.Exists then
             failwithf "ClientController.Prepare(): no such test data dir \"%s\"" sourceTestDataDir.FullName
 
-        client.Post(SetupWithProfile clientProfile)
+        let tempSolutionDir = prepareTempTestDirFrom sourceTestDataDir
+        patchSolutionDir (tempSolutionDir)
+        solutionDir <- Some(tempSolutionDir)
 
-        if solutionLoaded then
-            failwith "Solution has already been loaded for this ClientController!"
-
-        solutionLoaded <- true
-
-        let log = logMessage "StartInitializeAndWaitForSolutionLoad"
-        projectDir <- Some(prepareTempTestDirFrom sourceTestDataDir)
-
+        // start the server
         log "sending ServerStartRequest"
-        let state = client.PostAndReply(fun rc -> ServerStartRequest(projectDir.Value, rc))
+
+        let state =
+            client.PostAndReply(fun rc -> ServerStartRequest(clientProfile, solutionDir.Value, rc))
 
         let initializeParams: InitializeParams =
-            let rootUri = Uri(projectDir.Value) |> string |> DocumentUri
+            let rootUri = solutionDir.Value |> Uri |> string |> DocumentUri
 
             { RootPath = None
               RootUri = Some rootUri
-              ProcessId = (Process.GetCurrentProcess().Id) |> int |> Some
+              ProcessId = Process.GetCurrentProcess().Id |> int |> Some
               Capabilities = state.ClientProfile.ClientCapabilities
               WorkDoneToken = None
               ClientInfo = None
@@ -861,34 +869,44 @@ type ClientController(client: MailboxProcessor<ClientEvent>, fixtureName: string
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
     member __.Open(filename: string) : FileController =
-        let file = new FileController(client, projectDir.Value, filename)
+        let file = new FileController(client, solutionDir.Value, filename)
         file.Open()
         file
-
-let private activateClient (clientProfile: ClientProfile) (fixtureName: string) =
-    let initialState =
-        { defaultClientState with
-            LoggingEnabled = clientProfile.LoggingEnabled }
-
-    let clientActor = MailboxProcessor.Start(clientEventLoop initialState)
-
-    let client = new ClientController(clientActor, fixtureName)
-    client.StartAndWaitForSolutionLoad(clientProfile)
-    client
 
 let activeClientsSemaphore =
     new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
 
-let activateFixtureWithClientProfile fixtureName clientProfile =
+let activateFixtureExt fixtureName clientProfile (patchFixtureDir: string -> unit) =
     activeClientsSemaphore.Wait()
 
     try
-        activateClient clientProfile fixtureName
+        let client = new ClientController(clientProfile)
+        client.LoadSolution(fixtureName, patchFixtureDir)
+        client
     finally
         activeClientsSemaphore.Release() |> ignore
 
 let activateFixture fixtureName =
-    activateFixtureWithClientProfile fixtureName defaultClientProfile
+    let patchSolutionDir = fun _ -> ()
+    activateFixtureExt fixtureName defaultClientProfile patchSolutionDir
+
+let patchFixtureWithTfm newTfm =
+    let updateTfmInSubdir (rootDir: string) =
+        let csprojs = Directory.GetFiles(rootDir, "*.csproj", SearchOption.AllDirectories)
+
+        for file in csprojs do
+            let doc = file |> XDocument.Load
+
+            let tfm =
+                doc.Descendants() |> Seq.tryFind (fun e -> e.Name.LocalName = "TargetFramework")
+
+            match tfm with
+            | Some elem ->
+                elem.Value <- newTfm
+                doc.Save file
+            | None -> ()
+
+    updateTfmInSubdir
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =

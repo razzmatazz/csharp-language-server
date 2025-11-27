@@ -23,7 +23,8 @@ let ``test csharp/metadata works`` () =
         client.Request("textDocument/typeDefinition", typeDefinitionParams0)
 
     let csharpUriForSystemString =
-        Uri(client.ProjectDir)
+        client.SolutionDir
+        |> Uri
         |> string
         |> _.Substring("file:///".Length)
         |> sprintf "csharp:/%s/$metadata$/projects/Project/assemblies/System.Runtime/symbols/System.String.cs"

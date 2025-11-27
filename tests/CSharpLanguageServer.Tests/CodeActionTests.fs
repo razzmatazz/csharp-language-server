@@ -5,10 +5,13 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<Test>]
-let ``code action menu appears on request`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open("Project/Class.cs")
+[<TestCase("net10.0")>]
+[<TestCase("net8.0")>]
+let ``code action menu appears on request`` (tfm: string) =
+    let patchFixture = patchFixtureWithTfm tfm
+    use client = activateFixtureExt "genericProject" defaultClientProfile patchFixture
+
+    use classFile = client.Open "Project/Class.cs"
 
     let caParams: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -72,7 +75,6 @@ let ``extract base class request extracts base class`` () =
 
     | _ -> failwith "Some [| U2.C2 x |] was expected"
 
-
 [<Test>]
 let ``extract interface code action should extract an interface`` () =
     use client = activateFixture "genericProject"
@@ -128,7 +130,7 @@ let ``extract interface code action should extract an interface`` () =
 
 [<Test>]
 let ``code actions are listed when activated on a string literal`` () =
-    use client = activateFixtureWithClientProfile "genericProject" defaultClientProfile
+    use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let caParams: CodeActionParams =
@@ -166,7 +168,11 @@ let ``code actions are listed when activated on a string literal`` () =
         assertCAHasTitle (introduceConstant, "Introduce constant for '\"\"'")
         assertCAHasTitle (introduceConstantForAllOccurences, "Introduce constant for all occurrences of '\"\"'")
         assertCAHasTitle (introduceLocalConstant, "Introduce local constant for '\"\"'")
-        assertCAHasTitle (introduceLocalConstantForAllOccurences, "Introduce local constant for all occurrences of '\"\"'")
+
+        assertCAHasTitle (
+            introduceLocalConstantForAllOccurences,
+            "Introduce local constant for all occurrences of '\"\"'"
+        )
 
         // TODO: this looks wrong
         assertCAHasTitle (andUpdateCallSitesDirectly, "and update call sites directly")
