@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Update Microsoft.Build.Locator to 1.10.12
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/296
 * Add experimental support for Razor (.cshtml) files. "razor-support" feature needs to be enabled via command line
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/273
 * Add suggestion to install specific dotnet sdk version
