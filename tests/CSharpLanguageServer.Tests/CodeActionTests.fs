@@ -158,30 +158,34 @@ let ``code actions are listed when activated on a string literal`` () =
 
     Assert.AreEqual(10, caResult.Length)
 
-    let assertCAHasTitle (ca: CodeAction, title: string) = Assert.AreEqual(title, ca.Title)
-
     match caResult with
     | [| U2.C2 introduceConstant
          U2.C2 introduceConstantForAllOccurences
          U2.C2 introduceLocalConstant
          U2.C2 introduceLocalConstantForAllOccurences
-         U2.C2 andUpdateCallSitesDirectly
+         U2.C2 introduceParameterAndUpdateCallSitesDirectly
          U2.C2 _
          U2.C2 _
          U2.C2 _
          U2.C2 _
          U2.C2 _ |] ->
-        assertCAHasTitle (introduceConstant, "Introduce constant for '\"\"'")
-        assertCAHasTitle (introduceConstantForAllOccurences, "Introduce constant for all occurrences of '\"\"'")
-        assertCAHasTitle (introduceLocalConstant, "Introduce local constant for '\"\"'")
+        let assertCAHasTitle (ca: CodeAction) title = Assert.AreEqual(title, ca.Title)
 
-        assertCAHasTitle (
-            introduceLocalConstantForAllOccurences,
-            "Introduce local constant for all occurrences of '\"\"'"
-        )
+        assertCAHasTitle introduceConstant "Introduce constant - Introduce constant for '\"\"'"
 
-        // TODO: this looks wrong
-        assertCAHasTitle (andUpdateCallSitesDirectly, "and update call sites directly")
+        assertCAHasTitle
+            introduceConstantForAllOccurences
+            "Introduce constant - Introduce constant for all occurrences of '\"\"'"
+
+        assertCAHasTitle introduceLocalConstant "Introduce constant - Introduce local constant for '\"\"'"
+
+        assertCAHasTitle
+            introduceLocalConstantForAllOccurences
+            "Introduce constant - Introduce local constant for all occurrences of '\"\"'"
+
+        assertCAHasTitle
+            introduceParameterAndUpdateCallSitesDirectly
+            "Introduce parameter for '\"\"' - and update call sites directly"
 
     | _ -> failwith "Not all code actions were matched as expected"
 
