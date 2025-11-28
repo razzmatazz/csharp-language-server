@@ -98,6 +98,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
-    <PackageReference Include="NuGet.Frameworks" />
+    <PackageReference Include="NuGet.Frameworks" ExcludeAssets="runtime" />
   </ItemGroup>
 </Project>
