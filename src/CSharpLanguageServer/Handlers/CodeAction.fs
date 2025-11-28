@@ -79,7 +79,7 @@ module CodeAction =
         (doc: Document)
         (textSpan: TextSpan)
         (ct: CancellationToken)
-        : Async<CodeActions.CodeAction list> =
+        : Async<list<string * CodeActions.CodeAction>> =
         async {
             let roslynCodeActions = List<CodeActions.CodeAction>()
             let addCodeAction = Action<CodeActions.CodeAction>(roslynCodeActions.Add)
@@ -134,20 +134,14 @@ module CodeAction =
                             logger.LogError(ex, "error in RegisterCodeFixesAsync()")
 
             let unwrapRoslynCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-                let nestedCAProp =
-                    ca.GetType().GetProperty("NestedCodeActions", BindingFlags.Instance ||| BindingFlags.NonPublic)
-                    |> Option.ofObj
+                let nestedCAs = ca.NestedActions
 
-                match nestedCAProp with
-                | Some nestedCAProp ->
-                    let nestedCAs =
-                        nestedCAProp.GetValue(ca, null)
-                        :?> ImmutableArray<Microsoft.CodeAnalysis.CodeActions.CodeAction>
-
-                    match nestedCAs.Length with
-                    | 0 -> [ ca ].ToImmutableArray()
-                    | _ -> nestedCAs
-                | None -> [ ca ].ToImmutableArray()
+                match nestedCAs.Length with
+                | 0 -> [ ca.Title, ca ]
+                | _ ->
+                    nestedCAs
+                    |> Seq.map (fun nestedCA -> sprintf "%s - %s" ca.Title nestedCA.Title, nestedCA)
+                    |> List.ofSeq
 
             return roslynCodeActions |> Seq.collect unwrapRoslynCodeAction |> List.ofSeq
         }
@@ -169,10 +163,13 @@ module CodeAction =
         else
             None, None
 
-    let roslynCodeActionToUnresolvedLspCodeAction (ca: CodeActions.CodeAction) : CodeAction =
+    let roslynCodeActionToUnresolvedLspCodeAction
+        caTitle
+        (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction)
+        : CodeAction =
         let caKind, caIsPreferred = lspCodeActionDetailsFromRoslynCA ca
 
-        { Title = ca.Title
+        { Title = caTitle
           Kind = caKind
           Diagnostics = None
           Edit = None
@@ -273,10 +270,10 @@ module CodeAction =
         tryGetDocVersionByUri
         (originatingDoc: Document)
         (ct: CancellationToken)
+        (caTitle: string)
         (ca: CodeActions.CodeAction)
         : Async<CodeAction option> =
         async {
-
             let! maybeOps = asyncMaybeOnException (fun () -> ca.GetOperationsAsync(ct) |> Async.AwaitTask)
 
             match maybeOps with
@@ -301,7 +298,7 @@ module CodeAction =
 
                 return
                     Some
-                        { Title = ca.Title
+                        { Title = caTitle
                           Kind = caKind
                           Diagnostics = None
                           Edit = Some edit
@@ -347,25 +344,19 @@ module CodeAction =
                     context.ClientCapabilities.TextDocument
                     |> Option.bind _.CodeAction
                     |> Option.bind _.ResolveSupport
-                    |> Option.map (fun resolveSupport -> resolveSupport.Properties |> Array.contains "edit")
+                    |> Option.map (_.Properties >> Array.contains "edit")
                     |> Option.defaultValue false
 
                 let! lspCodeActions =
                     match clientSupportsCodeActionEditResolveWithEditAndData with
                     | true -> async {
-                        let toUnresolvedLspCodeAction (ca: Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                        let toUnresolvedLspCodeAction (ca: string * Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                            let caTitle, ca = ca
+                            let lspCa = roslynCodeActionToUnresolvedLspCodeAction caTitle ca
+
                             let resolutionData: CSharpCodeActionResolutionData =
                                 { TextDocumentUri = p.TextDocument.Uri
                                   Range = p.Range }
-
-                            (*
-                        logger.trace (
-                            Log.setMessage "codeaction data: {data}"
-                            >> Log.addContextDestructured "data" resolutionData
-                        )
-                        *)
-
-                            let lspCa = roslynCodeActionToUnresolvedLspCodeAction ca
 
                             { lspCa with
                                 Data = resolutionData |> serialize |> Some }
@@ -374,26 +365,25 @@ module CodeAction =
                       }
 
                     | false -> async {
-                        let results = List<CodeAction>()
+                        let results = List<CodeAction option>()
 
-                        for ca in roslynCodeActions do
+                        for caTitle, ca in roslynCodeActions do
                             let! maybeLspCa =
                                 roslynCodeActionToResolvedLspCodeAction
                                     doc.Project.Solution
                                     (Uri.unescape >> workspaceDocumentVersion context.Workspace)
                                     doc
                                     ct
+                                    caTitle
                                     ca
 
-                            if maybeLspCa.IsSome then
-                                results.Add(maybeLspCa.Value)
+                            results.Add(maybeLspCa)
 
-                        return results |> Array.ofSeq
+                        return results |> Seq.choose id |> Array.ofSeq
                       }
 
                 return
                     lspCodeActions
-                    |> Seq.sortByDescending (fun ca -> ca.IsPreferred)
                     |> Seq.map U2<Command, CodeAction>.C2
                     |> Array.ofSeq
                     |> Some
@@ -404,7 +394,7 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let wf, docForUri =
+        let wf_, docForUri =
             resolutionData.Value.TextDocumentUri
             |> workspaceDocument context.Workspace AnyDocument
 
@@ -419,7 +409,7 @@ module CodeAction =
             let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
 
             let selectedCodeAction =
-                roslynCodeActions |> Seq.tryFind (fun ca -> ca.Title = p.Title)
+                roslynCodeActions |> Seq.tryFind (fun (caTitle, _) -> caTitle = p.Title)
 
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
@@ -430,8 +420,8 @@ module CodeAction =
 
             let! lspCodeAction =
                 match selectedCodeAction with
-                | Some ca -> async {
-                    let! resolvedCA = toResolvedLspCodeAction ca
+                | Some(caTitle, ca) -> async {
+                    let! resolvedCA = toResolvedLspCodeAction caTitle ca
 
                     if resolvedCA.IsNone then
                         logger.LogError("handleCodeActionResolve: could not resolve {action} - null", ca)
