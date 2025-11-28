@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * csharp-ls will now use and require the .NET 10 runtime/SDK
 * Fix how title is formatted for nested code actions
   - https://github.com/razzmatazz/csharp-language-server/pull/295
+* Update Microsoft.Build and Microsoft.Build.Locator libs
 
 **Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.20.0...main
 
