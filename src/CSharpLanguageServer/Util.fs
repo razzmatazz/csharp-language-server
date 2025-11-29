@@ -1,10 +1,7 @@
 module CSharpLanguageServer.Util
 
 open System
-open System.Runtime.InteropServices
 open System.Threading.Tasks
-open System.IO
-open System.Reflection
 
 let nonNull name (value: 'T when 'T: null) : 'T =
     if Object.ReferenceEquals(value, null) then
@@ -38,13 +35,6 @@ let tryParseFileUri s : string option =
         Some uri.LocalPath
     with _ex ->
         None
-
-let makeFileUri (path: string) : string =
-    let fullPath = Path.GetFullPath path
-
-    match RuntimeInformation.IsOSPlatform OSPlatform.Windows with
-    | true -> "file:///" + fullPath
-    | false -> "file://" + fullPath
 
 let unwindProtect cleanupFn op = async {
     try
