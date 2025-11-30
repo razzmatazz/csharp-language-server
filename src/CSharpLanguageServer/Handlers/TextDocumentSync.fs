@@ -6,15 +6,13 @@ open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer
+open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Lsp.Workspace
-
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
@@ -72,7 +70,7 @@ module TextDocumentSync =
             | _ -> Ok() |> async.Return
 
         | Some wf, None ->
-            let docFilePathMaybe = Util.tryParseFileUri p.TextDocument.Uri
+            let docFilePathMaybe = Uri.tryParseFileUri p.TextDocument.Uri
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
@@ -149,7 +147,7 @@ module TextDocumentSync =
         | Some _, Some doc -> Ok() |> async.Return
 
         | Some wf, None -> async {
-            let docFilePath = Util.parseFileUri p.TextDocument.Uri
+            let docFilePath = Uri.parseFileUri p.TextDocument.Uri
 
             // we need to add this file to solution if not already
             let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
