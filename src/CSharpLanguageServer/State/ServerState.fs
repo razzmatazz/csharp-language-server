@@ -507,18 +507,16 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         match solutionReloadDeadline < DateTime.Now with
         | true ->
             let wf = state.Workspace.SingletonFolder
+            let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
 
             let! newSolution =
-                let workspaceFolderRootDir = wf.Uri |> workspaceFolderUriToPath wf
+                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath wfRootDir
 
-                solutionLoadSolutionWithPathOrOnCwd
-                    state.LspClient.Value
-                    state.Settings.SolutionPath
-                    workspaceFolderRootDir
+            let updatedWf = { wf with Solution = newSolution }
 
             return
                 { state with
-                    Workspace = state.Workspace.WithSolution(newSolution)
+                    Workspace = updatedWf |> workspaceWithFolder state.Workspace
                     WorkspaceReloadPending = None }
 
         | false -> return state
