@@ -221,19 +221,6 @@ type LspWorkspace =
 
     member this.SingletonFolder = this.Folders |> Seq.exactlyOne
 
-    member this.WithSingletonFolderUpdated(update: LspWorkspaceFolder -> LspWorkspaceFolder) =
-        let updatedFolders =
-            this.Folders
-            |> Seq.tryExactlyOne
-            |> Option.defaultValue LspWorkspaceFolder.Empty
-            |> update
-            |> List.singleton
-
-        { this with Folders = updatedFolders }
-
-    member this.WithSolution(solution: Solution option) =
-        this.WithSingletonFolderUpdated(fun f -> { f with Solution = solution })
-
 let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
     // TODO: currently only the first workspace folder is taken into account (see Seq.take 1)
     match workspaceFolders.Length with
@@ -258,6 +245,21 @@ let workspaceFolder (workspace: LspWorkspace) (uri: string) =
         uri.StartsWith wf.Uri || uri.StartsWith(workspaceFolderMetadataUriBase wf)
 
     workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
+
+let workspaceWithFolder (workspace: LspWorkspace) (updatedWf: LspWorkspaceFolder) =
+    let existingW = workspace.Folders |> Seq.tryFind (fun wf -> wf.Uri = updatedWf.Uri)
+
+    let updatedFolders =
+        match existingW with
+        | Some existingWf ->
+            let replaceByUri wf =
+                if wf.Uri = existingWf.Uri then updatedWf else wf
+
+            workspace.Folders |> List.map replaceByUri
+        | None -> workspace.Folders @ [ updatedWf ]
+
+    { workspace with
+        Folders = updatedFolders }
 
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
