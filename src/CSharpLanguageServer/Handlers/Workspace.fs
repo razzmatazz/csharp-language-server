@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Server
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Util
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Solution
@@ -16,26 +17,23 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
 
-
 [<RequireQualifiedAccess>]
 module Workspace =
     let private logger = Logging.getLoggerByName "Workspace"
 
-    let provider (_: ClientCapabilities) : ServerCapabilitiesWorkspace option =
+    let provider (_cc: ClientCapabilities) : ServerCapabilitiesWorkspace option =
         { WorkspaceFolders = None
           FileOperations = None }
         |> Some
 
-
-    let dynamicRegistrationForDidChangeWatchedFiles (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.Workspace
+    let dynamicRegistrationForDidChangeWatchedFiles (cc: ClientCapabilities) =
+        cc.Workspace
         |> Option.bind _.DidChangeWatchedFiles
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-
-    let didChangeWatchedFilesRegistration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistrationForDidChangeWatchedFiles clientCapabilities with
+    let didChangeWatchedFilesRegistration (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistrationForDidChangeWatchedFiles cc with
         | false -> None
         | true ->
             let fileSystemWatcher =
@@ -50,13 +48,12 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-
     let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
         let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
         match wf, doc with
         | Some wf, Some doc ->
-            let fileText = uri |> Util.parseFileUri |> File.ReadAllText
+            let fileText = uri |> Uri.parseFileUri |> File.ReadAllText
             let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
             let updatedWf =
@@ -66,7 +63,7 @@ module Workspace =
             context.Emit(WorkspaceFolderChange updatedWf)
 
         | Some wf, None ->
-            let docFilePathMaybe = uri |> Util.tryParseFileUri
+            let docFilePathMaybe = uri |> Uri.tryParseFileUri
 
             match docFilePathMaybe with
             | Some docFilePath ->
@@ -87,7 +84,6 @@ module Workspace =
         | _, _ -> ()
     }
 
-
     let private removeDocument (context: ServerRequestContext) uri =
         let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
@@ -103,7 +99,6 @@ module Workspace =
             context.Emit(DocumentClosed uri)
 
         | _, _ -> ()
-
 
     let didChangeWatchedFiles
         (context: ServerRequestContext)
@@ -142,7 +137,6 @@ module Workspace =
 
             return Ok()
         }
-
 
     let didChangeConfiguration
         (context: ServerRequestContext)

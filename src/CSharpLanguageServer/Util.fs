@@ -27,14 +27,14 @@ module Uri =
         else
             Uri(path).ToString()
 
-let parseFileUri s : string = Uri(s).LocalPath
+    let parseFileUri s : string = Uri(s).LocalPath
 
-let tryParseFileUri s : string option =
-    try
-        let uri = Uri s
-        Some uri.LocalPath
-    with _ex ->
-        None
+    let tryParseFileUri s : string option =
+        try
+            let uri = Uri s
+            Some uri.LocalPath
+        with _ex ->
+            None
 
 let unwindProtect cleanupFn op = async {
     try
@@ -51,7 +51,6 @@ let rec unpackException (exn: Exception) =
         | Some x -> unpackException x
         | None -> exn
     | _ -> exn
-
 
 let formatInColumns (data: list<list<string>>) : string =
     if List.isEmpty data then
