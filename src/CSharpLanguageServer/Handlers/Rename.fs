@@ -16,13 +16,13 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
-
 [<RequireQualifiedAccess>]
 module Rename =
     let private logger = Logging.getLoggerByName "Rename"
 
     let private lspDocChangesFromSolutionDiff
         (ct: CancellationToken)
+        (wf: LspWorkspaceFolder)
         (originalSolution: Solution)
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
@@ -54,7 +54,7 @@ module Rename =
                     |> Seq.map U2.C1
                     |> Array.ofSeq
 
-                let uri = originalDoc.FilePath |> Uri.fromPath
+                let uri = originalDoc.FilePath |> workspaceFolderPathToUri wf
 
                 let textEditDocument =
                     { Uri = uri
@@ -167,6 +167,7 @@ module Rename =
             let! docTextEdit =
                 lspDocChangesFromSolutionDiff
                     ct
+                    wf
                     originalSolution
                     updatedSolution
                     (workspaceDocumentVersion context.Workspace)

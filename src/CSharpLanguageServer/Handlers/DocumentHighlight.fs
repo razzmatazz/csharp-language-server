@@ -9,7 +9,6 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
@@ -27,11 +26,10 @@ module DocumentHighlight =
         : AsyncLspResult<DocumentHighlight[] option> =
         async {
             let! ct = Async.CancellationToken
-            let filePath = Uri.toPath p.TextDocument.Uri
 
             // We only need to find references in the file (not the whole workspace), so we don't use
             // context.FindSymbol & context.FindReferences here.
-            let getHighlights (symbol: ISymbol) (doc: Document) = async {
+            let getHighlights (filePath: string) (symbol: ISymbol) (doc: Document) = async {
                 let docSet = ImmutableHashSet.Create(doc)
 
                 let! refs =
@@ -42,15 +40,12 @@ module DocumentHighlight =
                     SymbolFinder.FindSourceDefinitionAsync(symbol, doc.Project.Solution, cancellationToken = ct)
                     |> Async.AwaitTask
 
-                let locations =
+                return
                     refs
                     |> Seq.collect (fun r -> r.Locations)
                     |> Seq.map (fun rl -> rl.Location)
                     |> Seq.filter (fun l -> l.IsInSource && l.GetMappedLineSpan().Path = filePath)
                     |> Seq.append (def |> Option.ofObj |> Option.toList |> Seq.collect (fun sym -> sym.Locations))
-
-                return
-                    locations
                     |> Seq.choose Location.fromRoslynLocation
                     |> Seq.map (fun l ->
                         { Range = l.Range
@@ -60,7 +55,8 @@ module DocumentHighlight =
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, _, Some doc) ->
                 if shouldHighlight symbol then
-                    let! highlights = getHighlights symbol doc
+                    let filePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+                    let! highlights = getHighlights filePath symbol doc
                     return highlights |> Seq.toArray |> Some |> LspResult.success
                 else
                     return None |> LspResult.success
