@@ -16,9 +16,6 @@ module Uri =
     /// "#/ProjDir" is Fragment instead of part of LocalPath.
     let unescape (uri: string) = uri.Replace("%3a", ":", true, null)
 
-    let toPath (uri: string) =
-        Uri.UnescapeDataString(Uri(unescape uri).LocalPath)
-
     let fromPath (path: string) =
         let metadataPrefix = "$metadata$/"
 
@@ -74,7 +71,6 @@ let formatInColumns (data: list<list<string>>) : string =
                 value.PadRight width)
             |> String.concat "  ")
         |> String.concat Environment.NewLine
-
 
 [<AutoOpen>]
 module TaskExtensions =

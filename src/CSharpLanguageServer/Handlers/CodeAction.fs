@@ -179,11 +179,12 @@ module CodeAction =
           Disabled = None }
 
     let lspDocChangesFromSolutionDiff
+        (ct: CancellationToken)
+        (wf: LspWorkspaceFolder)
         originalSolution
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
         (originatingDoc: Document)
-        (ct: CancellationToken)
         : Async<TextDocumentEdit list> =
         async {
             // make a list of changes
@@ -223,9 +224,11 @@ module CodeAction =
 
                 match newDocFilePathMaybe with
                 | Some newDocFilePath ->
+                    let newDocUri = newDocFilePath |> workspaceFolderPathToUri wf
+
                     let textEditDocument =
-                        { Uri = Uri.fromPath newDocFilePath
-                          Version = newDocFilePath |> Uri.fromPath |> tryGetDocVersionByUri }
+                        { Uri = newDocUri
+                          Version = newDocUri |> tryGetDocVersionByUri }
 
                     docTextEdits.Add(
                         { TextDocument = textEditDocument
@@ -252,9 +255,11 @@ module CodeAction =
                         |> Seq.map U2.C1
                         |> Array.ofSeq
 
+                    let originalDocUri = originalDoc.FilePath |> workspaceFolderPathToUri wf
+
                     let textEditDocument =
-                        { Uri = originalDoc.FilePath |> Uri.fromPath
-                          Version = originalDoc.FilePath |> Uri.fromPath |> tryGetDocVersionByUri }
+                        { Uri = originalDocUri
+                          Version = originalDocUri |> tryGetDocVersionByUri }
 
                     docTextEdits.Add(
                         { TextDocument = textEditDocument
@@ -266,6 +271,7 @@ module CodeAction =
         }
 
     let roslynCodeActionToResolvedLspCodeAction
+        (wf: LspWorkspaceFolder)
         originalSolution
         tryGetDocVersionByUri
         (originatingDoc: Document)
@@ -283,11 +289,12 @@ module CodeAction =
 
                 let! docTextEdit =
                     lspDocChangesFromSolutionDiff
+                        ct
+                        wf
                         originalSolution
                         op.ChangedSolution
                         tryGetDocVersionByUri
                         originatingDoc
-                        ct
 
                 let edit: WorkspaceEdit =
                     { Changes = None
@@ -331,9 +338,8 @@ module CodeAction =
             let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-            match docForUri with
-            | None -> return None |> LspResult.success
-            | Some doc ->
+            match wf, docForUri with
+            | Some wf, Some doc ->
                 let! ct = Async.CancellationToken
                 let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
                 let textSpan = Range.toTextSpan docText.Lines p.Range
@@ -370,6 +376,7 @@ module CodeAction =
                         for caTitle, ca in roslynCodeActions do
                             let! maybeLspCa =
                                 roslynCodeActionToResolvedLspCodeAction
+                                    wf
                                     doc.Project.Solution
                                     (Uri.unescape >> workspaceDocumentVersion context.Workspace)
                                     doc
@@ -388,19 +395,20 @@ module CodeAction =
                     |> Array.ofSeq
                     |> Some
                     |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
 
     let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let wf_, docForUri =
+        let wf, docForUri =
             resolutionData.Value.TextDocumentUri
             |> workspaceDocument context.Workspace AnyDocument
 
-        match docForUri with
-        | None -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
-        | Some doc ->
+        match wf, docForUri with
+        | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
@@ -413,6 +421,7 @@ module CodeAction =
 
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
+                    wf
                     doc.Project.Solution
                     (Uri.unescape >> workspaceDocumentVersion context.Workspace)
                     doc
@@ -431,4 +440,6 @@ module CodeAction =
                 | None -> raise (Exception("no CodeAction resolved"))
 
             return lspCodeAction |> LspResult.success
+
+        | _, _ -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
     }

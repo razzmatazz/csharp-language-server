@@ -4,7 +4,6 @@ open System
 open System.Threading
 open System.Threading.Tasks
 
-open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 open Microsoft.Extensions.Logging
@@ -507,13 +506,15 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
-            let workspaceFolder = state.Workspace.SingletonFolder
+            let wf = state.Workspace.SingletonFolder
 
             let! newSolution =
+                let workspaceFolderRootDir = wf.Uri |> workspaceFolderUriToPath wf
+
                 solutionLoadSolutionWithPathOrOnCwd
                     state.LspClient.Value
                     state.Settings.SolutionPath
-                    (workspaceFolder.Uri |> Uri.toPath)
+                    workspaceFolderRootDir
 
             return
                 { state with

@@ -43,6 +43,17 @@ type LspWorkspaceDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
+let workspaceFolderUriToPath (_wf: LspWorkspaceFolder) (uri: string) : string =
+    Uri.UnescapeDataString(Uri(Uri.unescape uri).LocalPath)
+
+let workspaceFolderPathToUri (_wf: LspWorkspaceFolder) (path: string) : string =
+    let metadataPrefix = "$metadata$/"
+
+    if path.StartsWith metadataPrefix then
+        "csharp:/metadata/" + path.Substring metadataPrefix.Length
+    else
+        Uri(path).ToString()
+
 let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
     wf.Uri
     |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
