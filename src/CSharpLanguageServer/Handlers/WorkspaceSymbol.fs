@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
@@ -21,10 +22,13 @@ module WorkspaceSymbol =
         async {
             let! ct = Async.CancellationToken
 
+            let wf = context.Workspace.SingletonFolder
+            let wfPathToUri = workspaceFolderPathToUri wf
+
             let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
 
             let! symbols =
-                match context.Workspace.SingletonFolder.Solution with
+                match wf.Solution with
                 | None -> async.Return Seq.empty
                 | Some solution ->
                     match pattern with
@@ -49,7 +53,7 @@ module WorkspaceSymbol =
 
             return
                 symbols
-                |> Seq.map (SymbolInformation.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat)
+                |> Seq.map (SymbolInformation.fromSymbol wfPathToUri SymbolDisplayFormat.MinimallyQualifiedFormat)
                 |> Seq.collect id
                 // TODO: make 100 configurable?
                 |> Seq.truncate 100

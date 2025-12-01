@@ -32,7 +32,7 @@ type LspWorkspaceFolder =
       DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
 
     static member Empty =
-        { Uri = Directory.GetCurrentDirectory() |> Uri.fromPath
+        { Uri = Directory.GetCurrentDirectory() |> Uri |> string
           Name = "(no name)"
           RoslynWorkspace = None
           Solution = None
@@ -43,9 +43,20 @@ type LspWorkspaceDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
-let workspaceFolderUriToPath (_wf: LspWorkspaceFolder) (uri: string) : option<string> =
+// Unescape some necessary char before passing string to Uri.
+// Can't use Uri.UnescapeDataString here. For example, if uri is "file:///z%3a/src/c%23/ProjDir" ("%3a" is
+// ":" and "%23" is "#"), Uri.UnescapeDataString will unescape both "%3a" and "%23". Then Uri will think
+/// "#/ProjDir" is Fragment instead of part of LocalPath.
+let workspaceFolderUriUnescape (_wf: LspWorkspaceFolder) (uri: string) : string = uri.Replace("%3a", ":", true, null)
+
+let workspaceFolderUriToPath (wf: LspWorkspaceFolder) (uri: string) : option<string> =
     try
-        uri |> Uri.unescape |> Uri |> _.LocalPath |> Uri.UnescapeDataString |> Some
+        uri
+        |> workspaceFolderUriUnescape wf
+        |> Uri
+        |> _.LocalPath
+        |> Uri.UnescapeDataString
+        |> Some
     with _ex ->
         None
 
@@ -186,8 +197,10 @@ let workspaceFolderResolveSymbolLocation
                 | ls -> ls, updatedWf
 
         | false, true ->
+            let wfPathToUri = workspaceFolderPathToUri wf
+
             return
-                match (Location.fromRoslynLocation l) with
+                match Location.fromRoslynLocation wfPathToUri l with
                 | Some loc -> [ loc ], wf
                 | None -> [], wf
 

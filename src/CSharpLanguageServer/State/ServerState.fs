@@ -422,6 +422,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
                 let wf, docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
+                let wfPathToUri = workspaceFolderPathToUri wf.Value
 
                 match docForUri with
                 | None ->
@@ -446,7 +447,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         | Some semanticModel ->
                             let diagnostics =
                                 semanticModel.GetDiagnostics()
-                                |> Seq.map Diagnostic.fromRoslynDiagnostic
+                                |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                                 |> Seq.map fst
                                 |> Array.ofSeq
 

@@ -29,7 +29,7 @@ module DocumentHighlight =
 
             // We only need to find references in the file (not the whole workspace), so we don't use
             // context.FindSymbol & context.FindReferences here.
-            let getHighlights (filePath: string) (symbol: ISymbol) (doc: Document) = async {
+            let getHighlights (pathToUri: string -> string) (filePath: string) (symbol: ISymbol) (doc: Document) = async {
                 let docSet = ImmutableHashSet.Create(doc)
 
                 let! refs =
@@ -46,7 +46,7 @@ module DocumentHighlight =
                     |> Seq.map (fun rl -> rl.Location)
                     |> Seq.filter (fun l -> l.IsInSource && l.GetMappedLineSpan().Path = filePath)
                     |> Seq.append (def |> Option.ofObj |> Option.toList |> Seq.collect (fun sym -> sym.Locations))
-                    |> Seq.choose Location.fromRoslynLocation
+                    |> Seq.choose (Location.fromRoslynLocation pathToUri)
                     |> Seq.map (fun l ->
                         { Range = l.Range
                           Kind = Some DocumentHighlightKind.Read })
@@ -54,11 +54,14 @@ module DocumentHighlight =
 
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, _, Some doc) ->
-                let filePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+                let wfPathToUri = workspaceFolderPathToUri wf
+                let wfUriToPath = workspaceFolderUriToPath wf
+
+                let filePath = p.TextDocument.Uri |> wfUriToPath
 
                 match shouldHighlight symbol, filePath with
                 | true, Some filePath ->
-                    let! highlights = getHighlights filePath symbol doc
+                    let! highlights = getHighlights wfPathToUri filePath symbol doc
                     return highlights |> Seq.toArray |> Some |> LspResult.success
                 | _, _ -> return None |> LspResult.success
 

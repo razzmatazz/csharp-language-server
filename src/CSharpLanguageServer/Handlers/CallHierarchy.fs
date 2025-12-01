@@ -51,14 +51,17 @@ module CallHierarchy =
         async {
             let! ct = Async.CancellationToken
 
-            let toCallHierarchyIncomingCalls (info: SymbolCallerInfo) : CallHierarchyIncomingCall seq =
+            let toCallHierarchyIncomingCalls
+                (pathToUri: string -> string)
+                (info: SymbolCallerInfo)
+                : CallHierarchyIncomingCall seq =
                 let fromRanges =
                     info.Locations
                     |> Seq.map (fun l -> l.GetLineSpan().Span |> Range.fromLinePositionSpan)
                     |> Seq.toArray
 
                 info.CallingSymbol.Locations
-                |> Seq.choose Location.fromRoslynLocation
+                |> Seq.choose (Location.fromRoslynLocation pathToUri)
                 |> Seq.map (fun loc ->
                     { From = CallHierarchyItem.fromSymbolAndLocation info.CallingSymbol loc
                       FromRanges = fromRanges })
@@ -69,12 +72,14 @@ module CallHierarchy =
                     SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                     |> Async.AwaitTask
 
+                let wfPathToUri = workspaceFolderPathToUri wf
+
                 // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
                 // we will miss many callers. Maybe it should have some change in LSP protocol.
                 return
                     callers
                     |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
-                    |> Seq.collect toCallHierarchyIncomingCalls
+                    |> Seq.collect (toCallHierarchyIncomingCalls wfPathToUri)
                     |> Seq.distinct
                     |> Seq.toArray
                     |> Some
