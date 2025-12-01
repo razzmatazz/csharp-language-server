@@ -41,27 +41,30 @@ module Diagnostic =
             let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-            match docForUri with
-            | None -> return emptyReport |> U2.C1 |> LspResult.success
-
-            | Some doc ->
+            match wf, docForUri with
+            | Some wf, Some doc ->
                 let! ct = Async.CancellationToken
                 let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
                 match semanticModelMaybe |> Option.ofObj with
                 | Some semanticModel ->
+                    let wfPathToUri = workspaceFolderPathToUri wf
+
                     let diagnostics =
                         semanticModel.GetDiagnostics()
-                        |> Seq.map Diagnostic.fromRoslynDiagnostic
+                        |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                         |> Seq.map fst
                         |> Array.ofSeq
 
                     return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
 
                 | None -> return emptyReport |> U2.C1 |> LspResult.success
+
+            | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
         }
 
     let private getWorkspaceDiagnosticReports
+        (pathToUri: string -> string)
         (solution: Microsoft.CodeAnalysis.Solution)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
@@ -77,18 +80,18 @@ module Diagnostic =
                         d.Location.SourceTree
                         |> Option.ofObj
                         |> Option.map _.FilePath
-                        |> Option.map Uri.fromPath
+                        |> Option.map pathToUri
 
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)
                         |> Seq.groupBy uriForDiagnostic
                         |> Seq.filter (fun (uri, _ds) -> uri.IsSome)
-                        |> Seq.map (fun (uri, ds) -> (uri.Value, ds))
+                        |> Seq.map (fun (uri, ds) -> uri.Value, ds)
 
                     for (uri, docDiagnostics) in diagnosticsByDocument do
                         let items =
                             docDiagnostics
-                            |> Seq.map Diagnostic.fromRoslynDiagnostic
+                            |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
                             |> Seq.map fst
                             |> Array.ofSeq
 
@@ -112,11 +115,14 @@ module Diagnostic =
             let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
                 { Items = Array.empty }
 
-            match context.Workspace.SingletonFolder.Solution, p.PartialResultToken with
+            let wf = context.Workspace.SingletonFolder
+            let wfPathToUri = workspaceFolderPathToUri wf
+
+            match wf.Solution, p.PartialResultToken with
             | None, _ -> return emptyWorkspaceDiagnosticReport |> LspResult.success
 
             | Some solution, None ->
-                let! diagnosticReports = getWorkspaceDiagnosticReports solution |> AsyncSeq.toArrayAsync
+                let! diagnosticReports = getWorkspaceDiagnosticReports wfPathToUri solution |> AsyncSeq.toArrayAsync
 
                 let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
                     { Items = diagnosticReports }
@@ -144,7 +150,7 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports solution)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports wfPathToUri solution)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 return emptyWorkspaceDiagnosticReport |> LspResult.success

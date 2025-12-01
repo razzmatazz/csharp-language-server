@@ -19,6 +19,8 @@ module References =
 
         match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
         | Some wf, Some(symbol, _, _) ->
+            let wfPathToUri = workspaceFolderPathToUri wf
+
             let! refs =
                 SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
                 |> Async.AwaitTask
@@ -33,7 +35,7 @@ module References =
             return
                 refs
                 |> Seq.collect locationsFromReferencedSym
-                |> Seq.choose Location.fromRoslynLocation
+                |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
                 |> Seq.distinct
                 |> Seq.toArray
                 |> Some

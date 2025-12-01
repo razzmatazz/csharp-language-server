@@ -23,11 +23,9 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
-
 type CSharpCodeActionResolutionData =
     { TextDocumentUri: string
       Range: Range }
-
 
 [<RequireQualifiedAccess>]
 module CodeAction =
@@ -378,7 +376,7 @@ module CodeAction =
                                 roslynCodeActionToResolvedLspCodeAction
                                     wf
                                     doc.Project.Solution
-                                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
+                                    (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
                                     doc
                                     ct
                                     caTitle
@@ -423,7 +421,7 @@ module CodeAction =
                 roslynCodeActionToResolvedLspCodeAction
                     wf
                     doc.Project.Solution
-                    (Uri.unescape >> workspaceDocumentVersion context.Workspace)
+                    (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
                     doc
                     ct
 

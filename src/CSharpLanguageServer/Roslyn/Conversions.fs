@@ -9,7 +9,6 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Util
 
-
 module Position =
     let fromLinePosition (pos: LinePosition) : Position =
         { Line = uint32 pos.Line
@@ -23,7 +22,6 @@ module Position =
 
     let toRoslynPosition (lines: TextLineCollection) =
         toLinePosition lines >> lines.GetPosition
-
 
 module Range =
     let toLinePositionSpan (lines: TextLineCollection) (range: Range) : LinePositionSpan =
@@ -39,11 +37,10 @@ module Range =
     let fromTextSpan (lines: TextLineCollection) =
         lines.GetLinePositionSpan >> fromLinePositionSpan
 
-
 module Location =
-    let fromRoslynLocation (loc: Microsoft.CodeAnalysis.Location) : option<Location> =
+    let fromRoslynLocation (pathToUri: string -> string) (loc: Microsoft.CodeAnalysis.Location) : option<Location> =
         let toLspLocation (path: string) span : Location =
-            { Uri = path |> Uri.fromPath
+            { Uri = path |> pathToUri
               Range = span |> Range.fromLinePositionSpan }
 
         match loc.Kind with
@@ -69,12 +66,10 @@ module Location =
 
         | _ -> None
 
-
 module TextEdit =
     let fromTextChange (lines: TextLineCollection) (changes: TextChange) : TextEdit =
         { Range = changes.Span |> Range.fromTextSpan lines
           NewText = changes.NewText }
-
 
 module SymbolKind =
     let fromSymbol (symbol: ISymbol) : SymbolKind =
@@ -112,10 +107,8 @@ module SymbolKind =
         | :? INamespaceSymbol -> SymbolKind.Namespace
         | _ -> SymbolKind.File
 
-
 module SymbolName =
     let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol) : string = symbol.ToDisplayString format
-
 
 module CallHierarchyItem =
     let private displayStyle =
@@ -182,7 +175,11 @@ module TypeHierarchyItem =
           Data = None }
 
 module SymbolInformation =
-    let fromSymbol (format: SymbolDisplayFormat) (symbol: ISymbol) : SymbolInformation list =
+    let fromSymbol
+        (pathToUri: string -> string)
+        (format: SymbolDisplayFormat)
+        (symbol: ISymbol)
+        : SymbolInformation list =
         let toSymbolInformation loc =
             { Name = SymbolName.fromSymbol format symbol
               Kind = SymbolKind.fromSymbol symbol
@@ -192,10 +189,9 @@ module SymbolInformation =
               Tags = None }
 
         symbol.Locations
-        |> Seq.choose Location.fromRoslynLocation
+        |> Seq.choose (Location.fromRoslynLocation pathToUri)
         |> Seq.map toSymbolInformation
         |> Seq.toList
-
 
 module DiagnosticSeverity =
     let fromRoslynDiagnosticSeverity (sev: Microsoft.CodeAnalysis.DiagnosticSeverity) : DiagnosticSeverity =
@@ -205,9 +201,11 @@ module DiagnosticSeverity =
         | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> DiagnosticSeverity.Error
         | _ -> DiagnosticSeverity.Warning
 
-
 module Diagnostic =
-    let fromRoslynDiagnostic (diagnostic: Microsoft.CodeAnalysis.Diagnostic) : Diagnostic * string =
+    let fromRoslynDiagnostic
+        (pathToUri: string -> string)
+        (diagnostic: Microsoft.CodeAnalysis.Diagnostic)
+        : Diagnostic * string =
         let diagnosticCodeUrl = diagnostic.Descriptor.HelpLinkUri |> Option.ofObj
 
         let mappedLineSpan = diagnostic.Location.GetMappedLineSpan()
@@ -224,4 +222,4 @@ module Diagnostic =
               Tags = None
               Data = None }
 
-        (diagnostic, mappedLineSpan.Path |> Uri.fromPath)
+        (diagnostic, mappedLineSpan.Path |> pathToUri)
