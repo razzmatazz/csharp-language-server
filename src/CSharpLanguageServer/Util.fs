@@ -65,12 +65,6 @@ module Seq =
         else
             Seq.maxBy projection source |> Some
 
-module Option =
-    let inline ofString (value: string) =
-        match String.IsNullOrWhiteSpace value with
-        | true -> None
-        | false -> Some value
-
 module Async =
     let map f computation =
         async.Bind(computation, f >> async.Return)

@@ -150,6 +150,11 @@ module Completion =
         | "TypeParameter" -> CompletionItemKind.TypeParameter
         | _ -> CompletionItemKind.Property
 
+    let optionOfString (value: string) =
+        match String.IsNullOrWhiteSpace value with
+        | true -> None
+        | false -> Some value
+
     let parseAndFormatDocumentation
         (completionDescription: Microsoft.CodeAnalysis.Completion.CompletionDescription)
         : (string option * string option) =
@@ -176,7 +181,7 @@ module Completion =
                 |> Seq.skipWhile (fun t -> t.Tag = "LineBreak")
                 |> Seq.map _.Text
                 |> String.concat ""
-                |> Option.ofString
+                |> optionOfString
 
             synopsis, documentationText
         | _, _ -> None, None
@@ -239,9 +244,9 @@ module Completion =
                         let lspCompletionItem =
                             { Ionide.LanguageServerProtocol.Types.CompletionItem.Create item.DisplayText with
                                 Kind = item.Tags |> Seq.tryHead |> Option.map roslynTagToLspCompletion
-                                SortText = item.SortText |> Option.ofString
-                                FilterText = item.FilterText |> Option.ofString
-                                InsertText = item.DisplayText |> Option.ofString
+                                SortText = item.SortText |> optionOfString
+                                FilterText = item.FilterText |> optionOfString
+                                InsertText = item.DisplayText |> optionOfString
                                 Data = cacheItemId |> serialize |> Some }
 
                         (lspCompletionItem, cacheItemId, doc, item))
