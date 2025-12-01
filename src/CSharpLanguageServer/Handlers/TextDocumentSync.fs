@@ -70,7 +70,7 @@ module TextDocumentSync =
             | _ -> Ok() |> async.Return
 
         | Some wf, None ->
-            let docFilePathMaybe = Uri.tryParseFileUri p.TextDocument.Uri
+            let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
             match docFilePathMaybe with
             | Some docFilePath -> async {
@@ -147,21 +147,24 @@ module TextDocumentSync =
         | Some _, Some doc -> Ok() |> async.Return
 
         | Some wf, None -> async {
-            let docFilePath = Uri.parseFileUri p.TextDocument.Uri
+            let docFilePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
-            // we need to add this file to solution if not already
-            let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
-
-            match newDocMaybe with
-            | Some newDoc ->
-                let updatedWf =
-                    { wf with
-                        Solution = Some newDoc.Project.Solution }
-
-                context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
-                context.Emit(WorkspaceFolderChange updatedWf)
-
+            match docFilePath with
             | None -> ()
+            | Some docFilePath ->
+                // we need to add this file to solution if not already
+                let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
+
+                match newDocMaybe with
+                | Some newDoc ->
+                    let updatedWf =
+                        { wf with
+                            Solution = Some newDoc.Project.Solution }
+
+                    context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
+                    context.Emit(WorkspaceFolderChange updatedWf)
+
+                | None -> ()
 
             return Ok()
           }

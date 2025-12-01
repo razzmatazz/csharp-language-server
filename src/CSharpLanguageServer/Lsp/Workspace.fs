@@ -43,8 +43,11 @@ type LspWorkspaceDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
-let workspaceFolderUriToPath (_wf: LspWorkspaceFolder) (uri: string) : string =
-    Uri.UnescapeDataString(Uri(Uri.unescape uri).LocalPath)
+let workspaceFolderUriToPath (_wf: LspWorkspaceFolder) (uri: string) : option<string> =
+    try
+        uri |> Uri.unescape |> Uri |> _.LocalPath |> Uri.UnescapeDataString |> Some
+    with _ex ->
+        None
 
 let workspaceFolderPathToUri (_wf: LspWorkspaceFolder) (path: string) : string =
     let metadataPrefix = "$metadata$/"
