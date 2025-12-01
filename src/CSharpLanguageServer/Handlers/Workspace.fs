@@ -53,17 +53,22 @@ module Workspace =
 
         match wf, doc with
         | Some wf, Some doc ->
-            let fileText = uri |> Uri.parseFileUri |> File.ReadAllText
-            let updatedDoc = SourceText.From(fileText) |> doc.WithText
+            let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
 
-            let updatedWf =
-                { wf with
-                    Solution = Some updatedDoc.Project.Solution }
+            match docFilePathMaybe with
+            | Some docFilePath ->
+                let fileText = docFilePath |> File.ReadAllText
+                let updatedDoc = SourceText.From(fileText) |> doc.WithText
 
-            context.Emit(WorkspaceFolderChange updatedWf)
+                let updatedWf =
+                    { wf with
+                        Solution = Some updatedDoc.Project.Solution }
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+            | None -> ()
 
         | Some wf, None ->
-            let docFilePathMaybe = uri |> Uri.tryParseFileUri
+            let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
 
             match docFilePathMaybe with
             | Some docFilePath ->

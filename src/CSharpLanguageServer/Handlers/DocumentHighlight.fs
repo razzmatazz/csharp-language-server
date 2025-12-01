@@ -54,12 +54,13 @@ module DocumentHighlight =
 
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, _, Some doc) ->
-                if shouldHighlight symbol then
-                    let filePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+                let filePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+
+                match shouldHighlight symbol, filePath with
+                | true, Some filePath ->
                     let! highlights = getHighlights filePath symbol doc
                     return highlights |> Seq.toArray |> Some |> LspResult.success
-                else
-                    return None |> LspResult.success
+                | _, _ -> return None |> LspResult.success
 
             | _, _ -> return None |> LspResult.success
         }

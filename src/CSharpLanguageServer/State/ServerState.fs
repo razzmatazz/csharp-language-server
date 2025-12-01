@@ -510,7 +510,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
 
             let! newSolution =
-                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath wfRootDir
+                solutionLoadSolutionWithPathOrOnCwd state.LspClient.Value state.Settings.SolutionPath wfRootDir.Value
 
             let updatedWf = { wf with Solution = newSolution }
 

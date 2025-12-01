@@ -24,15 +24,6 @@ module Uri =
         else
             Uri(path).ToString()
 
-    let parseFileUri s : string = Uri(s).LocalPath
-
-    let tryParseFileUri s : string option =
-        try
-            let uri = Uri s
-            Some uri.LocalPath
-        with _ex ->
-            None
-
 let unwindProtect cleanupFn op = async {
     try
         return! op
