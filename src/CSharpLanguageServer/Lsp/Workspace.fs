@@ -72,15 +72,22 @@ let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
     wf.Uri
     |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
     |> _.TrimEnd('/')
-    |> sprintf "csharp:/%s/$metadata$"
+    |> sprintf "csharp:///%s"
 
-let workspaceFolderMetadataUri wf projectName containingAssemblyName symbolFullName =
-    sprintf
-        "%s/projects/%s/assemblies/%s/symbols/%s.cs"
-        (workspaceFolderMetadataUriBase wf)
-        projectName
-        containingAssemblyName
-        symbolFullName
+let workspaceFolderMetadataSymbolSourceViewUri
+    _wf
+    (project: Microsoft.CodeAnalysis.Project)
+    (symbolMetadataName: string)
+    =
+    let projectFileUri =
+        project.FilePath
+        |> Uri
+        |> string
+        |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
+        |> _.TrimEnd('/')
+        |> sprintf "csharp:///%s"
+
+    sprintf "%s?symbol=%s&view=source" projectFileUri (Uri.EscapeDataString(symbolMetadataName))
 
 let documentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
@@ -126,32 +133,28 @@ let workspaceFolderWithDocumentFromMetadata
     wf
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
-    (l: Microsoft.CodeAnalysis.Location)
     =
     async {
-        let containingAssembly: IAssemblySymbol =
-            l.MetadataModule |> nonNull "l.MetadataModule" |> _.ContainingAssembly
-
         let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
             match symbol with
             | :? INamedTypeSymbol as namedType -> namedType
             | _ -> symbol.ContainingType
 
-        let symbolFullName =
-            symbol |> symbolGetContainingTypeOrThis |> symbolGetFullReflectionName
+        let symbolMetadataName =
+            symbol |> symbolGetContainingTypeOrThis |> symbolGetMetadataName
 
         let metadataUri =
-            workspaceFolderMetadataUri wf project.Name containingAssembly.Name symbolFullName
+            workspaceFolderMetadataSymbolSourceViewUri wf project symbolMetadataName
 
         match Map.tryFind metadataUri wf.DecompiledMetadata with
         | Some md -> return wf, metadataUri, md.Document
         | None ->
-            let! documentFromMd, text = documentFromMetadata project containingAssembly symbolFullName
+            let! documentFromMd, text = documentFromMetadata project symbol.ContainingAssembly symbolMetadataName
 
             let csharpMetadata =
                 { ProjectName = project.Name
-                  AssemblyName = containingAssembly.Name
-                  SymbolName = symbolFullName
+                  AssemblyName = symbol.ContainingAssembly.Name
+                  SymbolName = symbolMetadataName
                   Source = text }
 
             let md =
@@ -176,7 +179,7 @@ let workspaceFolderResolveSymbolLocation
         | true, _ ->
             let! ct = Async.CancellationToken
 
-            let! (updatedWf, metadataUri, mdDocument) = workspaceFolderWithDocumentFromMetadata wf project symbol l
+            let! updatedWf, metadataUri, mdDocument = workspaceFolderWithDocumentFromMetadata wf project symbol
 
             // figure out location on the document (approx implementation)
             let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
