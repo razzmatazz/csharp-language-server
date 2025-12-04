@@ -5,12 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 * Fix go-to-definition in metadata, csharp/metadata endpoint
-  - https://github.com/razzmatazz/csharp-language-server/pull/293
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/293 and https://github.com/razzmatazz/csharp-language-server/pull/294
   - Reported by @samwcoulter in https://github.com/razzmatazz/csharp-language-server/issues/289
 * Upgrade Roslyn libs to 5.0.0
 * csharp-ls will now use and require the .NET 10 runtime/SDK
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/281
 * Fix how title is formatted for nested code actions
-  - https://github.com/razzmatazz/csharp-language-server/pull/295
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/295
 
 **Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.20.0...main
 
