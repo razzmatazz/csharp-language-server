@@ -27,7 +27,6 @@ open CSharpLanguageServer.Roslyn.WorkspaceServices
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
 
-
 type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
@@ -74,10 +73,9 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
 
         | _ -> ()
 
-
         base.Visit node
 
-let symbolGetFullReflectionName (containingType: INamedTypeSymbol) =
+let symbolGetMetadataName (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
     stack.Push containingType.MetadataName
     let mutable ns = containingType.ContainingNamespace
