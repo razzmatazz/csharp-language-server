@@ -25,18 +25,22 @@ type LspWorkspaceDecompiledMetadataDocument =
       Document: Document }
 
 type LspWorkspaceFolder =
-    { Uri: string
-      Name: string
-      RoslynWorkspace: Workspace option
-      Solution: Solution option
-      DecompiledMetadata: Map<string, LspWorkspaceDecompiledMetadataDocument> }
+    {
+        Uri: string
+        Name: string
+        RoslynWorkspace: Workspace option
+        Solution: Solution option
+
+        /// key is (project.Path * symbol metadata name)
+        DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
+    }
 
     static member Empty =
         { Uri = Directory.GetCurrentDirectory() |> Uri |> string
           Name = "(no name)"
           RoslynWorkspace = None
           Solution = None
-          DecompiledMetadata = Map.empty }
+          DecompiledSymbolMetadata = Map.empty }
 
 type LspWorkspaceDocumentType =
     | UserDocument // user Document from solution, on disk
@@ -77,7 +81,7 @@ let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
 let workspaceFolderMetadataSymbolSourceViewUri
     _wf
     (project: Microsoft.CodeAnalysis.Project)
-    (symbolMetadataName: string)
+    (symbol: Microsoft.CodeAnalysis.ISymbol)
     =
     let projectFileUri =
         project.FilePath
@@ -87,12 +91,36 @@ let workspaceFolderMetadataSymbolSourceViewUri
         |> _.TrimEnd('/')
         |> sprintf "csharp:///%s"
 
+    let symbolMetadataName = symbolGetMetadataName symbol
+
     sprintf "%s?symbol=%s&view=source" projectFileUri (Uri.EscapeDataString(symbolMetadataName))
+
+let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (uri: string) : option<string * string> =
+    let uri = uri |> Uri
+
+    match uri.Scheme with
+    | "csharp" ->
+        let queryParams =
+            uri.Query
+            |> _.TrimStart('?').Split([| '&' |], StringSplitOptions.RemoveEmptyEntries)
+            |> Seq.map _.Split('=')
+            |> Seq.filter (fun parts -> parts.Length = 2)
+            |> Seq.map (fun parts -> parts[0], parts[1])
+            |> Map.ofSeq
+
+        let getParam name : option<string> =
+            queryParams |> Map.tryFind name |> Option.map Uri.UnescapeDataString
+
+        match getParam "view", getParam "symbol" with
+        | (Some "source", Some symbolMetadataName) -> Some(uri.LocalPath, symbolMetadataName)
+        | _ -> None
+
+    | _ -> None
 
 let documentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
     (containingAssembly: Microsoft.CodeAnalysis.IAssemblySymbol)
-    (fullName: string)
+    (symbolMetadataName: string)
     =
     async {
         let! ct = Async.CancellationToken
@@ -105,7 +133,7 @@ let documentFromMetadata
         let peReference = reference :?> PortableExecutableReference |> Option.ofObj
 
         let assemblyLocation =
-            peReference |> Option.map (fun r -> r.FilePath) |> Option.defaultValue "???"
+            peReference |> Option.map _.FilePath |> Option.defaultValue "???"
 
         let decompilerSettings = DecompilerSettings()
         decompilerSettings.ThrowOnAssemblyResolveErrors <- false // this shouldn't be a showstopper for us
@@ -116,17 +144,15 @@ let documentFromMetadata
         // (This happens for example, when there is compiler-generated code that is not yet recognized/transformed by the decompiler.)
         decompiler.AstTransforms.Add(EscapeInvalidIdentifiers())
 
-        let fullTypeName = TypeSystem.FullTypeName fullName
-
-        let text = decompiler.DecompileTypeAsString fullTypeName
+        let text =
+            symbolMetadataName
+            |> TypeSystem.FullTypeName
+            |> decompiler.DecompileTypeAsString
 
         let mdDocumentFilename =
-            $"$metadata$/projects/{project.Name}/assemblies/{containingAssembly.Name}/symbols/{fullName}.cs"
+            $"$metadata$/assemblies/{containingAssembly.Name}/symbols/{symbolMetadataName}.cs"
 
-        let mdDocumentEmpty = project.AddDocument(mdDocumentFilename, String.Empty)
-
-        let mdDocument = SourceText.From text |> mdDocumentEmpty.WithText
-        return mdDocument, text
+        return project.AddDocument(mdDocumentFilename, text = text), text
     }
 
 let workspaceFolderWithDocumentFromMetadata
@@ -135,19 +161,10 @@ let workspaceFolderWithDocumentFromMetadata
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     =
     async {
-        let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
-            match symbol with
-            | :? INamedTypeSymbol as namedType -> namedType
-            | _ -> symbol.ContainingType
+        let symbolMetadataName = symbolGetMetadataName symbol
 
-        let symbolMetadataName =
-            symbol |> symbolGetContainingTypeOrThis |> symbolGetMetadataName
-
-        let metadataUri =
-            workspaceFolderMetadataSymbolSourceViewUri wf project symbolMetadataName
-
-        match Map.tryFind metadataUri wf.DecompiledMetadata with
-        | Some md -> return wf, metadataUri, md.Document
+        match Map.tryFind (project.FilePath, symbolMetadataName) wf.DecompiledSymbolMetadata with
+        | Some md -> return wf, md
         | None ->
             let! documentFromMd, text = documentFromMetadata project symbol.ContainingAssembly symbolMetadataName
 
@@ -157,15 +174,17 @@ let workspaceFolderWithDocumentFromMetadata
                   SymbolName = symbolMetadataName
                   Source = text }
 
-            let md =
+            let symbolMetadata =
                 { Metadata = csharpMetadata
                   Document = documentFromMd }
 
             let updatedFolder =
                 { wf with
-                    DecompiledMetadata = Map.add metadataUri md wf.DecompiledMetadata }
+                    DecompiledSymbolMetadata =
+                        wf.DecompiledSymbolMetadata
+                        |> Map.add (project.FilePath, symbolMetadataName) symbolMetadata }
 
-            return updatedFolder, metadataUri, documentFromMd
+            return updatedFolder, symbolMetadata
     }
 
 let workspaceFolderResolveSymbolLocation
@@ -179,17 +198,21 @@ let workspaceFolderResolveSymbolLocation
         | true, _ ->
             let! ct = Async.CancellationToken
 
-            let! updatedWf, metadataUri, mdDocument = workspaceFolderWithDocumentFromMetadata wf project symbol
+            let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata wf project symbol
 
             // figure out location on the document (approx implementation)
-            let! syntaxTree = mdDocument.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+            let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-            let collector = DocumentSymbolCollectorForMatchingSymbolName(metadataUri, symbol)
+            let symbolMetadataUri = workspaceFolderMetadataSymbolSourceViewUri wf project symbol
+
+            let collector =
+                DocumentSymbolCollectorForMatchingSymbolName(symbolMetadataUri, symbol)
+
             let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
             collector.Visit(root)
 
             let fallbackLocationInMetadata =
-                { Uri = metadataUri
+                { Uri = symbolMetadataUri
                   Range =
                     { Start = { Line = 0u; Character = 0u }
                       End = { Line = 0u; Character = 1u } } }
@@ -301,9 +324,11 @@ let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
                 | _ -> None
 
             let matchingDecompiledDocumentMaybe =
-                wf.DecompiledMetadata
-                |> Map.tryFind u
-                |> Option.map (fun x -> (x.Document, DecompiledDocument))
+                u
+                |> workspaceFolderParseMetadataSymbolSourceViewUri wf
+                |> Option.bind (fun (projectPath, symbolMetadataName) ->
+                    Map.tryFind (projectPath, symbolMetadataName) wf.DecompiledSymbolMetadata)
+                |> Option.map (fun x -> x.Document, DecompiledDocument)
 
             match docType with
             | UserDocument -> matchingUserDocumentMaybe
