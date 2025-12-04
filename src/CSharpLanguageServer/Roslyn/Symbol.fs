@@ -75,7 +75,7 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
 
         base.Visit node
 
-let symbolGetMetadataName (containingType: INamedTypeSymbol) =
+let symbolGetMetadataName' (containingType: INamedTypeSymbol) =
     let stack = Stack<string>()
     stack.Push containingType.MetadataName
     let mutable ns = containingType.ContainingNamespace
@@ -89,3 +89,11 @@ let symbolGetMetadataName (containingType: INamedTypeSymbol) =
         doContinue <- ns <> null && not ns.IsGlobalNamespace
 
     String.Join(".", stack)
+
+let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
+    match symbol with
+    | :? INamedTypeSymbol as namedType -> namedType
+    | _ -> symbol.ContainingType
+
+let symbolGetMetadataName (symbol: Microsoft.CodeAnalysis.ISymbol) =
+    symbol |> symbolGetContainingTypeOrThis |> symbolGetMetadataName'

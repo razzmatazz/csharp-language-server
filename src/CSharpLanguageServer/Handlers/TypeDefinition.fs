@@ -6,7 +6,6 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
-open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
