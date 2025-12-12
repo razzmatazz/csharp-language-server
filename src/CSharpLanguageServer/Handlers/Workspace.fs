@@ -22,7 +22,10 @@ module Workspace =
     let private logger = Logging.getLoggerByName "Workspace"
 
     let provider (_cc: ClientCapabilities) : ServerCapabilitiesWorkspace option =
-        { WorkspaceFolders = None
+        { WorkspaceFolders =
+            Some
+                { Supported = Some true
+                  ChangeNotifications = None }
           FileOperations = None }
         |> Some
 

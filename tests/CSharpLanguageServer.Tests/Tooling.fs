@@ -32,6 +32,22 @@ type ClientProfile =
 
 let defaultClientCapabilities =
     { emptyClientCapabilities with
+        Workspace =
+            Some
+                { ApplyEdit = None
+                  WorkspaceEdit = None
+                  DidChangeConfiguration = None
+                  DidChangeWatchedFiles = None
+                  Symbol = None
+                  ExecuteCommand = None
+                  WorkspaceFolders = None
+                  Configuration = None
+                  SemanticTokens = None
+                  CodeLens = None
+                  FileOperations = None
+                  InlineValue = None
+                  InlayHint = None
+                  Diagnostics = None }
         TextDocument =
             Some
                 { Hover = None
@@ -255,10 +271,10 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
             let terminatorReached () =
                 headerBytes.Count >= 4
-                && headerBytes[headerBytes.Count - 4] = (byte '\r')
-                && headerBytes[headerBytes.Count - 3] = (byte '\n')
-                && headerBytes[headerBytes.Count - 2] = (byte '\r')
-                && headerBytes[headerBytes.Count - 1] = (byte '\n')
+                && headerBytes[headerBytes.Count - 4] = byte '\r'
+                && headerBytes[headerBytes.Count - 3] = byte '\n'
+                && headerBytes[headerBytes.Count - 2] = byte '\r'
+                && headerBytes[headerBytes.Count - 1] = byte '\n'
 
             let mutable eof = false
 
@@ -275,7 +291,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                     Encoding.UTF8.GetString(headerBytes.ToArray())
                     |> _.Split("\r\n")
                     |> Seq.filter (fun s -> s.Length > 0)
-                    |> Seq.map (_.Split(":"))
+                    |> Seq.map _.Split(":")
 
                 let contentLength =
                     headers
@@ -449,8 +465,8 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
             state.OutstandingServerRpcReqs |> Map.remove rpcCallId
 
         let resultOrError: Result<JToken, JToken> =
-            if rpcMsg.ContainsKey("result") then Ok(rpcMsg["result"])
-            elif rpcMsg.ContainsKey("error") then Error(rpcMsg["error"])
+            if rpcMsg.ContainsKey "result" then Ok(rpcMsg["result"])
+            elif rpcMsg.ContainsKey "error" then Error(rpcMsg["error"])
             else failwithf "unknown result rpcMsg: %s" (string rpcMsg)
 
         match rpcRequest.ResultReplyChannel with
@@ -509,9 +525,9 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
         let timestampFmt =
             if offsetMs >= 0 then
-                (sprintf "+%06i" offsetMs)
+                sprintf "+%06i" offsetMs
             else
-                (sprintf "%07i" offsetMs)
+                sprintf "%07i" offsetMs
 
         if state.LoggingEnabled then
             Console.Error.WriteLine("[{0} {1}] {2}", timestampFmt, logger, msg)
@@ -547,7 +563,7 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
 
     // a hack for macOS
     let tempTestDirName =
-        match RuntimeInformation.IsOSPlatform(OSPlatform.OSX), tempDir.StartsWith("/private") with
+        match RuntimeInformation.IsOSPlatform OSPlatform.OSX, tempDir.StartsWith "/private" with
         | true, false -> "/private" + tempDir
         | _ -> tempDir
 
@@ -586,7 +602,7 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
     copyDirWithFilter sourceTestDir tempTestDir |> string
 
 let rec deleteDirectory (path: string) =
-    if Directory.Exists(path) then
+    if Directory.Exists path then
         Directory.GetFileSystemEntries(path)
         |> Array.iter (fun item ->
             if File.Exists(item) then
@@ -691,7 +707,12 @@ type ClientController(clientProfile: ClientProfile) =
 
     member __.SolutionDir: string = solutionDir.Value
 
-    member this.LoadSolution(fixtureName: string, patchSolutionDir: string -> unit) =
+    member this.LoadSolution
+        (
+            fixtureName: string,
+            patchSolutionDir: string -> unit,
+            initializeParamsUpdate: InitializeParams -> InitializeParams
+        ) =
         let log = logMessage "LoadSolution"
 
         // solution can only be loaded once for ClientController instance
@@ -712,8 +733,8 @@ type ClientController(clientProfile: ClientProfile) =
             failwithf "ClientController.Prepare(): no such test data dir \"%s\"" sourceTestDataDir.FullName
 
         let tempSolutionDir = prepareTempTestDirFrom sourceTestDataDir
-        patchSolutionDir (tempSolutionDir)
-        solutionDir <- Some(tempSolutionDir)
+        patchSolutionDir tempSolutionDir
+        solutionDir <- Some tempSolutionDir
 
         // start the server
         log "sending ServerStartRequest"
@@ -726,7 +747,7 @@ type ClientController(clientProfile: ClientProfile) =
 
             { RootPath = None
               RootUri = Some rootUri
-              ProcessId = Process.GetCurrentProcess().Id |> int |> Some
+              ProcessId = Process.GetCurrentProcess() |> _.Id |> int |> Some
               Capabilities = state.ClientProfile.ClientCapabilities
               WorkDoneToken = None
               ClientInfo = None
@@ -734,6 +755,7 @@ type ClientController(clientProfile: ClientProfile) =
               InitializationOptions = None
               Trace = None
               WorkspaceFolders = None }
+            |> initializeParamsUpdate
 
         let initializeResult =
             let initResponse =
@@ -759,17 +781,17 @@ type ClientController(clientProfile: ClientProfile) =
 
         log "OK, 'initialized' request complete"
 
-        this.WaitForProgressEnd(fun m -> m = "OK, 1 project file(s) loaded" || m.Contains("Finished loading solution"))
+        this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
 
     member __.WaitForProgressEnd(messagePred: (string -> bool)) =
-        let timeoutMS = 60 * 1000
+        let timeoutMS = 20 * 1000
         let start = DateTime.Now
 
         let progressEndMatch m =
             let paramsValue = m.Message["params"] |> Option.ofObj |> indexJToken "value"
 
             m.Source = Server
-            && (m.Message.["method"] |> string) = "$/progress"
+            && (string m.Message.["method"]) = "$/progress"
             && (paramsValue
                 |> indexJToken "kind"
                 |> Option.map string
@@ -857,6 +879,22 @@ type ClientController(clientProfile: ClientProfile) =
 
         rpcLog |> Seq.exists containsPred
 
+    member __.ServerProgressLogContains(pred: string -> bool) : bool =
+        let containsPred m =
+            let paramsValue = m.Message["params"] |> Option.ofObj |> indexJToken "value"
+
+            m.Source = Server
+            && (m.Message["method"] |> string) = "$/progress"
+            && (pred (
+                paramsValue
+                |> indexJToken "message"
+                |> Option.map string
+                |> Option.defaultValue "(None)"
+            ))
+
+        let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
+        rpcLog |> Seq.exists containsPred
+
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         let requestJObject = request |> serialize
 
@@ -876,19 +914,22 @@ type ClientController(clientProfile: ClientProfile) =
 let activeClientsSemaphore =
     new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
 
-let activateFixtureExt fixtureName clientProfile (patchFixtureDir: string -> unit) =
+let activateFixtureExt
+    fixtureName
+    clientProfile
+    (patchFixtureDir: string -> unit)
+    (initializeParamsUpdate: InitializeParams -> InitializeParams)
+    =
     activeClientsSemaphore.Wait()
 
     try
         let client = new ClientController(clientProfile)
-        client.LoadSolution(fixtureName, patchFixtureDir)
+        client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
         client
     finally
         activeClientsSemaphore.Release() |> ignore
 
-let activateFixture fixtureName =
-    let patchSolutionDir = fun _ -> ()
-    activateFixtureExt fixtureName defaultClientProfile patchSolutionDir
+let emptyFixturePatch _ = ()
 
 let patchFixtureWithTfm newTfm =
     let updateTfmInSubdir (rootDir: string) =
@@ -907,6 +948,17 @@ let patchFixtureWithTfm newTfm =
             | None -> ()
 
     updateTfmInSubdir
+
+let activateFixture fixtureName =
+    activateFixtureExt fixtureName defaultClientProfile emptyFixturePatch id
+
+let activateFixtureWithLoggingEnabled fixtureName =
+    activateFixtureExt
+        fixtureName
+        { defaultClientProfile with
+            LoggingEnabled = true }
+        emptyFixturePatch
+        id
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =

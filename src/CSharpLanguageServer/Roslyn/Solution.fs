@@ -217,7 +217,6 @@ let selectPreferredSolution (slnFiles: string list) : option<string> =
 
 let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
     assert Path.IsPathRooted solutionPath
-    let progress = ProgressReporter lspClient
 
     let logMessage m =
         lspClient.WindowLogMessage
@@ -231,9 +230,7 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
 
     async {
         try
-            let beginMessage = sprintf "Loading solution \"%s\"..." solutionPath
-            do! progress.Begin beginMessage
-            do! logMessage beginMessage
+            do! logMessage (sprintf "Loading solution \"%s\"..." solutionPath)
 
             let projs = solutionLoadProjectFilenames solutionPath
 
@@ -254,25 +251,25 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) =
 
                 do! logMessage (sprintf "msbuildWorkspace.Diagnostics: %s" (diag.ToString()))
 
-            let endMessage = sprintf "Finished loading solution \"%s\"" solutionPath
-            do! progress.End endMessage
-            do! logMessage endMessage
+            do! logMessage (sprintf "Finished loading solution \"%s\"" solutionPath)
 
             return Some solution
         with ex ->
             let errorMessage =
                 sprintf "Solution \"%s\" could not be loaded: %s" solutionPath (ex.ToString())
 
-            do! progress.End errorMessage
             do! showMessage errorMessage
             return None
     }
 
-let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string -> Async<unit>) (projs: string list) =
-    let progress = ProgressReporter lspClient
-
+let solutionTryLoadFromProjectFiles
+    (lspClient: ILspClient)
+    (logMessage: string -> Async<unit>)
+    (progressReport: string * uint -> Async<unit>)
+    (projs: string list)
+    =
     async {
-        do! progress.Begin($"Loading {projs.Length} project(s)...", false, $"0/{projs.Length}", 0u)
+        do! progressReport ($"Loading {projs.Length} project(s)...", 0u)
         let loadedProj = ref 0
 
         let tfmsPerProject = loadProjectTfms projs
@@ -298,18 +295,16 @@ let solutionTryLoadFromProjectFiles (lspClient: ILspClient) (logMessage: string 
             let projName = projectFile.Name
             let loaded = Interlocked.Increment loadedProj
             let percent = 100 * loaded / projs.Length |> uint
-            do! progress.Report(false, $"{projName} {loaded}/{projs.Length}", percent)
+            do! progressReport ($"{projName} {loaded}/{projs.Length}", percent)
 
         for diag in msbuildWorkspace.Diagnostics do
             logger.LogTrace("msbuildWorkspace.Diagnostics: {message}", diag.ToString())
-
-        do! progress.End(sprintf "OK, %d project file(s) loaded" projs.Length)
 
         //workspace <- Some(msbuildWorkspace :> Workspace)
         return Some msbuildWorkspace.CurrentSolution
     }
 
-let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
+let solutionFindAndLoadOnDir (progressReporter: ProgressReporter) (lspClient: ILspClient) dir = async {
     let fileNotOnNodeModules (filename: string) =
         filename.Split Path.DirectorySeparatorChar |> Seq.contains "node_modules" |> not
 
@@ -353,18 +348,26 @@ let solutionFindAndLoadOnDir (lspClient: ILspClient) dir = async {
             do! logMessage message
             Exception message |> raise
 
-        return! solutionTryLoadFromProjectFiles lspClient logMessage projFiles
+        let progressReport (message, percent) =
+            progressReporter.Report(false, message, percent)
+
+        return! solutionTryLoadFromProjectFiles lspClient logMessage progressReport projFiles
 
     | Some solutionPath -> return! solutionTryLoadOnPath lspClient solutionPath
 }
 
-let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMaybe: string option) (cwd: string) =
+let solutionLoadSolutionWithPathOrOnDir
+    (lspClient: ILspClient)
+    (progressReporter: ProgressReporter)
+    (solutionPathMaybe: string option)
+    (dir: string)
+    =
     match solutionPathMaybe with
     | Some solutionPath -> async {
         let rootedSolutionPath =
             match Path.IsPathRooted solutionPath with
             | true -> solutionPath
-            | false -> Path.Combine(cwd, solutionPath)
+            | false -> Path.Combine(dir, solutionPath)
 
         return! solutionTryLoadOnPath lspClient rootedSolutionPath
       }
@@ -372,8 +375,9 @@ let solutionLoadSolutionWithPathOrOnCwd (lspClient: ILspClient) (solutionPathMay
     | None -> async {
         let logMessage: LogMessageParams =
             { Type = MessageType.Info
-              Message = sprintf "csharp-ls: attempting to find and load solution based on cwd (\"%s\").." cwd }
+              Message = sprintf "csharp-ls: attempting to find and load solution on path \"%s\".." dir }
 
         do! lspClient.WindowLogMessage logMessage
-        return! solutionFindAndLoadOnDir lspClient cwd
+
+        return! solutionFindAndLoadOnDir progressReporter lspClient dir
       }

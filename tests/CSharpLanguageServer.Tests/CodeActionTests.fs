@@ -11,7 +11,9 @@ open CSharpLanguageServer.Tests.Tooling
 [<TestCase("net8.0")>]
 let ``code action menu appears on request`` (tfm: string) =
     let patchFixture = patchFixtureWithTfm tfm
-    use client = activateFixtureExt "genericProject" defaultClientProfile patchFixture
+
+    use client =
+        activateFixtureExt "genericProject" defaultClientProfile patchFixture id
 
     use classFile = client.Open "Project/Class.cs"
 
