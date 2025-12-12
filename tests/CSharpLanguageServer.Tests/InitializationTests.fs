@@ -24,7 +24,6 @@ let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
 
     | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
 
-
 [<Test>]
 let testServerRegistersCapabilitiesWithTheClient () =
     use client = activateFixture "genericProject"
@@ -128,7 +127,6 @@ let testServerRegistersCapabilitiesWithTheClient () =
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
     Assert.IsTrue(client.ServerDidRespondTo "initialized")
 
-
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
     use client = activateFixture "projectWithSlnx"
@@ -144,7 +142,6 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.MethodA(string arg)\n```"
 
-
 [<Test>]
 let testMultiTargetProjectLoads () =
     use client = activateFixture "multiTargetProject"
@@ -156,3 +153,8 @@ let testMultiTargetProjectLoads () =
         "Project/Class.cs"
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.Method(string arg)\n```"
+
+[<Test>]
+let testWorkspaceWillLoadAllFolders() =
+    failwith "not implemented"
+    ()

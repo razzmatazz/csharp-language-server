@@ -128,7 +128,7 @@ module Workspace =
 
                 | ".sln"
                 | ".slnx" ->
-                    do! windowShowMessage "change to .sln detected, will reload solution"
+                    do! windowShowMessage "change to .sln(x) detected, will reload solution"
                     context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
                 | ".cs" ->
@@ -137,6 +137,10 @@ module Workspace =
                     | FileChangeType.Changed -> do! tryReloadDocumentOnUri logger context change.Uri
                     | FileChangeType.Deleted -> do removeDocument context change.Uri
                     | _ -> ()
+
+                | ".cshtml" ->
+                    // TODO: handle this
+                    ()
 
                 | _ -> ()
 
