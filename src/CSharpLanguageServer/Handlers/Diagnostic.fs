@@ -63,14 +63,18 @@ module Diagnostic =
             | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
         }
 
-    let private getWorkspaceDiagnosticReports
-        (pathToUri: string -> string)
-        (solution: Microsoft.CodeAnalysis.Solution)
-        : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
+    let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
+        let wf = workspace.SingletonFolder
+
+        let pathToUri = workspaceFolderPathToUri wf
+
+        let solutionProjects =
+            wf.Solution |> Option.map _.Projects |> Option.defaultValue Seq.empty
+
         asyncSeq {
             let! ct = Async.CancellationToken
 
-            for project in solution.Projects do
+            for project in solutionProjects do
                 let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
                 match compilation |> Option.ofObj with
@@ -112,24 +116,16 @@ module Diagnostic =
         (p: WorkspaceDiagnosticParams)
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {
-            let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
-                { Items = Array.empty }
-
-            let wf = context.Workspace.SingletonFolder
-            let wfPathToUri = workspaceFolderPathToUri wf
-
-            match wf.Solution, p.PartialResultToken with
-            | None, _ -> return emptyWorkspaceDiagnosticReport |> LspResult.success
-
-            | Some solution, None ->
-                let! diagnosticReports = getWorkspaceDiagnosticReports wfPathToUri solution |> AsyncSeq.toArrayAsync
+            match p.PartialResultToken with
+            | None ->
+                let! diagnosticReports = getWorkspaceDiagnosticReports context.Workspace |> AsyncSeq.toArrayAsync
 
                 let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
                     { Items = diagnosticReports }
 
                 return workspaceDiagnosticReport |> LspResult.success
 
-            | Some solution, Some partialResultToken ->
+            | Some partialResultToken ->
                 let sendWorkspaceDiagnosticReport (documentReport, index) = async {
                     let progressParams =
                         if index = 0 then
@@ -150,8 +146,11 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports wfPathToUri solution)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports context.Workspace)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
+
+                let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
+                    { Items = Array.empty }
 
                 return emptyWorkspaceDiagnosticReport |> LspResult.success
         }
