@@ -261,18 +261,12 @@ type LspWorkspace =
 
     static member Empty = { Folders = []; OpenDocs = Map.empty }
 
-    member this.SingletonFolder = this.Folders |> Seq.exactlyOne
-
 let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
-    // TODO: currently only the first workspace folder is taken into account (see Seq.take 1)
-    match workspaceFolders.Length with
-    | 0 -> failwith "workspaceFrom: at least 1 workspace folder must be provided!"
-    | 1 -> ()
-    | _ -> logger.LogWarning("workspaceFrom: only the first WorkspaceFolder will be loaded!")
+    if workspaceFolders.Length = 0 then
+        failwith "workspaceFrom: at least 1 workspace folder must be provided!"
 
     let folders =
         workspaceFolders
-        |> Seq.take 1
         |> Seq.map (fun f ->
             { LspWorkspaceFolder.Empty with
                 Uri = f.Uri
