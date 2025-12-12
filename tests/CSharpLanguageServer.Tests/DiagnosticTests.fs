@@ -57,7 +57,6 @@ let testPushDiagnosticsWork () =
     Assert.AreEqual(0, diagnosticList1.Length)
     ()
 
-
 [<Test>]
 let testPullDiagnosticsWork () =
     use client = activateFixture "testDiagnosticsWork"
@@ -118,7 +117,6 @@ let testPullDiagnosticsWork () =
 
     ()
 
-
 [<Test>]
 let testWorkspaceDiagnosticsWork () =
     use client = activateFixture "testDiagnosticsWork"
@@ -149,7 +147,6 @@ let testWorkspaceDiagnosticsWork () =
         | _ -> failwith "'U2.C1' was expected"
 
     | _ -> failwith "'Some' was expected"
-
 
 [<Test>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
