@@ -14,6 +14,7 @@ open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp
 
 type ServerRequestMode =
     | ReadOnly
@@ -327,7 +328,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return
             { state with
-                Workspace.Folders = updatedWorkspaceFolderList }
+                Workspace =
+                    { state.Workspace with
+                        Folders = updatedWorkspaceFolderList } }
 
     | DocumentOpened(uri, ver, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
@@ -337,7 +340,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return
             { state with
-                Workspace.OpenDocs = newOpenDocs }
+                Workspace =
+                    { state.Workspace with
+                        OpenDocs = newOpenDocs } }
 
     | DocumentClosed uri ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
@@ -346,7 +351,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         return
             { state with
-                Workspace.OpenDocs = newOpenDocVersions }
+                Workspace =
+                    { state.Workspace with
+                        OpenDocs = newOpenDocVersions } }
 
     | DocumentTouched(uri, timestamp) ->
         postSelf PushDiagnosticsDocumentBacklogUpdate
@@ -361,7 +368,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
             return
                 { state with
-                    Workspace.OpenDocs = newOpenDocVersions }
+                    Workspace =
+                        { state.Workspace with
+                            OpenDocs = newOpenDocVersions } }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
@@ -509,17 +518,32 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         | true ->
             let mutable updatedWorkspace = state.Workspace
 
+            let progressReporter = ProgressReporter state.LspClient.Value
+
+            let beginMessage =
+                sprintf "Loading workspace (%d workspace folders)" state.Workspace.Folders.Length
+
+            do! progressReporter.Begin(beginMessage)
+
             for wf in state.Workspace.Folders do
+                let beginMessage = sprintf "Loading workspace folder %s..." wf.Uri
+
                 let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
 
                 let! newSolution =
-                    solutionLoadSolutionWithPathOrOnCwd
+                    solutionLoadSolutionWithPathOrOnDir
                         state.LspClient.Value
+                        progressReporter
                         state.Settings.SolutionPath
                         wfRootDir.Value
 
                 let updatedWf = { wf with Solution = newSolution }
                 updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
+
+                do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+
+            let endMessage = sprintf "Finished loading workspace"
+            do! progressReporter.End(endMessage)
 
             return
                 { state with

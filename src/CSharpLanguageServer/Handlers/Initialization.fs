@@ -75,12 +75,11 @@ module Initialization =
                 |> Option.defaultValue (Directory.GetCurrentDirectory() |> (Uri >> string))
 
             let workspaceFolders =
-                p.WorkspaceFolders
-                |> Option.defaultValue Array.empty
-                |> Seq.append
+                match p.WorkspaceFolders with
+                | Some wfs -> wfs |> List.ofArray
+                | None ->
                     [ { Uri = workspaceFoldersFallbackUri
                         Name = "root" } ]
-                |> List.ofSeq
 
             logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 

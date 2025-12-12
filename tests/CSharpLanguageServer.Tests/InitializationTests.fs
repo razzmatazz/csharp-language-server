@@ -24,7 +24,6 @@ let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
 
     | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
 
-
 [<Test>]
 let testServerRegistersCapabilitiesWithTheClient () =
     use client = activateFixture "genericProject"
@@ -46,7 +45,10 @@ let testServerRegistersCapabilitiesWithTheClient () =
     )
 
     Assert.AreEqual(
-        { WorkspaceFolders = None
+        { WorkspaceFolders =
+            Some
+                { Supported = Some true
+                  ChangeNotifications = None }
           FileOperations = None }
         |> Some,
         serverCaps.Workspace
@@ -128,7 +130,6 @@ let testServerRegistersCapabilitiesWithTheClient () =
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
     Assert.IsTrue(client.ServerDidRespondTo "initialized")
 
-
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
     use client = activateFixture "projectWithSlnx"
@@ -144,7 +145,6 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.MethodA(string arg)\n```"
 
-
 [<Test>]
 let testMultiTargetProjectLoads () =
     use client = activateFixture "multiTargetProject"
@@ -156,3 +156,73 @@ let testMultiTargetProjectLoads () =
         "Project/Class.cs"
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.Method(string arg)\n```"
+
+[<Test>]
+let testMultiTargetWorkspace () =
+    let clientWorkspaceCaps: WorkspaceClientCapabilities =
+        { defaultClientCapabilities.Workspace.Value with
+            WorkspaceFolders = Some true }
+
+    let clientCaps: ClientCapabilities =
+        { defaultClientCapabilities with
+            Workspace = Some clientWorkspaceCaps }
+
+    let updateInitializeParamsWithWorkspaceFolders (initParams: InitializeParams) : InitializeParams =
+        let rootUri = initParams.RootUri.Value
+
+        { initParams with
+            WorkspaceFolders =
+                Some
+                    [| { Name = "folder0"
+                         Uri = rootUri + "/folder0" }
+                       { Name = "folder1"
+                         Uri = rootUri + "/folder1" } |] }
+
+    use client =
+        activateFixtureExt
+            "multiFolderWorkspace"
+            { defaultClientProfile with
+                ClientCapabilities = clientCaps }
+            emptyFixturePatch
+            updateInitializeParamsWithWorkspaceFolders
+
+    Assert.IsTrue(
+        client.ServerProgressLogContains(fun str ->
+            str.Contains("Finished loading workspace folder") && str.Contains("/folder0"))
+    )
+
+    Assert.IsTrue(
+        client.ServerProgressLogContains(fun str ->
+            str.Contains("Finished loading workspace folder") && str.Contains("/folder1"))
+    )
+
+    //
+    // actually check multiple folders work by dispatching requests to several folders
+    //
+    let testHoverOnClass filename expectedMethodName =
+        use classFile = client.Open(filename)
+
+        //
+        // check hover at method name
+        //
+        let hover0Params: HoverParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 2u; Character = 16u }
+              WorkDoneToken = None }
+
+        let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
+
+        match hover0 with
+        | Some hover ->
+            match hover.Contents with
+            | U3.C1 c ->
+                Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+                Assert.AreEqual(sprintf "```csharp\n%s\n```" expectedMethodName, c.Value.ReplaceLineEndings("\n"))
+            | _ -> failwith "C1 was expected"
+
+            Assert.IsTrue(hover.Range.IsNone)
+
+        | _ -> failwith "Some (U3.C1 c) was expected"
+
+    testHoverOnClass "folder0/Project/Class.cs" "void Class0.Method(string arg)"
+    testHoverOnClass "folder1/Project/Class.cs" "void Class1.Method(string arg)"
