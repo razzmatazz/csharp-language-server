@@ -20,41 +20,49 @@ module WorkspaceSymbol =
         (p: WorkspaceSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> =
         async {
-            let! ct = Async.CancellationToken
-
-            let wf = context.Workspace.SingletonFolder
-            let wfPathToUri = workspaceFolderPathToUri wf
-
             let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
 
-            let! symbols =
-                match wf.Solution with
-                | None -> async.Return Seq.empty
-                | Some solution ->
-                    match pattern with
-                    | Some pat ->
-                        SymbolFinder.FindSourceDeclarationsWithPatternAsync(
-                            solution,
-                            pat,
-                            SymbolFilter.TypeAndMember,
-                            cancellationToken = ct
-                        )
-                        |> Async.AwaitTask
-                    | None ->
-                        let true' = System.Func<string, bool>(fun _ -> true)
+            let! ct = Async.CancellationToken
 
-                        SymbolFinder.FindSourceDeclarationsAsync(
-                            solution,
-                            true',
-                            SymbolFilter.TypeAndMember,
-                            cancellationToken = ct
-                        )
-                        |> Async.AwaitTask
+            let mutable symbolInfos = []
+
+            for wf in context.Workspace.Folders do
+                let wfPathToUri = workspaceFolderPathToUri wf
+
+                let! symbols =
+                    match wf.Solution with
+                    | None -> async.Return Seq.empty
+                    | Some solution ->
+                        match pattern with
+                        | Some pat ->
+                            SymbolFinder.FindSourceDeclarationsWithPatternAsync(
+                                solution,
+                                pat,
+                                SymbolFilter.TypeAndMember,
+                                cancellationToken = ct
+                            )
+                            |> Async.AwaitTask
+                        | None ->
+                            let true' = System.Func<string, bool>(fun _ -> true)
+
+                            SymbolFinder.FindSourceDeclarationsAsync(
+                                solution,
+                                true',
+                                SymbolFilter.TypeAndMember,
+                                cancellationToken = ct
+                            )
+                            |> Async.AwaitTask
+
+                let symbolInfosForWf =
+                    symbols
+                    |> Seq.map (SymbolInformation.fromSymbol wfPathToUri SymbolDisplayFormat.MinimallyQualifiedFormat)
+                    |> Seq.collect id
+                    |> List.ofSeq
+
+                symbolInfos <- symbolInfos @ symbolInfosForWf
 
             return
-                symbols
-                |> Seq.map (SymbolInformation.fromSymbol wfPathToUri SymbolDisplayFormat.MinimallyQualifiedFormat)
-                |> Seq.collect id
+                symbolInfos
                 // TODO: make 100 configurable?
                 |> Seq.truncate 100
                 |> Seq.toArray
