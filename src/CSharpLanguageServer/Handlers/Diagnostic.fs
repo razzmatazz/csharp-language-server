@@ -63,16 +63,14 @@ module Diagnostic =
             | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
         }
 
-    let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
-        let wf = workspace.SingletonFolder
+    let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> = asyncSeq {
+        let! ct = Async.CancellationToken
 
-        let pathToUri = workspaceFolderPathToUri wf
+        for wf in workspace.Folders do
+            let pathToUri = workspaceFolderPathToUri wf
 
-        let solutionProjects =
-            wf.Solution |> Option.map _.Projects |> Option.defaultValue Seq.empty
-
-        asyncSeq {
-            let! ct = Async.CancellationToken
+            let solutionProjects =
+                wf.Solution |> Option.map _.Projects |> Option.defaultValue Seq.empty
 
             for project in solutionProjects do
                 let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
@@ -109,7 +107,7 @@ module Diagnostic =
                         let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
 
                         yield documentReport
-        }
+    }
 
     let handleWorkspaceDiagnostic
         (context: ServerRequestContext)
