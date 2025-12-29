@@ -25,7 +25,7 @@ module Workspace =
         { WorkspaceFolders =
             Some
                 { Supported = Some true
-                  ChangeNotifications = None }
+                  ChangeNotifications = U2.C2 true |> Some }
           FileOperations = None }
         |> Some
 
@@ -168,6 +168,28 @@ module Workspace =
                     ApplyFormattingOptions = csharpSettings.applyFormattingOptions |> Option.defaultValue false }
 
             context.Emit(SettingsChange newServerSettings)
+
+            return Ok()
+        }
+
+    let didChangeWorkspaceFolders
+        (context: ServerRequestContext)
+        (p: DidChangeWorkspaceFoldersParams)
+        : Async<LspResult<unit>> =
+        async {
+            let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
+                p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
+
+            let updatedWorkspaceFolders =
+                context.State.Workspace.Folders
+                |> Seq.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
+                |> Seq.filter wfNotInRemovedList
+                |> Seq.append p.Event.Added
+                |> List.ofSeq
+
+            context.Emit(WorkspaceConfigurationChanged updatedWorkspaceFolders)
+
+            context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
             return Ok()
         }

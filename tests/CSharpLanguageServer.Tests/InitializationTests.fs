@@ -48,7 +48,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         { WorkspaceFolders =
             Some
                 { Supported = Some true
-                  ChangeNotifications = None }
+                  ChangeNotifications = U2.C2 true |> Some }
           FileOperations = None }
         |> Some,
         serverCaps.Workspace
