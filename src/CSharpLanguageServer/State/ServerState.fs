@@ -512,38 +512,11 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             postSelf DumpAndResetRequestStats
 
         let solutionReloadDeadline =
-            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays(1))
+            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays 1)
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
-            let mutable updatedWorkspace = state.Workspace
-
-            let progressReporter = ProgressReporter state.LspClient.Value
-
-            let beginMessage =
-                sprintf "Loading workspace (%d workspace folders)" state.Workspace.Folders.Length
-
-            do! progressReporter.Begin(beginMessage)
-
-            for wf in state.Workspace.Folders do
-                let beginMessage = sprintf "Loading workspace folder %s..." wf.Uri
-
-                let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
-
-                let! newSolution =
-                    solutionLoadSolutionWithPathOrOnDir
-                        state.LspClient.Value
-                        progressReporter
-                        state.Settings.SolutionPath
-                        wfRootDir.Value
-
-                let updatedWf = { wf with Solution = newSolution }
-                updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
-
-                do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
-
-            let endMessage = sprintf "Finished loading workspace"
-            do! progressReporter.End(endMessage)
+            let! updatedWorkspace = workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.Workspace
 
             return
                 { state with
