@@ -115,7 +115,37 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
 
-    ()
+
+[<Test>]
+let testPullDiagnosticsWorkForRazorFiles () =
+    use client = activateFixture "aspnetProject"
+    use cshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+
+    let diagnosticParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = cshtmlFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
+
+    let report0: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
+
+    match report0 with
+    | Some(U2.C1 report) ->
+        Assert.AreEqual("full", report.Kind)
+        Assert.AreEqual(None, report.ResultId)
+        Assert.AreEqual(7, report.Items.Length)
+
+        let reportItems = report.Items |> Array.sortBy _.Range
+
+        let diagnostic0 = reportItems[0]
+        Assert.AreEqual(7, diagnostic0.Range.Start.Line)
+        Assert.AreEqual(4, diagnostic0.Range.Start.Character)
+        Assert.AreEqual(Some DiagnosticSeverity.Warning, diagnostic0.Severity)
+        Assert.AreEqual("Unnecessary using directive.", diagnostic0.Message)
+
+    | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
 let testWorkspaceDiagnosticsWork () =
@@ -152,7 +182,7 @@ let testWorkspaceDiagnosticsWork () =
 let testWorkspaceDiagnosticsWorkWithStreaming () =
     use client = activateFixture "testDiagnosticsWork"
 
-    Thread.Sleep(500)
+    Thread.Sleep(1000)
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

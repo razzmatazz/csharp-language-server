@@ -24,7 +24,7 @@ let testWorkspaceSymbolWorks () =
 
     match symbols0 with
     | Some(U2.C1 sis) ->
-        Assert.AreEqual(4, sis.Length)
+        Assert.AreEqual(6, sis.Length)
 
         let sym0 = sis[0]
         Assert.AreEqual("Class", sym0.Name)

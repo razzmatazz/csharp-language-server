@@ -69,13 +69,18 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
     Assert.AreEqual(null, serverCaps.InlineValueProvider)
 
+    let expectedDocumentSelector =
+        [| U2.C1
+               { Language = Some "csharp"
+                 Scheme = Some "file"
+                 Pattern = Some "**/*.cs" }
+           U2.C1
+               { Language = Some "razor"
+                 Scheme = Some "file"
+                 Pattern = Some "**/*.cshtml" } |]
+
     Assert.AreEqual(
-        { DocumentSelector =
-            Some
-                [| U2.C1
-                       { Language = Some "csharp"
-                         Scheme = Some "file"
-                         Pattern = Some "**/*.cs" } |]
+        { DocumentSelector = Some expectedDocumentSelector
           WorkDoneProgress = None
           Identifier = None
           InterFileDependencies = false
