@@ -6,6 +6,7 @@ open System.IO
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.Extensions.Logging
 open ICSharpCode.Decompiler
@@ -17,6 +18,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Roslyn.Solution
 
 let logger = Logging.getLoggerByName "Lsp.Workspace"
 
@@ -358,3 +360,32 @@ let workspaceDocumentSymbol workspace docType (uri: DocumentUri) (pos: Ionide.La
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
+
+let workspaceWithSolutionsLoaded (settings: ServerSettings) (lspClient: ILspClient) workspace = async {
+    let progressReporter = ProgressReporter lspClient
+
+    let beginMessage =
+        sprintf "Loading workspace (%d workspace folders)" workspace.Folders.Length
+
+    do! progressReporter.Begin(beginMessage)
+
+    let mutable updatedWorkspace = workspace
+
+    for wf in workspace.Folders do
+        let beginMessage = sprintf "Loading workspace folder %s..." wf.Uri
+
+        let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
+
+        let! newSolution =
+            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter settings.SolutionPath wfRootDir.Value
+
+        let updatedWf = { wf with Solution = newSolution }
+        updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
+
+        do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+
+    let endMessage = sprintf "Finished loading workspace"
+    do! progressReporter.End(endMessage)
+
+    return updatedWorkspace
+}

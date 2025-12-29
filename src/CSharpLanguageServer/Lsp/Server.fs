@@ -52,8 +52,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                 )
             )
 
-    let mutable _workspaceFolders: WorkspaceFolder list = []
-
     let withContext requestName requestMode (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>) param =
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
