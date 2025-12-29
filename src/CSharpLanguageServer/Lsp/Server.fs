@@ -269,7 +269,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
             |> withReadWriteContext "workspace/didChangeWatchedFiles" Workspace.didChangeWatchedFiles
             |> ignoreResult
 
-        override __.WorkspaceDidChangeWorkspaceFolders _p = ignoreNotification
+        override __.WorkspaceDidChangeWorkspaceFolders p =
+            p
+            |> withReadWriteContext "workspace/didChangeWorkspaceFolders" Workspace.didChangeWorkspaceFolders
+            |> ignoreResult
 
         override __.WorkspaceDidChangeConfiguration p =
             p
