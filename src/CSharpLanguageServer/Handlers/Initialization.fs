@@ -104,6 +104,23 @@ module Initialization =
             return initializeResult |> LspResult.success
         }
 
+    let getNewSettingsForWorkspaceCSharpConfig prevSettings workspaceCSharpConfig =
+        let csharpConfig =
+            workspaceCSharpConfig
+            |> Option.fromResult
+            |> Option.bind Seq.tryHead
+            |> Option.bind deserialize<ServerSettingsCSharpDto option>
+
+        match csharpConfig with
+        | None -> None
+        | Some csharpConfig ->
+            let newSettings =
+                { prevSettings with
+                    UseMetadataUris = csharpConfig.metadataUris
+                    SolutionPath = csharpConfig.solution |> Option.orElse prevSettings.SolutionPath }
+
+            Some newSettings
+
     let handleInitialized
         (lspClient: ILspClient)
         (stateActor: MailboxProcessor<ServerStateEvent>)
@@ -142,34 +159,13 @@ module Initialization =
                                  ScopeUri = None } |] }
                     )
 
-                let csharpConfigTokensMaybe =
-                    match workspaceCSharpConfig with
-                    | Ok ts -> Some ts
-                    | _ -> None
-
                 let newSettingsMaybe =
-                    match csharpConfigTokensMaybe with
-                    | Some [| t |] ->
-                        let csharpSettingsMaybe = t |> deserialize<ServerSettingsCSharpDto option>
-
-                        match csharpSettingsMaybe with
-                        | Some csharpSettings ->
-
-                            match csharpSettings.solution with
-                            | Some solutionPath ->
-                                Some
-                                    { context.State.Settings with
-                                        SolutionPath = Some solutionPath }
-                            | _ -> None
-
-                        | _ -> None
-                    | _ -> None
-
-                // do! logMessage (sprintf "handleInitialized: newSettingsMaybe=%s" (string newSettingsMaybe))
+                    getNewSettingsForWorkspaceCSharpConfig context.State.Settings workspaceCSharpConfig
 
                 match newSettingsMaybe with
                 | Some newSettings -> context.Emit(SettingsChange newSettings)
-                | _ -> ()
+                | None -> ()
+
             with ex ->
                 logger.LogWarning(
                     "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",

@@ -81,3 +81,9 @@ module Async =
 module Map =
     let union map1 map2 =
         Map.fold (fun acc key value -> Map.add key value acc) map1 map2
+
+module Option =
+    let fromResult r =
+        match r with
+        | Ok v -> Some v
+        | _ -> None

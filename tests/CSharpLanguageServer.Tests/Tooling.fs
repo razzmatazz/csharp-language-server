@@ -115,7 +115,7 @@ let makeServerProcessInfo projectTempDir =
         | _ -> baseServerFileName
 
     if not (File.Exists(serverFileName)) then
-        failwithf "makeServerProcessInfo: no '%s' server executable present" serverFileName
+        failwithf "makeServerProcessInfo: no server executable '%s' present" serverFileName
 
     let processStartInfo = new ProcessStartInfo()
     processStartInfo.FileName <- serverFileName
@@ -413,7 +413,25 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                 state
             | "workspace/configuration" ->
                 logMessage "ClientRpcCall" (String.Format("workspace/configuration: params={0}", p))
-                post (SendClientRpcCallResult(id, Some(new JArray())))
+
+                let getSectionConfiguration (section: string) : Option<JToken> =
+                    match section with
+                    | "csharp" -> {| metadataUris = true |} |> serialize |> Some
+                    | _ -> None
+
+                let configurationPerSection =
+                    p
+                    |> deserialize<ConfigurationParams>
+                    |> _.Items
+                    |> Seq.choose _.Section
+                    |> Seq.map getSectionConfiguration
+                    |> List.ofSeq
+                    |> serialize
+                    |> Some
+
+                logMessage "ClientRpcCall" (String.Format("workspace/configuration: res={0}", configurationPerSection))
+
+                post (SendClientRpcCallResult(id, configurationPerSection))
                 state
             | "window/workDoneProgress/create" ->
                 logMessage "ClientRpcCall" (String.Format("window/workDoneProgress/create: params={0}", p))
