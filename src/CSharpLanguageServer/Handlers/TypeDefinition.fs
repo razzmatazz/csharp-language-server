@@ -33,10 +33,11 @@ module TypeDefinition =
                     match typeSymbol with
                     | None -> async.Return([], wf)
                     | Some symbol -> async {
-                        let! aggregatedLspLocations, updatedWf = workspaceFolderSymbolLocations symbol project wf
+                        let! aggregatedLspLocations, updatedWf =
+                            workspaceFolderSymbolLocations wf context.State.Settings symbol project
 
                         context.Emit(WorkspaceFolderChange updatedWf)
-                        return (aggregatedLspLocations, updatedWf)
+                        return aggregatedLspLocations, updatedWf
                       }
 
                 return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success

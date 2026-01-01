@@ -30,7 +30,7 @@ module CallHierarchy =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations symbol project wf
+                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.State.Settings symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 

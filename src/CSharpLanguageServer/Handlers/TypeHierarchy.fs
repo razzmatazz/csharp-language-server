@@ -28,7 +28,7 @@ module TypeHierarchy =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let! symLocations, updatedWf = workspaceFolderSymbolLocations symbol project wf
+                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.State.Settings symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 
@@ -64,7 +64,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in supertypes do
-                    let! locations, wf = workspaceFolderSymbolLocations typeSym project updatedWf
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.State.Settings typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
@@ -120,7 +120,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in subtypes do
-                    let! locations, wf = workspaceFolderSymbolLocations typeSym project updatedWf
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.State.Settings typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
