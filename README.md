@@ -38,10 +38,6 @@ Once installed, your editor's LSP client should automatically detect and start
 - `csharp.applyFormattingOptions` - use formatting options as supplied by the
   client (may override `.editorconfig` values), defaults to `false`
 
-- `csharp.metadataUris` - enable `csharp://` metadata uri support where e.g.
-  decompiled source can be provided to the client for imported/generated
-  assemblies.
-
 ## Command Line Arguments
 
 ```
@@ -68,6 +64,12 @@ OPTIONS:
 ```
 
 See `csharp-ls --help`.
+
+## Experimental Client Capabilities
+
+### Decompiled Code/Metadata URIs
+`csharp://` metadata URIs can be enabled by setting the
+`experimental.csharp.metadataUris` client capability to `true`.
 
 # Clients
 

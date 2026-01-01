@@ -87,7 +87,8 @@ let defaultClientCapabilities =
                           DataSupport = None
                           ResolveSupport = None
                           HonorsChangeAnnotations = None
-                          CodeActionLiteralSupport = Some { CodeActionKind = { ValueSet = Array.empty } } } } }
+                          CodeActionLiteralSupport = Some { CodeActionKind = { ValueSet = Array.empty } } } }
+        Experimental = {| csharp = {| metadataUris = true |} |} |> serialize |> Some }
 
 let defaultClientProfile =
     { LoggingEnabled = false

@@ -24,21 +24,18 @@ type ServerSettings =
 
 type CSharpSectionConfiguration =
     { solution: string option
-      applyFormattingOptions: bool option
-      metadataUris: bool }
+      applyFormattingOptions: bool option }
 
     static member Default =
         { solution = None
-          applyFormattingOptions = None
-          metadataUris = false }
+          applyFormattingOptions = None }
 
 let applyCSharpSectionConfigurationOnSettings oldSettings csharpSectionConfig =
     { oldSettings with
         SolutionPath = csharpSectionConfig.solution |> Option.orElse oldSettings.SolutionPath
         ApplyFormattingOptions =
             csharpSectionConfig.applyFormattingOptions
-            |> Option.defaultValue oldSettings.ApplyFormattingOptions
-        UseMetadataUris = csharpSectionConfig.metadataUris }
+            |> Option.defaultValue oldSettings.ApplyFormattingOptions }
 
 type DidChangeConfigurationSettingsDto =
     { csharp: CSharpSectionConfiguration option }
