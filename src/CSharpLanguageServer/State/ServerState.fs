@@ -7,6 +7,7 @@ open System.Threading.Tasks
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 open Microsoft.Extensions.Logging
+open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
@@ -319,7 +320,25 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | ClientChange lspClient -> return { state with LspClient = lspClient }
 
-    | ClientCapabilityChange cc -> return { state with ClientCapabilities = cc }
+    | ClientCapabilityChange cc ->
+        let csharpMetadataUrisSupported =
+            cc.Experimental
+            |> Option.map _.SelectToken("csharp.metadataUris")
+            |> Option.bind Option.ofObj
+            |> Option.map (fun t ->
+                let v = t :?> JValue
+                v.Value :?> bool)
+
+        let oldSettings = state.Settings
+
+        let newSettings =
+            { oldSettings with
+                UseMetadataUris = csharpMetadataUrisSupported |> Option.defaultValue oldSettings.UseMetadataUris }
+
+        return
+            { state with
+                ClientCapabilities = cc
+                Settings = newSettings }
 
     | WorkspaceFolderChange updatedWf ->
         let updatedWorkspaceFolderList =
