@@ -188,6 +188,34 @@ let workspaceFolderWithDocumentFromMetadata
             return updatedFolder, symbolMetadata
     }
 
+let workspaceFolderSymbolLocationsInMetadata wf project symbol = async {
+    let! ct = Async.CancellationToken
+
+    let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata wf project symbol
+
+    // figure out location on the document (approx implementation)
+    let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+
+    let symbolMetadataUri = workspaceFolderMetadataSymbolSourceViewUri wf project symbol
+
+    let collector =
+        DocumentSymbolCollectorForMatchingSymbolName(symbolMetadataUri, symbol)
+
+    let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+    collector.Visit(root)
+
+    let fallbackLocationInMetadata =
+        { Uri = symbolMetadataUri
+          Range =
+            { Start = { Line = 0u; Character = 0u }
+              End = { Line = 0u; Character = 1u } } }
+
+    return
+        match collector.GetLocations() with
+        | [] -> [ fallbackLocationInMetadata ], updatedWf
+        | ls -> ls, updatedWf
+}
+
 let workspaceFolderResolveSymbolLocation
     (wf: LspWorkspaceFolder)
     (settings: ServerSettings)
@@ -195,45 +223,20 @@ let workspaceFolderResolveSymbolLocation
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
     =
-    async {
-        match l.IsInMetadata, l.IsInSource with
-        | true, _ ->
-            let! ct = Async.CancellationToken
+    match l.IsInMetadata, l.IsInSource with
+    | true, _ ->
+        match settings.UseMetadataUris with
+        | true -> workspaceFolderSymbolLocationsInMetadata wf project symbol
+        | false -> ([], wf) |> async.Return
 
-            let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata wf project symbol
+    | false, true ->
+        let wfPathToUri = workspaceFolderPathToUri wf
 
-            // figure out location on the document (approx implementation)
-            let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+        match Location.fromRoslynLocation wfPathToUri l with
+        | Some loc -> ([ loc ], wf) |> async.Return
+        | None -> ([], wf) |> async.Return
 
-            let symbolMetadataUri = workspaceFolderMetadataSymbolSourceViewUri wf project symbol
-
-            let collector =
-                DocumentSymbolCollectorForMatchingSymbolName(symbolMetadataUri, symbol)
-
-            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
-            collector.Visit(root)
-
-            let fallbackLocationInMetadata =
-                { Uri = symbolMetadataUri
-                  Range =
-                    { Start = { Line = 0u; Character = 0u }
-                      End = { Line = 0u; Character = 1u } } }
-
-            return
-                match collector.GetLocations() with
-                | [] -> [ fallbackLocationInMetadata ], updatedWf
-                | ls -> ls, updatedWf
-
-        | false, true ->
-            let wfPathToUri = workspaceFolderPathToUri wf
-
-            return
-                match Location.fromRoslynLocation wfPathToUri l with
-                | Some loc -> [ loc ], wf
-                | None -> [], wf
-
-        | _, _ -> return [], wf
-    }
+    | _, _ -> ([], wf) |> async.Return
 
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
