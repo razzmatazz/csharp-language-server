@@ -85,17 +85,16 @@ let workspaceFolderMetadataSymbolSourceViewUri
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     =
-    let projectFileUri =
+    let projectFile =
         project.FilePath
         |> Uri
         |> string
         |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
         |> _.TrimEnd('/')
-        |> sprintf "csharp:///%s"
 
     let symbolMetadataName = symbolGetMetadataName symbol
 
-    sprintf "%s?symbol=%s&view=source" projectFileUri (Uri.EscapeDataString(symbolMetadataName))
+    sprintf "csharp:///%s?symbol=%s&view=source" projectFile (Uri.EscapeDataString symbolMetadataName)
 
 let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (uri: string) : option<string * string> =
     let uri = uri |> Uri
@@ -190,10 +189,11 @@ let workspaceFolderWithDocumentFromMetadata
     }
 
 let workspaceFolderResolveSymbolLocation
+    (wf: LspWorkspaceFolder)
+    (settings: ServerSettings)
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
-    (wf: LspWorkspaceFolder)
     =
     async {
         match l.IsInMetadata, l.IsInSource with
@@ -238,16 +238,17 @@ let workspaceFolderResolveSymbolLocation
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
 let workspaceFolderSymbolLocations
+    folder
+    (settings: ServerSettings)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (project: Microsoft.CodeAnalysis.Project)
-    folder
     =
     async {
         let mutable wf = folder
         let mutable aggregatedLspLocations = []
 
         for l in symbol.Locations do
-            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation project symbol l wf
+            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation wf settings project symbol l
 
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
             wf <- updatedWf

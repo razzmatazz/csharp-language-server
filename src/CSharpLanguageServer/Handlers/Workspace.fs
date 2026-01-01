@@ -165,7 +165,8 @@ module Workspace =
             let newServerSettings =
                 { context.State.Settings with
                     SolutionPath = csharpSettings.solution
-                    ApplyFormattingOptions = csharpSettings.applyFormattingOptions |> Option.defaultValue false }
+                    ApplyFormattingOptions = csharpSettings.applyFormattingOptions |> Option.defaultValue false
+                    UseMetadataUris = csharpSettings.metadataUris }
 
             context.Emit(SettingsChange newServerSettings)
 
