@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Do not emit csharp:/// urls when client does not have this capability enabled.
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/298
 * Fix go-to-definition in metadata, csharp/metadata endpoint
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/293 and https://github.com/razzmatazz/csharp-language-server/pull/294
   - Reported by @samwcoulter in https://github.com/razzmatazz/csharp-language-server/issues/289
