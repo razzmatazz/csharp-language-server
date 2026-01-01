@@ -1,10 +1,3 @@
-# Settings
-
-- `csharp.solution` - solution to load, optional
-
-- `csharp.applyFormattingOptions` - use formatting options as supplied by the
-  client (may override `.editorconfig` values), defaults to `false`
-
 # Support for decompilation
 
 ## API

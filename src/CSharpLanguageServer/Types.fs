@@ -9,6 +9,7 @@ type ServerSettings =
     { SolutionPath: string option
       LogLevel: LogLevel
       ApplyFormattingOptions: bool
+      UseMetadataUris: bool
       DebugMode: bool }
 
     member this.GetEffectiveFormattingOptions options =
@@ -18,6 +19,7 @@ type ServerSettings =
         { SolutionPath = None
           LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
+          UseMetadataUris = false
           DebugMode = false }
 
 type CSharpMetadataInformation =

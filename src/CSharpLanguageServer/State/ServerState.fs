@@ -549,8 +549,10 @@ type ServerSettingsDto =
 
 and ServerSettingsCSharpDto =
     { solution: string option
-      applyFormattingOptions: bool option }
+      applyFormattingOptions: bool option
+      metadataUris: bool }
 
     static member Default =
         { solution = None
-          applyFormattingOptions = None }
+          applyFormattingOptions = None
+          metadataUris = false }

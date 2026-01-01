@@ -30,6 +30,45 @@ dotnet tool install --global csharp-ls
 Once installed, your editor's LSP client should automatically detect and start
 `csharp-ls` when opening C# project files.
 
+# Settings
+
+## Configuration
+- `csharp.solution` - solution to load, optional
+
+- `csharp.applyFormattingOptions` - use formatting options as supplied by the
+  client (may override `.editorconfig` values), defaults to `false`
+
+- `csharp.metadataUris` - enable `csharp://` metadata uri support where e.g.
+  decompiled source can be provided to the client for imported/generated
+  assemblies.
+
+## Command Line Arguments
+
+```
+USAGE: csharp-ls [--help]
+                 [--version]
+                 [--loglevel <level>]
+                 [--solution <solution>]
+                 [--debug]
+                 [--diagnose]
+                 [--features <features>]
+
+OPTIONS:
+
+    --version, -v         display versioning information
+    --loglevel, -l <level>
+                          set log level, <trace|debug|info|warning|error>; default is `info`
+    --solution, -s <solution>
+                          specify .sln file to load (relative to CWD)
+    --debug               enable debug mode
+    --diagnose            run diagnostics
+    --features, -f <features>
+                          enable optional features, comma-separated: metadata-uris
+    --help                display this list of options.
+```
+
+See `csharp-ls --help`.
+
 # Clients
 
 `csharp-ls` implements the standard LSP protocol to interact with your editor.
