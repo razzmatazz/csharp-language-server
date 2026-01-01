@@ -543,16 +543,3 @@ let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
     }
 
     loop initialState
-
-type ServerSettingsDto =
-    { csharp: ServerSettingsCSharpDto option }
-
-and ServerSettingsCSharpDto =
-    { solution: string option
-      applyFormattingOptions: bool option
-      metadataUris: bool }
-
-    static member Default =
-        { solution = None
-          applyFormattingOptions = None
-          metadataUris = false }

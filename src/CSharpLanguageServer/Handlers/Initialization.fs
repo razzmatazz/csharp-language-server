@@ -104,23 +104,6 @@ module Initialization =
             return initializeResult |> LspResult.success
         }
 
-    let getNewSettingsForWorkspaceCSharpConfig prevSettings workspaceCSharpConfig =
-        let csharpConfig =
-            workspaceCSharpConfig
-            |> Option.fromResult
-            |> Option.bind Seq.tryHead
-            |> Option.bind deserialize<ServerSettingsCSharpDto option>
-
-        match csharpConfig with
-        | None -> None
-        | Some csharpConfig ->
-            let newSettings =
-                { prevSettings with
-                    UseMetadataUris = csharpConfig.metadataUris
-                    SolutionPath = csharpConfig.solution |> Option.orElse prevSettings.SolutionPath }
-
-            Some newSettings
-
     let handleInitialized
         (lspClient: ILspClient)
         (stateActor: MailboxProcessor<ServerStateEvent>)
@@ -159,12 +142,21 @@ module Initialization =
                                  ScopeUri = None } |] }
                     )
 
-                let newSettingsMaybe =
-                    getNewSettingsForWorkspaceCSharpConfig context.State.Settings workspaceCSharpConfig
+                let csharpConfig =
+                    workspaceCSharpConfig
+                    |> Option.fromResult
+                    |> Option.bind Seq.tryHead
+                    |> Option.bind deserialize<CSharpSectionConfiguration option>
 
-                match newSettingsMaybe with
-                | Some newSettings -> context.Emit(SettingsChange newSettings)
+                match csharpConfig with
                 | None -> ()
+                | Some csharpConfig ->
+                    let prevSettings = context.State.Settings
+
+                    let newSettings =
+                        applyCSharpSectionConfigurationOnSettings prevSettings csharpConfig
+
+                    context.Emit(SettingsChange newSettings)
 
             with ex ->
                 logger.LogWarning(
