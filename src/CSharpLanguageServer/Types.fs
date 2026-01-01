@@ -22,6 +22,27 @@ type ServerSettings =
           UseMetadataUris = false
           DebugMode = false }
 
+type CSharpSectionConfiguration =
+    { solution: string option
+      applyFormattingOptions: bool option
+      metadataUris: bool }
+
+    static member Default =
+        { solution = None
+          applyFormattingOptions = None
+          metadataUris = false }
+
+let applyCSharpSectionConfigurationOnSettings oldSettings csharpSectionConfig =
+    { oldSettings with
+        SolutionPath = csharpSectionConfig.solution |> Option.orElse oldSettings.SolutionPath
+        ApplyFormattingOptions =
+            csharpSectionConfig.applyFormattingOptions
+            |> Option.defaultValue oldSettings.ApplyFormattingOptions
+        UseMetadataUris = csharpSectionConfig.metadataUris }
+
+type DidChangeConfigurationSettingsDto =
+    { csharp: CSharpSectionConfiguration option }
+
 type CSharpMetadataInformation =
     { ProjectName: string
       AssemblyName: string

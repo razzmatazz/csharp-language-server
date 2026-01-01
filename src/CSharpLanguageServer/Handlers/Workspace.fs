@@ -155,20 +155,20 @@ module Workspace =
         (configParams: DidChangeConfigurationParams)
         : Async<LspResult<unit>> =
         async {
-
-            let csharpSettings =
+            let csharpSettingsMaybe =
                 configParams.Settings
-                |> deserialize<ServerSettingsDto>
-                |> (fun x -> x.csharp)
-                |> Option.defaultValue ServerSettingsCSharpDto.Default
+                |> deserialize<DidChangeConfigurationSettingsDto>
+                |> _.csharp
 
-            let newServerSettings =
-                { context.State.Settings with
-                    SolutionPath = csharpSettings.solution
-                    ApplyFormattingOptions = csharpSettings.applyFormattingOptions |> Option.defaultValue false
-                    UseMetadataUris = csharpSettings.metadataUris }
+            match csharpSettingsMaybe with
+            | None -> ()
+            | Some csharpSettings ->
+                let prevSettings = context.State.Settings
 
-            context.Emit(SettingsChange newServerSettings)
+                let newSettings =
+                    applyCSharpSectionConfigurationOnSettings prevSettings csharpSettings
+
+                context.Emit(SettingsChange newSettings)
 
             return Ok()
         }
