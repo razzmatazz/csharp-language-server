@@ -32,6 +32,9 @@ let initializeMSBuild () : unit =
                 "No instances of MSBuild could be detected."
                 + Environment.NewLine
                 + "Try calling RegisterInstance or RegisterMSBuildPath to manually register one."
+                + Environment.NewLine
+                + "Or try installing the dotnet sdk version: "
+                + sprintf "%i.%i." Environment.Version.Major Environment.Version.Minor
             )
         )
 
