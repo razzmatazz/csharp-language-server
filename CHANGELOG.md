@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## [0.21.0] - 2026-01-02 / Klaipėda
 * Do not emit csharp:/ urls when client does not have this capability enabled.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/298
   - This is a breaking change, please set `experimental.csharp.metadataUris` client capability to `true`.
@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix how title is formatted for nested code actions
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/295
 
-**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.20.0...main
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.20.0...0.21.0
 
 ## [0.20.0] - 2025-11-13 / Kulautuva
 * Actually selected the most optimal fx for multiple projects when loading a solution:
