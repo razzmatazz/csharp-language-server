@@ -102,7 +102,9 @@ let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (u
     match uri.Scheme with
     | "csharp" ->
         let path = uri.LocalPath
-        let decompiledSourcePathPrefix = ".csproj/decompiled/"
+
+        let decompiledSourcePathPrefix =
+            sprintf ".csproj%sdecompiled%s" (string Path.DirectorySeparatorChar) (string Path.DirectorySeparatorChar)
 
         match path.IndexOf decompiledSourcePathPrefix with
         | -1 -> None
