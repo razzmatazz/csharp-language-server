@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
-* Do not emit csharp:/// urls when client does not have this capability enabled.
+* Do not emit csharp:/ urls when client does not have this capability enabled.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/298
   - This is a breaking change, please set `experimental.csharp.metadataUris` client capability to `true`.
 * Fix go-to-definition in metadata, csharp/metadata endpoint

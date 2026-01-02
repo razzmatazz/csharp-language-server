@@ -68,7 +68,7 @@ See `csharp-ls --help`.
 ## Experimental Client Capabilities
 
 ### Decompiled Code/Metadata URIs
-`csharp://` metadata URIs can be enabled by setting the
+`csharp:/` metadata URIs can be enabled by setting the
 `experimental.csharp.metadataUris` client capability to `true`.
 
 # Clients

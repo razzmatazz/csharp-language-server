@@ -27,7 +27,7 @@ let ``test csharp/metadata works`` () =
         |> Uri
         |> string
         |> _.Substring("file:///".Length)
-        |> sprintf "csharp:///%s/Project/Project.csproj?symbol=System.String&view=source"
+        |> sprintf "csharp:/%s/Project/Project.csproj?symbol=System.String&view=source"
 
     match typeDefinition0 with
     | Some(U2.C1(U2.C2 ls)) ->
@@ -58,7 +58,7 @@ let ``test csharp/metadata works with no prior LSP request`` () =
         |> Uri
         |> string
         |> _.Substring("file:///".Length)
-        |> sprintf "csharp:///%s/Project/Project.csproj?symbol=System.String&view=source"
+        |> sprintf "csharp:/%s/Project/Project.csproj?symbol=System.String&view=source"
 
     let metadataParams0: CSharpMetadataParams =
         { TextDocument = { Uri = csharpUriForSystemString } }

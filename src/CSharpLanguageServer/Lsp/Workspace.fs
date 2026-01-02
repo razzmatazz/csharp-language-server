@@ -78,7 +78,7 @@ let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
     wf.Uri
     |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
     |> _.TrimEnd('/')
-    |> sprintf "csharp:///%s"
+    |> sprintf "csharp:/%s"
 
 let workspaceFolderMetadataSymbolSourceViewUri
     _wf
@@ -94,7 +94,7 @@ let workspaceFolderMetadataSymbolSourceViewUri
 
     let symbolMetadataName = symbolGetMetadataName symbol
 
-    sprintf "csharp:///%s?symbol=%s&view=source" projectFile (Uri.EscapeDataString symbolMetadataName)
+    sprintf "csharp:/%s?symbol=%s&view=source" projectFile (Uri.EscapeDataString symbolMetadataName)
 
 let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (uri: string) : option<string * string> =
     let uri = uri |> Uri
