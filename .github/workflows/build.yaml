@@ -25,10 +25,10 @@ jobs:
         run: dotnet tool restore
 
       - name: Run Build
-        run: dotnet build
+        run: dotnet build -c Release
 
       - name: Run Pack
-        run: dotnet pack -c Release -o release
+        run: dotnet pack -c Release -o release --no-build
         working-directory: src/CSharpLanguageServer
 
       - name: Upload NuGet packages as artifacts
