@@ -27,7 +27,7 @@ jobs:
       - name: Run Build
         run: dotnet build
 
-      - name: Run publish
+      - name: Run Pack
         run: dotnet pack -c Release -o release
         working-directory: src/CSharpLanguageServer
 

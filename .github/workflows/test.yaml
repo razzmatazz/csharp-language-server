@@ -36,3 +36,7 @@ jobs:
 
       - name: Run Fantomas check
         run: dotnet fantomas --check .
+
+      - name: Run Pack
+        run: dotnet pack -c Release -o release
+        working-directory: src/CSharpLanguageServer
