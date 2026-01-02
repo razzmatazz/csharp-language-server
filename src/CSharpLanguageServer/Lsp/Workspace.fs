@@ -94,28 +94,28 @@ let workspaceFolderMetadataSymbolSourceViewUri
 
     let symbolMetadataName = symbolGetMetadataName symbol
 
-    sprintf "csharp:/%s?symbol=%s&view=source" projectFile (Uri.EscapeDataString symbolMetadataName)
+    sprintf "csharp:/%s/decompiled/%s.cs" projectFile (Uri.EscapeDataString symbolMetadataName)
 
 let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (uri: string) : option<string * string> =
     let uri = uri |> Uri
 
     match uri.Scheme with
     | "csharp" ->
-        let queryParams =
-            uri.Query
-            |> _.TrimStart('?').Split([| '&' |], StringSplitOptions.RemoveEmptyEntries)
-            |> Seq.map _.Split('=')
-            |> Seq.filter (fun parts -> parts.Length = 2)
-            |> Seq.map (fun parts -> parts[0], parts[1])
-            |> Map.ofSeq
+        let path = uri.LocalPath
+        let decompiledSourcePathPrefix = ".csproj/decompiled/"
 
-        let getParam name : option<string> =
-            queryParams |> Map.tryFind name |> Option.map Uri.UnescapeDataString
+        match path.IndexOf decompiledSourcePathPrefix with
+        | -1 -> None
+        | idx ->
+            let projectFile = path.Substring(0, idx + ".csproj".Length)
 
-        match getParam "view", getParam "symbol" with
-        | (Some "source", Some symbolMetadataName) -> Some(uri.LocalPath, symbolMetadataName)
-        | _ -> None
+            let symbolMetadataName =
+                path
+                |> _.Substring(idx + decompiledSourcePathPrefix.Length)
+                |> _.TrimEnd(".cs".ToCharArray())
+                |> Uri.UnescapeDataString
 
+            Some(projectFile, symbolMetadataName)
     | _ -> None
 
 let documentFromMetadata
