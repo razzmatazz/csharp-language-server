@@ -10,6 +10,7 @@ type ServerSettings =
       LogLevel: LogLevel
       ApplyFormattingOptions: bool
       UseMetadataUris: bool
+      RazorSupport: bool
       DebugMode: bool }
 
     member this.GetEffectiveFormattingOptions options =
@@ -20,6 +21,7 @@ type ServerSettings =
           LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
           UseMetadataUris = false
+          RazorSupport = false
           DebugMode = false }
 
 type CSharpSectionConfiguration =
