@@ -17,6 +17,7 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Symbol
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 
@@ -261,6 +262,36 @@ let workspaceFolderSymbolLocations
         return aggregatedLspLocations, wf
     }
 
+let workspaceFolderDocumentDetails (wf: LspWorkspaceFolder) docType (u: string) =
+    let uri = Uri(u.Replace("%3A", ":", true, null))
+
+    match wf.Solution with
+    | None -> None
+
+    | Some solution ->
+        let matchingUserDocuments =
+            solution.Projects
+            |> Seq.collect (fun p -> p.Documents)
+            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+            |> List.ofSeq
+
+        let matchingUserDocumentMaybe =
+            match matchingUserDocuments with
+            | [ d ] -> Some(d, UserDocument)
+            | _ -> None
+
+        let matchingDecompiledDocumentMaybe =
+            u
+            |> workspaceFolderParseMetadataSymbolSourceViewUri wf
+            |> Option.bind (fun (projectPath, symbolMetadataName) ->
+                Map.tryFind (projectPath, symbolMetadataName) wf.DecompiledSymbolMetadata)
+            |> Option.map (fun x -> x.Document, DecompiledDocument)
+
+        match docType with
+        | UserDocument -> matchingUserDocumentMaybe
+        | DecompiledDocument -> matchingDecompiledDocumentMaybe
+        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+
 type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
 type LspWorkspace =
@@ -306,38 +337,12 @@ let workspaceWithFolder (workspace: LspWorkspace) (updatedWf: LspWorkspaceFolder
         Folders = updatedFolders }
 
 let workspaceDocumentDetails (workspace: LspWorkspace) docType (u: string) =
-    let uri = Uri(u.Replace("%3A", ":", true, null))
-
     let wf = workspaceFolder workspace u
-    let solution = wf |> Option.bind _.Solution
 
     let docAndDocType =
-        match wf, solution with
-        | Some wf, Some solution ->
-            let matchingUserDocuments =
-                solution.Projects
-                |> Seq.collect (fun p -> p.Documents)
-                |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-                |> List.ofSeq
-
-            let matchingUserDocumentMaybe =
-                match matchingUserDocuments with
-                | [ d ] -> Some(d, UserDocument)
-                | _ -> None
-
-            let matchingDecompiledDocumentMaybe =
-                u
-                |> workspaceFolderParseMetadataSymbolSourceViewUri wf
-                |> Option.bind (fun (projectPath, symbolMetadataName) ->
-                    Map.tryFind (projectPath, symbolMetadataName) wf.DecompiledSymbolMetadata)
-                |> Option.map (fun x -> x.Document, DecompiledDocument)
-
-            match docType with
-            | UserDocument -> matchingUserDocumentMaybe
-            | DecompiledDocument -> matchingDecompiledDocumentMaybe
-            | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
-
-        | _, _ -> None
+        match wf with
+        | None -> None
+        | Some wf -> workspaceFolderDocumentDetails wf docType u
 
     wf, docAndDocType
 
@@ -346,23 +351,67 @@ let workspaceDocument workspace docType (u: string) =
     let doc = docAndType |> Option.map fst
     wf, doc
 
-let workspaceDocumentSymbol workspace docType (uri: DocumentUri) (pos: Ionide.LanguageServerProtocol.Types.Position) = async {
-    let wf, docForUri = uri |> workspaceDocument workspace AnyDocument
+let workspaceDocumentSemanticModel (workspace: LspWorkspace) (uri: DocumentUri) = async {
+    let wf = workspaceFolder workspace uri
 
-    match wf, docForUri with
-    | Some wf, Some doc ->
-        let! ct = Async.CancellationToken
-        let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-        let position = Position.toRoslynPosition sourceText.Lines pos
-        let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+    match wf with
+    | None -> return None, None
+    | Some wf ->
+        if uri.EndsWith ".cshtml" then
+            let cshtmlPath = workspaceFolderUriToPath wf uri
+            match cshtmlPath with
+            | None -> return None, None
+            | Some cshtmlPath ->
+                match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
+                | None -> return Some wf, None
+                | Some(_, compilation, cshtmlTree) ->
+                    let semanticModel = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+                    return Some wf, semanticModel
+        else
+            let wf, docAndType = workspaceDocumentDetails workspace AnyDocument uri
 
-        let symbolInfo =
-            symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+            match docAndType with
+            | Some(doc, _) ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask |> Async.map Option.ofObj
+                return wf, semanticModel
 
-        return Some wf, symbolInfo
-
-    | wf, _ -> return (wf, None)
+            | None -> return wf, None
 }
+
+let workspaceDocumentSymbol
+    (workspace: LspWorkspace)
+    docType
+    (uri: DocumentUri)
+    (pos: Ionide.LanguageServerProtocol.Types.Position)
+    =
+    async {
+        let wf = workspaceFolder workspace uri
+
+        match wf, uri.EndsWith ".cshtml" with
+        | None, _ -> return None, None
+
+        | Some wf, true ->
+            let! symbolInfo = solutionFindSymbolForRazorDocumentUri wf.Solution.Value uri pos
+            return Some wf, symbolInfo
+
+        | Some wf, false ->
+            let docForUri = uri |> workspaceFolderDocumentDetails wf docType
+
+            match docForUri with
+            | None -> return Some wf, None
+
+            | Some (doc, _) ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+                let symbolInfo =
+                    symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+                return Some wf, symbolInfo
+    }
 
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version

@@ -11,7 +11,6 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
-
 [<RequireQualifiedAccess>]
 module Diagnostic =
     let provider

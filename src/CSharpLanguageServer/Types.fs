@@ -73,7 +73,9 @@ let razorCsharpDocumentFilter: TextDocumentFilter =
       Scheme = Some "file"
       Pattern = Some "**/*.cshtml" }
 
-let defaultDocumentSelector: DocumentSelector = [| csharpDocumentFilter |> U2.C1 |]
+// Type abbreviations cannot have augmentations, extensions
+let defaultDocumentSelector: DocumentSelector =
+    [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
 
 let emptyClientCapabilities: ClientCapabilities =
     { Workspace = None
