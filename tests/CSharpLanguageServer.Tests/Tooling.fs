@@ -120,6 +120,7 @@ let makeServerProcessInfo projectTempDir =
 
     let processStartInfo = new ProcessStartInfo()
     processStartInfo.FileName <- serverFileName
+    processStartInfo.Arguments <- "--features razor-support"
     processStartInfo.RedirectStandardInput <- true
     processStartInfo.RedirectStandardOutput <- true
     processStartInfo.RedirectStandardError <- true
