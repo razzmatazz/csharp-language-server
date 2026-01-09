@@ -22,6 +22,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 type CSharpCodeActionResolutionData =
     { TextDocumentUri: string
@@ -327,6 +328,27 @@ module CodeAction =
             |> U2.C2
             |> Some
         | None -> true |> U2.C1 |> Some
+
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.CodeAction
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: CodeActionRegistrationOptions =
+                { CodeActionKinds = None
+                  ResolveProvider = Some true
+                  WorkDoneProgress = None
+                  DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/codeAction"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
         (context: ServerRequestContext)

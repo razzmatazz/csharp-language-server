@@ -1,18 +1,43 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
-
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module DocumentFormatting =
-    let provider (_cc: ClientCapabilities) : U2<bool, DocumentFormattingOptions> option = Some(U2.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Formatting
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentFormattingOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U2.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: DocumentFormattingRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/formatting"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let formatDocument lspFormattingOptions doc : Async<TextEdit array option> = async {
         let! ct = Async.CancellationToken

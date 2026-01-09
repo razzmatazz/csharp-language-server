@@ -1,16 +1,42 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Hover =
-    let provider (_cc: ClientCapabilities) : U2<bool, HoverOptions> option = Some(U2.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Hover
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, HoverOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> Some(U2.C1 false)
+        | false -> Some(U2.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: HoverRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/hover"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let makeHoverForSymbol symbol =
         let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol

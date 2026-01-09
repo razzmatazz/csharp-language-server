@@ -1,15 +1,19 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module TypeHierarchy =
@@ -18,8 +22,32 @@ module TypeHierarchy =
         | :? INamedTypeSymbol -> true
         | _ -> false
 
-    let provider (_: ClientCapabilities) : U3<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions> option =
-        Some(U3.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.TypeHierarchy
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U3<bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U3.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: TypeHierarchyRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/prepareTypeHierarchy"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare
         (context: ServerRequestContext)

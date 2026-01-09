@@ -1,24 +1,50 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
-
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module DocumentOnTypeFormatting =
-    let provider (_: ClientCapabilities) : DocumentOnTypeFormattingOptions option =
-        Some
-            { FirstTriggerCharacter = ";"
-              MoreTriggerCharacter = Some([| "}"; ")" |]) }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.OnTypeFormatting
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : DocumentOnTypeFormattingOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { FirstTriggerCharacter = ";"
+                  MoreTriggerCharacter = Some([| "}"; ")" |]) }
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: DocumentOnTypeFormattingRegistrationOptions =
+                { FirstTriggerCharacter = ";"
+                  MoreTriggerCharacter = Some([| "}"; ")" |])
+                  DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/onTypeFormatting"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let rec getSyntaxNode (token: SyntaxToken) : SyntaxNode option =
         if token.IsKind(SyntaxKind.EndOfFileToken) then

@@ -5,6 +5,7 @@ open System
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
@@ -13,6 +14,7 @@ open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
@@ -36,13 +38,73 @@ module TextDocumentSync =
 
         changes |> Seq.fold applyLspContentChangeOnRoslynSourceText initialSourceText
 
-    let provider (_: ClientCapabilities) : TextDocumentSyncOptions option =
-        { TextDocumentSyncOptions.Default with
-            OpenClose = Some true
-            Save = Some(U2.C2 { IncludeText = Some true })
-            Change = Some TextDocumentSyncKind.Incremental }
-        |> Some
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind (fun x -> x.Synchronization)
+        |> Option.bind (fun x -> x.DynamicRegistration)
+        |> Option.defaultValue false
 
+    let provider (clientCapabilities: ClientCapabilities) : TextDocumentSyncOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { TextDocumentSyncOptions.Default with
+                    OpenClose = Some true
+                    Save = Some(U2.C2 { IncludeText = Some true })
+                    Change = Some TextDocumentSyncKind.Incremental }
+
+    let didOpenRegistration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions = { DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/didOpen"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let didChangeRegistration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  SyncKind = TextDocumentSyncKind.Incremental }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/didChange"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let didSaveRegistration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  IncludeText = Some true }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/didSave"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let didCloseRegistration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions = { DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/didClose"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
+    let willSaveRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
+
+    let willSaveWaitUntilRegistration (_clientCapabilities: ClientCapabilities) : Registration option = None
 
     let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
         let wf, docAndDocTypeForUri =
