@@ -1,18 +1,44 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module References =
-    let provider (_cc: ClientCapabilities) : U2<bool, ReferenceOptions> option = Some(U2.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.References
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : U2<bool, ReferenceOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U2.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: ReferenceRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/references"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         let! ct = Async.CancellationToken

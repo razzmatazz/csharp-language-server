@@ -9,12 +9,13 @@ open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
-
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module InlayHint =
@@ -233,12 +234,38 @@ module InlayHint =
 
         | _ -> None
 
-    let provider (_: ClientCapabilities) : U3<bool, InlayHintOptions, InlayHintRegistrationOptions> option =
-        let inlayHintOptions: InlayHintOptions =
-            { ResolveProvider = Some false
-              WorkDoneProgress = None }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.InlayHint
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
 
-        Some(U3.C2 inlayHintOptions)
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U3<bool, InlayHintOptions, InlayHintRegistrationOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            let inlayHintOptions: InlayHintOptions =
+                { ResolveProvider = Some false
+                  WorkDoneProgress = None }
+
+            Some(U3.C2 inlayHintOptions)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: InlayHintRegistrationOptions =
+                { ResolveProvider = Some false
+                  DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/inlayHint"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
         let wf, docForUri =

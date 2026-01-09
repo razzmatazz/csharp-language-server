@@ -47,7 +47,7 @@ module Workspace =
                 { Watchers = [| fileSystemWatcher |] }
 
             Some
-                { Id = Guid.NewGuid().ToString()
+                { Id = Guid.NewGuid() |> string
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 

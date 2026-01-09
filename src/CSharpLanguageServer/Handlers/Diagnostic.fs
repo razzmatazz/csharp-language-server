@@ -1,5 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -11,21 +13,39 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 
-
 [<RequireQualifiedAccess>]
 module Diagnostic =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Diagnostic
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let private registrationOptions: DiagnosticRegistrationOptions =
+        { DocumentSelector = Some defaultDocumentSelector
+          WorkDoneProgress = None
+          Identifier = None
+          InterFileDependencies = false
+          WorkspaceDiagnostics = true
+          Id = None }
+
     let provider
         (clientCapabilities: ClientCapabilities)
         : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
-        let registrationOptions: DiagnosticRegistrationOptions =
-            { DocumentSelector = Some defaultDocumentSelector
-              WorkDoneProgress = None
-              Identifier = None
-              InterFileDependencies = false
-              WorkspaceDiagnostics = true
-              Id = None }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U2.C2 registrationOptions)
 
-        Some(U2.C2 registrationOptions)
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registration =
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/diagnostic"
+                  RegisterOptions = registrationOptions |> serialize |> Some }
+
+            Some registration
 
     let handle
         (context: ServerRequestContext)

@@ -1,7 +1,10 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -9,9 +12,37 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module CallHierarchy =
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.CallHierarchy
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U3<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U3.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: CallHierarchyRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/prepareCallHierarchy"
+                  RegisterOptions = registerOptions |> serialize |> Some }
+
     let private isCallableSymbol (symbol: ISymbol) : bool =
         List.contains
             symbol.Kind
@@ -19,9 +50,6 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Field
               Microsoft.CodeAnalysis.SymbolKind.Event
               Microsoft.CodeAnalysis.SymbolKind.Property ]
-
-    let provider (_cc: ClientCapabilities) : U3<bool, CallHierarchyOptions, CallHierarchyRegistrationOptions> option =
-        Some(U3.C1 true)
 
     let prepare
         (context: ServerRequestContext)

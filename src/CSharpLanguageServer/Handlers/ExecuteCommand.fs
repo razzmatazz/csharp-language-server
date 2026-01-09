@@ -9,5 +9,7 @@ open CSharpLanguageServer.State
 module ExecuteCommand =
     let provider (_cc: ClientCapabilities) : ExecuteCommandOptions option = None
 
+    let registration (_cc: ClientCapabilities) : Registration option = None
+
     let handle (_context: ServerRequestContext) (_p: ExecuteCommandParams) : AsyncLspResult<LSPAny option> =
         LspResult.notImplemented<LSPAny option> |> async.Return

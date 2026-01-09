@@ -8,11 +8,12 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.Util
-open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -118,13 +119,39 @@ module Completion =
         member __.GetDescriptionAsync(doc, item, ct) =
             service.GetDescriptionAsync(doc, item, ct)
 
-    let provider (_cc: ClientCapabilities) : CompletionOptions option =
-        Some
-            { ResolveProvider = Some true
-              TriggerCharacters = Some([| "."; "'" |])
-              AllCommitCharacters = None
-              CompletionItem = None
-              WorkDoneProgress = None }
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Completion
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : CompletionOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { ResolveProvider = Some true
+                  TriggerCharacters = Some([| "."; "'" |])
+                  AllCommitCharacters = None
+                  WorkDoneProgress = None
+                  CompletionItem = None }
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: CompletionRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  ResolveProvider = Some true
+                  TriggerCharacters = Some([| "."; "'" |])
+                  AllCommitCharacters = None
+                  CompletionItem = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/completion"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let private roslynTagToLspCompletion tag =
         match tag with

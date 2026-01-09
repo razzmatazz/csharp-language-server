@@ -1,5 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
 open System.Threading
 
 open Microsoft.CodeAnalysis
@@ -8,6 +9,7 @@ open Microsoft.CodeAnalysis.FindSymbols
 open Microsoft.CodeAnalysis.Rename
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.State
@@ -15,6 +17,7 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Rename =
@@ -71,6 +74,12 @@ module Rename =
         |> Async.Parallel
         |> Async.map (Seq.distinct >> Array.ofSeq)
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Rename
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
     let private prepareSupport (clientCapabilities: ClientCapabilities) =
         clientCapabilities.TextDocument
         |> Option.bind _.Rename
@@ -78,14 +87,29 @@ module Rename =
         |> Option.defaultValue false
 
     let provider (clientCapabilities: ClientCapabilities) : U2<bool, RenameOptions> option =
-        match prepareSupport clientCapabilities with
-        | true ->
+        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
+        | true, _ -> None
+        | false, true ->
             Some(
                 U2.C2
                     { PrepareProvider = Some true
                       WorkDoneProgress = None }
             )
-        | false -> Some(U2.C1 true)
+        | false, false -> Some(U2.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: RenameRegistrationOptions =
+                { PrepareProvider = Some(prepareSupport clientCapabilities)
+                  DocumentSelector = Some defaultDocumentSelector
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/rename"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
 

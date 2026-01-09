@@ -6,6 +6,7 @@ open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
@@ -13,7 +14,29 @@ open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
-    let provider (_cc: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option = Some(U2.C1 true)
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.Workspace
+        |> Option.bind _.Symbol
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (cc: ClientCapabilities) : U2<bool, WorkspaceSymbolOptions> option =
+        match dynamicRegistration cc with
+        | true -> None
+        | false -> Some(U2.C1 true)
+
+    let registration (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
+        | false -> None
+        | true ->
+            let registrationOptions: WorkspaceSymbolRegistrationOptions =
+                { ResolveProvider = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "workspace/symbol"
+                  RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle
         (context: ServerRequestContext)

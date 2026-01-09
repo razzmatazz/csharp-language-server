@@ -2,17 +2,46 @@ namespace CSharpLanguageServer.Handlers
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
+open System
+
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module Implementation =
-    let provider (_cc: ClientCapabilities) : U3<bool, ImplementationOptions, ImplementationRegistrationOptions> option =
-        Some(U3.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.Implementation
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U3<bool, ImplementationOptions, ImplementationRegistrationOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U3.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: ImplementationRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/implementation"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let findImplLocationsOfSymbol wf settings project (sym: ISymbol) = async {
         let! ct = Async.CancellationToken

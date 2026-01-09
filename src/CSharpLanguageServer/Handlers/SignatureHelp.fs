@@ -1,16 +1,20 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 module SignatureInformation =
     let internal fromMethod (m: IMethodSymbol) =
@@ -53,11 +57,35 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map score |> Seq.sum
 
-    let provider (_cc: ClientCapabilities) : SignatureHelpOptions option =
-        { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
-          WorkDoneProgress = None
-          RetriggerCharacters = None }
-        |> Some
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.SignatureHelp
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider (clientCapabilities: ClientCapabilities) : SignatureHelpOptions option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
+                  WorkDoneProgress = None
+                  RetriggerCharacters = None }
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: SignatureHelpRegistrationOptions =
+                { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
+                  RetriggerCharacters = None
+                  WorkDoneProgress = None
+                  DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/signatureHelp"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
         let wf, docMaybe =

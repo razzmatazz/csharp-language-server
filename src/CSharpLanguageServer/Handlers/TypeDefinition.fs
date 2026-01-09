@@ -1,17 +1,45 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let provider (_cc: ClientCapabilities) : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
-        Some(U3.C1 true)
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) : bool =
+        clientCapabilities.TextDocument
+        |> Option.bind _.TypeDefinition
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
+    let provider
+        (clientCapabilities: ClientCapabilities)
+        : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false -> Some(U3.C1 true)
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: TypeDefinitionRegistrationOptions =
+                { DocumentSelector = Some defaultDocumentSelector
+                  Id = None
+                  WorkDoneProgress = None }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/typeDefinition"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
         (context: ServerRequestContext)

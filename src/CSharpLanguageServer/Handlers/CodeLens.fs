@@ -1,5 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
+open System
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
@@ -12,6 +14,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 type private DocumentSymbolCollectorForCodeLens(semanticModel: SemanticModel) =
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
@@ -85,10 +88,33 @@ module CodeLens =
             { DocumentUri = ""
               Position = { Line = 0u; Character = 0u } }
 
+    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
+        clientCapabilities.TextDocument
+        |> Option.bind _.CodeLens
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
     let provider (clientCapabilities: ClientCapabilities) : CodeLensOptions option =
-        Some
-            { ResolveProvider = Some true
-              WorkDoneProgress = None }
+        match dynamicRegistration clientCapabilities with
+        | true -> None
+        | false ->
+            Some
+                { ResolveProvider = Some true
+                  WorkDoneProgress = None }
+
+    let registration (clientCapabilities: ClientCapabilities) : Registration option =
+        match dynamicRegistration clientCapabilities with
+        | false -> None
+        | true ->
+            let registerOptions: CodeLensRegistrationOptions =
+                { ResolveProvider = Some true
+                  WorkDoneProgress = None
+                  DocumentSelector = Some defaultDocumentSelector }
+
+            Some
+                { Id = Guid.NewGuid() |> string
+                  Method = "textDocument/codeLens"
+                  RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
         let wf, docForUri =
