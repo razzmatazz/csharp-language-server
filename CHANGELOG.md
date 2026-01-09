@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Add suggestion to install specific dotnet sdk version
   - By @jhamm in https://github.com/razzmatazz/csharp-language-server/pull/299
   - Reported by @pandasoli in https://github.com/razzmatazz/csharp-language-server/issues/215
+* Restore dynamic server capability registration
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/303
 
 ## [0.21.0] - 2026-01-02 / Klaipėda
 * Do not emit csharp:/ urls when client does not have this capability enabled.
