@@ -189,7 +189,7 @@ module SemanticTokens =
                   Full = Some(U2.C1 true)
                   Id = None
                   WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpDocuments |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

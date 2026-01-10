@@ -31,7 +31,7 @@ module DocumentFormatting =
         | false -> None
         | true ->
             let registerOptions: DocumentFormattingRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
+                { DocumentSelector = documentSelectorForCSharpDocuments |> Some
                   WorkDoneProgress = None }
 
             Some

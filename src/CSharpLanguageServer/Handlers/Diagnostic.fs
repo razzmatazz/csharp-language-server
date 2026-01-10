@@ -21,8 +21,8 @@ module Diagnostic =
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let private registrationOptions: DiagnosticRegistrationOptions =
-        { DocumentSelector = Some defaultDocumentSelector
+    let private registrationOptions documentSelector : DiagnosticRegistrationOptions =
+        { DocumentSelector = documentSelector |> Some
           WorkDoneProgress = None
           Identifier = None
           InterFileDependencies = false
@@ -32,16 +32,22 @@ module Diagnostic =
     let provider (cc: ClientCapabilities) : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         match dynamicRegistration cc with
         | true -> None
-        | false -> Some(U2.C2 registrationOptions)
+        | false ->
+            // TODO: actually consider .cshtml documents too!
+            let documentSelector = documentSelectorForCSharpDocuments
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+            registrationOptions documentSelector |> U2.C2 |> Some
+
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
+
             let registration =
                 { Id = Guid.NewGuid() |> string
                   Method = "textDocument/diagnostic"
-                  RegisterOptions = registrationOptions |> serialize |> Some }
+                  RegisterOptions = registrationOptions documentSelector |> serialize |> Some }
 
             Some registration
 

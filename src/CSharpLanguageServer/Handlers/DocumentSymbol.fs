@@ -300,7 +300,7 @@ module DocumentSymbol =
             let registerOptions: DocumentSymbolRegistrationOptions =
                 { Label = None
                   WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

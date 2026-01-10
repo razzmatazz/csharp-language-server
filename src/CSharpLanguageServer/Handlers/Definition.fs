@@ -24,12 +24,12 @@ module Definition =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DefinitionRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
                   WorkDoneProgress = None }
 
             Some

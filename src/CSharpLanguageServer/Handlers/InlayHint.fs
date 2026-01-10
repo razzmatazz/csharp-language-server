@@ -256,7 +256,7 @@ module InlayHint =
         | true ->
             let registerOptions: InlayHintRegistrationOptions =
                 { ResolveProvider = Some false
-                  DocumentSelector = Some defaultDocumentSelector
+                  DocumentSelector = documentSelectorForCSharpDocuments |> Some
                   Id = None
                   WorkDoneProgress = None }
 

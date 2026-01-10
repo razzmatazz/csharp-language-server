@@ -80,7 +80,7 @@ module SignatureHelp =
                 { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
                   RetriggerCharacters = None
                   WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

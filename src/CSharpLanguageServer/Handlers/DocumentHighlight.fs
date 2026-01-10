@@ -32,7 +32,7 @@ module DocumentHighlight =
         | false -> None
         | true ->
             let registerOptions: DocumentHighlightRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
                   WorkDoneProgress = None }
 
             Some
