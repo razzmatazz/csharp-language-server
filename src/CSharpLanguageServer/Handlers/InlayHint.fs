@@ -234,16 +234,14 @@ module InlayHint =
 
         | _ -> None
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.InlayHint
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U3<bool, InlayHintOptions, InlayHintRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U3<bool, InlayHintOptions, InlayHintRegistrationOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false ->
             let inlayHintOptions: InlayHintOptions =
@@ -252,8 +250,8 @@ module InlayHint =
 
             Some(U3.C2 inlayHintOptions)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: InlayHintRegistrationOptions =

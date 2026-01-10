@@ -15,8 +15,8 @@ open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.Diagnostic
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
@@ -29,15 +29,13 @@ module Diagnostic =
           WorkspaceDiagnostics = true
           Id = None }
 
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false -> Some(U2.C2 registrationOptions)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registration =

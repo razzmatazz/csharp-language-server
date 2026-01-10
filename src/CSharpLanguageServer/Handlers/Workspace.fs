@@ -35,7 +35,7 @@ module Workspace =
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let didChangeWatchedFilesRegistration (cc: ClientCapabilities) : Registration option =
+    let didChangeWatchedFilesRegistration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistrationForDidChangeWatchedFiles cc with
         | false -> None
         | true ->

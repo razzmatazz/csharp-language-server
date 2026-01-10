@@ -16,19 +16,19 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module DocumentRangeFormatting =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.RangeFormatting
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentRangeFormattingOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<bool, DocumentRangeFormattingOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DocumentRangeFormattingRegistrationOptions =

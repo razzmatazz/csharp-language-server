@@ -157,16 +157,14 @@ module SemanticTokens =
                 return Some response |> LspResult.success
         }
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.SemanticTokens
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U2<SemanticTokensOptions, SemanticTokensRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<SemanticTokensOptions, SemanticTokensRegistrationOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false ->
             let semanticTokensOptions: SemanticTokensOptions =
@@ -179,8 +177,8 @@ module SemanticTokens =
 
             Some(U2.C1 semanticTokensOptions)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: SemanticTokensRegistrationOptions =
