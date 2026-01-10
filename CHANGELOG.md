@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Update Microsoft.Build and Microsoft.Build.Locator libs
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/296
 * Add suggestion to install specific dotnet sdk version
   - By @jhamm in https://github.com/razzmatazz/csharp-language-server/pull/299
   - Reported by @pandasoli in https://github.com/razzmatazz/csharp-language-server/issues/215
