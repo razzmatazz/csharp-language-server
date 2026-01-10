@@ -102,14 +102,14 @@ module CodeLens =
                 { ResolveProvider = Some true
                   WorkDoneProgress = None }
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: CodeLensRegistrationOptions =
                 { ResolveProvider = Some true
                   WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string
