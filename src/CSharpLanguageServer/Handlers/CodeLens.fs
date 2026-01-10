@@ -88,22 +88,22 @@ module CodeLens =
             { DocumentUri = ""
               Position = { Line = 0u; Character = 0u } }
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.CodeLens
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : CodeLensOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : CodeLensOptions option =
+        match dynamicRegistration cc with
         | true -> None
         | false ->
             Some
                 { ResolveProvider = Some true
                   WorkDoneProgress = None }
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: CodeLensRegistrationOptions =

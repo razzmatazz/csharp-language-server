@@ -4,12 +4,13 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Color =
-    let provider (clientCapabilities: ClientCapabilities) = None
+    let provider (cc: ClientCapabilities) = None
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
 
     let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return

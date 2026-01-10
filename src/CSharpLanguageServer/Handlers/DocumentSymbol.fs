@@ -282,19 +282,19 @@ module DocumentSymbol =
             base.VisitEventDeclaration(node)
             pop node
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.DocumentSymbol
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<bool, DocumentSymbolOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false -> true |> U2.C1 |> Some
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DocumentSymbolRegistrationOptions =

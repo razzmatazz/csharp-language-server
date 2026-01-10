@@ -101,7 +101,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         return ()
     }
 
-    let getDynamicRegistrations (clientCapabilities: ClientCapabilities) : Registration list =
+    let getDynamicRegistrations
+        (serverSettings: ServerSettings)
+        (clientCapabilities: ClientCapabilities)
+        : Registration list =
         [ CallHierarchy.registration
           CodeAction.registration
           CodeLens.registration
@@ -139,7 +142,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
           TypeHierarchy.registration
           Workspace.didChangeWatchedFilesRegistration
           WorkspaceSymbol.registration ]
-        |> List.choose (fun regFunc -> regFunc clientCapabilities)
+        |> List.choose (fun regFunc -> regFunc serverSettings clientCapabilities)
 
     let getServerCapabilities (lspClient: InitializeParams) =
         { ServerCapabilities.Default with

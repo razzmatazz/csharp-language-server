@@ -74,20 +74,20 @@ module Rename =
         |> Async.Parallel
         |> Async.map (Seq.distinct >> Array.ofSeq)
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.Rename
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let private prepareSupport (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private prepareSupport (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.Rename
         |> Option.bind _.PrepareSupport
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, RenameOptions> option =
-        match dynamicRegistration clientCapabilities, prepareSupport clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<bool, RenameOptions> option =
+        match dynamicRegistration cc, prepareSupport cc with
         | true, _ -> None
         | false, true ->
             Some(
@@ -97,13 +97,13 @@ module Rename =
             )
         | false, false -> Some(U2.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: RenameRegistrationOptions =
-                { PrepareProvider = Some(prepareSupport clientCapabilities)
-                  DocumentSelector = Some defaultDocumentSelector
+                { PrepareProvider = Some(prepareSupport cc)
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
                   WorkDoneProgress = None }
 
             Some

@@ -57,14 +57,14 @@ module SignatureHelp =
         else
             Seq.zip types m.Parameters |> Seq.map score |> Seq.sum
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.SignatureHelp
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : SignatureHelpOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : SignatureHelpOptions option =
+        match dynamicRegistration cc with
         | true -> None
         | false ->
             Some
@@ -72,8 +72,8 @@ module SignatureHelp =
                   WorkDoneProgress = None
                   RetriggerCharacters = None }
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: SignatureHelpRegistrationOptions =
