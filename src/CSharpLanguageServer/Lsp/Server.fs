@@ -144,7 +144,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
           WorkspaceSymbol.registration ]
         |> List.choose (fun regFunc -> regFunc serverSettings clientCapabilities)
 
-    let getServerCapabilities (lspClient: InitializeParams) =
+    let getServerCapabilities (settings: ServerSettings) (lspClient: InitializeParams) =
         { ServerCapabilities.Default with
             TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities |> Option.map U2.C1
             CompletionProvider = Completion.provider lspClient.Capabilities
@@ -175,7 +175,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
             TypeHierarchyProvider = TypeHierarchy.provider lspClient.Capabilities
             // InlineValueProvider = InlineValue.provider lspClient.Capabilities
             InlayHintProvider = InlayHint.provider lspClient.Capabilities
-            DiagnosticProvider = Diagnostic.provider lspClient.Capabilities
+            DiagnosticProvider = Diagnostic.provider settings lspClient.Capabilities
             WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities
             Workspace = Workspace.provider lspClient.Capabilities }
 
@@ -183,7 +183,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         override __.Dispose() = ()
 
         override __.Initialize p =
-            let serverCapabilities = getServerCapabilities p
+            let state = stateActor.PostAndReply GetState
+            let serverCapabilities = getServerCapabilities state.Settings p
 
             p
             |> withReadWriteContext

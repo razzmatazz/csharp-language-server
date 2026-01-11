@@ -29,12 +29,14 @@ module Diagnostic =
           WorkspaceDiagnostics = true
           Id = None }
 
-    let provider (cc: ClientCapabilities) : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
+    let provider
+        (settings: ServerSettings)
+        (cc: ClientCapabilities)
+        : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         match dynamicRegistration cc with
         | true -> None
         | false ->
-            // TODO: actually consider .cshtml documents too!
-            let documentSelector = documentSelectorForCSharpDocuments
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
 
             registrationOptions documentSelector |> U2.C2 |> Some
 
