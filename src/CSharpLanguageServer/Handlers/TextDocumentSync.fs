@@ -161,33 +161,70 @@ module TextDocumentSync =
         | _, _ -> Ok() |> async.Return
 
     let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf, docMaybe =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+        if p.TextDocument.Uri.EndsWith ".cshtml" then
+            let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+            let wf = wf.Value // TODO: handle this
 
-        match wf, docMaybe with
-        | Some wf, Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            //logMessage (sprintf "TextDocumentDidChange: changeParams: %s" (string changeParams))
-            //logMessage (sprintf "TextDocumentDidChange: sourceText: %s" (string sourceText))
+            let u = p.TextDocument.Uri |> string
+            let uri = Uri(u.Replace("%3A", ":", true, null))
 
-            let updatedSourceText =
-                sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
+            let matchingAdditionalDoc =
+                wf.Solution.Value
+                |> _.Projects
+                |> Seq.collect _.AdditionalDocuments
+                |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+                |> List.ofSeq
 
-            let updatedDoc = doc.WithText(updatedSourceText)
+            let doc =
+                if matchingAdditionalDoc.Length = 1 then
+                    matchingAdditionalDoc |> Seq.head |> Some
+                else
+                    None
 
-            //logMessage (sprintf "TextDocumentDidChange: newSourceText: %s" (string updatedSourceText))
+            match doc with
+            | None -> ()
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let updatedWf =
-                { wf with
-                    Solution = Some updatedDoc.Project.Solution }
+                let updatedSourceText =
+                    sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
-            context.Emit(WorkspaceFolderChange updatedWf)
-            context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                let updatedSolution =
+                    doc.Project
+                    |> _.RemoveAdditionalDocument(doc.Id)
+                    |> _.AddAdditionalDocument(doc.Name, updatedSourceText, doc.Folders, doc.FilePath)
+                    |> _.Project.Solution
+                    |> Some
 
-        | _, _ -> ()
+                let updatedWf = { wf with Solution = updatedSolution }
+                context.Emit(WorkspaceFolderChange updatedWf)
+                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
-        return Ok()
+            return Ok()
+        else
+            let wf, doc = workspaceDocument context.Workspace UserDocument p.TextDocument.Uri
+
+            match wf, doc with
+            | Some wf, Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+
+                let updatedSolution =
+                    sourceText
+                    |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
+                    |> doc.WithText
+                    |> _.Project.Solution
+                    |> Some
+
+                let updatedWf = { wf with Solution = updatedSolution }
+
+                context.Emit(WorkspaceFolderChange updatedWf)
+                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+
+            | _, _ -> ()
+
+            return Ok()
     }
 
     let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
@@ -230,8 +267,8 @@ module TextDocumentSync =
                         { wf with
                             Solution = Some newDoc.Project.Solution }
 
-                    context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
                     context.Emit(WorkspaceFolderChange updatedWf)
+                    context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
 
                 | None -> ()
 
