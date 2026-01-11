@@ -1,6 +1,8 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.IO
+open System.Text
 
 open Microsoft.CodeAnalysis.Text
 open Ionide.LanguageServerProtocol.Types
@@ -108,57 +110,119 @@ module TextDocumentSync =
 
     let willSaveWaitUntilRegistration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> =
-        let wf, docAndDocTypeForUri =
-            p.TextDocument.Uri |> workspaceDocumentDetails context.Workspace AnyDocument
+    let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
+        if p.TextDocument.Uri.EndsWith ".cshtml" then
+            let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+            let wf = wf.Value // TODO: handle this
 
-        match wf, docAndDocTypeForUri with
-        | Some(wf), Some(doc, docType) ->
-            match docType with
-            | UserDocument ->
-                // we want to load the document in case it has been changed since we have the solution loaded
-                // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
-                // went out of sync with editor
-                let updatedDoc = SourceText.From(p.TextDocument.Text) |> doc.WithText
+            let u = p.TextDocument.Uri |> string
+            let uri = Uri(u.Replace("%3A", ":", true, null))
 
+            let matchingAdditionalDoc =
+                wf.Solution.Value
+                |> _.Projects
+                |> Seq.collect _.AdditionalDocuments
+                |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+                |> List.ofSeq
+
+            let doc =
+                if matchingAdditionalDoc.Length = 1 then
+                    matchingAdditionalDoc |> Seq.head |> Some
+                else
+                    None
+
+            let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
+
+            match doc with
+            | Some doc ->
+                let updatedWf =
+                    doc.Project
+                    |> _.RemoveAdditionalDocument(doc.Id)
+                    |> _.AddAdditionalDocument(doc.Name, newSourceText, doc.Folders, doc.FilePath)
+                    |> _.Project.Solution
+                    |> (fun sln -> { wf with Solution = Some sln })
+
+                context.Emit(WorkspaceFolderChange updatedWf)
                 context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
-                context.Emit(
-                    WorkspaceFolderChange
-                        { wf with
-                            Solution = Some updatedDoc.Project.Solution }
-                )
+            | None ->
+                let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
-                Ok() |> async.Return
+                let project =
+                    match cshtmlPath with
+                    | Some cshtmlPath -> solutionGetProjectForPath wf.Solution.Value cshtmlPath
+                    | None -> None
 
-            | _ -> Ok() |> async.Return
+                match project with
+                | Some project ->
+                    let cshtmlPath = cshtmlPath.Value
+                    let projectBaseDir = Path.GetDirectoryName project.FilePath
+                    let relativePath = Path.GetRelativePath(projectBaseDir, cshtmlPath)
 
-        | Some wf, None ->
-            let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+                    let folders = relativePath.Split Path.DirectorySeparatorChar
 
-            match docFilePathMaybe with
-            | Some docFilePath -> async {
-                // ok, this document is not in solution, register a new document
-                let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text wf.Solution.Value
+                    let folders = folders |> Seq.take (folders.Length - 1)
 
-                match newDocMaybe with
-                | Some newDoc ->
+                    let updatedWf =
+                        project
+                        |> _.AddAdditionalDocument(Path.GetFileName cshtmlPath, newSourceText, folders, cshtmlPath)
+                        |> _.Project.Solution
+                        |> (fun sln -> { wf with Solution = Some sln })
+
+                    context.Emit(WorkspaceFolderChange updatedWf)
                     context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-                    context.Emit(
-                        WorkspaceFolderChange
-                            { wf with
-                                Solution = Some newDoc.Project.Solution }
-                    )
 
                 | None -> ()
 
-                return Ok()
-              }
+            return Ok()
+        else
+            let wf, docInfo =
+                workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
 
-            | None -> Ok() |> async.Return
+            match wf, docInfo with
+            | Some wf, Some(doc, docType) ->
+                match docType with
+                | UserDocument ->
+                    // we want to load the document in case it has been changed since we have the solution loaded
+                    // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
+                    // went out of sync with editor
 
-        | _, _ -> Ok() |> async.Return
+                    let updatedWf =
+                        p.TextDocument.Text
+                        |> SourceText.From
+                        |> doc.WithText
+                        |> _.Project.Solution
+                        |> (fun sln -> { wf with Solution = Some sln })
+
+                    context.Emit(WorkspaceFolderChange updatedWf)
+                    context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                    return Ok()
+
+                | _ -> return Ok()
+
+            | Some wf, None ->
+                let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+
+                match docFilePathMaybe with
+                | Some docFilePath ->
+                    // ok, this document is not in solution, register a new document
+                    let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text wf.Solution.Value
+
+                    match newDocMaybe with
+                    | None -> ()
+                    | Some newDoc ->
+                        let updatedWf =
+                            newDoc |> _.Project.Solution |> (fun sln -> { wf with Solution = Some sln })
+
+                        context.Emit(WorkspaceFolderChange updatedWf)
+                        context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+
+                    return Ok()
+
+                | None -> return Ok()
+
+            | _, _ -> return Ok()
+    }
 
     let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
         if p.TextDocument.Uri.EndsWith ".cshtml" then
