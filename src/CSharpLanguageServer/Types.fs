@@ -10,6 +10,7 @@ type ServerSettings =
       LogLevel: LogLevel
       ApplyFormattingOptions: bool
       UseMetadataUris: bool
+      RazorSupport: bool
       DebugMode: bool }
 
     member this.GetEffectiveFormattingOptions options =
@@ -20,6 +21,7 @@ type ServerSettings =
           LogLevel = LogLevel.Information
           ApplyFormattingOptions = false
           UseMetadataUris = false
+          RazorSupport = false
           DebugMode = false }
 
 type CSharpSectionConfiguration =
@@ -73,7 +75,13 @@ let razorCsharpDocumentFilter: TextDocumentFilter =
       Scheme = Some "file"
       Pattern = Some "**/*.cshtml" }
 
-let defaultDocumentSelector: DocumentSelector = [| csharpDocumentFilter |> U2.C1 |]
+let documentSelectorForCSharpDocuments: DocumentSelector =
+    [| csharpDocumentFilter |> U2.C1 |]
+
+let documentSelectorForCSharpAndRazorDocuments (settings: ServerSettings) : DocumentSelector =
+    match settings.RazorSupport with
+    | true -> [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
+    | false -> [| csharpDocumentFilter |> U2.C1 |]
 
 let emptyClientCapabilities: ClientCapabilities =
     { Workspace = None

@@ -107,7 +107,7 @@ module Initialization =
     let handleInitialized
         (lspClient: ILspClient)
         (stateActor: MailboxProcessor<ServerStateEvent>)
-        (getDynamicRegistrations: ClientCapabilities -> Registration list)
+        (getDynamicRegistrations: ServerSettings -> ClientCapabilities -> Registration list)
         (context: ServerRequestContext)
         (_p: unit)
         : Async<LspResult<unit>> =
@@ -117,7 +117,9 @@ module Initialization =
             logger.LogDebug("handleInitialized: registrationParams..")
 
             let registrationParams =
-                { Registrations = getDynamicRegistrations context.ClientCapabilities |> List.toArray }
+                { Registrations =
+                    getDynamicRegistrations context.State.Settings context.ClientCapabilities
+                    |> List.toArray }
 
             logger.LogDebug("handleInitialized: ClientRegisterCapability..")
             // TODO: Retry on error?

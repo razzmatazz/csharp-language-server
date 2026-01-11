@@ -16,23 +16,23 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module References =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.References
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, ReferenceOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U2<bool, ReferenceOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: ReferenceRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
                   WorkDoneProgress = None }
 
             Some

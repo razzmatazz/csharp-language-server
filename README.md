@@ -59,7 +59,7 @@ OPTIONS:
     --debug               enable debug mode
     --diagnose            run diagnostics
     --features, -f <features>
-                          enable optional features, comma-separated: metadata-uris
+                          enable optional features, comma-separated: [metadata-uris, razor-support]
     --help                display this list of options.
 ```
 
@@ -70,6 +70,10 @@ See `csharp-ls --help`.
 ### Decompiled Code/Metadata URIs
 `csharp:/` metadata URIs can be enabled by setting the
 `experimental.csharp.metadataUris` client capability to `true`.
+
+### Razor (.cshtml) support
+Can be enabled by passing in the `razor-support` feature to the server using the
+`--features` command line flag.
 
 # Clients
 

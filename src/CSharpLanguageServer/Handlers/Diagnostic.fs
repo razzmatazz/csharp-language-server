@@ -15,14 +15,14 @@ open CSharpLanguageServer.Lsp.Workspace
 
 [<RequireQualifiedAccess>]
 module Diagnostic =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.Diagnostic
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let private registrationOptions: DiagnosticRegistrationOptions =
-        { DocumentSelector = Some defaultDocumentSelector
+    let private registrationOptions documentSelector : DiagnosticRegistrationOptions =
+        { DocumentSelector = documentSelector |> Some
           WorkDoneProgress = None
           Identifier = None
           InterFileDependencies = false
@@ -30,20 +30,26 @@ module Diagnostic =
           Id = None }
 
     let provider
-        (clientCapabilities: ClientCapabilities)
+        (settings: ServerSettings)
+        (cc: ClientCapabilities)
         : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
+        match dynamicRegistration cc with
         | true -> None
-        | false -> Some(U2.C2 registrationOptions)
+        | false ->
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+            registrationOptions documentSelector |> U2.C2 |> Some
+
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
+
             let registration =
                 { Id = Guid.NewGuid() |> string
                   Method = "textDocument/diagnostic"
-                  RegisterOptions = registrationOptions |> serialize |> Some }
+                  RegisterOptions = registrationOptions documentSelector |> serialize |> Some }
 
             Some registration
 

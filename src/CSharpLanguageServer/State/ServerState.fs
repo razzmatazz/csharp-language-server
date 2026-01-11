@@ -321,9 +321,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
     | ClientChange lspClient -> return { state with LspClient = lspClient }
 
     | ClientCapabilityChange cc ->
-        let csharpMetadataUrisSupported =
+        let experimentalCapsBoolValue boolPropName =
             cc.Experimental
-            |> Option.map _.SelectToken("csharp.metadataUris")
+            |> Option.map _.SelectToken(boolPropName)
             |> Option.bind Option.ofObj
             |> Option.map (fun t ->
                 let v = t :?> JValue
@@ -333,7 +333,9 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         let newSettings =
             { oldSettings with
-                UseMetadataUris = csharpMetadataUrisSupported |> Option.defaultValue oldSettings.UseMetadataUris }
+                UseMetadataUris =
+                    experimentalCapsBoolValue "csharp.metadataUris"
+                    |> Option.defaultValue oldSettings.UseMetadataUris }
 
         return
             { state with

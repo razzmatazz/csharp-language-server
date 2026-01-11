@@ -18,28 +18,28 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module DocumentOnTypeFormatting =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.OnTypeFormatting
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider (clientCapabilities: ClientCapabilities) : DocumentOnTypeFormattingOptions option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : DocumentOnTypeFormattingOptions option =
+        match dynamicRegistration cc with
         | true -> None
         | false ->
             Some
                 { FirstTriggerCharacter = ";"
                   MoreTriggerCharacter = Some([| "}"; ")" |]) }
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DocumentOnTypeFormattingRegistrationOptions =
                 { FirstTriggerCharacter = ";"
                   MoreTriggerCharacter = Some([| "}"; ")" |])
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpDocuments |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

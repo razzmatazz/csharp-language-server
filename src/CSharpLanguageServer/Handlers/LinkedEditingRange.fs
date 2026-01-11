@@ -4,12 +4,13 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.State
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module LinkedEditingRange =
-    let provider (clientCapabilities: ClientCapabilities) = None
+    let provider (cc: ClientCapabilities) = None
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option = None
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
 
     let handle
         (context: ServerRequestContext)

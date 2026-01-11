@@ -27,7 +27,7 @@ type CLIArguments =
             | LogLevel _ -> "set log level, <trace|debug|info|warning|error>; default is `info`"
             | Debug -> "enable debug mode"
             | Diagnose -> "run diagnostics"
-            | Features _ -> "enable optional features, comma-separated: metadata-uris"
+            | Features _ -> "enable optional features, comma-separated: [metadata-uris, razor-support]"
 
 let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
     match logLevelArg with
@@ -68,6 +68,7 @@ let entry args =
                 DebugMode = debugMode
                 SolutionPath = serverArgs.TryGetResult <@ Solution @>
                 UseMetadataUris = features.Contains "metadata-uris"
+                RazorSupport = features.Contains "razor-support"
                 LogLevel = logLevel }
 
         let exitCode =

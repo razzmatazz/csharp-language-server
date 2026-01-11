@@ -314,9 +314,9 @@ module CodeAction =
                           Disabled = None }
         }
 
-    let provider (clientCapabilities: ClientCapabilities) : U2<bool, CodeActionOptions> option =
+    let provider (cc: ClientCapabilities) : U2<bool, CodeActionOptions> option =
         let literalSupport =
-            clientCapabilities.TextDocument
+            cc.TextDocument
             |> Option.bind _.CodeAction
             |> Option.bind _.CodeActionLiteralSupport
 
@@ -329,21 +329,21 @@ module CodeAction =
             |> Some
         | None -> true |> U2.C1 |> Some
 
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
         |> Option.bind _.CodeAction
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: CodeActionRegistrationOptions =
                 { CodeActionKinds = None
                   ResolveProvider = Some true
                   WorkDoneProgress = None
-                  DocumentSelector = Some defaultDocumentSelector }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

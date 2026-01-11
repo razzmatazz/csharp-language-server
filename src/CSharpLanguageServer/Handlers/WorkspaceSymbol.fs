@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module WorkspaceSymbol =
@@ -25,7 +26,7 @@ module WorkspaceSymbol =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (cc: ClientCapabilities) : Registration option =
+    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->

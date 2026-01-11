@@ -14,25 +14,23 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module TypeDefinition =
-    let private dynamicRegistration (clientCapabilities: ClientCapabilities) : bool =
-        clientCapabilities.TextDocument
+    let private dynamicRegistration (cc: ClientCapabilities) : bool =
+        cc.TextDocument
         |> Option.bind _.TypeDefinition
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let provider
-        (clientCapabilities: ClientCapabilities)
-        : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
-        match dynamicRegistration clientCapabilities with
+    let provider (cc: ClientCapabilities) : U3<bool, TypeDefinitionOptions, TypeDefinitionRegistrationOptions> option =
+        match dynamicRegistration cc with
         | true -> None
         | false -> Some(U3.C1 true)
 
-    let registration (clientCapabilities: ClientCapabilities) : Registration option =
-        match dynamicRegistration clientCapabilities with
+    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+        match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: TypeDefinitionRegistrationOptions =
-                { DocumentSelector = Some defaultDocumentSelector
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
                   Id = None
                   WorkDoneProgress = None }
 
