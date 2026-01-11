@@ -190,9 +190,10 @@ module TextDocumentSync =
         return Ok()
     }
 
-    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> =
+    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
         context.Emit(DocumentClosed p.TextDocument.Uri)
-        Ok() |> async.Return
+        return Ok()
+    }
 
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         return Ok()
@@ -204,20 +205,24 @@ module TextDocumentSync =
         : AsyncLspResult<TextEdit[] option> =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
-    let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> =
-        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+    let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+        if p.TextDocument.Uri.EndsWith ".cshtml" then
+            // TODO: Add to project.AdditionalFiles
+            return Ok()
+        else
+            let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-        match wf, doc with
-        | Some _, Some doc -> Ok() |> async.Return
+            match wf, doc with
+            | Some _, Some _ -> return Ok()
 
-        | Some wf, None -> async {
-            let docFilePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+            | Some wf, None ->
+                let docFilePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
-            match docFilePath with
-            | None -> ()
-            | Some docFilePath ->
                 // we need to add this file to solution if not already
-                let! newDocMaybe = solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
+                let! newDocMaybe =
+                    match docFilePath with
+                    | Some docFilePath -> solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
+                    | None -> None |> async.Return
 
                 match newDocMaybe with
                 | Some newDoc ->
@@ -230,7 +235,7 @@ module TextDocumentSync =
 
                 | None -> ()
 
-            return Ok()
-          }
+                return Ok()
 
-        | _, _ -> Ok() |> async.Return
+            | _, _ -> return Ok()
+    }
