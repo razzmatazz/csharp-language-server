@@ -73,7 +73,6 @@ let testReferenceWorks () =
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
-
 [<Test>]
 let testReferenceWorksDotnet8 () =
     use client = activateFixture "testReferenceWorksDotnet8"
@@ -142,14 +141,13 @@ let testReferenceWorksDotnet8 () =
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
-
 [<Test>]
-let testReferenceWorksToAspNetRazorPageReferencedValue () =
+let testReferenceWorksToRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
     use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
-    use viewsTestIndexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
+    use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
@@ -161,23 +159,23 @@ let testReferenceWorksToAspNetRazorPageReferencedValue () =
     let locations0: Location[] option =
         client.Request("textDocument/references", referenceParams0)
 
-    Assert.IsTrue(locations0.IsSome)
+    Assert.IsTrue locations0.IsSome
     Assert.AreEqual(2, locations0.Value.Length)
 
     let expectedLocations0: Location array =
-        [| { Uri = viewsTestIndexCshtmlFile.Uri
-             Range =
-               { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } }
-
-           { Uri = testControllerCsFile.Uri
+        [| { Uri = testControllerCsFile.Uri
              Range =
                { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } } |]
+                 End = { Line = 11u; Character = 18u } } }
+
+           { Uri = indexCshtmlFile.Uri
+             Range =
+               { Start = { Line = 1u; Character = 7u }
+                 End = { Line = 1u; Character = 13u } } } |]
 
     let sortedLocations0 =
         locations0.Value
-        |> Array.sortBy (fun f -> (f.Range.Start.Line, f.Range.Start.Character))
+        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
     Assert.AreEqual(expectedLocations0, sortedLocations0)
 
@@ -198,10 +196,10 @@ let testReferenceWorksToAspNetRazorPageReferencedValue () =
     Assert.AreEqual(5, locations1.Value.Length)
 
     let expectedLocations1: Location array =
-        [| { Uri = viewsTestIndexCshtmlFile.Uri
+        [| { Uri = testControllerCsFile.Uri
              Range =
-               { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } }
+               { Start = { Line = 11u; Character = 12u }
+                 End = { Line = 11u; Character = 18u } } }
 
            { Uri = testIndexViewModelCsFile.Uri
              Range =
@@ -218,13 +216,66 @@ let testReferenceWorksToAspNetRazorPageReferencedValue () =
                { Start = { Line = 3u; Character = 33u }
                  End = { Line = 3u; Character = 36u } } }
 
-           { Uri = testControllerCsFile.Uri
+           { Uri = indexCshtmlFile.Uri
              Range =
-               { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } } |]
+               { Start = { Line = 1u; Character = 7u }
+                 End = { Line = 1u; Character = 13u } } } |]
 
     let sortedLocations1 =
         locations1.Value
-        |> Array.sortBy (fun f -> (f.Range.Start.Line, f.Range.Start.Character))
+        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
     Assert.AreEqual(expectedLocations1, sortedLocations1)
+
+[<Test>]
+let testReferenceWorksFromRazorPageReferencedValue () =
+    use client = activateFixture "aspnetProject"
+
+    use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
+    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
+    use indexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+
+    let referenceParams0: ReferenceParams =
+        { TextDocument = { Uri = indexCshtmlFile.Uri }
+          Position = { Line = 1u; Character = 7u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = { IncludeDeclaration = true } }
+
+    let locations0: Location[] option =
+        client.Request("textDocument/references", referenceParams0)
+
+    Assert.IsTrue(locations0.IsSome)
+    Assert.AreEqual(5, locations0.Value.Length)
+
+    let expectedLocations0: Location array =
+        [| { Uri = testControllerCsFile.Uri
+             Range =
+               { Start = { Line = 11u; Character = 12u }
+                 End = { Line = 11u; Character = 18u } } }
+
+           { Uri = testIndexViewModelCsFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 19u }
+                 End = { Line = 3u; Character = 25u } } }
+
+           { Uri = testIndexViewModelCsFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 28u }
+                 End = { Line = 3u; Character = 31u } } }
+
+           { Uri = testIndexViewModelCsFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 33u }
+                 End = { Line = 3u; Character = 36u } } }
+
+           { Uri = indexCshtmlFile.Uri
+             Range =
+               { Start = { Line = 1u; Character = 7u }
+                 End = { Line = 1u; Character = 13u } } } |]
+
+    let sortedLocations0 =
+        locations0.Value
+        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
+
+    Assert.AreEqual(expectedLocations0, sortedLocations0)
