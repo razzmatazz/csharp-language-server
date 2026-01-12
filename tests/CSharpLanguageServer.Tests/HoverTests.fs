@@ -43,19 +43,13 @@ let testHoverWorks () =
     let hover1: Hover option = client.Request("textDocument/hover", hover1Params)
 
     match hover1 with
-    | Some hover ->
-        match hover.Contents with
-        | U3.C1 c ->
-            Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+    | Some { Contents = U3.C1 c } ->
+        Assert.AreEqual(MarkupKind.Markdown, c.Kind)
 
-            Assert.AreEqual(
-                "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
-                c.Value.ReplaceLineEndings("\n")
-            )
-        | _ -> failwith "C1 was expected"
-
-        Assert.IsTrue(hover.Range.IsNone)
-
+        Assert.AreEqual(
+            "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
+            c.Value.ReplaceLineEndings("\n")
+        )
     | _ -> failwith "Some (U3.C1 c) was expected"
 
     //
@@ -69,3 +63,25 @@ let testHoverWorks () =
     let hover2: Hover option = client.Request("textDocument/hover", hover2Params)
 
     Assert.IsTrue(hover2.IsNone)
+
+[<Test>]
+let testHoverWorksInRazorFile () =
+    use client = activateFixture "aspnetProject"
+
+    use indexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+
+    let hover0Params: HoverParams =
+        { TextDocument = { Uri = indexCshtmlFile.Uri }
+          Position = { Line = 1u; Character = 7u }
+          WorkDoneToken = None }
+
+    let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
+
+    Assert.IsTrue(hover0.IsSome)
+
+    match hover0 with
+    | Some { Contents = U3.C1 c } ->
+        Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+        Assert.AreEqual("```csharp\nstring? IndexViewModel.Output\n```", c.Value.ReplaceLineEndings("\n"))
+
+    | _ -> failwith "Some (U3.C1 c) was expected"

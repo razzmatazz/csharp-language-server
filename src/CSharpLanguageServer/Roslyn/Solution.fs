@@ -18,6 +18,8 @@ open NuGet.Frameworks
 
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Util
+open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 
 let private logger = Logging.getLoggerByName "Roslyn.Solution"
@@ -384,3 +386,77 @@ let solutionLoadSolutionWithPathOrOnDir
 
         return! solutionFindAndLoadOnDir progressReporter lspClient dir
       }
+
+let solutionGetRazorDocumentForPath
+    (solution: Solution)
+    (cshtmlPath: string)
+    : Async<(Project * Compilation * SyntaxTree) option> =
+    async {
+        let normalizedTargetDir = cshtmlPath |> Path.GetDirectoryName |> Path.GetFullPath
+
+        let projectForPath =
+            solution.Projects
+            |> Seq.tryFind (fun project ->
+                let projectDirectory = Path.GetDirectoryName(project.FilePath)
+                let normalizedProjectDir = Path.GetFullPath(projectDirectory)
+
+                normalizedTargetDir.StartsWith(
+                    normalizedProjectDir + Path.DirectorySeparatorChar.ToString(),
+                    StringComparison.OrdinalIgnoreCase
+                ))
+
+        match projectForPath with
+        | None -> return None
+        | Some project ->
+            let projectBaseDir = Path.GetDirectoryName project.FilePath
+
+            let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
+
+            let mutable cshtmlTree: SyntaxTree option = None
+
+            let cshtmlPathTranslated =
+                Path.GetRelativePath(projectBaseDir, cshtmlPath)
+                |> _.Replace(".", "_")
+                |> _.Replace(Path.DirectorySeparatorChar, '_')
+                |> (fun s -> s + ".g.cs")
+
+            for tree in compilation.SyntaxTrees do
+                let path = tree.FilePath
+
+                if path.StartsWith projectBaseDir then
+                    let relativePath = Path.GetRelativePath(projectBaseDir, path)
+
+                    if relativePath.EndsWith cshtmlPathTranslated then
+                        cshtmlTree <- Some tree
+
+            return cshtmlTree |> Option.map (fun cst -> (project, compilation, cst))
+    }
+
+let solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos = async {
+    match! solutionGetRazorDocumentForPath solution cshtmlPath with
+    | None -> return None
+
+    | Some(project, compilation, cshtmlTree) ->
+        let model = compilation.GetSemanticModel cshtmlTree
+
+        let root = cshtmlTree.GetRoot()
+
+        let token =
+            root.DescendantTokens()
+            |> Seq.tryFind (fun t ->
+                let span = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                span.Path = cshtmlPath
+                && span.StartLinePosition.Line <= (int pos.Line)
+                && span.EndLinePosition.Line >= (int pos.Line)
+                && span.StartLinePosition.Character <= (int pos.Character)
+                && span.EndLinePosition.Character > (int pos.Character))
+
+        let symbol =
+            token
+            |> Option.bind (fun x -> x.Parent |> Option.ofObj)
+            |> Option.map (fun parentToken -> model.GetSymbolInfo(parentToken))
+            |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
+
+        return symbol |> Option.map (fun sym -> (sym, project, None))
+}
