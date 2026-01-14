@@ -136,3 +136,84 @@ let ``completion works for extension methods`` () =
             Assert.IsFalse(itemResolved.Documentation.IsSome)
 
     | _ -> failwith "Some U2.C1 was expected"
+
+[<Test>]
+let ``completion works in cshtml files`` () =
+    use client = activateFixture "aspnetProject"
+
+    use cshtmlFile = client.Open "Project/Views/Test/CompletionTests.cshtml"
+
+    let testCompletionResultContainsItem
+        line
+        character
+        expectedLabel
+        expectedCompletionItemKind
+        expectedDetail
+        documentationTestFn
+        =
+        let completionParams0: CompletionParams =
+            { TextDocument = { Uri = cshtmlFile.Uri }
+              Position = { Line = line; Character = character }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = None }
+
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams0)
+
+        match completion with
+        | Some(U2.C2 cl) ->
+            let expectedItem = cl.Items |> Seq.tryFind (fun i -> i.Label = expectedLabel)
+
+            match expectedItem with
+            | None -> failwithf "an item with Label '%s' was expected for completion at this position" expectedLabel
+            | Some item ->
+                Assert.AreEqual(expectedLabel, item.Label)
+                Assert.IsFalse(item.Detail.IsSome)
+                Assert.IsFalse(item.Documentation.IsSome)
+                Assert.AreEqual(Some expectedCompletionItemKind, item.Kind)
+
+                let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
+
+                Assert.AreEqual(Some expectedDetail, itemResolved.Detail)
+                Assert.IsTrue(documentationTestFn itemResolved.Documentation)
+
+        | _ -> failwith "Some U2.C1 was expected"
+
+    //
+    // 1st completion test: (@Model.|)
+    //
+    testCompletionResultContainsItem
+        1u
+        14u
+        "Output"
+        CompletionItemKind.Property
+        "string? Project.Models.Test.IndexViewModel.Output { get; set; }"
+        _.IsNone
+
+    //
+    // 2nd completion test: @Model.|
+    //
+    testCompletionResultContainsItem
+        2u
+        13u
+        "Output"
+        CompletionItemKind.Property
+        "string? Project.Models.Test.IndexViewModel.Output { get; set; }"
+        _.IsNone
+
+    //
+    // 3nd completion test: @Model.Output.|
+    //
+    testCompletionResultContainsItem 3u 13u "ToString" CompletionItemKind.Method "string? object.ToString()" _.IsSome
+
+    //
+    // 4nd completion test: x.
+    //
+    testCompletionResultContainsItem
+        6u
+        6u
+        "TryFormat"
+        CompletionItemKind.Method
+        "bool int.TryFormat(Span<byte> utf8Destination, out int bytesWritten, [ReadOnlySpan<char> format = default], [IFormatProvider? provider = null])"
+        _.IsSome
