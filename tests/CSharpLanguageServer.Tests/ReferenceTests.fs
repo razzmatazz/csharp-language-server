@@ -149,6 +149,9 @@ let testReferenceWorksToRazorPageReferencedValue () =
     use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
     use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
 
+    use completionTestsCshtmlFile =
+        client.Open "Project/Views/Test/CompletionTests.cshtml"
+
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
           Position = { Line = 3u; Character = 20u }
@@ -160,13 +163,18 @@ let testReferenceWorksToRazorPageReferencedValue () =
         client.Request("textDocument/references", referenceParams0)
 
     Assert.IsTrue locations0.IsSome
-    Assert.AreEqual(2, locations0.Value.Length)
+    Assert.AreEqual(3, locations0.Value.Length)
 
     let expectedLocations0: Location array =
         [| { Uri = testControllerCsFile.Uri
              Range =
                { Start = { Line = 11u; Character = 12u }
                  End = { Line = 11u; Character = 18u } } }
+
+           { Uri = completionTestsCshtmlFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 13u }
+                 End = { Line = 3u; Character = 19u } } }
 
            { Uri = indexCshtmlFile.Uri
              Range =
@@ -193,7 +201,7 @@ let testReferenceWorksToRazorPageReferencedValue () =
         client.Request("textDocument/references", referenceParams1)
 
     Assert.IsTrue(locations1.IsSome)
-    Assert.AreEqual(5, locations1.Value.Length)
+    Assert.AreEqual(6, locations1.Value.Length)
 
     let expectedLocations1: Location array =
         [| { Uri = testControllerCsFile.Uri
@@ -216,6 +224,11 @@ let testReferenceWorksToRazorPageReferencedValue () =
                { Start = { Line = 3u; Character = 33u }
                  End = { Line = 3u; Character = 36u } } }
 
+           { Uri = completionTestsCshtmlFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 13u }
+                 End = { Line = 3u; Character = 19u } } }
+
            { Uri = indexCshtmlFile.Uri
              Range =
                { Start = { Line = 1u; Character = 7u }
@@ -231,9 +244,12 @@ let testReferenceWorksToRazorPageReferencedValue () =
 let testReferenceWorksFromRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
-    use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
-    use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
-    use indexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+    use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
+    use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
+    use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
+
+    use completionTestsCshtmlFile =
+        client.Open "Project/Views/Test/CompletionTests.cshtml"
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = indexCshtmlFile.Uri }
@@ -246,7 +262,7 @@ let testReferenceWorksFromRazorPageReferencedValue () =
         client.Request("textDocument/references", referenceParams0)
 
     Assert.IsTrue(locations0.IsSome)
-    Assert.AreEqual(5, locations0.Value.Length)
+    Assert.AreEqual(6, locations0.Value.Length)
 
     let expectedLocations0: Location array =
         [| { Uri = testControllerCsFile.Uri
@@ -268,6 +284,11 @@ let testReferenceWorksFromRazorPageReferencedValue () =
              Range =
                { Start = { Line = 3u; Character = 33u }
                  End = { Line = 3u; Character = 36u } } }
+
+           { Uri = completionTestsCshtmlFile.Uri
+             Range =
+               { Start = { Line = 3u; Character = 13u }
+                 End = { Line = 3u; Character = 19u } } }
 
            { Uri = indexCshtmlFile.Uri
              Range =
