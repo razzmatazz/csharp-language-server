@@ -351,6 +351,35 @@ let workspaceDocument workspace docType (u: string) =
     let doc = docAndType |> Option.map fst
     wf, doc
 
+let workspaceDocumentSemanticModel (workspace: LspWorkspace) (uri: DocumentUri) = async {
+    let wf = workspaceFolder workspace uri
+
+    match wf with
+    | None -> return None, None
+    | Some wf ->
+        if uri.EndsWith ".cshtml" then
+            let cshtmlPath = workspaceFolderUriToPath wf uri
+
+            match cshtmlPath with
+            | None -> return None, None
+            | Some cshtmlPath ->
+                match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
+                | None -> return Some wf, None
+                | Some(_, compilation, cshtmlTree) ->
+                    let semanticModel = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+                    return Some wf, semanticModel
+        else
+            let wf, docAndType = workspaceDocumentDetails workspace AnyDocument uri
+
+            match docAndType with
+            | Some(doc, _) ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask |> Async.map Option.ofObj
+                return wf, semanticModel
+
+            | None -> return wf, None
+}
+
 let workspaceDocumentSymbol
     (workspace: LspWorkspace)
     docType
