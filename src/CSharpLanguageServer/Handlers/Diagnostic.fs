@@ -64,27 +64,21 @@ module Diagnostic =
                   Items = [||]
                   RelatedDocuments = None }
 
-            let wf, docForUri =
-                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+            let! wf, semModel = p.TextDocument.Uri |> workspaceDocumentSemanticModel context.Workspace
 
-            match wf, docForUri with
-            | Some wf, Some doc ->
+            match wf, semModel with
+            | Some wf, Some semanticModel ->
                 let! ct = Async.CancellationToken
-                let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
-                match semanticModelMaybe |> Option.ofObj with
-                | Some semanticModel ->
-                    let wfPathToUri = workspaceFolderPathToUri wf
+                let wfPathToUri = workspaceFolderPathToUri wf
 
-                    let diagnostics =
-                        semanticModel.GetDiagnostics()
-                        |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
-                        |> Seq.map fst
-                        |> Array.ofSeq
+                let diagnostics =
+                    semanticModel.GetDiagnostics()
+                    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+                    |> Seq.map fst
+                    |> Array.ofSeq
 
-                    return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
-
-                | None -> return emptyReport |> U2.C1 |> LspResult.success
+                return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
 
             | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
         }
