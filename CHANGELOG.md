@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Restore dynamic server capability registration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/303
 
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.21.0...HEAD
+
 ## [0.21.0] - 2026-01-02 / Klaipėda
 * Do not emit csharp:/ urls when client does not have this capability enabled.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/298
