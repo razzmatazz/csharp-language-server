@@ -259,8 +259,9 @@ module Completion =
 
                 let! razorSourceText = razorTextDocument.GetTextAsync() |> Async.AwaitTask
 
-                let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
-                logger.LogInformation("posInCshtml={posInCshtml}", posInCshtml)
+                //let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
+                //logger.LogInformation("posInCshtml={posInCshtml}", posInCshtml)
+
                 let pos = p.Position
 
                 let root = cshtmlTree.GetRoot()
