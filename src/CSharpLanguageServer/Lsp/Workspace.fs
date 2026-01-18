@@ -360,14 +360,15 @@ let workspaceDocumentSemanticModel (workspace: LspWorkspace) (uri: DocumentUri) 
         if uri.EndsWith ".cshtml" then
             let cshtmlPath = workspaceFolderUriToPath wf uri
 
-            match cshtmlPath with
-            | None -> return None, None
-            | Some cshtmlPath ->
-                match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
+            match wf.Solution, cshtmlPath with
+            | Some solution, Some cshtmlPath ->
+                match! solutionGetRazorDocumentForPath solution cshtmlPath with
                 | None -> return Some wf, None
                 | Some(_, compilation, cshtmlTree) ->
                     let semanticModel = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
                     return Some wf, semanticModel
+
+            | _, _ -> return None, None
         else
             let wf, docAndType = workspaceDocumentDetails workspace AnyDocument uri
 
@@ -395,11 +396,12 @@ let workspaceDocumentSymbol
         | Some wf, true ->
             let cshtmlPath = workspaceFolderUriToPath wf uri
 
-            match cshtmlPath with
-            | None -> return Some wf, None
-            | Some cshtmlPath ->
-                let! symbolInfo = solutionFindSymbolForRazorDocumentPath wf.Solution.Value cshtmlPath pos
+            match wf.Solution, cshtmlPath with
+            | Some solution, Some cshtmlPath ->
+                let! symbolInfo = solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos
                 return Some wf, symbolInfo
+
+            | _, _ -> return Some wf, None
 
         | Some wf, false ->
             let docForUri = uri |> workspaceFolderDocumentDetails wf docType
