@@ -72,8 +72,20 @@ module Diagnostic =
 
                 let wfPathToUri = workspaceFolderPathToUri wf
 
+                let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
+                    let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
+
+                    match documentIsCshtml with
+                    | true ->
+                        // this particular diagnostic (CS8019: Unnecessary using directive.) does not
+                        // have proper line mapping information and appears out of place on cshtml files
+                        d.Id <> "CS8019"
+
+                    | false -> true
+
                 let diagnostics =
                     semanticModel.GetDiagnostics()
+                    |> Seq.filter diagnosticIsToBeListed
                     |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                     |> Seq.map fst
                     |> Array.ofSeq
