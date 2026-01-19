@@ -12,6 +12,7 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]

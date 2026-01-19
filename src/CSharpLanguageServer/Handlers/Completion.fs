@@ -17,6 +17,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types

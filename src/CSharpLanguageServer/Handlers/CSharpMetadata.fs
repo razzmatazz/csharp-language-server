@@ -7,6 +7,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 [<RequireQualifiedAccess>]
 module CSharpMetadata =

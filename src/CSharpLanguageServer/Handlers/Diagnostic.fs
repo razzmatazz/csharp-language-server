@@ -12,6 +12,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 [<RequireQualifiedAccess>]
 module Diagnostic =

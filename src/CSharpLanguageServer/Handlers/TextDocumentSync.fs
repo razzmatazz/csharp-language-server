@@ -15,6 +15,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 

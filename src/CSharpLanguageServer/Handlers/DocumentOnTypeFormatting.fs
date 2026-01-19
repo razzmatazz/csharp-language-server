@@ -14,6 +14,7 @@ open CSharpLanguageServer.State
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
