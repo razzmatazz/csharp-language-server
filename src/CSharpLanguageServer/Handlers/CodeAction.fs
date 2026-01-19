@@ -22,6 +22,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 type CSharpCodeActionResolutionData =

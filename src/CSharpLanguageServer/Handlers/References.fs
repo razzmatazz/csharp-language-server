@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 

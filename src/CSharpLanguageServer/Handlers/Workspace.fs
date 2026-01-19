@@ -16,6 +16,7 @@ open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 [<RequireQualifiedAccess>]
 module Workspace =
