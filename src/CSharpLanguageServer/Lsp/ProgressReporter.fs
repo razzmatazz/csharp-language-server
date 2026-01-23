@@ -13,13 +13,19 @@ type ProgressReporter(client: ILspClient) =
     member val Token = ProgressToken.C2(Guid.NewGuid().ToString())
 
     member this.Begin(title, ?cancellable, ?message, ?percentage) = async {
-        let! progressCreateResult = client.WindowWorkDoneProgressCreate { Token = this.Token }
+        let! createSucceeded = async {
+            try
+                match! client.WindowWorkDoneProgressCreate { Token = this.Token } with
+                | Ok() -> return true
+                | Error _ -> return false
+            with _ ->
+                // Client does not support window/workDoneProgress/create
+                return false
+        }
 
-        match progressCreateResult with
-        | Error _ -> canReport <- false
-        | Ok() ->
-            canReport <- true
+        canReport <- createSucceeded
 
+        if canReport then
             let param =
                 WorkDoneProgressBegin.Create(
                     title = title,
