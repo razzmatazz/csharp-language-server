@@ -421,8 +421,8 @@ let workspaceDocumentSymbol
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
 
-let workspaceWithSolutionsLoaded (settings: ServerSettings) (lspClient: ILspClient) workspace = async {
-    let progressReporter = ProgressReporter lspClient
+let workspaceWithSolutionsLoaded (settings: ServerSettings) (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) workspace = async {
+    let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
     let beginMessage =
         sprintf "Loading workspace (%d workspace folders)" workspace.Folders.Length

@@ -65,7 +65,7 @@ module Diagnostics =
 
         let lspClient = new LspClientStub()
         let cwd = string (Directory.GetCurrentDirectory())
-        let progressReporter = ProgressReporter lspClient
+        let progressReporter = ProgressReporter(lspClient, emptyClientCapabilities)
         let! _sln = solutionLoadSolutionWithPathOrOnDir lspClient progressReporter None cwd
 
         logger.LogDebug("diagnose: done")

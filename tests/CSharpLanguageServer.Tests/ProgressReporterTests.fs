@@ -6,20 +6,23 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Tests.Tooling
 
-/// A test stub that throws an exception when WindowWorkDoneProgressCreate is called,
-/// simulating a client that doesn't support this method.
-type ThrowingLspClientStub() =
+/// Client stub that tracks whether WindowWorkDoneProgressCreate was called
+type TrackingLspClientStub() =
+    let mutable createCalled = false
+
+    member _.WasCreateCalled = createCalled
+
     interface System.IDisposable with
         member _.Dispose() = ()
 
     interface ILspClient with
         member _.WindowWorkDoneProgressCreate(_: WorkDoneProgressCreateParams) =
-            async { return raise (Exception("Method not supported")) }
+            createCalled <- true
+            async { return LspResult.Ok() }
 
         member _.Progress(_: ProgressParams) = async { return () }
-
-        // Other required interface members return default values
         member _.WindowShowMessage(_) = async { return () }
         member _.WindowLogMessage(_) = async { return () }
         member _.TelemetryEvent(_) = async { return () }
@@ -41,25 +44,57 @@ type ThrowingLspClientStub() =
             return LspResult.Ok { Applied = false; FailureReason = None; FailedChange = None }
         }
 
+let capabilitiesWithWorkDoneProgress (supported: bool): ClientCapabilities =
+    let windowCaps: WindowClientCapabilities =
+        { WorkDoneProgress = Some supported
+          ShowMessage = None
+          ShowDocument = None }
+
+    { Workspace = None
+      TextDocument = None
+      NotebookDocument = None
+      Window = Some windowCaps
+      General = None
+      Experimental = None }
+
 [<Test>]
-let ``ProgressReporter Begin does not throw when client throws exception`` () =
-    let client = new ThrowingLspClientStub()
-    let reporter = new ProgressReporter(client)
+let ``ProgressReporter does not call WindowWorkDoneProgressCreate when capability not supported`` () =
+    let client = new TrackingLspClientStub()
+    let reporter = new ProgressReporter(client, emptyClientCapabilities)
 
-    // Should not throw - exception should be caught internally
-    Assert.DoesNotThrowAsync(fun () ->
-        reporter.Begin("Test Title") |> Async.StartAsTask :> System.Threading.Tasks.Task
-    )
-
-[<Test>]
-let ``ProgressReporter Report and End are no-ops after failed Begin`` () =
-    let client = new ThrowingLspClientStub()
-    let reporter = new ProgressReporter(client)
-
-    // Begin with a throwing client
     reporter.Begin("Test Title") |> Async.RunSynchronously
 
-    // Report and End should not throw (they should be no-ops since canReport is false)
+    Assert.That(client.WasCreateCalled, Is.False, "WindowWorkDoneProgressCreate should not be called when capability is not supported")
+
+[<Test>]
+let ``ProgressReporter does not call WindowWorkDoneProgressCreate when WorkDoneProgress is false`` () =
+    let client = new TrackingLspClientStub()
+    let caps = capabilitiesWithWorkDoneProgress false
+    let reporter = new ProgressReporter(client, caps)
+
+    reporter.Begin("Test Title") |> Async.RunSynchronously
+
+    Assert.That(client.WasCreateCalled, Is.False, "WindowWorkDoneProgressCreate should not be called when WorkDoneProgress is false")
+
+[<Test>]
+let ``ProgressReporter calls WindowWorkDoneProgressCreate when capability is supported`` () =
+    let client = new TrackingLspClientStub()
+    let caps = capabilitiesWithWorkDoneProgress true
+    let reporter = new ProgressReporter(client, caps)
+
+    reporter.Begin("Test Title") |> Async.RunSynchronously
+
+    Assert.That(client.WasCreateCalled, Is.True, "WindowWorkDoneProgressCreate should be called when WorkDoneProgress is true")
+
+[<Test>]
+let ``ProgressReporter Report and End are no-ops when capability not supported`` () =
+    let client = new TrackingLspClientStub()
+    let reporter = new ProgressReporter(client, emptyClientCapabilities)
+
+    // Begin with unsupported capability
+    reporter.Begin("Test Title") |> Async.RunSynchronously
+
+    // Report and End should not throw
     Assert.DoesNotThrowAsync(fun () ->
         reporter.Report(message = "Progress") |> Async.StartAsTask :> System.Threading.Tasks.Task
     )

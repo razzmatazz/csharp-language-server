@@ -5,39 +5,40 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
-type ProgressReporter(client: ILspClient) =
+type ProgressReporter(client: ILspClient, clientCapabilities: ClientCapabilities) =
     let mutable canReport = false
-
     let mutable endSent = false
+
+    let workDoneProgressSupported =
+        clientCapabilities.Window
+        |> Option.bind _.WorkDoneProgress
+        |> Option.defaultValue false
 
     member val Token = ProgressToken.C2(Guid.NewGuid().ToString())
 
     member this.Begin(title, ?cancellable, ?message, ?percentage) = async {
-        let! createSucceeded = async {
-            try
-                match! client.WindowWorkDoneProgressCreate { Token = this.Token } with
-                | Ok() -> return true
-                | Error _ -> return false
-            with _ ->
-                // Client does not support window/workDoneProgress/create
-                return false
-        }
+        if not workDoneProgressSupported then
+            canReport <- false
+        else
+            let! progressCreateResult = client.WindowWorkDoneProgressCreate { Token = this.Token }
 
-        canReport <- createSucceeded
+            match progressCreateResult with
+            | Error _ -> canReport <- false
+            | Ok() ->
+                canReport <- true
 
-        if canReport then
-            let param =
-                WorkDoneProgressBegin.Create(
-                    title = title,
-                    ?cancellable = cancellable,
-                    ?message = message,
-                    ?percentage = percentage
-                )
+                let param =
+                    WorkDoneProgressBegin.Create(
+                        title = title,
+                        ?cancellable = cancellable,
+                        ?message = message,
+                        ?percentage = percentage
+                    )
 
-            do!
-                client.Progress
-                    { Token = this.Token
-                      Value = serialize param }
+                do!
+                    client.Progress
+                        { Token = this.Token
+                          Value = serialize param }
     }
 
     member this.Report(?cancellable, ?message, ?percentage) = async {

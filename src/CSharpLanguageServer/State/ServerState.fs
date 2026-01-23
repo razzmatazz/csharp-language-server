@@ -583,7 +583,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
-            let! updatedWorkspace = workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.Workspace
+            let! updatedWorkspace = workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.ClientCapabilities state.Workspace
 
             return
                 { state with
