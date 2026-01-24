@@ -38,9 +38,9 @@ type RequestMetrics =
 type RequestDetails =
     { Name: string
       Mode: ServerRequestMode
-      Priority: int  // 0 is the highest priority, 1 is lower prio, etc.
-    // priority is used to order pending R/O requests and is ignored wrt R/W requests
-    }
+      Priority: int // 0 is the highest priority, 1 is lower prio, etc.
+      // priority is used to order pending R/O requests and is ignored wrt R/W requests
+      Uri: option<string> }
 
 type QueuedRequest =
     { Details: RequestDetails

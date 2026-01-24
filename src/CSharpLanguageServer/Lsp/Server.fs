@@ -52,7 +52,13 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                 )
             )
 
-    let withContext requestName requestMode (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>) param =
+    let withContext
+        requestName
+        requestMode
+        (requestUri: option<string>)
+        (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>)
+        param
+        =
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
@@ -61,7 +67,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         let requestDetails =
             { Name = requestName
               Mode = requestMode
-              Priority = 0 }
+              Priority = 0
+              Uri = requestUri }
 
         let requestId, semaphore =
             stateActor.PostAndReply(fun rc -> StartRequest(requestDetails, rc))
@@ -94,10 +101,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
 
     let withReadOnlyContext requestName handlerFn =
-        withContext requestName ReadOnly handlerFn
+        withContext requestName ReadOnly None handlerFn
 
-    let withReadWriteContext requestName handlerFn =
-        withContext requestName ReadWrite handlerFn
+    let withReadWriteContext requestName requestUri handlerFn =
+        withContext requestName ReadWrite requestUri handlerFn
 
     let ignoreResult handlerFn = async {
         let! _ = handlerFn
@@ -192,17 +199,19 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
             p
             |> withReadWriteContext
                 "initialize"
+                None
                 (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
 
         override __.Initialized _ =
             ()
             |> withReadWriteContext
                 "initialized"
+                None
                 (Initialization.handleInitialized lspClient stateActor getDynamicRegistrations)
             |> ignoreResult
 
         override __.Shutdown() =
-            () |> withReadWriteContext "shutdown" Initialization.handleShutdown
+            () |> withReadWriteContext "shutdown" None Initialization.handleShutdown
 
         override __.Exit() = ignoreNotification
 
@@ -216,26 +225,29 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
         override __.TextDocumentDidChange p =
             p
-            |> withReadWriteContext "textDocument/didChange" TextDocumentSync.didChange
+            |> withReadWriteContext "textDocument/didChange" (Some p.TextDocument.Uri) TextDocumentSync.didChange
             |> ignoreResult
 
         override __.TextDocumentDidClose p =
             p
-            |> withReadWriteContext "textDocument/didClose" TextDocumentSync.didClose
+            |> withReadWriteContext "textDocument/didClose" (Some p.TextDocument.Uri) TextDocumentSync.didClose
             |> ignoreResult
 
         override __.TextDocumentWillSave p =
             p
-            |> withReadWriteContext "textDocument/willSave" TextDocumentSync.willSave
+            |> withReadWriteContext "textDocument/willSave" (Some p.TextDocument.Uri) TextDocumentSync.willSave
             |> ignoreResult
 
         override __.TextDocumentWillSaveWaitUntil p =
             p
-            |> withReadWriteContext "textDocument/willSaveWaitUntil" TextDocumentSync.willSaveWaitUntil
+            |> withReadWriteContext
+                "textDocument/willSaveWaitUntil"
+                (Some p.TextDocument.Uri)
+                TextDocumentSync.willSaveWaitUntil
 
         override __.TextDocumentDidSave p =
             p
-            |> withReadWriteContext "textDocument/didSave" TextDocumentSync.didSave
+            |> withReadWriteContext "textDocument/didSave" (Some p.TextDocument.Uri) TextDocumentSync.didSave
             |> ignoreResult
 
         override __.TextDocumentCompletion p =
@@ -309,17 +321,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
         override __.WorkspaceDidChangeWatchedFiles p =
             p
-            |> withReadWriteContext "workspace/didChangeWatchedFiles" Workspace.didChangeWatchedFiles
+            |> withReadWriteContext "workspace/didChangeWatchedFiles" None Workspace.didChangeWatchedFiles
             |> ignoreResult
 
         override __.WorkspaceDidChangeWorkspaceFolders p =
             p
-            |> withReadWriteContext "workspace/didChangeWorkspaceFolders" Workspace.didChangeWorkspaceFolders
+            |> withReadWriteContext "workspace/didChangeWorkspaceFolders" None Workspace.didChangeWorkspaceFolders
             |> ignoreResult
 
         override __.WorkspaceDidChangeConfiguration p =
             p
-            |> withReadWriteContext "workspace/didChangeConfiguration" Workspace.didChangeConfiguration
+            |> withReadWriteContext "workspace/didChangeConfiguration" None Workspace.didChangeConfiguration
             |> ignoreResult
 
         override __.WorkspaceWillCreateFiles _ =
