@@ -36,24 +36,28 @@ type RequestMetrics =
           ImpactedRequestsCount = 0
           TotalImpactedWaitingTime = TimeSpan.Zero }
 
-type ServerRequest =
-    { Id: int
-      Name: string
+type RequestDetails =
+    { Name: string
       Mode: ServerRequestMode
+      Priority: int  // 0 is the highest priority, 1 is lower prio, etc.
+    // priority is used to order pending R/O requests and is ignored wrt R/W requests
+    }
+
+type QueuedRequest =
+    { Details: RequestDetails
+      Id: int
       Semaphore: SemaphoreSlim
-      Priority: int // 0 is the highest priority, 1 is lower prio, etc.
-      // priority is used to order pending R/O requests and is ignored wrt R/W requests
       StartedProcessing: option<DateTime>
       Enqueued: DateTime }
 
-and ServerState =
+type ServerState =
     { Settings: ServerSettings
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       Workspace: LspWorkspace
       LastRequestId: int
-      PendingRequests: ServerRequest list
-      RunningRequests: Map<int, ServerRequest>
+      PendingRequests: QueuedRequest list
+      RunningRequests: Map<int, QueuedRequest>
       WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
@@ -77,21 +81,21 @@ and ServerState =
 let pullFirstRequestMaybe requestQueue =
     match requestQueue with
     | [] -> (None, [])
-    | (firstRequest :: queueRemainder) -> (Some firstRequest, queueRemainder)
+    | firstRequest :: queueRemainder -> (Some firstRequest, queueRemainder)
 
 let pullNextRequestMaybe requestQueue =
     match requestQueue with
     | [] -> (None, requestQueue)
 
     | nonEmptyRequestQueue ->
-        let requestIsReadOnly r = (r.Mode = ReadOnly)
+        let requestIsReadOnly (r: QueuedRequest) = (r.Details.Mode = ReadOnly)
 
         // here we will try to take non-interrupted r/o request sequence at the front,
         // order it by priority and run the most prioritized one first
         let nextRoRequestByPriorityMaybe =
             nonEmptyRequestQueue
             |> Seq.takeWhile requestIsReadOnly
-            |> Seq.sortBy (fun r -> r.Priority)
+            |> Seq.sortBy _.Details.Priority
             |> Seq.tryHead
 
         // otherwise, if no r/o request by priority was found then we should just take the first request
@@ -118,7 +122,7 @@ type ServerStateEvent =
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | SettingsChange of ServerSettings
-    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of RequestDetails * AsyncReplyChannel<int * SemaphoreSlim>
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
@@ -142,7 +146,7 @@ let processFinishRequest postSelf state request =
                 |> Some
             | Some s ->
                 let (impactedCount, totalImpactedWait) =
-                    if request.Mode = ReadWrite then
+                    if request.Details.Mode = ReadWrite then
                         let blockingStartTime =
                             request.StartedProcessing |> Option.defaultValue request.Enqueued
 
@@ -166,7 +170,7 @@ let processFinishRequest postSelf state request =
                         TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
 
         match state.Settings.DebugMode with
-        | true -> state.RequestStats |> Map.change request.Name updateRequestStats
+        | true -> state.RequestStats |> Map.change request.Details.Name updateRequestStats
         | false -> state.RequestStats
 
     let newRunningRequests = state.RunningRequests |> Map.remove request.Id
@@ -245,16 +249,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         replyChannel.Reply(state)
         return state
 
-    | StartRequest(name, requestMode, requestPriority, replyChannel) ->
+    | StartRequest(requestDetails, replyChannel) ->
         postSelf ProcessRequestQueue
 
         let newRequest =
-            { Id = state.LastRequestId + 1
-              Name = name
-              Mode = requestMode
+            { Details = requestDetails
+              Id = state.LastRequestId + 1
               Semaphore = new SemaphoreSlim(0, 1)
               StartedProcessing = None
-              Priority = requestPriority
               Enqueued = DateTime.Now }
 
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
@@ -282,7 +284,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         let runningRWRequestMaybe =
             state.RunningRequests
             |> Seq.map (fun kv -> kv.Value)
-            |> Seq.tryFind (fun r -> r.Mode = ReadWrite)
+            |> Seq.tryFind (fun r -> r.Details.Mode = ReadWrite)
 
         // let numRunningRequests = state.RunningRequests |> Map.count
 
