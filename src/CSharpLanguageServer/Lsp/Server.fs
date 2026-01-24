@@ -58,10 +58,13 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        let startRequest rc =
-            StartRequest(requestName, requestMode, 0, rc)
+        let requestDetails =
+            { Name = requestName
+              Mode = requestMode
+              Priority = 0 }
 
-        let requestId, semaphore = stateActor.PostAndReply startRequest
+        let requestId, semaphore =
+            stateActor.PostAndReply(fun rc -> StartRequest(requestDetails, rc))
 
         let stateAcquisitionAndHandlerInvocation = async {
             do! semaphore.WaitAsync() |> Async.AwaitTask
