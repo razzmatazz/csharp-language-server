@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Update Microsoft.Build.Locator to 1.10.12
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/296
 * Add experimental support for Razor (.cshtml) files. "razor-support" feature needs to be enabled via command line
-  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/273
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/273, https://github.com/razzmatazz/csharp-language-server/pull/304, https://github.com/razzmatazz/csharp-language-server/pull/310
 * Add suggestion to install specific dotnet sdk version
   - By @jhamm in https://github.com/razzmatazz/csharp-language-server/pull/299
   - Reported by @pandasoli in https://github.com/razzmatazz/csharp-language-server/issues/215
