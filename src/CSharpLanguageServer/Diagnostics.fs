@@ -55,6 +55,14 @@ module Diagnostics =
                           FailedChange = None }
             }
 
+    let diagnoseClientCapabilities = {
+         emptyClientCapabilities with
+            Window =
+            Some
+                { WorkDoneProgress = Some true
+                  ShowMessage = None
+                  ShowDocument = None }
+        }
 
     let diagnose (settings: ServerSettings) : Async<int> = async {
         logger.LogDebug("diagnose: settings={settings}", settings)
@@ -65,7 +73,7 @@ module Diagnostics =
 
         let lspClient = new LspClientStub()
         let cwd = string (Directory.GetCurrentDirectory())
-        let progressReporter = ProgressReporter(lspClient, emptyClientCapabilities)
+        let progressReporter = ProgressReporter(lspClient, diagnoseClientCapabilities)
         let! _sln = solutionLoadSolutionWithPathOrOnDir lspClient progressReporter None cwd
 
         logger.LogDebug("diagnose: done")
