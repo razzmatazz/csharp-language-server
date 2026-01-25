@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Check Window.WorkDoneProgress capability before calling WindowWorkDoneProgressCreate; fixes Claude Code
+  - By @HowardvanRooijen in https://github.com/razzmatazz/csharp-language-server/pull/309
 * Update Microsoft.Build.Locator to 1.10.12
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/296
 * Add experimental support for Razor (.cshtml) files. "razor-support" feature needs to be enabled via command line
