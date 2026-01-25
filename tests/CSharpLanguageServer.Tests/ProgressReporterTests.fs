@@ -40,11 +40,16 @@ type TrackingLspClientStub() =
         member _.ClientUnregisterCapability(_) = async { return LspResult.Ok() }
         member _.WindowShowMessageRequest(_) = async { return LspResult.Ok None }
         member _.WorkspaceCodeLensRefresh() = async { return LspResult.Ok() }
+
         member _.WorkspaceApplyEdit(_) = async {
-            return LspResult.Ok { Applied = false; FailureReason = None; FailedChange = None }
+            return
+                LspResult.Ok
+                    { Applied = false
+                      FailureReason = None
+                      FailedChange = None }
         }
 
-let capabilitiesWithWorkDoneProgress (supported: bool): ClientCapabilities =
+let capabilitiesWithWorkDoneProgress (supported: bool) : ClientCapabilities =
     let windowCaps: WindowClientCapabilities =
         { WorkDoneProgress = Some supported
           ShowMessage = None
@@ -64,7 +69,11 @@ let ``ProgressReporter does not call WindowWorkDoneProgressCreate when capabilit
 
     reporter.Begin("Test Title") |> Async.RunSynchronously
 
-    Assert.That(client.WasCreateCalled, Is.False, "WindowWorkDoneProgressCreate should not be called when capability is not supported")
+    Assert.That(
+        client.WasCreateCalled,
+        Is.False,
+        "WindowWorkDoneProgressCreate should not be called when capability is not supported"
+    )
 
 [<Test>]
 let ``ProgressReporter does not call WindowWorkDoneProgressCreate when WorkDoneProgress is false`` () =
@@ -74,7 +83,11 @@ let ``ProgressReporter does not call WindowWorkDoneProgressCreate when WorkDoneP
 
     reporter.Begin("Test Title") |> Async.RunSynchronously
 
-    Assert.That(client.WasCreateCalled, Is.False, "WindowWorkDoneProgressCreate should not be called when WorkDoneProgress is false")
+    Assert.That(
+        client.WasCreateCalled,
+        Is.False,
+        "WindowWorkDoneProgressCreate should not be called when WorkDoneProgress is false"
+    )
 
 [<Test>]
 let ``ProgressReporter calls WindowWorkDoneProgressCreate when capability is supported`` () =
@@ -84,7 +97,11 @@ let ``ProgressReporter calls WindowWorkDoneProgressCreate when capability is sup
 
     reporter.Begin("Test Title") |> Async.RunSynchronously
 
-    Assert.That(client.WasCreateCalled, Is.True, "WindowWorkDoneProgressCreate should be called when WorkDoneProgress is true")
+    Assert.That(
+        client.WasCreateCalled,
+        Is.True,
+        "WindowWorkDoneProgressCreate should be called when WorkDoneProgress is true"
+    )
 
 [<Test>]
 let ``ProgressReporter Report and End are no-ops when capability not supported`` () =
@@ -96,8 +113,7 @@ let ``ProgressReporter Report and End are no-ops when capability not supported``
 
     // Report and End should not throw
     Assert.DoesNotThrowAsync(fun () ->
-        reporter.Report(message = "Progress") |> Async.StartAsTask :> System.Threading.Tasks.Task
-    )
+        reporter.Report(message = "Progress") |> Async.StartAsTask :> System.Threading.Tasks.Task)
+
     Assert.DoesNotThrowAsync(fun () ->
-        reporter.End(message = "Done") |> Async.StartAsTask :> System.Threading.Tasks.Task
-    )
+        reporter.End(message = "Done") |> Async.StartAsTask :> System.Threading.Tasks.Task)

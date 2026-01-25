@@ -55,14 +55,13 @@ module Diagnostics =
                           FailedChange = None }
             }
 
-    let diagnoseClientCapabilities = {
-         emptyClientCapabilities with
+    let diagnoseClientCapabilities =
+        { emptyClientCapabilities with
             Window =
-            Some
-                { WorkDoneProgress = Some true
-                  ShowMessage = None
-                  ShowDocument = None }
-        }
+                Some
+                    { WorkDoneProgress = Some true
+                      ShowMessage = None
+                      ShowDocument = None } }
 
     let diagnose (settings: ServerSettings) : Async<int> = async {
         logger.LogDebug("diagnose: settings={settings}", settings)
