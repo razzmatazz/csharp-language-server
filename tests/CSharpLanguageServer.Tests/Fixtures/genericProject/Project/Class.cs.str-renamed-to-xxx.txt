@@ -2,8 +2,8 @@ class Class
 {
     public void MethodA(string arg)
     {
-        string str = "";
-        Console.WriteLine(str);
+        string xxx = "";
+        Console.WriteLine(xxx);
     }
 
     public void MethodB(string arg)
