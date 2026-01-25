@@ -28,6 +28,7 @@
     <Compile Include="TypeDefinitionTests.fs" />
     <Compile Include="ImplementationTests.fs" />
     <Compile Include="CSharpMetadataTests.fs" />
+    <Compile Include="ProgressReporterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

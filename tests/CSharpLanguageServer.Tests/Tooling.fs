@@ -88,6 +88,11 @@ let defaultClientCapabilities =
                           ResolveSupport = None
                           HonorsChangeAnnotations = None
                           CodeActionLiteralSupport = Some { CodeActionKind = { ValueSet = Array.empty } } } }
+        Window =
+            Some
+                { WorkDoneProgress = Some true
+                  ShowMessage = None
+                  ShowDocument = None }
         Experimental = {| csharp = {| metadataUris = true |} |} |> serialize |> Some }
 
 let defaultClientProfile =
