@@ -41,8 +41,8 @@ let testReferenceWorks () =
     let expectedLocations1: Location array =
         [| { Uri = classFile.Uri
              Range =
-               { Start = { Line = 9u; Character = 8u }
-                 End = { Line = 9u; Character = 15u } } } |]
+               { Start = { Line = 10u; Character = 8u }
+                 End = { Line = 10u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations1, locations1.Value)
 
@@ -68,8 +68,8 @@ let testReferenceWorks () =
 
            { Uri = classFile.Uri
              Range =
-               { Start = { Line = 9u; Character = 8u }
-                 End = { Line = 9u; Character = 15u } } } |]
+               { Start = { Line = 10u; Character = 8u }
+                 End = { Line = 10u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 

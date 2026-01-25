@@ -14,7 +14,7 @@ let ``test textDocument/typeDefinition works`` () =
 
     let typeDefinitionParams0: TypeDefinitionParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 9u; Character = 16u }
+          Position = { Line = 10u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None }
 

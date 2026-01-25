@@ -15,7 +15,7 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
 
     let highlightParams: DocumentHighlightParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 9u; Character = 8u }
+          Position = { Line = 10u; Character = 8u }
           WorkDoneToken = None
           PartialResultToken = None }
 
@@ -29,8 +29,8 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
             Kind = Some DocumentHighlightKind.Read }
 
           { Range =
-              { Start = { Line = 9u; Character = 8u }
-                End = { Line = 9u; Character = 15u } }
+              { Start = { Line = 10u; Character = 8u }
+                End = { Line = 10u; Character = 15u } }
             Kind = Some DocumentHighlightKind.Read } ]
 
     Assert.AreEqual(Some expectedHighlights, highlights |> Option.map List.ofArray)
