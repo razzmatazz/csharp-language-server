@@ -452,63 +452,46 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         PushDiagnosticsDocumentBacklog = newBacklog }
 
                 let wf, docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
+                let wfPathToUri = workspaceFolderPathToUri wf.Value
 
                 match wf, docForUri with
                 | Some wf, None ->
-                    // Only try to process as a .cshtml file if it actually is one
-                    match workspaceFolderUriToPath wf docUri with
-                    | Some cshtmlPath when cshtmlPath.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) ->
-                        match wf.Solution with
+                    let cshtmlPath = workspaceFolderUriToPath wf docUri |> _.Value
+
+                    match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
+                    | Some(_, compilation, cshtmlTree) ->
+                        let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
+
+                        match semanticModelMaybe with
                         | None ->
-                            // Solution not loaded yet, rebuild backlog and try again later
-                            postSelf PushDiagnosticsDocumentBacklogUpdate
-                            postSelf PushDiagnosticsProcessPendingDocuments
-                        | Some solution ->
-                            match! solutionGetRazorDocumentForPath solution cshtmlPath with
-                            | Some(_, compilation, cshtmlTree) ->
-                                let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
+                            Error(Exception "could not GetSemanticModelAsync")
+                            |> PushDiagnosticsDocumentDiagnosticsResolution
+                            |> postSelf
 
-                                match semanticModelMaybe with
-                                | None ->
-                                    Error(Exception "could not GetSemanticModelAsync")
-                                    |> PushDiagnosticsDocumentDiagnosticsResolution
-                                    |> postSelf
+                        | Some semanticModel ->
+                            let diagnostics =
+                                semanticModel.GetDiagnostics()
+                                |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
+                                |> Seq.filter (fun (_, uri) -> uri = docUri)
+                                |> Seq.map fst
+                                |> Array.ofSeq
 
-                                | Some semanticModel ->
-                                    let diagnostics =
-                                        semanticModel.GetDiagnostics()
-                                        |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
-                                        |> Seq.filter (fun (_, uri) -> uri = docUri)
-                                        |> Seq.map fst
-                                        |> Array.ofSeq
+                            Ok(docUri, None, diagnostics)
+                            |> PushDiagnosticsDocumentDiagnosticsResolution
+                            |> postSelf
 
-                                    Ok(docUri, None, diagnostics)
-                                    |> PushDiagnosticsDocumentDiagnosticsResolution
-                                    |> postSelf
-
-                            | None ->
-                                logger.LogDebug(
-                                    "PushDiagnosticsProcessPendingDocuments: could not find razor document for \"{cshtmlPath}\"",
-                                    cshtmlPath
-                                )
-                                // Continue with next document
-                                postSelf PushDiagnosticsProcessPendingDocuments
-
-                    | _ ->
-                        // Not a .cshtml file or couldn't convert URI
-                        // This can happen if solution hasn't loaded yet - rebuild backlog for retry
+                    | None ->
+                        // could not find document for this enqueued uri
                         logger.LogDebug(
-                            "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\", will retry",
+                            "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
                             string docUri
                         )
-                        postSelf PushDiagnosticsDocumentBacklogUpdate
-                        postSelf PushDiagnosticsProcessPendingDocuments
+
+                        ()
 
                     return newState
 
                 | Some wf, Some doc ->
-                    let wfPathToUri = workspaceFolderPathToUri wf
-
                     let resolveDocumentDiagnostics () : Task = task {
                         let! semanticModelMaybe = doc.GetSemanticModelAsync()
 
