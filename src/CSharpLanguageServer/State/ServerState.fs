@@ -13,6 +13,7 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
@@ -35,24 +36,28 @@ type RequestMetrics =
           ImpactedRequestsCount = 0
           TotalImpactedWaitingTime = TimeSpan.Zero }
 
-type ServerRequest =
-    { Id: int
-      Name: string
+type RequestDetails =
+    { Name: string
       Mode: ServerRequestMode
+      Priority: int  // 0 is the highest priority, 1 is lower prio, etc.
+    // priority is used to order pending R/O requests and is ignored wrt R/W requests
+    }
+
+type QueuedRequest =
+    { Details: RequestDetails
+      Id: int
       Semaphore: SemaphoreSlim
-      Priority: int // 0 is the highest priority, 1 is lower prio, etc.
-      // priority is used to order pending R/O requests and is ignored wrt R/W requests
       StartedProcessing: option<DateTime>
       Enqueued: DateTime }
 
-and ServerState =
+type ServerState =
     { Settings: ServerSettings
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       Workspace: LspWorkspace
       LastRequestId: int
-      PendingRequests: ServerRequest list
-      RunningRequests: Map<int, ServerRequest>
+      PendingRequests: QueuedRequest list
+      RunningRequests: Map<int, QueuedRequest>
       WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
@@ -73,24 +78,28 @@ and ServerState =
           RequestStats = Map.empty
           LastStatsDumpTime = DateTime.MinValue }
 
-let pullFirstRequestMaybe requestQueue =
-    match requestQueue with
-    | [] -> (None, [])
-    | (firstRequest :: queueRemainder) -> (Some firstRequest, queueRemainder)
+let tryPullNextRunnableRequest state =
+    let noRWRequestRunning =
+        state.RunningRequests
+        |> Seq.tryFind (fun r -> r.Value.Details.Mode = ReadWrite)
+        |> Option.isNone
 
-let pullNextRequestMaybe requestQueue =
-    match requestQueue with
-    | [] -> (None, requestQueue)
+    let canPullNextRequest = noRWRequestRunning && state.WorkspaceReloadPending.IsNone
 
-    | nonEmptyRequestQueue ->
-        let requestIsReadOnly r = (r.Mode = ReadOnly)
+    match canPullNextRequest, state.PendingRequests with
+    | false, _ -> None, state
+
+    | true, [] -> None, state
+
+    | true, nonEmptyRequestQueue ->
+        let requestIsReadOnly (r: QueuedRequest) = (r.Details.Mode = ReadOnly)
 
         // here we will try to take non-interrupted r/o request sequence at the front,
         // order it by priority and run the most prioritized one first
         let nextRoRequestByPriorityMaybe =
             nonEmptyRequestQueue
             |> Seq.takeWhile requestIsReadOnly
-            |> Seq.sortBy (fun r -> r.Priority)
+            |> Seq.sortBy _.Details.Priority
             |> Seq.tryHead
 
         // otherwise, if no r/o request by priority was found then we should just take the first request
@@ -98,9 +107,21 @@ let pullNextRequestMaybe requestQueue =
             nextRoRequestByPriorityMaybe
             |> Option.defaultValue (nonEmptyRequestQueue |> Seq.head)
 
-        let queueRemainder = nonEmptyRequestQueue |> List.except [ nextRequest ]
+        let newPendingRequests = nonEmptyRequestQueue |> List.except [ nextRequest ]
 
-        (Some nextRequest, queueRemainder)
+        let nextRunnableRequest =
+            { nextRequest with
+                StartedProcessing = Some DateTime.Now }
+
+        let newRunningRequests =
+            state.RunningRequests |> Map.add nextRunnableRequest.Id nextRunnableRequest
+
+        let newState =
+            { state with
+                RunningRequests = newRunningRequests
+                PendingRequests = newPendingRequests }
+
+        Some nextRunnableRequest, newState
 
 type ServerStateEvent =
     | ClientCapabilityChange of ClientCapabilities
@@ -117,12 +138,12 @@ type ServerStateEvent =
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | SettingsChange of ServerSettings
-    | StartRequest of string * ServerRequestMode * int * AsyncReplyChannel<int * SemaphoreSlim>
+    | StartRequest of RequestDetails * AsyncReplyChannel<int * SemaphoreSlim>
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
 
-let processFinishRequest postSelf state request =
+let processFinishRequest postServerEvent state request =
     request.Semaphore.Dispose()
 
     let newRequestStats =
@@ -141,7 +162,7 @@ let processFinishRequest postSelf state request =
                 |> Some
             | Some s ->
                 let (impactedCount, totalImpactedWait) =
-                    if request.Mode = ReadWrite then
+                    if request.Details.Mode = ReadWrite then
                         let blockingStartTime =
                             request.StartedProcessing |> Option.defaultValue request.Enqueued
 
@@ -165,7 +186,7 @@ let processFinishRequest postSelf state request =
                         TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
 
         match state.Settings.DebugMode with
-        | true -> state.RequestStats |> Map.change request.Name updateRequestStats
+        | true -> state.RequestStats |> Map.change request.Details.Name updateRequestStats
         | false -> state.RequestStats
 
     let newRunningRequests = state.RunningRequests |> Map.remove request.Id
@@ -175,7 +196,7 @@ let processFinishRequest postSelf state request =
             RunningRequests = newRunningRequests
             RequestStats = newRequestStats }
 
-    postSelf ProcessRequestQueue
+    postServerEvent ProcessRequestQueue
     newState
 
 let processDumpAndResetRequestStats (logger: ILogger) state =
@@ -227,8 +248,8 @@ let processDumpAndResetRequestStats (logger: ILogger) state =
         RequestStats = Map.empty
         LastStatsDumpTime = DateTime.Now }
 
-let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState> = async {
-    match msg with
+let processServerEvent (logger: ILogger) state postServerEvent ev : Async<ServerState> = async {
+    match ev with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
 
@@ -236,7 +257,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
 
         if solutionChanged then
-            postSelf (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 250)))
+            postServerEvent (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 250)))
 
         return newState
 
@@ -244,16 +265,14 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         replyChannel.Reply(state)
         return state
 
-    | StartRequest(name, requestMode, requestPriority, replyChannel) ->
-        postSelf ProcessRequestQueue
+    | StartRequest(requestDetails, replyChannel) ->
+        postServerEvent ProcessRequestQueue
 
         let newRequest =
-            { Id = state.LastRequestId + 1
-              Name = name
-              Mode = requestMode
+            { Details = requestDetails
+              Id = state.LastRequestId + 1
               Semaphore = new SemaphoreSlim(0, 1)
               StartedProcessing = None
-              Priority = requestPriority
               Enqueued = DateTime.Now }
 
         replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
@@ -267,7 +286,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
         let request = state.RunningRequests |> Map.tryFind requestId
 
         match request with
-        | Some request -> return processFinishRequest postSelf state request
+        | Some request -> return processFinishRequest postServerEvent state request
 
         | None ->
             logger.LogWarning(
@@ -278,41 +297,19 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             return state
 
     | ProcessRequestQueue ->
-        let runningRWRequestMaybe =
-            state.RunningRequests
-            |> Seq.map (fun kv -> kv.Value)
-            |> Seq.tryFind (fun r -> r.Mode = ReadWrite)
+        let nextRunnableRequest, newState = tryPullNextRunnableRequest state
 
-        // let numRunningRequests = state.RunningRequests |> Map.count
+        match nextRunnableRequest with
+        | Some requestToRun ->
+            // try to process next msg from the remainder, if possible, later
+            postServerEvent ProcessRequestQueue
 
-        let canRunNextRequest = (Option.isNone runningRWRequestMaybe) // && (numRunningRequests < 4)
+            // unblock this request to run by sending it current state
+            requestToRun.Semaphore.Release() |> ignore
 
-        return
-            if not canRunNextRequest then
-                state // block until current ReadWrite request is finished
-            else
-                let (nextRequestMaybe, pendingRequestsRemainder) =
-                    pullNextRequestMaybe state.PendingRequests
+        | None -> ()
 
-                match nextRequestMaybe with
-                | None -> state
-                | Some nextRequest ->
-                    // try to process next msg from the remainder, if possible, later
-                    postSelf ProcessRequestQueue
-
-                    let requestToRun =
-                        { nextRequest with
-                            StartedProcessing = Some DateTime.Now }
-
-                    let newState =
-                        { state with
-                            PendingRequests = pendingRequestsRemainder
-                            RunningRequests = state.RunningRequests |> Map.add requestToRun.Id requestToRun }
-
-                    // unblock this request to run by sending it current state
-                    requestToRun.Semaphore.Release() |> ignore
-
-                    newState
+        return newState
 
     | WorkspaceConfigurationChanged workspaceFolders ->
         let newWorkspace = workspaceFrom workspaceFolders
@@ -347,14 +344,20 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
             state.Workspace.Folders
             |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
 
-        return
-            { state with
-                Workspace =
-                    { state.Workspace with
-                        Folders = updatedWorkspaceFolderList } }
+        // request queue may have been blocked due to workspace folder(s)
+        // not having solution loaded yet
+        postServerEvent ProcessRequestQueue
+
+        let newWorkspace =
+            { state.Workspace with
+                Folders = updatedWorkspaceFolderList }
+
+        let newState = { state with Workspace = newWorkspace }
+
+        return newState
 
     | DocumentOpened(uri, ver, timestamp) ->
-        postSelf PushDiagnosticsDocumentBacklogUpdate
+        postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = { Version = ver; Touched = timestamp }
         let newOpenDocs = state.Workspace.OpenDocs |> Map.add uri openDocInfo
@@ -366,7 +369,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         OpenDocs = newOpenDocs } }
 
     | DocumentClosed uri ->
-        postSelf PushDiagnosticsDocumentBacklogUpdate
+        postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let newOpenDocVersions = state.Workspace.OpenDocs |> Map.remove uri
 
@@ -377,7 +380,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         OpenDocs = newOpenDocVersions } }
 
     | DocumentTouched(uri, timestamp) ->
-        postSelf PushDiagnosticsDocumentBacklogUpdate
+        postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let openDocInfo = state.Workspace.OpenDocs |> Map.tryFind uri
 
@@ -401,7 +404,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
             match state.WorkspaceReloadPending with
             | Some currentDeadline ->
-                if (suggestedDeadline < currentDeadline) then
+                if suggestedDeadline < currentDeadline then
                     suggestedDeadline
                 else
                     currentDeadline
@@ -466,7 +469,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         | None ->
                             Error(Exception "could not GetSemanticModelAsync")
                             |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
+                            |> postServerEvent
 
                         | Some semanticModel ->
                             let diagnostics =
@@ -478,7 +481,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                             Ok(docUri, None, diagnostics)
                             |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
+                            |> postServerEvent
 
                     | None ->
                         // could not find document for this enqueued uri
@@ -499,7 +502,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                         | None ->
                             Error(Exception("could not GetSemanticModelAsync"))
                             |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
+                            |> postServerEvent
 
                         | Some semanticModel ->
                             let diagnostics =
@@ -510,7 +513,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
                             Ok(docUri, None, diagnostics)
                             |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postSelf
+                            |> postServerEvent
                     }
 
                     let newTask = Task.Run(resolveDocumentDiagnostics)
@@ -529,7 +532,7 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
 
     | PushDiagnosticsDocumentDiagnosticsResolution result ->
         // enqueue processing for the next doc on the queue (if any)
-        postSelf PushDiagnosticsProcessPendingDocuments
+        postServerEvent PushDiagnosticsProcessPendingDocuments
 
         let newState =
             { state with
@@ -554,12 +557,12 @@ let processServerEvent (logger: ILogger) state postSelf msg : Async<ServerState>
                 return newState
 
     | PeriodicTimerTick ->
-        postSelf PushDiagnosticsProcessPendingDocuments
+        postServerEvent PushDiagnosticsProcessPendingDocuments
 
         let statsDumpDeadline = state.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
 
         if state.Settings.DebugMode && statsDumpDeadline < DateTime.Now then
-            postSelf DumpAndResetRequestStats
+            postServerEvent DumpAndResetRequestStats
 
         let solutionReloadDeadline =
             state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays 1)

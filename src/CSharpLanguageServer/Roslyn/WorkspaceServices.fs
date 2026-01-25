@@ -335,7 +335,8 @@ type WorkspaceServicesInterceptor() =
 
                     | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryCollectorWorkspaceService"
                     | "Microsoft.CodeAnalysis.CodeRefactorings.PullMemberUp.Dialog.IPullMemberUpOptionsService"
-                    | "Microsoft.CodeAnalysis.Packaging.IPackageInstallerService" ->
+                    | "Microsoft.CodeAnalysis.Packaging.IPackageInstallerService"
+                    | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryReporterWorkspaceService" ->
                         // supress "GetService failed" messages for these services
                         null
 

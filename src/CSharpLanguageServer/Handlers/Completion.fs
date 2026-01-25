@@ -17,6 +17,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Types
@@ -406,8 +407,6 @@ module Completion =
                 let items =
                     lspCompletionItemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item)
 
-                Console.Error.WriteLine("handle; items={0}", items)
-
                 return
                     { IsIncomplete = true
                       Items = items
@@ -422,8 +421,6 @@ module Completion =
             item.Data
             |> Option.bind deserialize<string option>
             |> Option.bind completionItemMemoryCacheGet
-
-        Console.Error.WriteLine("resolve; item={0}", item)
 
         match roslynDocAndItemMaybe with
         | Some(doc, roslynCompletionItem) ->

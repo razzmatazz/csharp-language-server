@@ -22,6 +22,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 type CSharpCodeActionResolutionData =
@@ -180,12 +181,13 @@ module CodeAction =
     let lspDocChangesFromSolutionDiff
         (ct: CancellationToken)
         (wf: LspWorkspaceFolder)
-        originalSolution
         (updatedSolution: Solution)
         (tryGetDocVersionByUri: string -> int option)
         (originatingDoc: Document)
         : Async<TextDocumentEdit list> =
         async {
+            let originalSolution = wf.Solution.Value
+
             // make a list of changes
             let solutionProjectChanges =
                 updatedSolution.GetChanges(originalSolution).GetProjectChanges()
@@ -271,7 +273,6 @@ module CodeAction =
 
     let roslynCodeActionToResolvedLspCodeAction
         (wf: LspWorkspaceFolder)
-        originalSolution
         tryGetDocVersionByUri
         (originatingDoc: Document)
         (ct: CancellationToken)
@@ -287,13 +288,7 @@ module CodeAction =
                 let op = ops |> Seq.map (fun o -> o :?> ApplyChangesOperation) |> Seq.head
 
                 let! docTextEdit =
-                    lspDocChangesFromSolutionDiff
-                        ct
-                        wf
-                        originalSolution
-                        op.ChangedSolution
-                        tryGetDocVersionByUri
-                        originatingDoc
+                    lspDocChangesFromSolutionDiff ct wf op.ChangedSolution tryGetDocVersionByUri originatingDoc
 
                 let edit: WorkspaceEdit =
                     { Changes = None
@@ -397,7 +392,6 @@ module CodeAction =
                             let! maybeLspCa =
                                 roslynCodeActionToResolvedLspCodeAction
                                     wf
-                                    doc.Project.Solution
                                     (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
                                     doc
                                     ct
@@ -431,7 +425,6 @@ module CodeAction =
         | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
-
             let textSpan = Range.toTextSpan docText.Lines resolutionData.Value.Range
 
             let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
@@ -442,7 +435,6 @@ module CodeAction =
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
                     wf
-                    doc.Project.Solution
                     (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
                     doc
                     ct

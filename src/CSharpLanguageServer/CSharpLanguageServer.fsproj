@@ -34,6 +34,7 @@
     <Compile Include="DocumentationUtil.fs" />
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Lsp/Client.fs" />
+    <Compile Include="Lsp/WorkspaceFolder.fs" />
     <Compile Include="Lsp/Workspace.fs" />
     <Compile Include="State/ServerState.fs" />
     <Compile Include="State/ServerRequestContext.fs" />

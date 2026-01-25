@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]

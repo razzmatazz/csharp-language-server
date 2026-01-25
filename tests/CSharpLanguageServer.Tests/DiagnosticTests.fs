@@ -119,7 +119,7 @@ let testPullDiagnosticsWork () =
 [<Test>]
 let testPullDiagnosticsWorkForRazorFiles () =
     use client = activateFixture "aspnetProject"
-    use cshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+    use cshtmlFile = client.Open("Project/Views/Test/ViewFileWithErrors.cshtml")
 
     let diagnosticParams: DocumentDiagnosticParams =
         { WorkDoneToken = None
@@ -135,17 +135,17 @@ let testPullDiagnosticsWorkForRazorFiles () =
     | Some(U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
         Assert.AreEqual(None, report.ResultId)
-        Assert.AreEqual(7, report.Items.Length)
+        Assert.AreEqual(1, report.Items.Length)
 
         let reportItems = report.Items |> Array.sortBy _.Range
 
         let diagnostic0 = reportItems[0]
-        Assert.AreEqual(7, diagnostic0.Range.Start.Line)
-        Assert.AreEqual(4, diagnostic0.Range.Start.Character)
-        Assert.AreEqual(Some DiagnosticSeverity.Warning, diagnostic0.Severity)
-        Assert.AreEqual("Unnecessary using directive.", diagnostic0.Message)
+        Assert.AreEqual(1, diagnostic0.Range.Start.Line)
+        Assert.AreEqual(7, diagnostic0.Range.Start.Character)
+        Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
+        Assert.IsTrue(diagnostic0.Message.StartsWith("'IndexViewModel' does not contain a definition for 'XXX' and no"))
 
-    | _ -> failwith "U2.C1 is expected"
+    | _ -> failwith "U2.C1 was expected"
 
 [<Test>]
 let testWorkspaceDiagnosticsWork () =
