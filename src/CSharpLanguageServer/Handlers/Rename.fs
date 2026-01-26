@@ -15,6 +15,7 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.State
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
@@ -113,19 +114,28 @@ module Rename =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
+        let! wf, semModel =
+            p.TextDocument.Uri |> workspaceDocumentSemanticModel context.Workspace
 
-        let wf, docForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
-
-        match docForUri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
+        match wf, semModel with
+        | Some wf, Some semModel ->
             let! ct = Async.CancellationToken
-            let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
+            let positionAndToken =
+                solutionSemanticModelMappedPositionAndToken semModel.SyntaxTree p.Position
+
+            let (position, token) = positionAndToken.Value
+
+            let symbol =
+                token
+                |> Option.bind (fun x -> x.Parent |> Option.ofObj)
+                |> Option.map (fun parentToken -> semModel.GetSymbolInfo(parentToken))
+                |> Option.bind (fun x -> x.Symbol |> Option.ofObj)
+
+            let! docText = semModel.SyntaxTree.GetTextAsync(ct) |> Async.AwaitTask
             let position = Position.toRoslynPosition docText.Lines p.Position
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(semModel, position, wf.Solution.Value.Workspace, ct) |> Async.AwaitTask
 
             let symbolIsFromMetadata =
                 symbolMaybe
@@ -138,7 +148,7 @@ module Rename =
 
             let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
-            let! rootNode = docSyntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            let! rootNode = semModel.SyntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
             let nodeOnPos =
                 rootNode.FindNode(textSpan, findInsideTrivia = false, getInnermostNodeForTie = true)
@@ -170,6 +180,8 @@ module Rename =
                 | _, _ -> None
 
             return rangeWithPlaceholderMaybe |> LspResult.success
+
+        | _, _ -> return None |> LspResult.success
     }
 
     let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {

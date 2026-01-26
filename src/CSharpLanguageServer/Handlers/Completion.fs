@@ -263,24 +263,7 @@ module Completion =
                 //let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
                 //logger.LogInformation("posInCshtml={posInCshtml}", posInCshtml)
 
-                let pos = p.Position
-
-                let root = cshtmlTree.GetRoot()
-
-                let mutable positionAndToken: (int * SyntaxToken) option = None
-
-                for t in root.DescendantTokens() do
-                    let cshtmlSpan = cshtmlTree.GetMappedLineSpan(t.Span)
-
-                    if
-                        cshtmlSpan.StartLinePosition.Line = (int pos.Line)
-                        && cshtmlSpan.EndLinePosition.Line = (int pos.Line)
-                        && cshtmlSpan.StartLinePosition.Character <= (int pos.Character)
-                    then
-                        let tokenStartCharacterOffset =
-                            (int pos.Character - cshtmlSpan.StartLinePosition.Character)
-
-                        positionAndToken <- Some(t.Span.Start + tokenStartCharacterOffset, t)
+                let positionAndToken = solutionSemanticModelMappedPositionAndToken cshtmlTree p.Position
 
                 match positionAndToken with
                 | None -> return None

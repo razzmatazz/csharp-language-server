@@ -460,3 +460,23 @@ let solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos = async {
 
         return symbol |> Option.map (fun sym -> (sym, project, None))
 }
+
+let solutionSemanticModelMappedPositionAndToken (cshtmlTree: SyntaxTree) pos =
+    let root = cshtmlTree.GetRoot()
+
+    let mutable positionAndToken: (int * SyntaxToken) option = None
+
+    for t in root.DescendantTokens() do
+        let cshtmlSpan = cshtmlTree.GetMappedLineSpan t.Span
+
+        if
+            cshtmlSpan.StartLinePosition.Line = (int pos.Line)
+            && cshtmlSpan.EndLinePosition.Line = (int pos.Line)
+            && cshtmlSpan.StartLinePosition.Character <= (int pos.Character)
+        then
+            let tokenStartCharacterOffset =
+                (int pos.Character) - cshtmlSpan.StartLinePosition.Character
+
+            positionAndToken <- Some(t.Span.Start + tokenStartCharacterOffset, t)
+
+    positionAndToken

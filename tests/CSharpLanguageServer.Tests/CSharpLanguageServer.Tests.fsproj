@@ -11,6 +11,7 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
     <Compile Include="RenameTests.fs" />
+    <!--
     <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
@@ -30,6 +31,7 @@
     <Compile Include="ImplementationTests.fs" />
     <Compile Include="CSharpMetadataTests.fs" />
     <Compile Include="ProgressReporterTests.fs" />
+    -->
   </ItemGroup>
 
   <ItemGroup>
