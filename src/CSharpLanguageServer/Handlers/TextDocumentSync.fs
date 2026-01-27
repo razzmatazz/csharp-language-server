@@ -148,11 +148,7 @@ module TextDocumentSync =
 
             | None ->
                 let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-
-                let project =
-                    match cshtmlPath with
-                    | Some cshtmlPath -> solutionGetProjectForPath wf.Solution.Value cshtmlPath
-                    | None -> None
+                let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
 
                 match project with
                 | Some project ->
@@ -207,14 +203,11 @@ module TextDocumentSync =
                 match docFilePathMaybe with
                 | Some docFilePath ->
                     // ok, this document is not in solution, register a new document
-                    let! newDocMaybe = solutionTryAddDocument docFilePath p.TextDocument.Text wf.Solution.Value
+                    let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.TextDocument.Text
 
                     match newDocMaybe with
                     | None -> ()
                     | Some newDoc ->
-                        let updatedWf =
-                            newDoc |> _.Project.Solution |> (fun sln -> { wf with Solution = Some sln })
-
                         context.Emit(WorkspaceFolderChange updatedWf)
                         context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
@@ -310,34 +303,28 @@ module TextDocumentSync =
     let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         if p.TextDocument.Uri.EndsWith ".cshtml" then
             // TODO: Add to project.AdditionalFiles
-            return Ok()
+            ()
         else
             let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
             match wf, doc with
-            | Some _, Some _ -> return Ok()
+            | None, _ -> ()
+            | Some wf, Some existingDoc -> ()
 
             | Some wf, None ->
                 let docFilePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
-                // we need to add this file to solution if not already
-                let! newDocMaybe =
-                    match docFilePath with
-                    | Some docFilePath -> solutionTryAddDocument docFilePath p.Text.Value wf.Solution.Value
-                    | None -> None |> async.Return
-
-                match newDocMaybe with
-                | Some newDoc ->
-                    let updatedWf =
-                        { wf with
-                            Solution = Some newDoc.Project.Solution }
-
-                    context.Emit(WorkspaceFolderChange updatedWf)
-                    context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
-
+                match docFilePath with
                 | None -> ()
+                | Some docFilePath ->
+                    // we need to add this file to solution if not already
+                    let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.Text.Value
 
-                return Ok()
+                    match newDocMaybe with
+                    | None -> ()
+                    | Some newDoc ->
+                        context.Emit(WorkspaceFolderChange updatedWf)
+                        context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
 
-            | _, _ -> return Ok()
+        return Ok()
     }

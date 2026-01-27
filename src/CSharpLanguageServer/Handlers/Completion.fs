@@ -297,7 +297,7 @@ module Completion =
                         else
                             sourceText
 
-                    let! doc = solutionTryAddDocument (cshtmlPath + ".cs") (newSourceText.ToString()) wf.Solution.Value
+                    let! _, doc = workspaceFolderWithDocumentAdded wf (cshtmlPath + ".cs") (newSourceText.ToString())
 
                     match doc with
                     | None -> return None

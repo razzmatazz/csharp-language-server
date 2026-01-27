@@ -170,39 +170,6 @@ let resolveDefaultWorkspaceProps (targetFramework: string option) : Map<string, 
 
     Map.empty |> applyTargetFrameworkProp
 
-let solutionGetProjectForPath (solution: Solution) (filePath: string) : Project option =
-    let docDir = Path.GetDirectoryName filePath
-
-    let fileOnProjectDir (p: Project) =
-        let projectDir = Path.GetDirectoryName p.FilePath
-        let projectDirWithDirSepChar = projectDir + string Path.DirectorySeparatorChar
-
-        docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
-
-    solution.Projects |> Seq.filter fileOnProjectDir |> Seq.tryHead
-
-let solutionTryAddDocument (docFilePath: string) (text: string) (solution: Solution) : Async<Document option> = async {
-    let projectOnPath = solutionGetProjectForPath solution docFilePath
-
-    let! newDocumentMaybe =
-        match projectOnPath with
-        | Some proj ->
-            let projectBaseDir = Path.GetDirectoryName proj.FilePath
-            let docName = docFilePath.Substring(projectBaseDir.Length + 1)
-
-            let newDoc =
-                proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
-
-            Some newDoc |> async.Return
-
-        | None -> async {
-            logger.LogTrace("No parent project could be resolved to add file \"{file}\" to workspace", docFilePath)
-            return None
-          }
-
-    return newDocumentMaybe
-}
-
 let selectPreferredSolution (slnFiles: string list) : option<string> =
     let getProjectCount (slnPath: string) =
         try
