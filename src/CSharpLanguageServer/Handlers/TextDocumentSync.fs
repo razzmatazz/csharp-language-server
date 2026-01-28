@@ -111,143 +111,127 @@ module TextDocumentSync =
 
     let willSaveWaitUntilRegistration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let didOpenCshtmlFile (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
-        let wf = wf.Value // TODO: handle this
+    let didOpenCshtmlFile wf (p: DidOpenTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
+        let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+        let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
 
-        let u = p.TextDocument.Uri |> string
-        let uri = Uri(u.Replace("%3A", ":", true, null))
+        let textDocument =
+            match project with
+            | None -> None
+            | Some project ->
+                let existingAdditionalDoc =
+                    project
+                    |> _.AdditionalDocuments
+                    |> Seq.filter (fun d -> Some d.FilePath = cshtmlPath)
+                    |> List.ofSeq
+                    |> List.singleOrNone
 
-        let matchingAdditionalDoc =
-            wf.Solution.Value
-            |> _.Projects
-            |> Seq.collect _.AdditionalDocuments
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-            |> List.ofSeq
+                let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
 
-        let doc =
-            if matchingAdditionalDoc.Length = 1 then
-                matchingAdditionalDoc |> Seq.head |> Some
-            else
-                None
+                match existingAdditionalDoc with
+                | Some doc ->
+                    project
+                    |> _.RemoveAdditionalDocument(doc.Id)
+                    |> _.AddAdditionalDocument(doc.Name, newSourceText, doc.Folders, doc.FilePath)
+                    |> Some
 
-        let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
+                | None ->
+                    let cshtmlPath = cshtmlPath.Value
+                    let projectBaseDir = Path.GetDirectoryName project.FilePath
+                    let relativePath = Path.GetRelativePath(projectBaseDir, cshtmlPath)
 
-        match doc with
-        | Some doc ->
+                    let folders = relativePath.Split Path.DirectorySeparatorChar
+                    let folders = folders |> Seq.take (folders.Length - 1)
+
+                    project
+                    |> _.AddAdditionalDocument(Path.GetFileName cshtmlPath, newSourceText, folders, cshtmlPath)
+                    |> Some
+
+        match textDocument with
+        | None -> return None
+        | Some textDocument ->
             let updatedWf =
-                doc.Project
-                |> _.RemoveAdditionalDocument(doc.Id)
-                |> _.AddAdditionalDocument(doc.Name, newSourceText, doc.Folders, doc.FilePath)
+                textDocument
                 |> _.Project.Solution
                 |> (fun sln -> { wf with Solution = Some sln })
 
-            context.Emit(WorkspaceFolderChange updatedWf)
-            context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-        | None ->
-            let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-            let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
-
-            match project with
-            | Some project ->
-                let cshtmlPath = cshtmlPath.Value
-                let projectBaseDir = Path.GetDirectoryName project.FilePath
-                let relativePath = Path.GetRelativePath(projectBaseDir, cshtmlPath)
-
-                let folders = relativePath.Split Path.DirectorySeparatorChar
-
-                let folders = folders |> Seq.take (folders.Length - 1)
-
-                let updatedWf =
-                    project
-                    |> _.AddAdditionalDocument(Path.GetFileName cshtmlPath, newSourceText, folders, cshtmlPath)
-                    |> _.Project.Solution
-                    |> (fun sln -> { wf with Solution = Some sln })
-
-                context.Emit(WorkspaceFolderChange updatedWf)
-                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-            | None -> ()
-
-        return Ok()
+            return Some updatedWf
     }
 
-    let didOpenCsharpFile (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf, docInfo =
-            workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
+    let didOpenCsharpFile
+        wf
+        (context: ServerRequestContext)
+        (p: DidOpenTextDocumentParams)
+        : Async<option<LspWorkspaceFolder>> =
+        async {
+            let _, docInfo =
+                workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
 
-        match wf, docInfo with
-        | Some wf, Some(doc, docType) ->
-            match docType with
-            | UserDocument ->
-                // we want to load the document in case it has been changed since we have the solution loaded
-                // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
-                // went out of sync with editor
+            match docInfo with
+            | Some(doc, docType) ->
+                match docType with
+                | UserDocument ->
+                    // we want to load the document in case it has been changed since we have the solution loaded
+                    // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
+                    // went out of sync with editor
 
-                let updatedWf =
-                    p.TextDocument.Text
-                    |> SourceText.From
-                    |> doc.WithText
-                    |> _.Project.Solution
-                    |> (fun sln -> { wf with Solution = Some sln })
+                    let updatedWf =
+                        p.TextDocument.Text
+                        |> SourceText.From
+                        |> doc.WithText
+                        |> _.Project.Solution
+                        |> (fun sln -> { wf with Solution = Some sln })
 
-                context.Emit(WorkspaceFolderChange updatedWf)
-                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-                return Ok()
+                    return Some updatedWf
 
-            | _ -> return Ok()
+                | _ -> return None
 
-        | Some wf, None ->
-            let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+            | None ->
+                let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
-            match docFilePathMaybe with
-            | Some docFilePath ->
-                // ok, this document is not in solution, register a new document
-                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.TextDocument.Text
+                match docFilePathMaybe with
+                | None -> return None
+                | Some docFilePath ->
+                    // ok, this document is not in solution, register a new document
+                    let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.TextDocument.Text
 
-                match newDocMaybe with
-                | None -> ()
-                | Some newDoc ->
-                    context.Emit(WorkspaceFolderChange updatedWf)
-                    context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-                return Ok()
-
-            | None -> return Ok()
-
-        | _, _ -> return Ok()
-    }
+                    return newDocMaybe |> Option.map (fun _ -> updatedWf)
+        }
 
     let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
-        if p.TextDocument.Uri.EndsWith ".cshtml" then
-            return! didOpenCshtmlFile context p
-        else
-            return! didOpenCsharpFile context p
+        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+
+        match wf with
+        | None -> return Ok()
+        | Some wf ->
+            let! updatedWf =
+                if p.TextDocument.Uri.EndsWith ".cshtml" then
+                    didOpenCshtmlFile wf p
+                else
+                    didOpenCsharpFile wf context p
+
+            match updatedWf with
+            | None -> ()
+            | Some updatedWf ->
+                context.Emit(WorkspaceFolderChange updatedWf)
+                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+
+            return Ok()
     }
 
-    let didChangeCshtmlFile (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
-        let wf = wf.Value // TODO: handle this
+    let didChangeCshtmlFile wf (p: DidChangeTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
+        let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+        let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
 
-        let u = p.TextDocument.Uri |> string
-        let uri = Uri(u.Replace("%3A", ":", true, null))
-
-        let matchingAdditionalDoc =
-            wf.Solution.Value
-            |> _.Projects
-            |> Seq.collect _.AdditionalDocuments
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
+        let existingAdditionalDoc =
+            project
+            |> (fun p -> if p.IsSome then p.Value.AdditionalDocuments else [])
+            |> Seq.filter (fun d -> Some d.FilePath = cshtmlPath)
             |> List.ofSeq
+            |> List.singleOrNone
 
-        let doc =
-            if matchingAdditionalDoc.Length = 1 then
-                matchingAdditionalDoc |> Seq.head |> Some
-            else
-                None
-
-        match doc with
-        | None -> ()
+        match existingAdditionalDoc with
+        | None -> return None
         | Some doc ->
             let! ct = Async.CancellationToken
             let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -263,42 +247,53 @@ module TextDocumentSync =
                 |> Some
 
             let updatedWf = { wf with Solution = updatedSolution }
-            context.Emit(WorkspaceFolderChange updatedWf)
-            context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-        return Ok()
+            return Some updatedWf
     }
 
-    let didChangeCsharpFile (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf, doc = workspaceDocument context.Workspace UserDocument p.TextDocument.Uri
+    let didChangeCsharpFile
+        wf
+        (context: ServerRequestContext)
+        (p: DidChangeTextDocumentParams)
+        : Async<option<LspWorkspaceFolder>> =
+        async {
+            let _, doc = workspaceDocument context.Workspace UserDocument p.TextDocument.Uri
 
-        match wf, doc with
-        | Some wf, Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            match doc with
+            | None -> return None
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let updatedSolution =
-                sourceText
-                |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
-                |> doc.WithText
-                |> _.Project.Solution
-                |> Some
+                let updatedSolution =
+                    sourceText
+                    |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
+                    |> doc.WithText
+                    |> _.Project.Solution
+                    |> Some
 
-            let updatedWf = { wf with Solution = updatedSolution }
-
-            context.Emit(WorkspaceFolderChange updatedWf)
-            context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
-
-        | _, _ -> ()
-
-        return Ok()
-    }
+                let updatedWf = { wf with Solution = updatedSolution }
+                return Some updatedWf
+        }
 
     let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        if p.TextDocument.Uri.EndsWith ".cshtml" then
-            return! didChangeCshtmlFile context p
-        else
-            return! didChangeCsharpFile context p
+        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+
+        match wf with
+        | None -> return Ok()
+        | Some wf ->
+            let! updatedWf =
+                if p.TextDocument.Uri.EndsWith ".cshtml" then
+                    didChangeCshtmlFile wf p
+                else
+                    didChangeCsharpFile wf context p
+
+            match updatedWf with
+            | None -> ()
+            | Some updatedWf ->
+                context.Emit(WorkspaceFolderChange updatedWf)
+                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+
+            return Ok()
     }
 
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
@@ -315,12 +310,45 @@ module TextDocumentSync =
         return Ok()
     }
 
+    let didCloseCshtmlFile
+        wf
+        (context: ServerRequestContext)
+        (p: DidCloseTextDocumentParams)
+        : Async<option<LspWorkspaceFolder>> =
+        async {
+            // TODO: reload this particular file from disk into Solution as there
+            //       could've been changes made to the in-memory file using didChange
+            //       and not persisted to disk before didClose (i.e. no didSave)
+
+            return None
+        }
+
+    let didCloseCsharpFile
+        wf
+        (context: ServerRequestContext)
+        (p: DidCloseTextDocumentParams)
+        : Async<option<LspWorkspaceFolder>> =
+        async {
+            // TODO: reload this particular file from disk into Solution as there
+            //       could've been changes made to the in-memory file using didChange
+            //       and not persisted to disk before didClose (i.e. no didSave)
+
+            return None
+        }
+
     let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
-        context.Emit(DocumentClosed p.TextDocument.Uri)
+        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
-        // TODO: reload this particular file from disk into Solution as there
-        //       could've been changes made to the in-memory file using didChange
-        //       and not persisted to disk before didClose (i.e. no didSave)
+        match wf with
+        | None -> return Ok()
+        | Some wf ->
+            let! updatedWf =
+                if p.TextDocument.Uri.EndsWith ".cshtml" then
+                    didCloseCshtmlFile wf context p
+                else
+                    didCloseCsharpFile wf context p
 
-        return Ok()
+            context.Emit(DocumentClosed p.TextDocument.Uri)
+
+            return Ok()
     }
