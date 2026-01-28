@@ -301,11 +301,6 @@ module TextDocumentSync =
             return! didChangeCsharpFile context p
     }
 
-    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
-        context.Emit(DocumentClosed p.TextDocument.Uri)
-        return Ok()
-    }
-
     let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         return Ok()
     }
@@ -316,39 +311,16 @@ module TextDocumentSync =
         : AsyncLspResult<TextEdit[] option> =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
-    let didSaveCshtmlFile (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
-        // TODO: Add to project.AdditionalFiles
-        return Ok()
-    }
-
-    let didSaveCsharpFile (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
-
-        match wf, doc with
-        | None, _ -> ()
-        | Some wf, Some existingDoc -> ()
-
-        | Some wf, None ->
-            let docFilePath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-
-            match docFilePath with
-            | None -> ()
-            | Some docFilePath ->
-                // we need to add this file to solution if not already
-                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.Text.Value
-
-                match newDocMaybe with
-                | None -> ()
-                | Some newDoc ->
-                    context.Emit(WorkspaceFolderChange updatedWf)
-                    context.Emit(DocumentTouched(p.TextDocument.Uri, DateTime.Now))
-
-        return Ok()
-    }
-
     let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
-        if p.TextDocument.Uri.EndsWith ".cshtml" then
-            return! didSaveCshtmlFile context p
-        else
-            return! didSaveCsharpFile context p
+        return Ok()
+    }
+
+    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
+        context.Emit(DocumentClosed p.TextDocument.Uri)
+
+        // TODO: reload this particular file from disk into Solution as there
+        //       could've been changes made to the in-memory file using didChange
+        //       and not persisted to disk before didClose (i.e. no didSave)
+
+        return Ok()
     }
