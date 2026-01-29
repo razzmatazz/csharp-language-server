@@ -174,7 +174,6 @@ module TextDocumentSync =
                     // we want to load the document in case it has been changed since we have the solution loaded
                     // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
                     // went out of sync with editor
-
                     let updatedWf =
                         p.TextDocument.Text
                         |> SourceText.From
@@ -329,11 +328,33 @@ module TextDocumentSync =
         (p: DidCloseTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
-            // TODO: reload this particular file from disk into Solution as there
-            //       could've been changes made to the in-memory file using didChange
-            //       and not persisted to disk before didClose (i.e. no didSave)
+            // reload this particular file from disk into Solution as there
+            // could've been changes made to the in-memory file using didChange
+            // and not persisted to disk before didClose (i.e. no didSave)
 
-            return None
+            let _, docInfo =
+                workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
+
+            let filename = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+
+            match docInfo, filename with
+            | Some(doc, docType), Some filename ->
+                match docType with
+                | UserDocument ->
+                    let textOnDisk = filename |> File.ReadAllBytes |> Encoding.UTF8.GetString
+
+                    let updatedWf =
+                        textOnDisk
+                        |> SourceText.From
+                        |> doc.WithText
+                        |> _.Project.Solution
+                        |> (fun sln -> { wf with Solution = Some sln })
+
+                    return Some updatedWf
+
+                | _ -> return None
+
+            | _, _ -> return None
         }
 
     let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
@@ -347,6 +368,10 @@ module TextDocumentSync =
                     didCloseCshtmlFile wf context p
                 else
                     didCloseCsharpFile wf context p
+
+            match updatedWf with
+            | Some updatedWf -> context.Emit(WorkspaceFolderChange updatedWf)
+            | None -> ()
 
             context.Emit(DocumentClosed p.TextDocument.Uri)
 

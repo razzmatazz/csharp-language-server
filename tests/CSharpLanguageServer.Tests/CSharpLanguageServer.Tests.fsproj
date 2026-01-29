@@ -30,6 +30,7 @@
     <Compile Include="ImplementationTests.fs" />
     <Compile Include="CSharpMetadataTests.fs" />
     <Compile Include="ProgressReporterTests.fs" />
+    <Compile Include="DocumentSyncTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

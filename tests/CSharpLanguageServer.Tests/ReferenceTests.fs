@@ -11,7 +11,7 @@ let testReferenceWorks () =
     use classFile = client.Open("Project/Class.cs")
 
     //
-    // try references request at empty line line 1 -- should return 0 results
+    // try references request at `using` token in the file on line 0 -- should return 0 results
     //
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -30,7 +30,7 @@ let testReferenceWorks () =
     //
     let referenceParams1: ReferenceParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 2u; Character = 16u }
+          Position = { Line = 4u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None
           Context = { IncludeDeclaration = false } }
@@ -41,8 +41,8 @@ let testReferenceWorks () =
     let expectedLocations1: Location array =
         [| { Uri = classFile.Uri
              Range =
-               { Start = { Line = 10u; Character = 8u }
-                 End = { Line = 10u; Character = 15u } } } |]
+               { Start = { Line = 12u; Character = 8u }
+                 End = { Line = 12u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations1, locations1.Value)
 
@@ -52,7 +52,7 @@ let testReferenceWorks () =
     //
     let referenceParams2: ReferenceParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 2u; Character = 16u }
+          Position = { Line = 4u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None
           Context = { IncludeDeclaration = true } }
@@ -63,13 +63,13 @@ let testReferenceWorks () =
     let expectedLocations2: Location array =
         [| { Uri = classFile.Uri
              Range =
-               { Start = { Line = 2u; Character = 16u }
-                 End = { Line = 2u; Character = 23u } } }
+               { Start = { Line = 4u; Character = 16u }
+                 End = { Line = 4u; Character = 23u } } }
 
            { Uri = classFile.Uri
              Range =
-               { Start = { Line = 10u; Character = 8u }
-                 End = { Line = 10u; Character = 15u } } } |]
+               { Start = { Line = 12u; Character = 8u }
+                 End = { Line = 12u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
