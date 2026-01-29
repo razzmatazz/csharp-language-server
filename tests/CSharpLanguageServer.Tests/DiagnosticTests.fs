@@ -45,7 +45,7 @@ let testPushDiagnosticsWork () =
     //
     // now change the file to contain no content (and thus no diagnostics)
     //
-    classFile.DidChange("")
+    classFile.Change("")
 
     Thread.Sleep(4000)
 
@@ -103,7 +103,7 @@ let testPullDiagnosticsWork () =
     //
     // now try to do the same but with file fixed to contain no content (and thus no diagnostics)
     //
-    classFile.DidChange("")
+    classFile.Change("")
 
     let report1: DocumentDiagnosticReport option =
         client.Request("textDocument/diagnostic", diagnosticParams)
@@ -114,7 +114,6 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(None, report.ResultId)
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
-
 
 [<Test>]
 let testPullDiagnosticsWorkForRazorFiles () =

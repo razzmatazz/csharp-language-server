@@ -15,7 +15,7 @@ let ``test csharp/metadata works`` () =
 
     let typeDefinitionParams0: TypeDefinitionParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 10u; Character = 16u }
+          Position = { Line = 12u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None }
 
