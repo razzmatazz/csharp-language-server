@@ -65,6 +65,13 @@ module Seq =
         else
             Seq.maxBy projection source |> Some
 
+module List =
+    let singleOrNone list =
+        match list with
+        | [] -> None
+        | [ doc ] -> Some doc
+        | _ -> None
+
 module Async =
     let map f computation =
         async.Bind(computation, f >> async.Return)

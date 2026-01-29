@@ -14,7 +14,7 @@ let ``test textDocument/typeDefinition works`` () =
 
     let typeDefinitionParams0: TypeDefinitionParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 10u; Character = 16u }
+          Position = { Line = 12u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None }
 
@@ -41,5 +41,3 @@ let ``test textDocument/typeDefinition works`` () =
         Assert.AreEqual(expectedTypeDefLocationsForStringArg, ls)
 
     | _ -> failwith "Some U2.C1 (U2.C2) was expected"
-
-    ()

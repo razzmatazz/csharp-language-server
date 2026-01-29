@@ -62,7 +62,7 @@ module Workspace =
             match docFilePathMaybe with
             | Some docFilePath ->
                 let fileText = docFilePath |> File.ReadAllText
-                let updatedDoc = SourceText.From(fileText) |> doc.WithText
+                let updatedDoc = fileText |> SourceText.From |> doc.WithText
 
                 let updatedWf =
                     { wf with
@@ -78,15 +78,12 @@ module Workspace =
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
-                let! newDocMaybe = solutionTryAddDocument docFilePath fileText wf.Solution.Value
+
+                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath fileText
 
                 match newDocMaybe with
-                | Some newDoc ->
-                    let updatedWf =
-                        { wf with
-                            Solution = Some newDoc.Project.Solution }
+                | Some newDoc -> context.Emit(WorkspaceFolderChange updatedWf)
 
-                    context.Emit(WorkspaceFolderChange updatedWf)
                 | None -> ()
             | None -> ()
 

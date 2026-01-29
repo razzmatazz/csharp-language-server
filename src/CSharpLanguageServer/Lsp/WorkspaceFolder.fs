@@ -11,12 +11,16 @@ open Ionide.LanguageServerProtocol.Types
 open ICSharpCode.Decompiler
 open ICSharpCode.Decompiler.CSharp
 open ICSharpCode.Decompiler.CSharp.Transforms
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
+open CSharpLanguageServer.Logging
+
+let logger = Logging.getLoggerByName "WorkspaceFolder"
 
 type LspWorkspaceDecompiledMetadataDocument =
     { Metadata: CSharpMetadataInformation
@@ -177,13 +181,13 @@ let workspaceFolderWithDocumentFromMetadata
                 { Metadata = csharpMetadata
                   Document = documentFromMd }
 
-            let updatedFolder =
+            let updatedWf =
                 { wf with
                     DecompiledSymbolMetadata =
                         wf.DecompiledSymbolMetadata
                         |> Map.add (project.FilePath, symbolMetadataName) symbolMetadata }
 
-            return updatedFolder, symbolMetadata
+            return updatedWf, symbolMetadata
     }
 
 let workspaceFolderSymbolLocationsInMetadata wf project symbol = async {
@@ -286,3 +290,47 @@ let workspaceFolderDocumentDetails (wf: LspWorkspaceFolder) docType (u: string) 
         | UserDocument -> matchingUserDocumentMaybe
         | DecompiledDocument -> matchingDecompiledDocumentMaybe
         | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+
+let workspaceFolderProjectForPath wf (filePath: string) : Project option =
+    let docDir = Path.GetDirectoryName filePath
+
+    let fileIsOnProjectDir (p: Project) =
+        let projectDir = Path.GetDirectoryName p.FilePath
+        let projectDirWithDirSepChar = projectDir + string Path.DirectorySeparatorChar
+
+        docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
+
+    let findMatchingFileInSolution (sln: Solution) =
+        sln.Projects |> Seq.filter fileIsOnProjectDir |> Seq.tryHead
+
+    wf.Solution |> Option.bind findMatchingFileInSolution
+
+let workspaceFolderWithDocumentAdded
+    wf
+    (docFilePath: string)
+    (text: string)
+    : Async<LspWorkspaceFolder * Document option> =
+    async {
+        let projectOnPath = workspaceFolderProjectForPath wf docFilePath
+
+        match projectOnPath with
+        | Some proj ->
+            let projectBaseDir = Path.GetDirectoryName proj.FilePath
+            let docName = docFilePath.Substring(projectBaseDir.Length + 1)
+
+            let newDoc =
+                proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
+
+            let updatedWf =
+                newDoc |> _.Project.Solution |> (fun sln -> { wf with Solution = Some sln })
+
+            return updatedWf, Some newDoc
+
+        | None ->
+            logger.LogTrace(
+                "workspaceFolderWithDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
+                docFilePath
+            )
+
+            return wf, None
+    }

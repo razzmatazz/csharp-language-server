@@ -15,7 +15,7 @@ let testHoverWorks () =
     //
     let hover0Params: HoverParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 2u; Character = 16u }
+          Position = { Line = 4u; Character = 16u }
           WorkDoneToken = None }
 
     let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
@@ -37,7 +37,7 @@ let testHoverWorks () =
     //
     let hover1Params: HoverParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 8u }
+          Position = { Line = 6u; Character = 8u }
           WorkDoneToken = None }
 
     let hover1: Hover option = client.Request("textDocument/hover", hover1Params)

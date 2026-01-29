@@ -1,3 +1,5 @@
+using System;
+
 class Class
 {
     public void MethodA(string arg)

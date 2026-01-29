@@ -12,7 +12,7 @@ let ``test textDocument/signatureHelp works`` () =
 
     let signatureHelpParams0: SignatureHelpParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 10u; Character = 16u }
+          Position = { Line = 12u; Character = 16u }
           WorkDoneToken = None
           Context = None }
 
