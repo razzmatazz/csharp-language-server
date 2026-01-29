@@ -9,14 +9,14 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
-let ``rename can be applied to a variable`` () =
+let testRenameCanBeAppliedToALocalVariable () =
     use client = activateFixture "genericProject"
 
     use classFile = client.Open "Project/Class.cs"
 
     let prepareParams: PrepareRenameParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 15u }
+          Position = { Line = 6u; Character = 15u }
           WorkDoneToken = None }
 
     let prepareResult: option<PrepareRenameResult> =
@@ -24,8 +24,8 @@ let ``rename can be applied to a variable`` () =
 
     let expectedPrepareResult: PrepareRenameResult =
         { Range =
-            { Start = { Line = 4u; Character = 15u }
-              End = { Line = 4u; Character = 18u } }
+            { Start = { Line = 6u; Character = 15u }
+              End = { Line = 6u; Character = 18u } }
           Placeholder = "str" }
         |> U3.C2
 
@@ -33,7 +33,7 @@ let ``rename can be applied to a variable`` () =
 
     let renameParams: RenameParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 15u }
+          Position = { Line = 6u; Character = 15u }
           WorkDoneToken = None
           NewName = "xxx" }
 

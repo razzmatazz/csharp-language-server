@@ -67,7 +67,7 @@
     <Compile Include="Handlers/SelectionRange.fs" />
     <Compile Include="Handlers/SemanticTokens.fs" />
     <Compile Include="Handlers/SignatureHelp.fs" />
-    <Compile Include="Handlers/TextDocumentSync.fs" />
+    <Compile Include="Handlers/DocumentSync.fs" />
     <Compile Include="Handlers/TypeDefinition.fs" />
     <Compile Include="Handlers/TypeHierarchy.fs" />
     <Compile Include="Handlers/Workspace.fs" />

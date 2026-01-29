@@ -23,24 +23,23 @@ let testDefinitionWorks () =
 
     let definitionParams1: DefinitionParams =
         { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 2u; Character = 16u }
+          Position = { Line = 4u; Character = 16u }
           WorkDoneToken = None
           PartialResultToken = None }
 
     let declaration1: Declaration option =
         client.Request("textDocument/definition", definitionParams1)
 
-    match declaration1.Value with
-    | U2.C1 _ -> failwith "Location[] was expected"
-    | U2.C2 declaration1Locations ->
+    match declaration1 with
+    | Some(U2.C2 declaration1Locations) ->
         let expectedLocations1: Location array =
             [| { Uri = classFile.Uri
                  Range =
-                   { Start = { Line = 2u; Character = 16u }
-                     End = { Line = 2u; Character = 23u } } } |]
+                   { Start = { Line = 4u; Character = 16u }
+                     End = { Line = 4u; Character = 23u } } } |]
 
         Assert.AreEqual(expectedLocations1, declaration1Locations)
-
+    | _ -> failwith "U2.C2 Location[] was expected"
 
 [<Test>]
 let testDefinitionWorksInAspNetProject () =

@@ -20,8 +20,8 @@ let ``code action menu appears on request`` (tfm: string) =
     let caParams: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }
           Range =
-            { Start = { Line = 1u; Character = 0u }
-              End = { Line = 1u; Character = 0u } }
+            { Start = { Line = 3u; Character = 0u }
+              End = { Line = 3u; Character = 0u } }
           Context =
             { Diagnostics = [||]
               Only = None
@@ -92,8 +92,8 @@ let ``extract interface code action should extract an interface`` () =
     let caArgs: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }
           Range =
-            { Start = { Line = 0u; Character = 0u }
-              End = { Line = 0u; Character = 0u } }
+            { Start = { Line = 2u; Character = 0u }
+              End = { Line = 2u; Character = 0u } }
           Context =
             { Diagnostics = [||]
               Only = Some [| "refactor.extract.interface" |]
@@ -115,8 +115,8 @@ let ``extract interface code action should extract an interface`` () =
 
     let expectedImplementInterfaceEdits =
         { Range =
-            { Start = { Line = 0u; Character = 11u }
-              End = { Line = 0u; Character = 11u } }
+            { Start = { Line = 2u; Character = 11u }
+              End = { Line = 2u; Character = 11u } }
           NewText = " : IClass" }
 
     let expectedCreateInterfaceEdits =
@@ -145,8 +145,8 @@ let ``code actions are listed when activated on a string literal`` () =
     let caParams: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }
           Range =
-            { Start = { Line = 4u; Character = 20u }
-              End = { Line = 4u; Character = 20u } }
+            { Start = { Line = 6u; Character = 20u }
+              End = { Line = 6u; Character = 20u } }
           Context =
             { Diagnostics = [||]
               Only = None

@@ -640,6 +640,7 @@ let rec deleteDirectory (path: string) =
 type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
 
     let mutable fileContents: option<string> = None
+    let mutable fileVersion: int = 1
 
     member __.FileName = filename
 
@@ -665,21 +666,42 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
         fileContents <- Some fileText
 
         let textDocument =
+            let fileLanguageId =
+                if Path.GetExtension filename = "cshtml" then
+                    "razor"
+                else
+                    "csharp"
+
             { Uri = this.Uri
-              LanguageId = "csharp"
-              Version = 1
+              LanguageId = fileLanguageId
+              Version = fileVersion
               Text = fileText }
 
         let didOpenParams: DidOpenTextDocumentParams = { TextDocument = textDocument }
 
         client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
 
-    member this.DidChange(text: string) =
+    member this.Change(text: string) =
+        fileVersion <- fileVersion + 1
+        fileContents <- Some text
+
         let didChangeParams: DidChangeTextDocumentParams =
-            { TextDocument = { Uri = this.Uri; Version = 2 }
+            { TextDocument =
+                { Uri = this.Uri
+                  Version = fileVersion }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
 
         client.Post(SendServerRpcNotification("textDocument/didChange", serialize didChangeParams))
+
+    member this.Save() =
+        let fullPath = Path.Combine(projectDir, filename)
+        File.WriteAllBytes(fullPath, fileContents.Value |> Encoding.UTF8.GetBytes)
+
+        let didSaveParams: DidSaveTextDocumentParams =
+            { TextDocument = { Uri = this.Uri }
+              Text = fileContents }
+
+        client.Post(SendServerRpcNotification("textDocument/didSave", serialize didSaveParams))
 
     member __.GetFileContents() = fileContents.Value
 
