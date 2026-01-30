@@ -305,6 +305,16 @@ let workspaceFolderProjectForPath wf (filePath: string) : Project option =
 
     wf.Solution |> Option.bind findMatchingFileInSolution
 
+let workspaceFolderAdditionalTextDocumentForPath (wf: LspWorkspaceFolder) (filePath: string) : TextDocument option =
+    let project = workspaceFolderProjectForPath wf filePath
+
+    match project with
+    | None -> None
+    | Some project ->
+        project.AdditionalDocuments
+        |> Seq.filter (fun d -> d.FilePath = filePath)
+        |> Seq.tryHead
+
 let workspaceFolderWithDocumentAdded
     wf
     (docFilePath: string)
@@ -334,3 +344,63 @@ let workspaceFolderWithDocumentAdded
 
             return wf, None
     }
+
+let workspaceFolderWithAdditionalTextDocumentTextUpdated
+    (wf: LspWorkspaceFolder)
+    (textDoc: TextDocument)
+    (newSourceText: SourceText)
+    : LspWorkspaceFolder =
+    let updatedSolution =
+        textDoc.Project
+        |> _.RemoveAdditionalDocument(textDoc.Id)
+        |> _.AddAdditionalDocument(textDoc.Name, newSourceText, textDoc.Folders, textDoc.FilePath)
+        |> _.Project.Solution
+
+    { wf with
+        Solution = Some updatedSolution }
+
+let workspaceFolderWithDocumentTextUpdated
+    (wf: LspWorkspaceFolder)
+    (doc: Document)
+    (newSourceText: SourceText)
+    : LspWorkspaceFolder =
+    let updatedSolution = newSourceText |> doc.WithText |> _.Project.Solution
+
+    { wf with
+        Solution = Some updatedSolution }
+
+let workspaceFolderWithAdditionalTextDocumentAdded
+    (wf: LspWorkspaceFolder)
+    (docFilePath: string)
+    (text: string)
+    : LspWorkspaceFolder * TextDocument option =
+    let projectOnPath = workspaceFolderProjectForPath wf docFilePath
+
+    match projectOnPath with
+    | Some project ->
+        let projectBaseDir = Path.GetDirectoryName project.FilePath
+        let relativePath = Path.GetRelativePath(projectBaseDir, docFilePath)
+
+        let folders = relativePath.Split Path.DirectorySeparatorChar
+        let folders = folders |> Seq.take (folders.Length - 1)
+
+        let newDoc =
+            project.AddAdditionalDocument(
+                name = Path.GetFileName docFilePath,
+                text = SourceText.From text,
+                folders = folders,
+                filePath = docFilePath
+            )
+
+        let updatedWf =
+            newDoc |> _.Project.Solution |> (fun sln -> { wf with Solution = Some sln })
+
+        updatedWf, Some newDoc
+
+    | None ->
+        logger.LogTrace(
+            "workspaceFolderWithAdditionalTextDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
+            docFilePath
+        )
+
+        wf, None
