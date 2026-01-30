@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
+* Fix more of document sync issues to handle textDocument/didClose properly, for .e.g
+  files that are not saved to disk.
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/311
 * Check Window.WorkDoneProgress capability before calling WindowWorkDoneProgressCreate; fixes Claude Code
   - By @HowardvanRooijen in https://github.com/razzmatazz/csharp-language-server/pull/309
 * Update Microsoft.Build.Locator to 1.10.12
