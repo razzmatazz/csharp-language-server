@@ -14,6 +14,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.State
 open CSharpLanguageServer.State.ServerState
 open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
@@ -113,49 +114,23 @@ module TextDocumentSync =
 
     let didOpenCshtmlFile wf (p: DidOpenTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
         let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-        let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
+        let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
 
-        let textDocument =
-            match project with
-            | None -> None
-            | Some project ->
-                let existingAdditionalDoc =
-                    project
-                    |> _.AdditionalDocuments
-                    |> Seq.filter (fun d -> Some d.FilePath = cshtmlPath)
-                    |> List.ofSeq
-                    |> List.singleOrNone
-
-                let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
-
-                match existingAdditionalDoc with
-                | Some doc ->
-                    project
-                    |> _.RemoveAdditionalDocument(doc.Id)
-                    |> _.AddAdditionalDocument(doc.Name, newSourceText, doc.Folders, doc.FilePath)
-                    |> Some
-
-                | None ->
-                    let cshtmlPath = cshtmlPath.Value
-                    let projectBaseDir = Path.GetDirectoryName project.FilePath
-                    let relativePath = Path.GetRelativePath(projectBaseDir, cshtmlPath)
-
-                    let folders = relativePath.Split Path.DirectorySeparatorChar
-                    let folders = folders |> Seq.take (folders.Length - 1)
-
-                    project
-                    |> _.AddAdditionalDocument(Path.GetFileName cshtmlPath, newSourceText, folders, cshtmlPath)
-                    |> Some
-
-        match textDocument with
+        match cshtmlPath with
         | None -> return None
-        | Some textDocument ->
-            let updatedWf =
-                textDocument
-                |> _.Project.Solution
-                |> (fun sln -> { wf with Solution = Some sln })
+        | Some cshtmlPath ->
+            match workspaceFolderAdditionalTextDocumentForPath wf cshtmlPath with
+            | Some doc ->
+                let updatedWf =
+                    workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc newSourceText
 
-            return Some updatedWf
+                return Some updatedWf
+
+            | None ->
+                let updatedWf, _ =
+                    workspaceFolderWithAdditionalTextDocumentAdded wf cshtmlPath p.TextDocument.Text
+
+                return Some updatedWf
     }
 
     let didOpenCsharpFile
@@ -177,9 +152,7 @@ module TextDocumentSync =
                     let updatedWf =
                         p.TextDocument.Text
                         |> SourceText.From
-                        |> doc.WithText
-                        |> _.Project.Solution
-                        |> (fun sln -> { wf with Solution = Some sln })
+                        |> workspaceFolderWithDocumentTextUpdated wf doc
 
                     return Some updatedWf
 
@@ -220,16 +193,11 @@ module TextDocumentSync =
 
     let didChangeCshtmlFile wf (p: DidChangeTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
         let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-        let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
 
-        let existingAdditionalDoc =
-            project
-            |> (fun p -> if p.IsSome then p.Value.AdditionalDocuments else [])
-            |> Seq.filter (fun d -> Some d.FilePath = cshtmlPath)
-            |> List.ofSeq
-            |> List.singleOrNone
+        let additionalDoc =
+            cshtmlPath |> Option.bind (workspaceFolderAdditionalTextDocumentForPath wf)
 
-        match existingAdditionalDoc with
+        match additionalDoc with
         | None -> return None
         | Some doc ->
             let! ct = Async.CancellationToken
@@ -238,14 +206,9 @@ module TextDocumentSync =
             let updatedSourceText =
                 sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
-            let updatedSolution =
-                doc.Project
-                |> _.RemoveAdditionalDocument(doc.Id)
-                |> _.AddAdditionalDocument(doc.Name, updatedSourceText, doc.Folders, doc.FilePath)
-                |> _.Project.Solution
-                |> Some
+            let updatedWf =
+                workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc updatedSourceText
 
-            let updatedWf = { wf with Solution = updatedSolution }
             return Some updatedWf
     }
 
@@ -263,14 +226,10 @@ module TextDocumentSync =
                 let! ct = Async.CancellationToken
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-                let updatedSolution =
-                    sourceText
-                    |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
-                    |> doc.WithText
-                    |> _.Project.Solution
-                    |> Some
+                let updatedSourceText =
+                    sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
-                let updatedWf = { wf with Solution = updatedSolution }
+                let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc updatedSourceText
                 return Some updatedWf
         }
 
@@ -315,31 +274,17 @@ module TextDocumentSync =
         // and not persisted to disk before didClose (i.e. no didSave)
 
         let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
-        let project = cshtmlPath |> Option.bind (workspaceFolderProjectForPath wf)
 
-        let existingAdditionalDoc =
-            project
-            |> (fun p -> if p.IsSome then p.Value.AdditionalDocuments else [])
-            |> Seq.filter (fun d -> Some d.FilePath = cshtmlPath)
-            |> List.ofSeq
-            |> List.singleOrNone
+        let additionalDoc =
+            cshtmlPath |> Option.bind (workspaceFolderAdditionalTextDocumentForPath wf)
 
-        match existingAdditionalDoc, cshtmlPath with
+        match additionalDoc, cshtmlPath with
         | Some doc, Some filename ->
-            let sourceFromDisk =
-                filename
-                |> File.ReadAllBytes
-                |> Encoding.UTF8.GetString
-                |> fun text -> SourceText.From(text, Encoding.UTF8)
+            let sourceFromDisk = sourceTextFromFile filename
 
-            let updatedSolution =
-                doc.Project
-                |> _.RemoveAdditionalDocument(doc.Id)
-                |> _.AddAdditionalDocument(doc.Name, sourceFromDisk, doc.Folders, doc.FilePath)
-                |> _.Project.Solution
-                |> Some
+            let updatedWf =
+                workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc sourceFromDisk
 
-            let updatedWf = { wf with Solution = updatedSolution }
             return Some updatedWf
 
         | _, _ -> return None
@@ -364,15 +309,8 @@ module TextDocumentSync =
             | Some(doc, docType), Some filename ->
                 match docType with
                 | UserDocument ->
-                    let textOnDisk = filename |> File.ReadAllBytes |> Encoding.UTF8.GetString
-
-                    let updatedWf =
-                        textOnDisk
-                        |> SourceText.From
-                        |> doc.WithText
-                        |> _.Project.Solution
-                        |> (fun sln -> { wf with Solution = Some sln })
-
+                    let sourceFromDisk = sourceTextFromFile filename
+                    let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc sourceFromDisk
                     return Some updatedWf
 
                 | _ -> return None

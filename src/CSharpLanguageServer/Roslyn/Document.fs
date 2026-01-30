@@ -1,12 +1,14 @@
 module CSharpLanguageServer.Roslyn.Document
 
+open System.IO
+open System.Text
+
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.Options
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
 open Ionide.LanguageServerProtocol.Types
-
 
 let private processChange (oldText: SourceText) (change: TextChange) : TextEdit =
     let mapToTextEdit (linePosition: LinePositionSpan, newText: string) : TextEdit =
@@ -70,7 +72,6 @@ let getDocumentDiffAsLspTextEdits (doc: Document) (oldDoc: Document) : Async<Tex
     return convert oldText (changes |> Seq.toArray)
 }
 
-
 let getDocumentFormattingOptionSet (doc: Document) (lspFormattingOptions: FormattingOptions option) : Async<OptionSet> = async {
     let! docOptions = doc.GetOptionsAsync() |> Async.AwaitTask
 
@@ -98,3 +99,6 @@ let getDocumentFormattingOptionSet (doc: Document) (lspFormattingOptions: Format
                    _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
                | None -> id
 }
+
+let sourceTextFromFile (filename: string) : SourceText =
+    filename |> File.ReadAllBytes |> Encoding.UTF8.GetString |> SourceText.From
