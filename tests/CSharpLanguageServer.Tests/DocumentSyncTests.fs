@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.DocumentSyncTests
 
+open System
 open System.Threading
 
 open NUnit.Framework
@@ -187,3 +188,69 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         | Some(U2.C1 report) ->
             Assert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error after file close")
         | _ -> failwith "U2.C1 is expected"
+
+[<Test>]
+let testOpeningAndClosingNonExistingCsFileRemovesItFromSolution () =
+    use client = activateFixture "genericProject"
+
+    let diagnosticsWaitTimeout = TimeSpan.FromSeconds(int64 10)
+
+    let brokenClassFileUri =
+        "Project/BrokenClass.cs" |> fileUriForProjectDir client.SolutionDir
+
+    let diagItems = brokenClassFileUri |> getWorkspaceDiagnosticsForUri client
+    Assert.AreEqual(0, diagItems.Length)
+
+    // Open a non-existing .cs file with invalid C# code and then check
+    // diagnostics to verify it was actually added to solution
+    do
+        use newFile =
+            client.OpenWithText("Project/BrokenClass.cs", "namespace Project { public class BrokenClass { xxx } }")
+
+        waitUntilOrTimeout
+            diagnosticsWaitTimeout
+            (fun () -> brokenClassFileUri |> getWorkspaceDiagnosticsForUri client |> _.Length = 1)
+            "Expected 1 diagnostic item for BrokenClass.cs"
+
+    // After closing the file, the document should be removed from the
+    // solution since it doesn't exist on disk
+    do
+        waitUntilOrTimeout
+            diagnosticsWaitTimeout
+            (fun () -> brokenClassFileUri |> getWorkspaceDiagnosticsForUri client |> _.Length = 0)
+            "Expected no diagnostic items for BrokenClass.cs"
+
+[<Test>]
+let testOpeningAndClosingNonExistingCshtmlFileRemovesItFromSolution () =
+    use client = activateFixture "aspnetProject"
+
+    let diagnosticsWaitTimeout = TimeSpan.FromSeconds(int64 10)
+
+    let brokenCshtmlFileUri =
+        "Project/Views/Test/BrokenView.cshtml"
+        |> fileUriForProjectDir client.SolutionDir
+
+    let diagItems = brokenCshtmlFileUri |> getWorkspaceDiagnosticsForUri client
+    Assert.AreEqual(0, diagItems.Length)
+
+    // Open a non-existing .cshtml file with invalid Razor code and then check
+    // diagnostics to verify it was actually added to solution
+    do
+        use newFile =
+            client.OpenWithText(
+                "Project/Views/Test/BrokenView.cshtml",
+                "@model Project.Models.Test.IndexViewModel\n@Model.InvalidProperty"
+            )
+
+        waitUntilOrTimeout
+            diagnosticsWaitTimeout
+            (fun () -> brokenCshtmlFileUri |> getWorkspaceDiagnosticsForUri client |> _.Length >= 1)
+            "Expected at least 1 diagnostic item for BrokenView.cshtml"
+
+    // After closing the file, the document should be removed from the
+    // solution since it doesn't exist on disk
+    do
+        waitUntilOrTimeout
+            diagnosticsWaitTimeout
+            (fun () -> brokenCshtmlFileUri |> getWorkspaceDiagnosticsForUri client |> _.Length = 0)
+            "Expected no diagnostic items for BrokenView.cshtml"

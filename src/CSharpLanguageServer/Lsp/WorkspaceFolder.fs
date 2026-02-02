@@ -369,6 +369,27 @@ let workspaceFolderWithDocumentTextUpdated
     { wf with
         Solution = Some updatedSolution }
 
+let workspaceFolderWithDocumentRemoved (wf: LspWorkspaceFolder) (uri: string) : LspWorkspaceFolder =
+    match wf.Solution with
+    | None -> wf
+    | Some solution ->
+        let filename = uri |> workspaceFolderUriToPath wf
+
+        let doc =
+            solution.Projects
+            |> Seq.collect _.Documents
+            |> Seq.tryFind (fun d -> Some d.FilePath = filename)
+
+        match doc with
+        | Some doc ->
+            let updatedSolution = solution.RemoveDocument(doc.Id)
+
+            { wf with
+                Solution = Some updatedSolution }
+        | None ->
+            logger.LogTrace("workspaceFolderWithDocumentRemoved: No document found for uri \"{uri}\"", uri)
+            wf
+
 let workspaceFolderWithAdditionalTextDocumentAdded
     (wf: LspWorkspaceFolder)
     (docFilePath: string)
@@ -404,3 +425,28 @@ let workspaceFolderWithAdditionalTextDocumentAdded
         )
 
         wf, None
+
+let workspaceFolderWithAdditionalDocumentRemoved (wf: LspWorkspaceFolder) (uri: string) : LspWorkspaceFolder =
+    match wf.Solution with
+    | None -> wf
+    | Some solution ->
+        let filename = uri |> workspaceFolderUriToPath wf
+
+        let doc =
+            solution.Projects
+            |> Seq.collect _.AdditionalDocuments
+            |> Seq.tryFind (fun d -> Some d.FilePath = filename)
+
+        match doc with
+        | Some doc ->
+            let updatedSolution = solution.RemoveAdditionalDocument(doc.Id)
+
+            { wf with
+                Solution = Some updatedSolution }
+        | None ->
+            logger.LogTrace(
+                "workspaceFolderWithAdditionalDocumentRemoved: No additional document found for uri \"{uri}\"",
+                uri
+            )
+
+            wf

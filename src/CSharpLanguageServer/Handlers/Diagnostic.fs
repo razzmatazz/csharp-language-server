@@ -111,24 +111,13 @@ module Diagnostic =
                 match compilation |> Option.ofObj with
                 | None -> ()
                 | Some compilation ->
-                    let uriForDiagnostic (d: Microsoft.CodeAnalysis.Diagnostic) =
-                        d.Location.SourceTree
-                        |> Option.ofObj
-                        |> Option.map _.FilePath
-                        |> Option.map pathToUri
-
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)
-                        |> Seq.groupBy uriForDiagnostic
-                        |> Seq.filter (fun (uri, _ds) -> uri.IsSome)
-                        |> Seq.map (fun (uri, ds) -> uri.Value, ds)
+                        |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
+                        |> Seq.groupBy snd
 
-                    for (uri, docDiagnostics) in diagnosticsByDocument do
-                        let items =
-                            docDiagnostics
-                            |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
-                            |> Seq.map fst
-                            |> Array.ofSeq
+                    for uri, items in diagnosticsByDocument do
+                        let items = items |> Seq.map fst |> Array.ofSeq
 
                         let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
                             { Kind = "full"

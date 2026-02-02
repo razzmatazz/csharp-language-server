@@ -272,6 +272,8 @@ module TextDocumentSync =
         // reload this particular file from disk into Solution as there
         // could've been changes made to the in-memory file using didChange
         // and not persisted to disk before didClose (i.e. no didSave)
+        //
+        // if file does not exist on disk, remove it from the solution
 
         let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
@@ -280,12 +282,16 @@ module TextDocumentSync =
 
         match additionalDoc, cshtmlPath with
         | Some doc, Some filename ->
-            let sourceFromDisk = sourceTextFromFile filename
+            if File.Exists filename then
+                let sourceFromDisk = sourceTextFromFile filename
 
-            let updatedWf =
-                workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc sourceFromDisk
+                let updatedWf =
+                    workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc sourceFromDisk
 
-            return Some updatedWf
+                return Some updatedWf
+            else
+                let updatedWf = workspaceFolderWithAdditionalDocumentRemoved wf p.TextDocument.Uri
+                return Some updatedWf
 
         | _, _ -> return None
     }
@@ -309,9 +315,14 @@ module TextDocumentSync =
             | Some(doc, docType), Some filename ->
                 match docType with
                 | UserDocument ->
-                    let sourceFromDisk = sourceTextFromFile filename
-                    let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc sourceFromDisk
-                    return Some updatedWf
+                    if File.Exists filename then
+                        // reverting the file to original contents
+                        let sourceFromDisk = sourceTextFromFile filename
+                        let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc sourceFromDisk
+                        return Some updatedWf
+                    else
+                        let updatedWf = workspaceFolderWithDocumentRemoved wf p.TextDocument.Uri
+                        return Some updatedWf
 
                 | _ -> return None
 
