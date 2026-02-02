@@ -159,17 +159,20 @@ let workspaceWithSolutionsLoaded
     async {
         let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
-        let beginMessage =
-            sprintf "Loading workspace (%d workspace folders)" workspace.Folders.Length
+        let beginMessage = sprintf "Loading workspace"
 
         do! progressReporter.Begin(beginMessage)
 
         let mutable updatedWorkspace = workspace
+        let mutable folderNum = 1
 
         for wf in workspace.Folders do
-            let beginMessage = sprintf "Loading workspace folder %s..." wf.Uri
-
             let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
+
+            let beginMessage =
+                sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum workspace.Folders.Length
+
+            do! progressReporter.Report(message = beginMessage)
 
             let! newSolution =
                 solutionLoadSolutionWithPathOrOnDir lspClient progressReporter settings.SolutionPath wfRootDir.Value
@@ -177,7 +180,7 @@ let workspaceWithSolutionsLoaded
             let updatedWf = { wf with Solution = newSolution }
             updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
 
-            do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+            folderNum <- folderNum + 1
 
         let endMessage = sprintf "Finished loading workspace"
         do! progressReporter.End(endMessage)
