@@ -11,6 +11,7 @@ open System.Threading
 open System.Threading.Tasks
 open System.Xml.Linq
 
+open NUnit.Framework
 open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
@@ -637,6 +638,11 @@ let rec deleteDirectory (path: string) =
 
         Directory.Delete(path)
 
+let fileUriForProjectDir projectDir filename =
+    match Environment.OSVersion.Platform with
+    | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
+    | _ -> "file://" + projectDir + "/" + filename
+
 type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
 
     let mutable fileContents: option<string> = None
@@ -644,10 +650,7 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
 
     member __.FileName = filename
 
-    member __.Uri =
-        match Environment.OSVersion.Platform with
-        | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
-        | _ -> "file://" + projectDir + "/" + filename
+    member __.Uri = filename |> fileUriForProjectDir projectDir
 
     interface IDisposable with
         member this.Dispose() =
@@ -657,17 +660,12 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
             client.Post(SendServerRpcNotification("textDocument/didClose", serialize didCloseParams))
             ()
 
-    member this.Open() =
-        let fileText =
-            Path.Combine(projectDir, filename)
-            |> File.ReadAllBytes
-            |> Encoding.UTF8.GetString
-
-        fileContents <- Some fileText
+    member this.OpenWithText(text: string) =
+        fileContents <- Some text
 
         let textDocument =
             let fileLanguageId =
-                if Path.GetExtension filename = "cshtml" then
+                if Path.GetExtension filename = ".cshtml" then
                     "razor"
                 else
                     "csharp"
@@ -675,11 +673,19 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
             { Uri = this.Uri
               LanguageId = fileLanguageId
               Version = fileVersion
-              Text = fileText }
+              Text = text }
 
         let didOpenParams: DidOpenTextDocumentParams = { TextDocument = textDocument }
 
         client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
+
+    member this.OpenWithTextFromDisk() =
+        let fileText =
+            Path.Combine(projectDir, filename)
+            |> File.ReadAllBytes
+            |> Encoding.UTF8.GetString
+
+        this.OpenWithText(fileText)
 
     member this.Change(text: string) =
         fileVersion <- fileVersion + 1
@@ -955,7 +961,12 @@ type ClientController(clientProfile: ClientProfile) =
 
     member __.Open(filename: string) : FileController =
         let file = new FileController(client, solutionDir.Value, filename)
-        file.Open()
+        file.OpenWithTextFromDisk()
+        file
+
+    member __.OpenWithText(filename: string, text: string) : FileController =
+        let file = new FileController(client, solutionDir.Value, filename)
+        file.OpenWithText(text)
         file
 
 let activeClientsSemaphore =
@@ -1011,3 +1022,37 @@ module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with
             NewText = s.NewText.ReplaceLineEndings("\n") }
+
+let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMessage: string) =
+    let stopwatch = Stopwatch.StartNew()
+
+    while not (predicate ()) && stopwatch.Elapsed < timeout do
+        Thread.Sleep(50)
+
+    if stopwatch.Elapsed >= timeout then
+        Assert.Fail(failureMessage)
+
+let getWorkspaceDiagnosticsForUri (client: ClientController) uri =
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let report: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    let matchingDocDiagnosticItemsForUri
+        (reportItem: Ionide.LanguageServerProtocol.Types.WorkspaceDocumentDiagnosticReport)
+        =
+        match reportItem with
+        | U2.C2 _ -> failwith "'U2.C1' was expected"
+        | U2.C1 fullReport ->
+            if fullReport.Uri = uri then
+                fullReport.Items |> List.ofArray
+            else
+                []
+
+    match report with
+    | None -> failwith "Some response from workspace/diagnostic was expected"
+    | Some report -> report.Items |> Seq.collect matchingDocDiagnosticItemsForUri |> List.ofSeq
