@@ -180,6 +180,8 @@ let workspaceWithSolutionsLoaded
             let updatedWf = { wf with Solution = newSolution }
             updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
 
+            do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+
             folderNum <- folderNum + 1
 
         let endMessage = sprintf "Finished loading workspace"
