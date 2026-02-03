@@ -31,6 +31,7 @@
     <Compile Include="CSharpMetadataTests.fs" />
     <Compile Include="ProgressReporterTests.fs" />
     <Compile Include="DocumentSyncTests.fs" />
+    <Compile Include="CallHierarchyTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
