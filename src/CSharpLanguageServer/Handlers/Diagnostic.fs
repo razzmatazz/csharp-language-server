@@ -105,7 +105,7 @@ module Diagnostic =
 
         let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
 
-        let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
+        let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
             let! ct = Async.CancellationToken
 
             let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
@@ -136,6 +136,13 @@ module Diagnostic =
                         channel.Writer.WriteAsync(DiagnosticsReport documentReport)
                         |> _.AsTask()
                         |> Async.AwaitTask
+        }
+
+        let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
+            try
+                do! generateProjectDiagnosticReports' wf project
+            with _ ->
+                ()
 
             do!
                 channel.Writer.WriteAsync(ReportingDoneForProject)
