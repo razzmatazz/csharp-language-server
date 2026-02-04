@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 * Improve performance of workspace diagnostics
- - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/commit/848b323ac6593d52adb9f566e76a3eaa0957095f
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/commit/848b323ac6593d52adb9f566e76a3eaa0957095f
 * Fix more of document sync issues to handle textDocument/didClose properly, for .e.g
   files that are not saved to disk.
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/311
