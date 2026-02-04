@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.Threading.Channels
 
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
@@ -96,39 +97,79 @@ module Diagnostic =
             | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
         }
 
+    type WorkspaceDiagnosticsReportsChannelItem =
+        | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
+        | ReportingDoneForProject
+
     let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> = asyncSeq {
-        let! ct = Async.CancellationToken
+
+        let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
+
+        let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
+            let! ct = Async.CancellationToken
+
+            let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+
+            match compilation |> Option.ofObj with
+            | None -> ()
+            | Some compilation ->
+                let pathToUri = workspaceFolderPathToUri wf
+
+                let diagnosticsByDocument =
+                    compilation.GetDiagnostics(ct)
+                    |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
+                    |> Seq.groupBy snd
+
+                for uri, items in diagnosticsByDocument do
+                    let items = items |> Seq.map fst |> Array.ofSeq
+
+                    let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
+                        { Kind = "full"
+                          ResultId = None
+                          Uri = uri
+                          Items = items
+                          Version = None }
+
+                    let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
+
+                    do!
+                        channel.Writer.WriteAsync(DiagnosticsReport documentReport)
+                        |> _.AsTask()
+                        |> Async.AwaitTask
+
+            do!
+                channel.Writer.WriteAsync(ReportingDoneForProject)
+                |> _.AsTask()
+                |> Async.AwaitTask
+        }
+
+        // generate project diagnostics in parallel
+        let mutable numProjectsBeingProcessed = 0
 
         for wf in workspace.Folders do
-            let pathToUri = workspaceFolderPathToUri wf
-
             let solutionProjects =
-                wf.Solution |> Option.map _.Projects |> Option.defaultValue Seq.empty
+                wf.Solution
+                |> Option.map _.Projects
+                |> Option.defaultValue Seq.empty
+                |> List.ofSeq
+
+            numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
 
             for project in solutionProjects do
-                let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+                Async.Start(generateProjectDiagnosticReports wf project)
 
-                match compilation |> Option.ofObj with
-                | None -> ()
-                | Some compilation ->
-                    let diagnosticsByDocument =
-                        compilation.GetDiagnostics(ct)
-                        |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
-                        |> Seq.groupBy snd
+        // eat from channel and yield diagnostic reports as they come
+        while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
+            let mutable item = ReportingDoneForProject
 
-                    for uri, items in diagnosticsByDocument do
-                        let items = items |> Seq.map fst |> Array.ofSeq
+            while channel.Reader.TryRead(&item) do
+                match item with
+                | DiagnosticsReport r -> yield r
+                | ReportingDoneForProject ->
+                    numProjectsBeingProcessed <- numProjectsBeingProcessed - 1
 
-                        let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
-                            { Kind = "full"
-                              ResultId = None
-                              Uri = uri
-                              Items = items
-                              Version = None }
-
-                        let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
-
-                        yield documentReport
+                    if numProjectsBeingProcessed = 0 then
+                        channel.Writer.Complete()
     }
 
     let handleWorkspaceDiagnostic
