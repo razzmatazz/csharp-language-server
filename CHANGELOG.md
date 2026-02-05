@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## [0.22.0] - 2026-02-05 / Mažeikiai
 * Improve performance of workspace diagnostics
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/commit/848b323ac6593d52adb9f566e76a3eaa0957095f
 * Fix more of document sync issues to handle textDocument/didClose properly, for .e.g
@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Restore dynamic server capability registration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/303
 
-**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.21.0...HEAD
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.21.0...0.22.0
 
 ## [0.21.0] - 2026-01-02 / Klaipėda
 * Do not emit csharp:/ urls when client does not have this capability enabled.
