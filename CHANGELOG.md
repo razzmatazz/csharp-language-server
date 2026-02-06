@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+* Hide unmapped diagnostics from Razor files
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/316
+
 ## [0.22.0] - 2026-02-05 / Mažeikiai
 * Improve performance of workspace diagnostics
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/commit/848b323ac6593d52adb9f566e76a3eaa0957095f
