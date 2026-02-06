@@ -2,6 +2,7 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Threading.Channels
+open System.Text.RegularExpressions
 
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
@@ -101,6 +102,9 @@ module Diagnostic =
         | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
         | ReportingDoneForProject
 
+    let private UnmappedRazorDiagnosticUriRegex =
+        Regex(@"Microsoft\.NET\.Sdk\.Razor\.SourceGenerators\.RazorSourceGenerator/.*cshtml\.g\.cs$", RegexOptions.Compiled)
+
     let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> = asyncSeq {
 
         let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
@@ -118,6 +122,10 @@ module Diagnostic =
                 let diagnosticsByDocument =
                     compilation.GetDiagnostics(ct)
                     |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
+
+                    // ignores "file:///xxx/obj/Debug/netY.0/Microsoft.CodeAnalysis.Razor.Compiler/Microsoft.NET.Sdk.Razor.SourceGenerators.RazorSourceGenerator/XXX_cshtml.g.cs"
+                    |> Seq.filter (snd >> UnmappedRazorDiagnosticUriRegex.IsMatch >> not)
+
                     |> Seq.groupBy snd
 
                 for uri, items in diagnosticsByDocument do
