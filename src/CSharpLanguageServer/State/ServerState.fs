@@ -46,11 +46,11 @@ type RequestDetails =
 type QueuedRequest =
     { Details: RequestDetails
       Id: int
-      Semaphore: SemaphoreSlim
+      ActivationListeners: AsyncReplyChannel<ServerState> list
       StartedProcessing: option<DateTime>
       Enqueued: DateTime }
 
-type ServerState =
+and ServerState =
     { Settings: ServerSettings
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
@@ -130,7 +130,9 @@ type ServerStateEvent =
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
     | DumpAndResetRequestStats
-    | FinishRequest of int
+    | EnqueueRequest of RequestDetails * AsyncReplyChannel<int>
+    | AwaitRequestActivation of int * AsyncReplyChannel<ServerState>
+    | RetireRequest of int
     | GetState of AsyncReplyChannel<ServerState>
     | PeriodicTimerTick
     | ProcessRequestQueue
@@ -138,66 +140,47 @@ type ServerStateEvent =
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | SettingsChange of ServerSettings
-    | StartRequest of RequestDetails * AsyncReplyChannel<int * SemaphoreSlim>
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
 
-let processFinishRequest postServerEvent state request =
-    request.Semaphore.Dispose()
+let updateRequestStats state request (stats: RequestMetrics option) : RequestMetrics option =
+    let requestExecutionDuration: TimeSpan =
+        match request.StartedProcessing with
+        | Some startTime -> DateTime.Now - startTime
+        | None -> DateTime.Now - request.Enqueued
 
-    let newRequestStats =
-        let requestExecutionDuration: TimeSpan =
-            match request.StartedProcessing with
-            | Some startTime -> DateTime.Now - startTime
-            | None -> DateTime.Now - request.Enqueued
+    match stats with
+    | None ->
+        { RequestMetrics.Zero with
+            Count = 1
+            TotalDuration = requestExecutionDuration
+            MaxDuration = requestExecutionDuration }
+        |> Some
+    | Some s ->
+        let (impactedCount, totalImpactedWait) =
+            if request.Details.Mode = ReadWrite then
+                let blockingStartTime =
+                    request.StartedProcessing |> Option.defaultValue request.Enqueued
 
-        let updateRequestStats (stats: RequestMetrics option) : RequestMetrics option =
-            match stats with
-            | None ->
-                { RequestMetrics.Zero with
-                    Count = 1
-                    TotalDuration = requestExecutionDuration
-                    MaxDuration = requestExecutionDuration }
-                |> Some
-            | Some s ->
-                let (impactedCount, totalImpactedWait) =
-                    if request.Details.Mode = ReadWrite then
-                        let blockingStartTime =
-                            request.StartedProcessing |> Option.defaultValue request.Enqueued
+                let aggregateBlockedRequestStats (count, totalWait) pendingRequest =
+                    let waitStartTime = max blockingStartTime pendingRequest.Enqueued
+                    let waitDurationForPending = DateTime.Now - waitStartTime
 
-                        let aggregateBlockedRequestStats (count, totalWait) pendingRequest =
-                            let waitStartTime = max blockingStartTime pendingRequest.Enqueued
-                            let waitDurationForPending = DateTime.Now - waitStartTime
+                    (count + 1, totalWait + waitDurationForPending)
 
-                            (count + 1, totalWait + waitDurationForPending)
+                state.PendingRequests
+                |> List.fold aggregateBlockedRequestStats (0, TimeSpan.Zero)
+            else
+                (0, TimeSpan.Zero)
 
-                        state.PendingRequests
-                        |> List.fold aggregateBlockedRequestStats (0, TimeSpan.Zero)
-                    else
-                        (0, TimeSpan.Zero)
-
-                Some
-                    { s with
-                        Count = s.Count + 1
-                        TotalDuration = s.TotalDuration + requestExecutionDuration
-                        MaxDuration = max s.MaxDuration requestExecutionDuration
-                        ImpactedRequestsCount = s.ImpactedRequestsCount + impactedCount
-                        TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
-
-        match state.Settings.DebugMode with
-        | true -> state.RequestStats |> Map.change request.Details.Name updateRequestStats
-        | false -> state.RequestStats
-
-    let newRunningRequests = state.RunningRequests |> Map.remove request.Id
-
-    let newState =
-        { state with
-            RunningRequests = newRunningRequests
-            RequestStats = newRequestStats }
-
-    postServerEvent ProcessRequestQueue
-    newState
+        Some
+            { s with
+                Count = s.Count + 1
+                TotalDuration = s.TotalDuration + requestExecutionDuration
+                MaxDuration = max s.MaxDuration requestExecutionDuration
+                ImpactedRequestsCount = s.ImpactedRequestsCount + impactedCount
+                TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
 
 let processDumpAndResetRequestStats (logger: ILogger) state =
     let formatStats stats =
@@ -265,32 +248,75 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
         replyChannel.Reply(state)
         return state
 
-    | StartRequest(requestDetails, replyChannel) ->
+    | EnqueueRequest(requestDetails, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
         let newRequest =
             { Details = requestDetails
               Id = state.LastRequestId + 1
-              Semaphore = new SemaphoreSlim(0, 1)
+              ActivationListeners = []
               StartedProcessing = None
               Enqueued = DateTime.Now }
 
-        replyChannel.Reply((newRequest.Id, newRequest.Semaphore))
+        replyChannel.Reply(newRequest.Id)
 
         return
             { state with
                 LastRequestId = newRequest.Id
                 PendingRequests = state.PendingRequests @ [ newRequest ] }
 
-    | FinishRequest requestId ->
+    | AwaitRequestActivation(requestId, replyChannel) ->
+        let pendingRequest =
+            state.PendingRequests |> List.tryFind (fun r -> r.Id = requestId)
+
+        match pendingRequest with
+        | Some request ->
+            // add replyChannel to ActivationListeners for the request
+            let updatedPendingRequests =
+                state.PendingRequests
+                |> List.map (fun r ->
+                    if r.Id = requestId then
+                        { r with
+                            ActivationListeners = replyChannel :: r.ActivationListeners }
+                    else
+                        r)
+
+            let updatedState =
+                { state with
+                    PendingRequests = updatedPendingRequests }
+
+            return updatedState
+
+        | None ->
+            // Request is already running or finished, send current state immediately
+            replyChannel.Reply(state)
+            return state
+
+    | RetireRequest requestId ->
         let request = state.RunningRequests |> Map.tryFind requestId
 
         match request with
-        | Some request -> return processFinishRequest postServerEvent state request
+        | Some request ->
+            let newRequestStats =
+                match state.Settings.DebugMode with
+                | true ->
+                    state.RequestStats
+                    |> Map.change request.Details.Name (updateRequestStats state request)
+                | false -> state.RequestStats
+
+            let newRunningRequests = state.RunningRequests |> Map.remove request.Id
+
+            let newState =
+                { state with
+                    RunningRequests = newRunningRequests
+                    RequestStats = newRequestStats }
+
+            postServerEvent ProcessRequestQueue
+            return newState
 
         | None ->
             logger.LogWarning(
-                "serverEventLoop/FinishRequest#{requestId}: request not found in state.RunningRequests",
+                "serverEventLoop/RetireRequest#{requestId}: request not found in state.RunningRequests",
                 requestId
             )
 
@@ -304,8 +330,8 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
             // try to process next msg from the remainder, if possible, later
             postServerEvent ProcessRequestQueue
 
-            // unblock this request to run by sending it current state
-            requestToRun.Semaphore.Release() |> ignore
+            // notify all activation listeners with the current state
+            requestToRun.ActivationListeners |> List.iter (fun rc -> rc.Reply(newState))
 
         | None -> ()
 

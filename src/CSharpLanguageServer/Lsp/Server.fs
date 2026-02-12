@@ -63,16 +63,12 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
               Mode = requestMode
               Priority = 0 }
 
-        let requestId, semaphore =
-            stateActor.PostAndReply(fun rc -> StartRequest(requestDetails, rc))
+        let requestId =
+            stateActor.PostAndReply(fun rc -> EnqueueRequest(requestDetails, rc))
 
-        let stateAcquisitionAndHandlerInvocation = async {
-            do! semaphore.WaitAsync() |> Async.AwaitTask
-
-            let! state = stateActor.PostAndAsyncReply GetState
-
+        let requestActivationAndHandlerInvocation = async {
+            let! state = stateActor.PostAndAsyncReply(fun rc -> AwaitRequestActivation(requestId, rc))
             let context = ServerRequestContext(state, stateActor.Post)
-
             return! handlerFn context param
         }
 
@@ -89,9 +85,9 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                     | _ -> LspResult.internalError (string exn)
         }
 
-        stateAcquisitionAndHandlerInvocation
+        requestActivationAndHandlerInvocation
         |> wrapExceptionAsLspResult
-        |> unwindProtect (fun () -> stateActor.Post(FinishRequest requestId))
+        |> unwindProtect (fun () -> stateActor.Post(RetireRequest requestId))
 
     let withReadOnlyContext requestName handlerFn =
         withContext requestName ReadOnly handlerFn
