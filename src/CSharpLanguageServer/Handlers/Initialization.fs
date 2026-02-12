@@ -17,7 +17,6 @@ open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
 
-
 [<RequireQualifiedAccess>]
 module Initialization =
     let private logger = Logging.getLoggerByName "Initialization"
@@ -25,11 +24,13 @@ module Initialization =
     let handleInitialize
         (lspClient: ILspClient)
         (setupTimer: unit -> unit)
-        (serverCapabilities: ServerCapabilities)
+        (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
         (context: ServerRequestContext)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
+            let serverCapabilities = getServerCapabilities context.State.Settings p
+
             // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
             let windowShowMessage m =
                 lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
