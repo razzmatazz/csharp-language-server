@@ -62,7 +62,8 @@ and ServerState =
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
       RequestStats: Map<string, RequestMetrics>
-      LastStatsDumpTime: DateTime }
+      LastStatsDumpTime: DateTime
+      PeriodicTickTimer: Threading.Timer option }
 
     static member Empty =
         { Settings = ServerSettings.Default
@@ -76,7 +77,8 @@ and ServerState =
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
           RequestStats = Map.empty
-          LastStatsDumpTime = DateTime.MinValue }
+          LastStatsDumpTime = DateTime.MinValue
+          PeriodicTickTimer = None }
 
 let tryPullNextRunnableRequest state =
     let noRWRequestRunning =
@@ -124,8 +126,9 @@ let tryPullNextRunnableRequest state =
         Some nextRunnableRequest, newState
 
 type ServerStateEvent =
+    | ClientInitialize of ILspClient
+    | ClientShutdown
     | ClientCapabilityChange of ClientCapabilities
-    | ClientChange of ILspClient option
     | DocumentClosed of string
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
@@ -336,7 +339,29 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
         let newWorkspace = workspaceFrom workspaceFolders
         return { state with Workspace = newWorkspace }
 
-    | ClientChange lspClient -> return { state with LspClient = lspClient }
+    | ClientInitialize lspClient ->
+        let timer =
+            new Threading.Timer(
+                Threading.TimerCallback(fun _ -> do postServerEvent PeriodicTimerTick),
+                null,
+                dueTime = 100,
+                period = 250
+            )
+
+        return
+            { state with
+                LspClient = Some lspClient
+                PeriodicTickTimer = Some timer }
+
+    | ClientShutdown ->
+        match state.PeriodicTickTimer with
+        | Some timer -> timer.Dispose()
+        | None -> ()
+
+        return
+            { state with
+                LspClient = None
+                PeriodicTickTimer = None }
 
     | ClientCapabilityChange cc ->
         let experimentalCapsBoolValue boolPropName =
