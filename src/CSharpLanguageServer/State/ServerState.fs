@@ -133,7 +133,6 @@ type ServerStateEvent =
     | EnqueueRequest of RequestDetails * AsyncReplyChannel<int>
     | AwaitRequestActivation of int * AsyncReplyChannel<ServerState>
     | RetireRequest of int
-    | GetState of AsyncReplyChannel<ServerState>
     | PeriodicTimerTick
     | ProcessRequestQueue
     | PushDiagnosticsDocumentBacklogUpdate
@@ -243,10 +242,6 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
             postServerEvent (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 250)))
 
         return newState
-
-    | GetState replyChannel ->
-        replyChannel.Reply(state)
-        return state
 
     | EnqueueRequest(requestDetails, replyChannel) ->
         postServerEvent ProcessRequestQueue

@@ -182,13 +182,10 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         override __.Dispose() = ()
 
         override __.Initialize p =
-            let state = stateActor.PostAndReply GetState
-            let serverCapabilities = getServerCapabilities state.Settings p
-
             p
             |> withReadWriteContext
                 "initialize"
-                (Initialization.handleInitialize lspClient setupTimer serverCapabilities)
+                (Initialization.handleInitialize lspClient setupTimer getServerCapabilities)
 
         override __.Initialized _ =
             ()
