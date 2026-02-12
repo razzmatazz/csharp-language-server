@@ -23,19 +23,16 @@ module Initialization =
 
     let handleInitialize
         (lspClient: ILspClient)
-        (setupTimer: unit -> unit)
         (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
         (context: ServerRequestContext)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
-            let serverCapabilities = getServerCapabilities context.State.Settings p
+            context.Emit(ClientInitialize lspClient)
 
             // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
             let windowShowMessage m =
                 lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
-
-            context.Emit(ClientChange(Some lspClient))
 
             let serverName = "csharp-ls"
             let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
@@ -86,10 +83,9 @@ module Initialization =
 
             context.Emit(WorkspaceConfigurationChanged workspaceFolders)
 
-            // setup timer so actors get period ticks
-            setupTimer ()
-
             let initializeResult =
+                let serverCapabilities = getServerCapabilities context.State.Settings p
+
                 let assemblyVersion =
                     Assembly.GetExecutingAssembly().GetName().Version
                     |> Option.ofObj
@@ -179,6 +175,6 @@ module Initialization =
 
     let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
         context.Emit(ClientCapabilityChange emptyClientCapabilities)
-        context.Emit(ClientChange None)
+        context.Emit(ClientShutdown)
         return Ok()
     }

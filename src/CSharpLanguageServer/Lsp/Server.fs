@@ -39,19 +39,6 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                     Settings = settings }
         )
 
-    let mutable timer: Threading.Timer option = None
-
-    let setupTimer () =
-        timer <-
-            Some(
-                new Threading.Timer(
-                    Threading.TimerCallback(fun _ -> do stateActor.Post PeriodicTimerTick),
-                    null,
-                    dueTime = 100,
-                    period = 250
-                )
-            )
-
     let withContext requestName requestMode (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>) param =
         // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
         //
@@ -183,9 +170,7 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
         override __.Initialize p =
             p
-            |> withReadWriteContext
-                "initialize"
-                (Initialization.handleInitialize lspClient setupTimer getServerCapabilities)
+            |> withReadWriteContext "initialize" (Initialization.handleInitialize lspClient getServerCapabilities)
 
         override __.Initialized _ =
             ()
