@@ -30,7 +30,7 @@ type CLIArguments =
             | Diagnose -> "run diagnostics"
             | Features _ -> "enable optional features, comma-separated: [metadata-uris, razor-support]"
 
-let parseLogLevel (debugMode: bool) (logLevelArg: string option) : LogLevel =
+let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
     match logLevelArg with
     | Some "error" -> LogLevel.Error
     | Some "warning" -> LogLevel.Warning
@@ -38,11 +38,6 @@ let parseLogLevel (debugMode: bool) (logLevelArg: string option) : LogLevel =
     | Some "debug" -> LogLevel.Debug
     | Some "trace" -> LogLevel.Trace
     | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
-
-let resolveDirectoryOrCurrent (path: string option) =
-    path
-    |> Option.filter (fun p -> not (String.IsNullOrWhiteSpace p) && Directory.Exists p)
-    |> Option.defaultValue (Directory.GetCurrentDirectory())
 
 let getTopLevelFiles (dir: string) (patterns: string list) =
     patterns
