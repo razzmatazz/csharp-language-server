@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Program
 
 open System
+open System.IO
 open System.Reflection
 
 open Argu
@@ -29,7 +30,7 @@ type CLIArguments =
             | Diagnose -> "run diagnostics"
             | Features _ -> "enable optional features, comma-separated: [metadata-uris, razor-support]"
 
-let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
+let parseLogLevel (debugMode: bool) (logLevelArg: string option) : LogLevel =
     match logLevelArg with
     | Some "error" -> LogLevel.Error
     | Some "warning" -> LogLevel.Warning
@@ -37,6 +38,71 @@ let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
     | Some "debug" -> LogLevel.Debug
     | Some "trace" -> LogLevel.Trace
     | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
+
+let resolveDirectoryOrCurrent (path: string option) =
+    path
+    |> Option.filter (fun p -> not (String.IsNullOrWhiteSpace p) && Directory.Exists p)
+    |> Option.defaultValue (Directory.GetCurrentDirectory())
+
+let getTopLevelFiles (dir: string) (patterns: string list) =
+    patterns
+    |> List.collect (fun pattern ->
+        Directory.GetFiles(dir, pattern, SearchOption.TopDirectoryOnly)
+        |> Array.toList)
+
+let validateSolutionsOrTopLevelProjects
+    (solutionPath: string option) : string option =
+        match solutionPath with
+        | Some solution ->
+            let fullPath = Path.GetFullPath solution
+            if not (File.Exists fullPath) then
+                invalidArg "Solution" $"Solution file not found: %s{fullPath}"
+
+            match Path.GetExtension(fullPath).ToLowerInvariant() with
+                | ".sln" | ".slnx" -> Some fullPath
+                | _ ->
+                    invalidArg "Solution" $"Invalid solution file extension (expected .sln or .slnx): %s{fullPath}"
+
+        | None ->
+            let dir = Directory.GetCurrentDirectory()
+
+            let slnxFiles = getTopLevelFiles dir [ "*.slnx" ]
+            let slnFiles  = getTopLevelFiles dir [ "*.sln"  ]
+            let projFiles = getTopLevelFiles dir [ "*.csproj"; ]
+
+            match slnxFiles, slnFiles with
+                // Prefer .slnx if exactly one
+                | [ single ], _ ->
+                    Some single
+
+                // Multiple .slnx → must choose
+                | xs, _ when List.length xs > 1 ->
+                    invalidArg "Solution"
+                        (sprintf
+                            "Multiple .slnx files found in '%s'. Please specify one with -s/--solution.\n%s"
+                            dir
+                            (String.concat "\n" xs))
+
+                // No .slnx, but exactly one .sln
+                | [], [ single ] ->
+                    Some single
+
+                // Multiple .sln → must choose
+                | [], xs when List.length xs > 1 ->
+                    invalidArg "Solution"
+                        (sprintf
+                            "Multiple .sln files found in '%s'. Please specify one with -s/--solution.\n%s"
+                            dir
+                            (String.concat "\n" xs))
+
+                // No solutions at all
+                | [], [] ->
+                    if List.isEmpty projFiles then
+                        invalidArg "Solution"
+                            $"No -s/--solution argument provided, and no .sln/.slnx or project files were found in '%s{dir}' (top-level)."
+                    else
+                        None
+                | _ -> invalidArg "Solution" "Unable to process target directory"
 
 [<EntryPoint>]
 let entry args =
@@ -63,15 +129,18 @@ let entry args =
             |> Seq.filter (String.IsNullOrWhiteSpace >> not)
             |> Set.ofSeq
 
-        let settings =
+        let solutionsProvided = serverArgs.TryGetResult <@ Solution @>
+        let solutionOrValidCurrentDir = validateSolutionsOrTopLevelProjects solutionsProvided
+
+        let settings: ServerSettings =
             { ServerSettings.Default with
                 DebugMode = debugMode
-                SolutionPath = serverArgs.TryGetResult <@ Solution @>
+                SolutionPath = solutionOrValidCurrentDir
                 UseMetadataUris = features.Contains "metadata-uris"
                 RazorSupport = features.Contains "razor-support"
                 LogLevel = logLevel }
 
-        let exitCode =
+        let exitCode: int =
             match serverArgs.TryGetResult <@ Diagnose @> with
             | Some _ ->
                 Logging.setupLogging LogLevel.Trace
