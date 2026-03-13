@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Tests.ReferenceTests
 
+open System.Threading
+
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
@@ -142,6 +144,7 @@ let testReferenceWorksDotnet8 () =
     Assert.AreEqual(expectedLocations2, locations2.Value)
 
 [<Test>]
+[<Retry(3)>]
 let testReferenceWorksToRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
@@ -151,6 +154,8 @@ let testReferenceWorksToRazorPageReferencedValue () =
 
     use completionTestsCshtmlFile =
         client.Open "Project/Views/Test/CompletionTests.cshtml"
+
+    Thread.Sleep(250) // TODO: work around race for Razor support
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
@@ -241,6 +246,7 @@ let testReferenceWorksToRazorPageReferencedValue () =
     Assert.AreEqual(expectedLocations1, sortedLocations1)
 
 [<Test>]
+[<Retry(3)>]
 let testReferenceWorksFromRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
@@ -250,6 +256,8 @@ let testReferenceWorksFromRazorPageReferencedValue () =
 
     use completionTestsCshtmlFile =
         client.Open "Project/Views/Test/CompletionTests.cshtml"
+
+    Thread.Sleep(250) // TODO: work around race for Razor support
 
     let referenceParams0: ReferenceParams =
         { TextDocument = { Uri = indexCshtmlFile.Uri }

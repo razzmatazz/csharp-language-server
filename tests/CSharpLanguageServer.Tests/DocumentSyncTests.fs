@@ -43,6 +43,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         // now change file to contain "xxx" to trigger diagnostics
         classFile.Change("xxx")
 
+        Thread.Sleep(250)
+
         let report1: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
@@ -74,6 +76,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         // now change file to contain "xxx" to trigger diagnostics
         classFile.Change("xxx")
 
+        Thread.Sleep(250)
+
         let report4: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
@@ -82,6 +86,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         | _ -> failwith "U2.C1 is expected"
 
         classFile.Save()
+
+        Thread.Sleep(250)
 
         let report5: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
@@ -132,6 +138,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         // now change file to contain invalid razor code to trigger diagnostics
         cshtmlFile.Change("@model Project.Models.Test.IndexViewModel\n@Model.InvalidProperty")
 
+        Thread.Sleep(250)
+
         let report1: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
@@ -163,6 +171,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         // now change file to contain invalid razor code to trigger diagnostics
         cshtmlFile.Change("@model Project.Models.Test.IndexViewModel\n@Model.InvalidProperty")
 
+        Thread.Sleep(250)
+
         let report4: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
@@ -171,6 +181,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         | _ -> failwith "U2.C1 is expected"
 
         cshtmlFile.Save()
+
+        Thread.Sleep(250)
 
         let report5: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)

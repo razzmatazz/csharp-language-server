@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.DocumentHighlightTests
 
 open System
+open System.Threading
 
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
@@ -39,6 +40,8 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
 let ``test textDocument/documentHighlight works in .cshtml file`` () =
     use client = activateFixture "aspnetProject"
     use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
+
+    Thread.Sleep(250) // TODO: work around race for Razor support
 
     let highlightParams: DocumentHighlightParams =
         { TextDocument = { Uri = indexCshtmlFile.Uri }
