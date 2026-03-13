@@ -19,7 +19,7 @@ open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder

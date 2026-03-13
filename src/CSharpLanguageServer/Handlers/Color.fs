@@ -3,7 +3,7 @@ namespace CSharpLanguageServer.Handlers
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]

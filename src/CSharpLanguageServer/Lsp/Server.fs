@@ -14,8 +14,8 @@ open Microsoft.Extensions.Logging
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.ServerStateLoop
 open CSharpLanguageServer.Util
 
 module LspUtils =
@@ -24,7 +24,6 @@ module LspUtils =
 
     /// Do nothing and ignore the notification
     let ignoreNotification: Async<unit> = async.Return(())
-
 
 open LspUtils
 
@@ -45,17 +44,23 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
         // handler until previous one returns a Task (in our case -- F# `async` object.)
 
-        let requestDetails =
-            { Name = requestName
-              Mode = requestMode
-              Priority = 0 }
-
         let requestId =
-            stateActor.PostAndReply(fun rc -> EnqueueRequest(requestDetails, rc))
+            stateActor.PostAndReply(fun rc -> RegisterRequest(requestName, requestMode, rc))
 
         let requestActivationAndHandlerInvocation = async {
             let! state = stateActor.PostAndAsyncReply(fun rc -> AwaitRequestActivation(requestId, rc))
-            let context = ServerRequestContext(state, stateActor.Post)
+            let state = state :?> ServerState
+
+            let context =
+                ServerRequestContext(
+                    requestMode,
+                    state.LspClient,
+                    state.Settings,
+                    state.Workspace,
+                    state.ClientCapabilities,
+                    stateActor.Post
+                )
+
             return! handlerFn context param
         }
 

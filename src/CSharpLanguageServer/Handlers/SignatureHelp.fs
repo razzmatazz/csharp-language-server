@@ -10,7 +10,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace

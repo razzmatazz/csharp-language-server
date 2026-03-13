@@ -10,8 +10,7 @@ open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
@@ -112,7 +111,7 @@ module Workspace =
         : Async<LspResult<unit>> =
 
         let windowShowMessage (m: string) =
-            match context.State.LspClient with
+            match context.LspClient with
             | Some lspClient ->
                 lspClient.WindowShowMessage(
                     { Type = MessageType.Info
@@ -161,7 +160,7 @@ module Workspace =
             match csharpSettingsMaybe with
             | None -> ()
             | Some csharpSettings ->
-                let prevSettings = context.State.Settings
+                let prevSettings = context.Settings
 
                 let newSettings =
                     applyCSharpSectionConfigurationOnSettings prevSettings csharpSettings
@@ -180,7 +179,7 @@ module Workspace =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 
             let updatedWorkspaceFolders =
-                context.State.Workspace.Folders
+                context.Workspace.Folders
                 |> Seq.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
                 |> Seq.filter wfNotInRemovedList
                 |> Seq.append p.Event.Added

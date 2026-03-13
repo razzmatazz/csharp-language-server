@@ -9,8 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Util
@@ -71,7 +70,7 @@ module Implementation =
 
             match wf, symInfo with
             | Some wf, Some(sym, project, _) ->
-                let! impls, updatedWf = findImplLocationsOfSymbol wf context.State.Settings project sym
+                let! impls, updatedWf = findImplLocationsOfSymbol wf context.Settings project sym
                 context.Emit(WorkspaceFolderChange updatedWf)
 
                 return impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
