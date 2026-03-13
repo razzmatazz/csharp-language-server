@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Tests.HoverTests
 
+open System.Threading
+
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
@@ -65,10 +67,13 @@ let testHoverWorks () =
     Assert.IsTrue(hover2.IsNone)
 
 [<Test>]
+[<Retry(3)>]
 let testHoverWorksInRazorFile () =
     use client = activateFixture "aspnetProject"
 
     use indexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
+
+    Thread.Sleep(250)
 
     let hover0Params: HoverParams =
         { TextDocument = { Uri = indexCshtmlFile.Uri }

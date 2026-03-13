@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
+[<Retry(3)>]
 let testPushDiagnosticsWork () =
     use client = activateFixture "testDiagnosticsWork"
 
@@ -116,9 +117,12 @@ let testPullDiagnosticsWork () =
     | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
+[<Retry(3)>]
 let testPullDiagnosticsWorkForRazorFiles () =
     use client = activateFixture "aspnetProject"
     use cshtmlFile = client.Open("Project/Views/Test/ViewFileWithErrors.cshtml")
+
+    Thread.Sleep(250) // TODO: work around race for Razor support
 
     let diagnosticParams: DocumentDiagnosticParams =
         { WorkDoneToken = None

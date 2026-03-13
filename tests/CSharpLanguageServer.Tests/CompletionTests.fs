@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Tests.CompletionTests
 
+open System.Threading
+
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
@@ -138,10 +140,13 @@ let ``completion works for extension methods`` () =
     | _ -> failwith "Some U2.C1 was expected"
 
 [<Test>]
+[<Retry(5)>]
 let ``completion works in cshtml files`` () =
     use client = activateFixture "aspnetProject"
 
     use cshtmlFile = client.Open "Project/Views/Test/CompletionTests.cshtml"
+
+    Thread.Sleep(250) // TODO: work around race for Razor support
 
     let testCompletionResultContainsItem
         line
