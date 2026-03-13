@@ -7,8 +7,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
@@ -61,7 +60,7 @@ module TypeDefinition =
                     | None -> async.Return([], wf)
                     | Some symbol -> async {
                         let! aggregatedLspLocations, updatedWf =
-                            workspaceFolderSymbolLocations wf context.State.Settings symbol project
+                            workspaceFolderSymbolLocations wf context.Settings symbol project
 
                         context.Emit(WorkspaceFolderChange updatedWf)
                         return aggregatedLspLocations, updatedWf

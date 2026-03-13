@@ -8,8 +8,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
@@ -55,7 +54,7 @@ module TypeHierarchy =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.State.Settings symbol project
+                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 
@@ -91,7 +90,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in supertypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.State.Settings typeSym project
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Settings typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
@@ -147,7 +146,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in subtypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.State.Settings typeSym project
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Settings typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)

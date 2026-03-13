@@ -1,4 +1,4 @@
-module CSharpLanguageServer.State.ServerState
+module CSharpLanguageServer.Runtime.ServerStateLoop
 
 open System
 open System.Threading
@@ -17,52 +17,19 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Runtime.RequestScheduling
 
-type ServerRequestMode =
-    | ReadOnly
-    | ReadWrite
+let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
-type RequestMetrics =
-    { Count: int
-      TotalDuration: TimeSpan
-      MaxDuration: TimeSpan
-      ImpactedRequestsCount: int
-      TotalImpactedWaitingTime: TimeSpan }
-
-    static member Zero =
-        { Count = 0
-          TotalDuration = TimeSpan.Zero
-          MaxDuration = TimeSpan.Zero
-          ImpactedRequestsCount = 0
-          TotalImpactedWaitingTime = TimeSpan.Zero }
-
-type RequestDetails =
-    { Name: string
-      Mode: ServerRequestMode
-      Priority: int  // 0 is the highest priority, 1 is lower prio, etc.
-    // priority is used to order pending R/O requests and is ignored wrt R/W requests
-    }
-
-type QueuedRequest =
-    { Details: RequestDetails
-      Id: int
-      ActivationListeners: AsyncReplyChannel<ServerState> list
-      StartedProcessing: option<DateTime>
-      Enqueued: DateTime }
-
-and ServerState =
+type ServerState =
     { Settings: ServerSettings
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       Workspace: LspWorkspace
-      LastRequestId: int
-      PendingRequests: QueuedRequest list
-      RunningRequests: Map<int, QueuedRequest>
+      RequestQueue: RequestQueue
       WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
-      RequestStats: Map<string, RequestMetrics>
-      LastStatsDumpTime: DateTime
       PeriodicTickTimer: Threading.Timer option }
 
     static member Empty =
@@ -70,170 +37,13 @@ and ServerState =
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
           Workspace = LspWorkspace.Empty
-          LastRequestId = 0
-          PendingRequests = []
-          RunningRequests = Map.empty
+          RequestQueue = RequestQueue.Empty
           WorkspaceReloadPending = None
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
-          RequestStats = Map.empty
-          LastStatsDumpTime = DateTime.MinValue
           PeriodicTickTimer = None }
 
-let tryPullNextRunnableRequest state =
-    let noRWRequestRunning =
-        state.RunningRequests
-        |> Seq.tryFind (fun r -> r.Value.Details.Mode = ReadWrite)
-        |> Option.isNone
-
-    let canPullNextRequest = noRWRequestRunning && state.WorkspaceReloadPending.IsNone
-
-    match canPullNextRequest, state.PendingRequests with
-    | false, _ -> None, state
-
-    | true, [] -> None, state
-
-    | true, nonEmptyRequestQueue ->
-        let requestIsReadOnly (r: QueuedRequest) = (r.Details.Mode = ReadOnly)
-
-        // here we will try to take non-interrupted r/o request sequence at the front,
-        // order it by priority and run the most prioritized one first
-        let nextRoRequestByPriorityMaybe =
-            nonEmptyRequestQueue
-            |> Seq.takeWhile requestIsReadOnly
-            |> Seq.sortBy _.Details.Priority
-            |> Seq.tryHead
-
-        // otherwise, if no r/o request by priority was found then we should just take the first request
-        let nextRequest =
-            nextRoRequestByPriorityMaybe
-            |> Option.defaultValue (nonEmptyRequestQueue |> Seq.head)
-
-        let newPendingRequests = nonEmptyRequestQueue |> List.except [ nextRequest ]
-
-        let nextRunnableRequest =
-            { nextRequest with
-                StartedProcessing = Some DateTime.Now }
-
-        let newRunningRequests =
-            state.RunningRequests |> Map.add nextRunnableRequest.Id nextRunnableRequest
-
-        let newState =
-            { state with
-                RunningRequests = newRunningRequests
-                PendingRequests = newPendingRequests }
-
-        Some nextRunnableRequest, newState
-
-type ServerStateEvent =
-    | ClientInitialize of ILspClient
-    | ClientShutdown
-    | ClientCapabilityChange of ClientCapabilities
-    | DocumentClosed of string
-    | DocumentOpened of string * int * DateTime
-    | DocumentTouched of string * DateTime
-    | DumpAndResetRequestStats
-    | EnqueueRequest of RequestDetails * AsyncReplyChannel<int>
-    | AwaitRequestActivation of int * AsyncReplyChannel<ServerState>
-    | RetireRequest of int
-    | PeriodicTimerTick
-    | ProcessRequestQueue
-    | PushDiagnosticsDocumentBacklogUpdate
-    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
-    | PushDiagnosticsProcessPendingDocuments
-    | SettingsChange of ServerSettings
-    | WorkspaceConfigurationChanged of WorkspaceFolder list
-    | WorkspaceFolderChange of LspWorkspaceFolder
-    | WorkspaceReloadRequested of TimeSpan
-
-let updateRequestStats state request (stats: RequestMetrics option) : RequestMetrics option =
-    let requestExecutionDuration: TimeSpan =
-        match request.StartedProcessing with
-        | Some startTime -> DateTime.Now - startTime
-        | None -> DateTime.Now - request.Enqueued
-
-    match stats with
-    | None ->
-        { RequestMetrics.Zero with
-            Count = 1
-            TotalDuration = requestExecutionDuration
-            MaxDuration = requestExecutionDuration }
-        |> Some
-    | Some s ->
-        let (impactedCount, totalImpactedWait) =
-            if request.Details.Mode = ReadWrite then
-                let blockingStartTime =
-                    request.StartedProcessing |> Option.defaultValue request.Enqueued
-
-                let aggregateBlockedRequestStats (count, totalWait) pendingRequest =
-                    let waitStartTime = max blockingStartTime pendingRequest.Enqueued
-                    let waitDurationForPending = DateTime.Now - waitStartTime
-
-                    (count + 1, totalWait + waitDurationForPending)
-
-                state.PendingRequests
-                |> List.fold aggregateBlockedRequestStats (0, TimeSpan.Zero)
-            else
-                (0, TimeSpan.Zero)
-
-        Some
-            { s with
-                Count = s.Count + 1
-                TotalDuration = s.TotalDuration + requestExecutionDuration
-                MaxDuration = max s.MaxDuration requestExecutionDuration
-                ImpactedRequestsCount = s.ImpactedRequestsCount + impactedCount
-                TotalImpactedWaitingTime = s.TotalImpactedWaitingTime + totalImpactedWait }
-
-let processDumpAndResetRequestStats (logger: ILogger) state =
-    let formatStats stats =
-        let calculateRequestStatsMetrics (name, metrics) =
-            let avgDurationMs =
-                if metrics.Count > 0 then
-                    metrics.TotalDuration.TotalMilliseconds / float metrics.Count
-                else
-                    0.0
-
-            let avgImpactedWaitMs =
-                if metrics.ImpactedRequestsCount > 0 then
-                    metrics.TotalImpactedWaitingTime.TotalMilliseconds
-                    / float metrics.ImpactedRequestsCount
-                else
-                    0.0
-
-            (name, metrics, avgImpactedWaitMs, avgDurationMs)
-
-        let sortedStats =
-            stats
-            |> Map.toList
-            |> List.map calculateRequestStatsMetrics
-            |> List.sortByDescending (fun (_, _, _, avgDuration) -> avgDuration)
-
-        let formatStatsRowWithImpact (name, metrics, avgImpactedWaitMs: float, avgDurationMs: float) =
-            [ $"\"{name}\""
-              metrics.Count |> string
-              avgDurationMs.ToString("F2")
-              metrics.MaxDuration.TotalMilliseconds.ToString("F2")
-              sprintf "%d (%s ms on avg)" metrics.ImpactedRequestsCount (avgImpactedWaitMs.ToString("F2")) ]
-
-        let headerRow =
-            [ "Name"; "Count"; "AvgDuration (ms)"; "MaxDuration (ms)"; "ImpactedRequests" ]
-
-        let dataRows = sortedStats |> List.map formatStatsRowWithImpact
-
-        formatInColumns (headerRow :: dataRows)
-
-    if not (Map.isEmpty state.RequestStats) then
-        logger.LogDebug("--------- Request Stats ---------")
-        logger.LogDebug("{stats}", (state.RequestStats |> formatStats))
-        logger.LogDebug("---------------------------------")
-    else
-        logger.LogDebug("------- No request stats  -------")
-
-    { state with
-        RequestStats = Map.empty
-        LastStatsDumpTime = DateTime.Now }
-
-let processServerEvent (logger: ILogger) state postServerEvent ev : Async<ServerState> = async {
+let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
     | SettingsChange newSettings ->
         let newState: ServerState = { state with Settings = newSettings }
@@ -246,94 +56,70 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
 
         return newState
 
-    | EnqueueRequest(requestDetails, replyChannel) ->
+    | RegisterRequest(requestName, requestMode, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
-        let newRequest =
-            { Details = requestDetails
-              Id = state.LastRequestId + 1
-              ActivationListeners = []
-              StartedProcessing = None
-              Enqueued = DateTime.Now }
+        let newRequest, updatedRequestQueue =
+            registerRequestToRequestQueue requestName (requestMode :?> ServerRequestMode) state.RequestQueue
 
         replyChannel.Reply(newRequest.Id)
 
-        return
+        let newState =
             { state with
-                LastRequestId = newRequest.Id
-                PendingRequests = state.PendingRequests @ [ newRequest ] }
+                RequestQueue = updatedRequestQueue }
+
+        return newState
 
     | AwaitRequestActivation(requestId, replyChannel) ->
-        let pendingRequest =
-            state.PendingRequests |> List.tryFind (fun r -> r.Id = requestId)
-
-        match pendingRequest with
-        | Some request ->
-            // add replyChannel to ActivationListeners for the request
-            let updatedPendingRequests =
-                state.PendingRequests
-                |> List.map (fun r ->
-                    if r.Id = requestId then
-                        { r with
-                            ActivationListeners = replyChannel :: r.ActivationListeners }
-                    else
-                        r)
-
+        match addActivationListenerForRequestOnRequestQueue requestId replyChannel state.RequestQueue with
+        | Some(_request, updatedRequestQueue) ->
             let updatedState =
                 { state with
-                    PendingRequests = updatedPendingRequests }
+                    RequestQueue = updatedRequestQueue }
 
             return updatedState
 
         | None ->
-            // Request is already running or finished, send current state immediately
+            // Request is already running or finished, send it the current state immediately
             replyChannel.Reply(state)
             return state
 
     | RetireRequest requestId ->
-        let request = state.RunningRequests |> Map.tryFind requestId
-
-        match request with
-        | Some request ->
-            let newRequestStats =
-                match state.Settings.DebugMode with
-                | true ->
-                    state.RequestStats
-                    |> Map.change request.Details.Name (updateRequestStats state request)
-                | false -> state.RequestStats
-
-            let newRunningRequests = state.RunningRequests |> Map.remove request.Id
-
+        match retireRequestFromRequestQueue state.Settings requestId state.RequestQueue with
+        | Some newRequestQueue ->
             let newState =
                 { state with
-                    RunningRequests = newRunningRequests
-                    RequestStats = newRequestStats }
+                    RequestQueue = newRequestQueue }
 
             postServerEvent ProcessRequestQueue
             return newState
 
         | None ->
-            logger.LogWarning(
-                "serverEventLoop/RetireRequest#{requestId}: request not found in state.RunningRequests",
-                requestId
-            )
+            logger.LogWarning("serverEventLoop/RetireRequest#{requestId}: not request to retire", requestId)
 
             return state
 
     | ProcessRequestQueue ->
-        let nextRunnableRequest, newState = tryPullNextRunnableRequest state
+        let! updatedRequestQueue =
+            processRequestQueue
+                state.WorkspaceReloadPending.IsSome
+                state
+                state.Workspace
+                state.Settings
+                state.RequestQueue
 
-        match nextRunnableRequest with
-        | Some requestToRun ->
-            // try to process next msg from the remainder, if possible, later
+        match updatedRequestQueue with
+        | Some updatedRequestQueue ->
+            // continue processing msgs from the queue
             postServerEvent ProcessRequestQueue
 
-            // notify all activation listeners with the current state
-            requestToRun.ActivationListeners |> List.iter (fun rc -> rc.Reply(newState))
+            let newState =
+                { state with
+                    RequestQueue = updatedRequestQueue }
 
-        | None -> ()
+            return newState
 
-        return newState
+        | None -> return state
 
     | WorkspaceConfigurationChanged workspaceFolders ->
         let newWorkspace = workspaceFrom workspaceFolders
@@ -605,10 +391,12 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let statsDumpDeadline = state.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
+        let updatedRequestQueue =
+            dumpAndResetRequestStats state.Settings.DebugMode state.RequestQueue
 
-        if state.Settings.DebugMode && statsDumpDeadline < DateTime.Now then
-            postServerEvent DumpAndResetRequestStats
+        let state =
+            { state with
+                RequestQueue = updatedRequestQueue }
 
         let solutionReloadDeadline =
             state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays 1)
@@ -629,17 +417,14 @@ let processServerEvent (logger: ILogger) state postServerEvent ev : Async<Server
 
         | false -> return state
 
-    | DumpAndResetRequestStats -> return processDumpAndResetRequestStats logger state
 }
 
-let serverEventLoop initialState (inbox: MailboxProcessor<ServerStateEvent>) =
-    let logger = Logging.getLoggerByName "serverEventLoop"
-
+let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
 
         try
-            let! newState = msg |> processServerEvent logger state inbox.Post
+            let! newState = msg |> processServerEvent state inbox.Post
             return! loop newState
         with ex ->
             logger.LogError(ex, "serverEventLoop: crashed with {exception}", string ex)

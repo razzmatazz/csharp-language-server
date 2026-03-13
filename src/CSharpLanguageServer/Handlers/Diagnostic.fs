@@ -9,7 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace
@@ -208,7 +208,7 @@ module Diagnostic =
                             { Token = partialResultToken
                               Value = serialize reportPartialResult }
 
-                    let lspClient = context.State.LspClient.Value
+                    let lspClient = context.LspClient.Value
                     do! lspClient.Progress(progressParams)
                 }
 

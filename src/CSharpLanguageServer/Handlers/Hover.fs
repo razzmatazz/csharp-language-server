@@ -8,7 +8,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Util

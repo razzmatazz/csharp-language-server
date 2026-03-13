@@ -10,7 +10,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.State
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
@@ -72,7 +72,7 @@ module DocumentOnTypeFormatting =
 
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         let lspFormattingOptions =
-            p.Options |> context.State.Settings.GetEffectiveFormattingOptions
+            p.Options |> context.Settings.GetEffectiveFormattingOptions
 
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument

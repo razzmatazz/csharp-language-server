@@ -10,8 +10,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.State
-open CSharpLanguageServer.State.ServerState
+open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
@@ -37,7 +36,7 @@ module LifeCycle =
             let serverName = "csharp-ls"
             let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
             logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
-            logger.LogInformation("initial server settings: {settings}", context.State.Settings |> string)
+            logger.LogInformation("initial server settings: {settings}", context.Settings |> string)
 
             do! windowShowMessage (sprintf "csharp-ls: initializing, version %s" serverVersion)
 
@@ -84,7 +83,7 @@ module LifeCycle =
             context.Emit(WorkspaceConfigurationChanged workspaceFolders)
 
             let initializeResult =
-                let serverCapabilities = getServerCapabilities context.State.Settings p
+                let serverCapabilities = getServerCapabilities context.Settings p
 
                 let assemblyVersion =
                     Assembly.GetExecutingAssembly().GetName().Version
@@ -103,7 +102,7 @@ module LifeCycle =
 
     let handleInitialized
         (lspClient: ILspClient)
-        (stateActor: MailboxProcessor<ServerStateEvent>)
+        (serverActor: MailboxProcessor<ServerEvent>)
         (getDynamicRegistrations: ServerSettings -> ClientCapabilities -> Registration list)
         (context: ServerRequestContext)
         (_p: unit)
@@ -115,7 +114,7 @@ module LifeCycle =
 
             let registrationParams =
                 { Registrations =
-                    getDynamicRegistrations context.State.Settings context.ClientCapabilities
+                    getDynamicRegistrations context.Settings context.ClientCapabilities
                     |> List.toArray }
 
             logger.LogDebug("handleInitialized: ClientRegisterCapability..")
@@ -150,7 +149,7 @@ module LifeCycle =
                 match csharpConfig with
                 | None -> ()
                 | Some csharpConfig ->
-                    let prevSettings = context.State.Settings
+                    let prevSettings = context.Settings
 
                     let newSettings =
                         applyCSharpSectionConfigurationOnSettings prevSettings csharpConfig
@@ -166,7 +165,7 @@ module LifeCycle =
             //
             // start loading workspace
             //
-            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
+            serverActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
