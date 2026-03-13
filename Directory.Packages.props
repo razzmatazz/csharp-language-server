@@ -5,8 +5,8 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <PropertyGroup>
-    <RoslynPackageVersion>5.0.0</RoslynPackageVersion>
     <MSBuildPackageVersion>18.4.0</MSBuildPackageVersion>
+    <RoslynPackageVersion>5.3.0</RoslynPackageVersion>
     <MSBuildLocatorPackageVersion>1.10.12</MSBuildLocatorPackageVersion>
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>
