@@ -384,8 +384,11 @@ let solutionGetRazorDocumentForPath
             let cshtmlPathTranslated =
                 Path.GetRelativePath(projectBaseDir, cshtmlPath)
                 |> _.Replace(".", "_")
-                |> _.Replace(Path.DirectorySeparatorChar, '_')
                 |> (fun s -> s + ".g.cs")
+
+            // TODO: drop this later, this is for compat with .NET SDK < "10.201"
+            let altCshtmlPathTranslated =
+                cshtmlPathTranslated |> _.Replace(Path.DirectorySeparatorChar, '_')
 
             for tree in compilation.SyntaxTrees do
                 let path = tree.FilePath
@@ -393,7 +396,10 @@ let solutionGetRazorDocumentForPath
                 if path.StartsWith projectBaseDir then
                     let relativePath = Path.GetRelativePath(projectBaseDir, path)
 
-                    if relativePath.EndsWith cshtmlPathTranslated then
+                    if
+                        relativePath.EndsWith cshtmlPathTranslated
+                        || relativePath.EndsWith altCshtmlPathTranslated
+                    then
                         cshtmlTree <- Some tree
 
             return cshtmlTree |> Option.map (fun cst -> (project, compilation, cst))

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 * Upgrade Roslyn lib to 5.3.0, MSBuild to 18.4.0
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/325
+* Fix Razor support with .NET SDK 10.201
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/325
 
 ## [0.22.0] - 2026-02-05 / Mažeikiai
 * Improve performance of workspace diagnostics
