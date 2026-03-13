@@ -32,7 +32,25 @@ jobs:
         run: dotnet build -c Debug
 
       - name: Run Tests
-        run: dotnet test --no-build
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          CORES=$(nproc)
+          WORKERS=$(( CORES / 2 ))
+          if [ "$WORKERS" -lt 1 ]; then
+            WORKERS=1
+          fi
+
+          echo "Total cores: $CORES, running tests with $WORKERS workers"
+          dotnet test --no-build -- NUnit.NumberOfTestWorkers=$WORKERS
+
+      - name: Run Tests
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $workers = [Math]::Max(1, [Math]::Floor($env:NUMBER_OF_PROCESSORS / 2))
+
+          Write-Host "Total cores: $cores, running tests with $workers"
+          dotnet test --no-build -- NUnit.NumberOfTestWorkers=$workers
 
       - name: Run Fantomas check
         run: dotnet fantomas --check .
