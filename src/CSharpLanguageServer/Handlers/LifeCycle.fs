@@ -18,8 +18,8 @@ open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
-module Initialization =
-    let private logger = Logging.getLoggerByName "Initialization"
+module LifeCycle =
+    let private logger = Logging.getLoggerByName "LifeCycle"
 
     let handleInitialize
         (lspClient: ILspClient)

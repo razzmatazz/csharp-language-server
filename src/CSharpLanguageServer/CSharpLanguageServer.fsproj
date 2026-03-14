@@ -57,7 +57,7 @@
     <Compile Include="Handlers/FoldingRange.fs" />
     <Compile Include="Handlers/Hover.fs" />
     <Compile Include="Handlers/Implementation.fs" />
-    <Compile Include="Handlers/Initialization.fs" />
+    <Compile Include="Handlers/LifeCycle.fs" />
     <Compile Include="Handlers/InlayHint.fs" />
     <Compile Include="Handlers/InlineValue.fs" />
     <Compile Include="Handlers/LinkedEditingRange.fs" />
