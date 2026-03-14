@@ -170,17 +170,17 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
         override __.Initialize p =
             p
-            |> withReadWriteContext "initialize" (Initialization.handleInitialize lspClient getServerCapabilities)
+            |> withReadWriteContext "initialize" (LifeCycle.handleInitialize lspClient getServerCapabilities)
 
         override __.Initialized _ =
             ()
             |> withReadWriteContext
                 "initialized"
-                (Initialization.handleInitialized lspClient stateActor getDynamicRegistrations)
+                (LifeCycle.handleInitialized lspClient stateActor getDynamicRegistrations)
             |> ignoreResult
 
         override __.Shutdown() =
-            () |> withReadWriteContext "shutdown" Initialization.handleShutdown
+            () |> withReadWriteContext "shutdown" LifeCycle.handleShutdown
 
         override __.Exit() = ignoreNotification
 
