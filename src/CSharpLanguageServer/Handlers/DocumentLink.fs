@@ -10,10 +10,12 @@ open CSharpLanguageServer.Types
 module DocumentLink =
     let provider (cc: ClientCapabilities) : DocumentLinkOptions option = None
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
+    let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> =
-        LspResult.notImplemented<DocumentLink[] option> |> async.Return
+    let handle (_a: ActivateServerRequest) (_p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> = async {
+        return LspResult.notImplemented<DocumentLink[] option>
+    }
 
-    let resolve (context: ServerRequestContext) (p: DocumentLink) : AsyncLspResult<DocumentLink> =
-        LspResult.notImplemented<DocumentLink> |> async.Return
+    let resolve (_a: ActivateServerRequest) (_p: DocumentLink) : AsyncLspResult<DocumentLink> = async {
+        return LspResult.notImplemented<DocumentLink>
+    }

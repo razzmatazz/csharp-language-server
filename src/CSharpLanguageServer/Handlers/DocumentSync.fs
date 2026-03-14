@@ -11,13 +11,13 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module TextDocumentSync =
@@ -169,7 +169,13 @@ module TextDocumentSync =
                     return newDocMaybe |> Option.map (fun _ -> updatedWf)
         }
 
-    let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didOpen (acquireContext: ActivateServerRequest) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
+        Console.Error.WriteLine("DocumentSync.didOpen: p={0}", p)
+
+        let! context = acquireContext ReadWriteSequential (Some p.TextDocument.Uri)
+
+        Console.Error.WriteLine("DocumentSync.didOpen: context={0}", context)
+
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with
@@ -232,7 +238,8 @@ module TextDocumentSync =
                 return Some updatedWf
         }
 
-    let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didChange (acquireContext: ActivateServerRequest) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
+        let! context = acquireContext ReadWriteSequential (Some p.TextDocument.Uri)
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with
@@ -253,17 +260,18 @@ module TextDocumentSync =
             return Ok()
     }
 
-    let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+    let willSave (acquireContext: ActivateServerRequest) (p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+        let! _context = acquireContext ReadWriteSequential (Some p.TextDocument.Uri)
         return Ok()
     }
 
     let willSaveWaitUntil
-        (_context: ServerRequestContext)
+        (_a: ActivateServerRequest)
         (_p: WillSaveTextDocumentParams)
         : AsyncLspResult<TextEdit[] option> =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
-    let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didSave (acquireContext: ActivateServerRequest) (_pp: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         return Ok()
     }
 
@@ -328,7 +336,8 @@ module TextDocumentSync =
             | _, _ -> return None
         }
 
-    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didClose (acquireContext: ActivateServerRequest) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
+        let! context = acquireContext ReadWriteSequential (Some p.TextDocument.Uri)
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with

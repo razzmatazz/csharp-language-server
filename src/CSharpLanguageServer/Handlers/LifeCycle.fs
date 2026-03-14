@@ -15,6 +15,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 [<RequireQualifiedAccess>]
 module LifeCycle =
@@ -23,10 +24,11 @@ module LifeCycle =
     let handleInitialize
         (lspClient: ILspClient)
         (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
+            let! context = acquireContext ReadWriteSequentialImmediate None
             context.Emit(ClientInitialize lspClient)
 
             // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
@@ -71,16 +73,19 @@ module LifeCycle =
                 |> Option.orElse (p.RootPath |> Option.map (Uri >> string))
                 |> Option.defaultValue (Directory.GetCurrentDirectory() |> (Uri >> string))
 
-            let workspaceFolders =
-                match p.WorkspaceFolders with
-                | Some wfs -> wfs |> List.ofArray
-                | None ->
-                    [ { Uri = workspaceFoldersFallbackUri
-                        Name = "root" } ]
+            let lspWorkspaceFolders =
+                let workspaceFolders =
+                    match p.WorkspaceFolders with
+                    | Some wfs -> wfs |> List.ofArray
+                    | None ->
+                        [ { Uri = workspaceFoldersFallbackUri
+                            Name = "root" } ]
 
-            logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
+                workspaceFolders |> List.map LspWorkspaceFolder.From
 
-            context.Emit(WorkspaceConfigurationChanged workspaceFolders)
+            logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize lspWorkspaceFolders)
+
+            context.Emit(WorkspaceConfigurationChange(TimeSpan.FromMilliseconds(int64 250), Some lspWorkspaceFolders))
 
             let initializeResult =
                 let serverCapabilities = getServerCapabilities context.Settings p
@@ -102,12 +107,14 @@ module LifeCycle =
 
     let handleInitialized
         (lspClient: ILspClient)
-        (serverActor: MailboxProcessor<ServerEvent>)
+        (stateActor: MailboxProcessor<ServerEvent>)
         (getDynamicRegistrations: ServerSettings -> ClientCapabilities -> Registration list)
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (_p: unit)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWriteSequentialImmediate None
+
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
             logger.LogDebug("handleInitialized: registrationParams..")
@@ -149,10 +156,8 @@ module LifeCycle =
                 match csharpConfig with
                 | None -> ()
                 | Some csharpConfig ->
-                    let prevSettings = context.Settings
-
                     let newSettings =
-                        applyCSharpSectionConfigurationOnSettings prevSettings csharpConfig
+                        applyCSharpSectionConfigurationOnSettings context.Settings csharpConfig
 
                     context.Emit(SettingsChange newSettings)
 
@@ -162,17 +167,13 @@ module LifeCycle =
                     ex |> string
                 )
 
-            //
-            // start loading workspace
-            //
-            serverActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
-
             logger.LogDebug("handleInitialized: Ok")
 
             return Ok()
         }
 
-    let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
+    let handleShutdown (acquireContext: ActivateServerRequest) (_: unit) : Async<LspResult<unit>> = async {
+        let! context = acquireContext ReadWriteSequential None
         context.Emit(ClientCapabilityChange emptyClientCapabilities)
         context.Emit(ClientShutdown)
         return Ok()

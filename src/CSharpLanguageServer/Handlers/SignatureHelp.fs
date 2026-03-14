@@ -10,12 +10,12 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Runtime
 
 module SignatureInformation =
     let internal fromMethod (m: IMethodSymbol) =
@@ -88,7 +88,9 @@ module SignatureHelp =
                   Method = "textDocument/signatureHelp"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
+        let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
         let wf, docMaybe =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 

@@ -10,12 +10,12 @@ open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module Workspace =
@@ -65,7 +65,7 @@ module Workspace =
 
                 let updatedWf =
                     { wf with
-                        Solution = Some updatedDoc.Project.Solution }
+                        Solution = Loaded updatedDoc.Project.Solution }
 
                 context.Emit(WorkspaceFolderChange updatedWf)
             | None -> ()
@@ -98,7 +98,7 @@ module Workspace =
 
             let updatedWf =
                 { wf with
-                    Solution = Some updatedProject.Solution }
+                    Solution = Loaded updatedProject.Solution }
 
             context.Emit(WorkspaceFolderChange updatedWf)
             context.Emit(DocumentClosed uri)
@@ -106,30 +106,31 @@ module Workspace =
         | _, _ -> ()
 
     let didChangeWatchedFiles
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DidChangeWatchedFilesParams)
         : Async<LspResult<unit>> =
-
-        let windowShowMessage (m: string) =
-            match context.LspClient with
-            | Some lspClient ->
-                lspClient.WindowShowMessage(
-                    { Type = MessageType.Info
-                      Message = sprintf "csharp-ls: %s" m }
-                )
-            | None -> async.Return()
-
         async {
+            let! context = acquireContext ReadWriteSequential None
+
+            let windowShowMessage (m: string) =
+                match context.LspClient with
+                | Some lspClient ->
+                    lspClient.WindowShowMessage(
+                        { Type = MessageType.Info
+                          Message = sprintf "csharp-ls: %s" m }
+                    )
+                | None -> async.Return()
+
             for change in p.Changes do
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
-                    context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    context.Emit(WorkspaceConfigurationChange(TimeSpan.FromSeconds(5: int64), None))
 
                 | ".sln"
                 | ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
-                    context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    context.Emit(WorkspaceConfigurationChange(TimeSpan.FromSeconds(5: int64), None))
 
                 | ".cs" ->
                     match change.Type with
@@ -148,10 +149,12 @@ module Workspace =
         }
 
     let didChangeConfiguration
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (configParams: DidChangeConfigurationParams)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWriteSequential None
+
             let csharpSettingsMaybe =
                 configParams.Settings
                 |> deserialize<DidChangeConfigurationSettingsDto>
@@ -160,10 +163,8 @@ module Workspace =
             match csharpSettingsMaybe with
             | None -> ()
             | Some csharpSettings ->
-                let prevSettings = context.Settings
-
                 let newSettings =
-                    applyCSharpSectionConfigurationOnSettings prevSettings csharpSettings
+                    applyCSharpSectionConfigurationOnSettings context.Settings csharpSettings
 
                 context.Emit(SettingsChange newSettings)
 
@@ -171,10 +172,12 @@ module Workspace =
         }
 
     let didChangeWorkspaceFolders
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DidChangeWorkspaceFoldersParams)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWriteSequential None
+
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 
@@ -183,11 +186,10 @@ module Workspace =
                 |> Seq.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
                 |> Seq.filter wfNotInRemovedList
                 |> Seq.append p.Event.Added
+                |> Seq.map LspWorkspaceFolder.From
                 |> List.ofSeq
 
-            context.Emit(WorkspaceConfigurationChanged updatedWorkspaceFolders)
-
-            context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+            context.Emit(WorkspaceConfigurationChange(TimeSpan.FromSeconds(5: int64), Some updatedWorkspaceFolders))
 
             return Ok()
         }

@@ -48,13 +48,21 @@ module DocumentFormatting =
         return textEdits |> Some
     }
 
-    let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
-        let lspFormattingOptions =
-            p.Options |> context.Settings.GetEffectiveFormattingOptions
+    let handle
+        (acquireContext: ActivateServerRequest)
+        (p: DocumentFormattingParams)
+        : AsyncLspResult<TextEdit[] option> =
+        async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
 
-        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+            let lspFormattingOptions =
+                p.Options |> context.Settings.GetEffectiveFormattingOptions
 
-        doc
-        |> async.Return
-        |> Async.bindOption (formatDocument lspFormattingOptions)
-        |> Async.map LspResult.success
+            let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+
+            return!
+                doc
+                |> async.Return
+                |> Async.bindOption (formatDocument lspFormattingOptions)
+                |> Async.map LspResult.success
+        }

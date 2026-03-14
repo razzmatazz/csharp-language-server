@@ -117,7 +117,9 @@ module CodeLens =
                   Method = "textDocument/codeLens"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
+        let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
@@ -149,7 +151,7 @@ module CodeLens =
             return codeLens |> Array.ofSeq |> Some |> LspResult.success
     }
 
-    let resolve (context: ServerRequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
+    let resolve (acquireContext: ActivateServerRequest) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
         let! ct = Async.CancellationToken
 
         let lensData: CodeLensData =
@@ -158,10 +160,14 @@ module CodeLens =
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
+        let! context = acquireContext ReadOnlySequential (Some lensData.DocumentUri)
+
         match! workspaceDocumentSymbol context.Workspace AnyDocument lensData.DocumentUri lensData.Position with
         | Some wf, Some(symbol, _, _) ->
+            let solution = workspaceFolderLoadedSolutionOrExn wf
+
             let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
                 |> Async.AwaitTask
 
             // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by

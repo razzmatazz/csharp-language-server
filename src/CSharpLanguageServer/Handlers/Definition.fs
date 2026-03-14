@@ -38,10 +38,12 @@ module Definition =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
                 let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project

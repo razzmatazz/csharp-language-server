@@ -15,15 +15,18 @@ type ServerEvent =
     | DocumentClosed of string
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
-    | RegisterRequest of string * obj * AsyncReplyChannel<int> // obj=ServerRequestMode
-    | AwaitRequestActivation of int * AsyncReplyChannel<obj> // obj=ServerState
-    | RetireRequest of int
+    | RegisterRequest of string * AsyncReplyChannel<int>
+    | RequestActivation of int * ServerRequestMode * option<string> * AsyncReplyChannel<obj> // obj=ServerState
+    | TerminateRequest of int * ServerRequestOutcome * ServerEvent list
+    | CleanupDeadlockedRequestsOnRequestQueue
     | PeriodicTimerTick
     | ProcessRequestQueue
+    | RetireRequestsUpToIdCompleted
     | PushDiagnosticsDocumentBacklogUpdate
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | SettingsChange of ServerSettings
-    | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder
-    | WorkspaceReloadRequested of TimeSpan
+    | WorkspaceConfigurationChange of TimeSpan * option<LspWorkspaceFolder list>
+    | WorkspaceFolderActivationRequest of string
+    | WorkspaceFolderActivationComplete of (string * LspWorkspaceFolderSolution)

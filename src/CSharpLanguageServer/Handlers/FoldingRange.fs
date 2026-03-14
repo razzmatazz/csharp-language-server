@@ -12,5 +12,5 @@ module FoldingRange =
 
     let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (_c: ServerRequestContext) (_p: FoldingRangeParams) : AsyncLspResult<FoldingRange array option> =
+    let handle (_a: ActivateServerRequest) (_p: FoldingRangeParams) : AsyncLspResult<FoldingRange array option> =
         LspResult.notImplemented<FoldingRange array option> |> async.Return

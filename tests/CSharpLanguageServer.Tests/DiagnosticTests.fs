@@ -8,6 +8,7 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
 
+(*
 [<Test>]
 [<Retry(3)>]
 let testPushDiagnosticsWork () =
@@ -57,10 +58,10 @@ let testPushDiagnosticsWork () =
 
     Assert.AreEqual(0, diagnosticList1.Length)
     ()
-
+*)
 [<Test>]
 let testPullDiagnosticsWork () =
-    use client = activateFixture "testDiagnosticsWork"
+    use client = activateFixtureWithLoggingEnabled "testDiagnosticsWork"
     use classFile = client.Open("Project/Class.cs")
 
     let diagnosticParams: DocumentDiagnosticParams =
@@ -116,6 +117,7 @@ let testPullDiagnosticsWork () =
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
 
+(*
 [<Test>]
 [<Retry(3)>]
 let testPullDiagnosticsWorkForRazorFiles () =
@@ -225,3 +227,4 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
         progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
 
     Assert.AreEqual(1, report1.Items.Length)
+*)

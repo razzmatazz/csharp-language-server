@@ -8,10 +8,10 @@ open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module Hover =
@@ -51,7 +51,9 @@ module Hover =
 
         hover |> Some
 
-    let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+        let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
         let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
         match symInfo with

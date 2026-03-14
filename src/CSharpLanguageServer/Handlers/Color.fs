@@ -8,12 +8,14 @@ open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 module Color =
-    let provider (cc: ClientCapabilities) = None
+    let provider (_cc: ClientCapabilities) = None
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
+    let registration (_s: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
-        LspResult.notImplemented<ColorInformation[]> |> async.Return
+    let handle (_a: ActivateServerRequest) (_p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> = async {
+        return LspResult.notImplemented<ColorInformation[]>
+    }
 
-    let present (context: ServerRequestContext) (p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> =
-        LspResult.notImplemented<ColorPresentation[]> |> async.Return
+    let present (_a: ActivateServerRequest) (_p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> = async {
+        return LspResult.notImplemented<ColorPresentation[]>
+    }

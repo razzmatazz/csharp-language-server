@@ -11,10 +11,11 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 [<RequireQualifiedAccess>]
 module CSharpMetadata =
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CSharpMetadataParams)
         : AsyncLspResult<CSharpMetadataResponse option> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
             let! ct = Async.CancellationToken
 
             let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
@@ -27,7 +28,7 @@ module CSharpMetadata =
                     |> workspaceFolderParseMetadataSymbolSourceViewUri wf
 
                 match wf.Solution, projectAndSymbolFromUri with
-                | Some solution, Some(projectPath, symbolMetadataName) ->
+                | Loaded solution, Some(projectPath, symbolMetadataName) ->
                     let project = solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectPath)
 
                     match project with

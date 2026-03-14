@@ -834,7 +834,7 @@ type ClientController(clientProfile: ClientProfile) =
 
         log "OK, 'initialized' request complete"
 
-        this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
+    //this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
 
     member __.WaitForProgressEnd(messagePred: (string -> bool)) =
         let timeoutMS = 20 * 1000

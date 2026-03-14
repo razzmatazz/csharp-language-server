@@ -22,25 +22,14 @@ let logger = Logging.getLoggerByName "Lsp.Workspace"
 type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
 type LspWorkspace =
-    { Folders: LspWorkspaceFolder list
+    { Initialized: bool
+      Folders: LspWorkspaceFolder list
       OpenDocs: Map<string, LspWorkspaceOpenDocInfo> }
 
-    static member Empty = { Folders = []; OpenDocs = Map.empty }
-
-let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
-    if workspaceFolders.Length = 0 then
-        failwith "workspaceFrom: at least 1 workspace folder must be provided!"
-
-    let folders =
-        workspaceFolders
-        |> Seq.map (fun f ->
-            { LspWorkspaceFolder.Empty with
-                Uri = f.Uri
-                Name = f.Name })
-        |> List.ofSeq
-
-    { LspWorkspace.Empty with
-        Folders = folders }
+    static member Uninitialized =
+        { Initialized = false
+          Folders = []
+          OpenDocs = Map.empty }
 
 let workspaceFolder (workspace: LspWorkspace) (uri: string) =
     let workspaceFolderMatchesUri wf =
@@ -88,7 +77,7 @@ let workspaceDocumentSemanticModel (workspace: LspWorkspace) (uri: DocumentUri) 
             let cshtmlPath = workspaceFolderUriToPath wf uri
 
             match wf.Solution, cshtmlPath with
-            | Some solution, Some cshtmlPath ->
+            | Loaded solution, Some cshtmlPath ->
                 match! solutionGetRazorDocumentForPath solution cshtmlPath with
                 | None -> return Some wf, None
                 | Some(_, compilation, cshtmlTree) ->
@@ -124,7 +113,7 @@ let workspaceDocumentSymbol
             let cshtmlPath = workspaceFolderUriToPath wf uri
 
             match wf.Solution, cshtmlPath with
-            | Some solution, Some cshtmlPath ->
+            | Loaded solution, Some cshtmlPath ->
                 let! symbolInfo = solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos
                 return Some wf, symbolInfo
 
@@ -177,7 +166,13 @@ let workspaceWithSolutionsLoaded
             let! newSolution =
                 solutionLoadSolutionWithPathOrOnDir lspClient progressReporter settings.SolutionPath wfRootDir.Value
 
-            let updatedWf = { wf with Solution = newSolution }
+            let updatedWf =
+                match newSolution with
+                | Some newSolution ->
+                    { wf with
+                        Solution = Loaded newSolution }
+                | None -> { wf with Solution = LoadFailure }
+
             updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
 
             do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)

@@ -41,11 +41,13 @@ module WorkspaceSymbol =
                   RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: WorkspaceSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> =
         async {
-            let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
+            let! context = acquireContext ReadOnlySequential None
+
+            let pattern = if String.IsNullOrEmpty p.Query then None else Some p.Query
 
             let! ct = Async.CancellationToken
 
@@ -56,8 +58,7 @@ module WorkspaceSymbol =
 
                 let! symbols =
                     match wf.Solution with
-                    | None -> async.Return Seq.empty
-                    | Some solution ->
+                    | Loaded solution ->
                         match pattern with
                         | Some pat ->
                             SymbolFinder.FindSourceDeclarationsWithPatternAsync(
@@ -77,6 +78,7 @@ module WorkspaceSymbol =
                                 cancellationToken = ct
                             )
                             |> Async.AwaitTask
+                    | _ -> async.Return Seq.empty
 
                 let symbolInfosForWf =
                     symbols
@@ -96,5 +98,6 @@ module WorkspaceSymbol =
                 |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
-        LspResult.notImplemented<WorkspaceSymbol> |> async.Return
+    let resolve (_a: ActivateServerRequest) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> = async {
+        return LspResult.notImplemented<WorkspaceSymbol>
+    }

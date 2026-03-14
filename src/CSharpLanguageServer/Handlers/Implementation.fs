@@ -9,10 +9,10 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module Implementation =
@@ -45,7 +45,9 @@ module Implementation =
         let! ct = Async.CancellationToken
 
         let! impls =
-            SymbolFinder.FindImplementationsAsync(sym, wf.Solution.Value, cancellationToken = ct)
+            let solution = workspaceFolderLoadedSolutionOrExn wf
+
+            SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
             |> Async.AwaitTask
 
         let mutable updatedWf = wf
@@ -62,10 +64,12 @@ module Implementation =
     }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
             let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
             match wf, symInfo with

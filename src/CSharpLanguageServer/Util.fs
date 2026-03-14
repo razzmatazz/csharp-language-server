@@ -9,13 +9,6 @@ let nonNull name (value: 'T when 'T: null) : 'T =
     else
         value
 
-let unwindProtect cleanupFn op = async {
-    try
-        return! op
-    finally
-        cleanupFn ()
-}
-
 // TPL Task's wrap exceptions in AggregateException, -- this fn unpacks them
 let rec unpackException (exn: Exception) =
     match exn with

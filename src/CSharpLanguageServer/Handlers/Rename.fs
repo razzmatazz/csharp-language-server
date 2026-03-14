@@ -112,67 +112,74 @@ module Rename =
                   Method = "textDocument/rename"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
+    let prepare
+        (acquireContext: ActivateServerRequest)
+        (p: PrepareRenameParams)
+        : AsyncLspResult<PrepareRenameResult option> =
+        async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
 
-        let wf, docForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+            let wf, docForUri =
+                p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
-        match docForUri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            match docForUri with
+            | None -> return None |> LspResult.success
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+                let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let position = Position.toRoslynPosition docText.Lines p.Position
-            let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition docText.Lines p.Position
+                let! symbolMaybe = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
 
-            let symbolIsFromMetadata =
-                symbolMaybe
-                |> Option.ofObj
-                |> Option.map (fun s -> s.MetadataToken <> 0)
-                |> Option.defaultValue false
+                let symbolIsFromMetadata =
+                    symbolMaybe
+                    |> Option.ofObj
+                    |> Option.map (fun s -> s.MetadataToken <> 0)
+                    |> Option.defaultValue false
 
-            let linePositionSpan =
-                Range.toLinePositionSpan docText.Lines { Start = p.Position; End = p.Position }
+                let linePositionSpan =
+                    Range.toLinePositionSpan docText.Lines { Start = p.Position; End = p.Position }
 
-            let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
+                let textSpan = docText.Lines.GetTextSpan(linePositionSpan)
 
-            let! rootNode = docSyntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+                let! rootNode = docSyntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
-            let nodeOnPos =
-                rootNode.FindNode(textSpan, findInsideTrivia = false, getInnermostNodeForTie = true)
+                let nodeOnPos =
+                    rootNode.FindNode(textSpan, findInsideTrivia = false, getInnermostNodeForTie = true)
 
-            let spanMaybe =
-                match nodeOnPos with
-                | :? PropertyDeclarationSyntax as propDec -> propDec.Identifier.Span |> Some
-                | :? MethodDeclarationSyntax as methodDec -> methodDec.Identifier.Span |> Some
-                | :? BaseTypeDeclarationSyntax as typeDec -> typeDec.Identifier.Span |> Some
-                | :? VariableDeclaratorSyntax as varDec -> varDec.Identifier.Span |> Some
-                | :? EnumMemberDeclarationSyntax as enumMemDec -> enumMemDec.Identifier.Span |> Some
-                | :? ParameterSyntax as paramSyn -> paramSyn.Identifier.Span |> Some
-                | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
-                | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some
-                | :? ForEachStatementSyntax as forEachSyn -> forEachSyn.Identifier.Span |> Some
-                | :? LocalFunctionStatementSyntax as localFunStSyn -> localFunStSyn.Identifier.Span |> Some
-                | node ->
-                    logger.LogDebug("textDocument/prepareRename: unhandled Type={type}", (node.GetType().Name))
-                    None
+                let spanMaybe =
+                    match nodeOnPos with
+                    | :? PropertyDeclarationSyntax as propDec -> propDec.Identifier.Span |> Some
+                    | :? MethodDeclarationSyntax as methodDec -> methodDec.Identifier.Span |> Some
+                    | :? BaseTypeDeclarationSyntax as typeDec -> typeDec.Identifier.Span |> Some
+                    | :? VariableDeclaratorSyntax as varDec -> varDec.Identifier.Span |> Some
+                    | :? EnumMemberDeclarationSyntax as enumMemDec -> enumMemDec.Identifier.Span |> Some
+                    | :? ParameterSyntax as paramSyn -> paramSyn.Identifier.Span |> Some
+                    | :? NameSyntax as nameSyn -> nameSyn.Span |> Some
+                    | :? SingleVariableDesignationSyntax as designationSyn -> designationSyn.Identifier.Span |> Some
+                    | :? ForEachStatementSyntax as forEachSyn -> forEachSyn.Identifier.Span |> Some
+                    | :? LocalFunctionStatementSyntax as localFunStSyn -> localFunStSyn.Identifier.Span |> Some
+                    | node ->
+                        logger.LogDebug("textDocument/prepareRename: unhandled Type={type}", (node.GetType().Name))
+                        None
 
-            let rangeWithPlaceholderMaybe: PrepareRenameResult option =
-                match spanMaybe, symbolIsFromMetadata with
-                | Some span, false ->
-                    let range = Range.fromTextSpan docText.Lines span
+                let rangeWithPlaceholderMaybe: PrepareRenameResult option =
+                    match spanMaybe, symbolIsFromMetadata with
+                    | Some span, false ->
+                        let range = Range.fromTextSpan docText.Lines span
 
-                    let text = docText.ToString(span)
+                        let text = docText.ToString(span)
 
-                    { Range = range; Placeholder = text } |> U3.C2 |> Some
-                | _, _ -> None
+                        { Range = range; Placeholder = text } |> U3.C2 |> Some
+                    | _, _ -> None
 
-            return rangeWithPlaceholderMaybe |> LspResult.success
-    }
+                return rangeWithPlaceholderMaybe |> LspResult.success
+        }
 
-    let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
+        let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
         match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
         | Some wf, Some(symbol, project, _) ->
             let! ct = Async.CancellationToken

@@ -48,10 +48,12 @@ module TypeHierarchy =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: TypeHierarchyPrepareParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
                 let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
@@ -69,10 +71,12 @@ module TypeHierarchy =
         }
 
     let supertypes
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: TypeHierarchySupertypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.Item.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
                 let typeSymbol = symbol :?> INamedTypeSymbol
@@ -107,32 +111,30 @@ module TypeHierarchy =
         }
 
     let subtypes
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: TypeHierarchySubtypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
+            let! context = acquireContext ReadOnlySequential (Some p.Item.Uri)
             let! ct = Async.CancellationToken
 
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
+                let solution = workspaceFolderLoadedSolutionOrExn wf
+
                 let typeSymbol = symbol :?> INamedTypeSymbol
                 // We only want immediately derived classes/interfaces/implementations here (we only need
                 // subclasses not subclasses' subclasses)
                 let findDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindDerivedClassesAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
+                    SymbolFinder.FindDerivedClassesAsync(symbol, solution, transitive, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let findDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindDerivedInterfacesAsync(
-                        symbol,
-                        wf.Solution.Value,
-                        transitive,
-                        cancellationToken = ct
-                    )
+                    SymbolFinder.FindDerivedInterfacesAsync(symbol, solution, transitive, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let findImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindImplementationsAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
+                    SymbolFinder.FindImplementationsAsync(symbol, solution, transitive, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let! subtypes =

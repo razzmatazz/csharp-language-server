@@ -56,10 +56,16 @@ module Diagnostic =
             Some registration
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DocumentDiagnosticParams)
         : AsyncLspResult<DocumentDiagnosticReport> =
         async {
+            Console.Error.WriteLine("Diagnostic.handle: p={0}", p)
+
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
+
+            Console.Error.WriteLine("Diagnostic.handle: context={0}", context)
+
             let emptyReport: RelatedFullDocumentDiagnosticReport =
                 { Kind = "full"
                   ResultId = None
@@ -102,7 +108,6 @@ module Diagnostic =
         | ReportingDoneForProject
 
     let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> = asyncSeq {
-
         let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
 
         let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
@@ -154,16 +159,18 @@ module Diagnostic =
         let mutable numProjectsBeingProcessed = 0
 
         for wf in workspace.Folders do
-            let solutionProjects =
-                wf.Solution
-                |> Option.map _.Projects
-                |> Option.defaultValue Seq.empty
-                |> List.ofSeq
+            let projectList =
+                match wf.Solution with
+                | Loaded sln -> sln.Projects |> List.ofSeq
+                | _ -> List.empty
 
-            numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
+            numProjectsBeingProcessed <- numProjectsBeingProcessed + projectList.Length
 
-            for project in solutionProjects do
+            for project in projectList do
                 Async.Start(generateProjectDiagnosticReports wf project)
+
+        if numProjectsBeingProcessed = 0 then
+            channel.Writer.Complete()
 
         // eat from channel and yield diagnostic reports as they come
         while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
@@ -180,10 +187,12 @@ module Diagnostic =
     }
 
     let handleWorkspaceDiagnostic
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: WorkspaceDiagnosticParams)
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {
+            let! context = acquireContext ReadOnlyBackground None
+
             match p.PartialResultToken with
             | None ->
                 let! diagnosticReports = getWorkspaceDiagnosticReports context.Workspace |> AsyncSeq.toArrayAsync
@@ -208,8 +217,7 @@ module Diagnostic =
                             { Token = partialResultToken
                               Value = serialize reportPartialResult }
 
-                    let lspClient = context.LspClient.Value
-                    do! lspClient.Progress(progressParams)
+                    do! context.LspClient.Value.Progress progressParams
                 }
 
                 do!

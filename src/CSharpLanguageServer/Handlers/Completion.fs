@@ -11,7 +11,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
@@ -21,6 +20,7 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -242,16 +242,17 @@ module Completion =
         async {
             let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace |> _.Value
 
+            let solution = workspaceFolderLoadedSolutionOrExn wf
             let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf |> _.Value
 
-            match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
+            match! solutionGetRazorDocumentForPath solution cshtmlPath with
             | None -> return None
             | Some(project, compilation, cshtmlTree) ->
                 let! ct = Async.CancellationToken
                 let! sourceText = cshtmlTree.GetTextAsync() |> Async.AwaitTask
 
                 let razorTextDocument =
-                    wf.Solution.Value
+                    solution
                     |> _.Projects
                     |> Seq.collect (fun p -> p.AdditionalDocuments)
                     |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = Uri p.TextDocument.Uri)
@@ -368,7 +369,7 @@ module Completion =
         }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CompletionParams)
         : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
         async {
@@ -377,6 +378,8 @@ module Completion =
                     getCompletionsForRazorDocument
                 else
                     getCompletionsForCSharpDocument
+
+            let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
 
             match! getCompletions p context with
             | None -> return None |> LspResult.success
@@ -415,7 +418,7 @@ module Completion =
                     |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+    let resolve (_a: ActivateServerRequest) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
         let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize<string option>

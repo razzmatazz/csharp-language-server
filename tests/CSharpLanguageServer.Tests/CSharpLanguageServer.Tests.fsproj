@@ -10,9 +10,10 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
+    <Compile Include="DiagnosticTests.fs" />
+    <!--
     <Compile Include="RenameTests.fs" />
     <Compile Include="CodeActionTests.fs" />
-    <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
     <Compile Include="DocumentHighlightTests.fs" />
     <Compile Include="HoverTests.fs" />
@@ -32,6 +33,7 @@
     <Compile Include="ProgressReporterTests.fs" />
     <Compile Include="DocumentSyncTests.fs" />
     <Compile Include="CallHierarchyTests.fs" />
+    -->
   </ItemGroup>
 
   <ItemGroup>

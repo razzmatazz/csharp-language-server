@@ -8,12 +8,12 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module References =
@@ -41,15 +41,17 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+        let! context = acquireContext ReadOnlySequential (Some p.TextDocument.Uri)
         let! ct = Async.CancellationToken
 
         match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
         | Some wf, Some(symbol, _, _) ->
+            let solution = workspaceFolderLoadedSolutionOrExn wf
             let wfPathToUri = workspaceFolderPathToUri wf
 
             let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
                 |> Async.AwaitTask
 
             let locationsFromReferencedSym (r: ReferencedSymbol) =
