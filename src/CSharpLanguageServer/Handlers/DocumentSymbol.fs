@@ -157,17 +157,20 @@ module DocumentSymbol =
 
             symbolStack <- symbolStack'
 
-        member __.Init(moduleName: string) =
-            let emptyRange =
+        member __.Init(moduleName: string, docText: SourceText) =
+            let fileRange =
+                let lastLine = docText.Lines.Count - 1
+                let lastLineSpan = docText.Lines.[lastLine]
                 { Start = { Line = 0u; Character = 0u }
-                  End = { Line = 0u; Character = 0u } }
+                  End = { Line = uint32 lastLine
+                          Character = uint32 (lastLineSpan.End - lastLineSpan.Start) } }
 
             let root: DocumentSymbol =
                 { Name = moduleName
                   Detail = None
                   Kind = SymbolKind.File
-                  Range = emptyRange
-                  SelectionRange = emptyRange
+                  Range = fileRange
+                  SelectionRange = fileRange
                   Children = None
                   Tags = None
                   Deprecated = None }
@@ -331,7 +334,7 @@ module DocumentSymbol =
                 let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
                 let collector = DocumentSymbolCollector(docText, semanticModel)
-                collector.Init(doc.Name)
+                collector.Init(doc.Name, docText)
 
                 let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
                 collector.Visit(root)
