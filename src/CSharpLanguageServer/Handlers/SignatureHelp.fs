@@ -88,7 +88,9 @@ module SignatureHelp =
                   Method = "textDocument/signatureHelp"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
+        let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
         let wf, docMaybe =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 

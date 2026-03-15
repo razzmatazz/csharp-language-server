@@ -23,10 +23,11 @@ module LifeCycle =
     let handleInitialize
         (lspClient: ILspClient)
         (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
+            let! context = acquireContext ReadWrite None
             context.Emit(ClientInitialize lspClient)
 
             // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
@@ -102,12 +103,14 @@ module LifeCycle =
 
     let handleInitialized
         (lspClient: ILspClient)
-        (serverActor: MailboxProcessor<ServerEvent>)
+        (stateActor: MailboxProcessor<ServerEvent>)
         (getDynamicRegistrations: ServerSettings -> ClientCapabilities -> Registration list)
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (_p: unit)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWrite None
+
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
             logger.LogDebug("handleInitialized: registrationParams..")
@@ -165,14 +168,15 @@ module LifeCycle =
             //
             // start loading workspace
             //
-            serverActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
+            stateActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
             return Ok()
         }
 
-    let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
+    let handleShutdown (acquireContext: ActivateServerRequest) (_: unit) : Async<LspResult<unit>> = async {
+        let! context = acquireContext ReadWrite None
         context.Emit(ClientCapabilityChange emptyClientCapabilities)
         context.Emit(ClientShutdown)
         return Ok()

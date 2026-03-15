@@ -58,7 +58,7 @@ let updateRequestStats requestQueue request (stats: RequestMetrics option) : Req
         |> Some
     | Some s ->
         let impactedCount, totalImpactedWait =
-            if request.Mode = ReadWrite then
+            if request.Mode.Value = ReadWrite then
                 let blockingStartTime =
                     request.RunningSince |> Option.defaultValue request.Registered
 
@@ -141,7 +141,7 @@ let pullPendingRequestToActivateFromRequestQueue
     : option<ServerRequest * RequestQueue> =
     let noRWRequestRunning =
         requestQueue.RunningRequests
-        |> Seq.tryFind (fun r -> r.Value.Mode = ReadWrite)
+        |> Seq.tryFind (fun r -> r.Value.Mode = Some ReadWrite)
         |> Option.isNone
 
     let canPullNextRequest = noRWRequestRunning && (not workspaceReloadIsPending)
@@ -155,7 +155,7 @@ let pullPendingRequestToActivateFromRequestQueue
         // order it by priority and run the most prioritized one first
         let nextRoRequestByPriorityMaybe =
             nonEmptyRequestQueue
-            |> Seq.takeWhile (fun r -> r.Mode = ReadOnly)
+            |> Seq.takeWhile (fun r -> r.Mode = Some ReadOnly)
             |> Seq.tryHead
 
         // otherwise, if no r/o request by priority was found then we should just take the first request
@@ -180,13 +180,13 @@ let pullPendingRequestToActivateFromRequestQueue
 
         Some(nextRunnableRequest, newRequestQueue)
 
-let registerRequestToRequestQueue requestName requestMode requestQueue =
+let registerRequestToRequestQueue requestName requestQueue =
     let newRequest =
         { State = Enqueued
           Name = requestName
           Id = requestQueue.LastRequestId + 1
           ActivationListeners = []
-          Mode = requestMode
+          Mode = None
           Registered = DateTime.Now
           RunningSince = None }
 

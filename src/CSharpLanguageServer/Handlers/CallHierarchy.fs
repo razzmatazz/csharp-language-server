@@ -50,10 +50,12 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
     let prepare
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CallHierarchyPrepareParams)
         : AsyncLspResult<CallHierarchyItem[] option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
                 let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
@@ -71,10 +73,11 @@ module CallHierarchy =
         }
 
     let incomingCalls
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CallHierarchyIncomingCallsParams)
         : AsyncLspResult<CallHierarchyIncomingCall[] option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.Item.Uri)
             let! ct = Async.CancellationToken
 
             let toCallHierarchyIncomingCalls
@@ -115,7 +118,7 @@ module CallHierarchy =
         }
 
     let outgoingCalls
-        (_context: ServerRequestContext)
+        (_a: ActivateServerRequest)
         (_: CallHierarchyOutgoingCallsParams)
         : AsyncLspResult<CallHierarchyOutgoingCall[] option> =
         async {

@@ -19,7 +19,7 @@ type ServerRequest =
       Name: string
       Id: int
       Registered: DateTime
-      Mode: ServerRequestMode
+      Mode: option<ServerRequestMode>
       ActivationListeners: AsyncReplyChannel<obj> list // obj=ServerState
       RunningSince: option<DateTime> }
 
@@ -37,3 +37,5 @@ type ServerRequestContext
     member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
     member _.Emit = emit
+
+type ActivateServerRequest = ServerRequestMode -> option<string> -> Async<ServerRequestContext>

@@ -11,7 +11,6 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
@@ -21,6 +20,7 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module Completion =
@@ -368,7 +368,7 @@ module Completion =
         }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CompletionParams)
         : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
         async {
@@ -377,6 +377,8 @@ module Completion =
                     getCompletionsForRazorDocument
                 else
                     getCompletionsForCSharpDocument
+
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
 
             match! getCompletions p context with
             | None -> return None |> LspResult.success
@@ -415,7 +417,7 @@ module Completion =
                     |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+    let resolve (_a: ActivateServerRequest) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
         let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize<string option>

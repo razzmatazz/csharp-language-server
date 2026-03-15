@@ -346,10 +346,12 @@ module CodeAction =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CodeActionParams)
         : AsyncLspResult<TextDocumentCodeActionResult option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             let wf, docForUri =
                 p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
@@ -413,9 +415,11 @@ module CodeAction =
             | _, _ -> return None |> LspResult.success
         }
 
-    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
+    let resolve (acquireContext: ActivateServerRequest) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
+
+        let! context = acquireContext ReadOnly (Some resolutionData.Value.TextDocumentUri)
 
         let wf, docForUri =
             resolutionData.Value.TextDocumentUri

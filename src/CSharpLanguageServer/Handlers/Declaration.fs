@@ -10,11 +10,10 @@ open CSharpLanguageServer.Types
 module Declaration =
     let provider (_cc: ClientCapabilities) : bool option = None
 
-    let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let registration (_s: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
     let handle
-        (_context: ServerRequestContext)
+        (_a: ActivateServerRequest)
         (_p: DeclarationParams)
         : AsyncLspResult<U2<Declaration, DeclarationLink array> option> =
-        LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>
-        |> async.Return
+        async { return LspResult.notImplemented<U2<Declaration, DeclarationLink array> option> }

@@ -106,20 +106,22 @@ module Workspace =
         | _, _ -> ()
 
     let didChangeWatchedFiles
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DidChangeWatchedFilesParams)
         : Async<LspResult<unit>> =
 
-        let windowShowMessage (m: string) =
-            match context.LspClient with
-            | Some lspClient ->
-                lspClient.WindowShowMessage(
-                    { Type = MessageType.Info
-                      Message = sprintf "csharp-ls: %s" m }
-                )
-            | None -> async.Return()
-
         async {
+            let! context = acquireContext ReadWrite None
+
+            let windowShowMessage (m: string) =
+                match context.LspClient with
+                | Some lspClient ->
+                    lspClient.WindowShowMessage(
+                        { Type = MessageType.Info
+                          Message = sprintf "csharp-ls: %s" m }
+                    )
+                | None -> async.Return()
+
             for change in p.Changes do
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
@@ -148,10 +150,12 @@ module Workspace =
         }
 
     let didChangeConfiguration
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (configParams: DidChangeConfigurationParams)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWrite None
+
             let csharpSettingsMaybe =
                 configParams.Settings
                 |> deserialize<DidChangeConfigurationSettingsDto>
@@ -171,10 +175,12 @@ module Workspace =
         }
 
     let didChangeWorkspaceFolders
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DidChangeWorkspaceFoldersParams)
         : Async<LspResult<unit>> =
         async {
+            let! context = acquireContext ReadWrite None
+
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 

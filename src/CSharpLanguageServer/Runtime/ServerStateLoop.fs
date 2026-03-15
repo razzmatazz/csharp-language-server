@@ -56,11 +56,11 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         return newState
 
-    | RegisterRequest(requestName, requestMode, replyChannel) ->
+    | RegisterRequest(requestName, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
         let newRequest, updatedRequestQueue =
-            registerRequestToRequestQueue requestName (requestMode :?> ServerRequestMode) state.RequestQueue
+            registerRequestToRequestQueue requestName state.RequestQueue
 
         replyChannel.Reply(newRequest.Id)
 
@@ -70,7 +70,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         return newState
 
-    | AwaitRequestActivation(requestId, replyChannel) ->
+    | RequestActivation(requestId, requestMode, _targetUri, replyChannel) ->
         match addActivationListenerForRequestOnRequestQueue requestId replyChannel state.RequestQueue with
         | Some(_request, updatedRequestQueue) ->
             let updatedState =
@@ -84,18 +84,21 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             replyChannel.Reply(state)
             return state
 
-    | RetireRequest requestId ->
+    | RetireRequest (requestId, emittedEvents) ->
         match retireRequestFromRequestQueue state.Settings requestId state.RequestQueue with
         | Some newRequestQueue ->
             let newState =
                 { state with
                     RequestQueue = newRequestQueue }
 
-            postServerEvent ProcessRequestQueue
+            for ev in emittedEvents do
+                do postServerEvent ev
+
+            do postServerEvent ProcessRequestQueue
             return newState
 
         | None ->
-            logger.LogWarning("serverEventLoop/RetireRequest#{requestId}: not request to retire", requestId)
+            logger.LogWarning("serverEventLoop/RetireRequest#{requestId}: no request to retire", requestId)
 
             return state
 

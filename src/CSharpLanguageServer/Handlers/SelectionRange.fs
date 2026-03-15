@@ -12,5 +12,5 @@ module SelectionRange =
 
     let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (_ctx: ServerRequestContext) (_p: SelectionRangeParams) : AsyncLspResult<SelectionRange array option> =
+    let handle (_a: ActivateServerRequest) (_p: SelectionRangeParams) : AsyncLspResult<SelectionRange array option> =
         LspResult.notImplemented<SelectionRange array option> |> async.Return

@@ -41,11 +41,13 @@ module WorkspaceSymbol =
                   RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: WorkspaceSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> =
         async {
-            let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
+            let! context = acquireContext ReadOnly None
+
+            let pattern = if String.IsNullOrEmpty p.Query then None else Some p.Query
 
             let! ct = Async.CancellationToken
 
@@ -96,5 +98,6 @@ module WorkspaceSymbol =
                 |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
-        LspResult.notImplemented<WorkspaceSymbol> |> async.Return
+    let resolve (_a: ActivateServerRequest) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> = async {
+        return LspResult.notImplemented<WorkspaceSymbol>
+    }

@@ -41,7 +41,8 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+        let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
         let! ct = Async.CancellationToken
 
         match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with

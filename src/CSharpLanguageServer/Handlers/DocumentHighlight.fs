@@ -9,11 +9,11 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Runtime
 
 [<RequireQualifiedAccess>]
 module DocumentHighlight =
@@ -78,10 +78,12 @@ module DocumentHighlight =
     }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DocumentHighlightParams)
         : AsyncLspResult<DocumentHighlight[] option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, docMaybe) ->
                 if shouldHighlight symbol then

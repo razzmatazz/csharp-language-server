@@ -25,6 +25,7 @@ module LspUtils =
     /// Do nothing and ignore the notification
     let ignoreNotification: Async<unit> = async.Return(())
 
+
 open LspUtils
 
 type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
@@ -38,54 +39,50 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                     Settings = settings }
         )
 
-    let withContext requestName requestMode (handlerFn: ServerRequestContext -> 'a -> Async<LspResult<'b>>) param =
-        // we want to be careful and lock solution for change immediately w/o entering async/returing an `async` workflow
+    let requestHandler requestName (handler: ActivateServerRequest -> 'a -> Async<LspResult<'b>>) requestParams =
+        // We want to be careful and register/enqueue the request immediately w/o entering the associated `async` fn
+        // to preserve request sequence outside of async context!
         //
         // StreamJsonRpc lib we're using in Ionide.LanguageServerProtocol guarantees that it will not call another
-        // handler until previous one returns a Task (in our case -- F# `async` object.)
+        // handler until previous one returns a Task (in our case -- F# `async` object wrapped as Task.)
+        let requestId = stateActor.PostAndReply(fun rc -> RegisterRequest(requestName, rc))
 
-        let requestId =
-            stateActor.PostAndReply(fun rc -> RegisterRequest(requestName, requestMode, rc))
+        let emittedEvents = System.Collections.Generic.List<ServerEvent>()
 
-        let requestActivationAndHandlerInvocation = async {
-            let! state = stateActor.PostAndAsyncReply(fun rc -> AwaitRequestActivation(requestId, rc))
+        let activateRequest mode (targetUri: string option) = async {
+            let! state = stateActor.PostAndAsyncReply(fun rc -> RequestActivation(requestId, mode, targetUri, rc))
             let state = state :?> ServerState
 
-            let context =
+            return
                 ServerRequestContext(
-                    requestMode,
+                    mode,
                     state.LspClient,
                     state.Settings,
                     state.Workspace,
                     state.ClientCapabilities,
-                    stateActor.Post
-                )
-
-            return! handlerFn context param
+                    emittedEvents.Add)
         }
 
-        let wrapExceptionAsLspResult op = async {
-            let! resultOrExn = op |> Async.Catch
+        let retireRequest (_: obj) =
+            stateActor.Post(RetireRequest(requestId, emittedEvents |> List.ofSeq))
+
+        let requestProcessing = async {
+            let handlerAsync = handler activateRequest requestParams
+            let! outcome = handlerAsync |> Async.Catch
+
+            do retireRequest ()
 
             return
-                match resultOrExn with
+                match outcome with
                 | Choice1Of2 result -> result
-                | Choice2Of2 exn ->
-                    match exn with
+                | Choice2Of2 ex ->
+                    match ex with
                     | :? TaskCanceledException -> LspResult.requestCancelled
                     | :? OperationCanceledException -> LspResult.requestCancelled
-                    | _ -> LspResult.internalError (string exn)
+                    | _ -> LspResult.internalError (string ex)
         }
 
-        requestActivationAndHandlerInvocation
-        |> wrapExceptionAsLspResult
-        |> unwindProtect (fun () -> stateActor.Post(RetireRequest requestId))
-
-    let withReadOnlyContext requestName handlerFn =
-        withContext requestName ReadOnly handlerFn
-
-    let withReadWriteContext requestName handlerFn =
-        withContext requestName ReadWrite handlerFn
+        Async.TryCancelled(requestProcessing, retireRequest)
 
     let ignoreResult handlerFn = async {
         let! _ = handlerFn
@@ -175,215 +172,203 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
 
         override __.Initialize p =
             p
-            |> withReadWriteContext "initialize" (LifeCycle.handleInitialize lspClient getServerCapabilities)
+            |> requestHandler "initialize" (LifeCycle.handleInitialize lspClient getServerCapabilities)
 
         override __.Initialized _ =
             ()
-            |> withReadWriteContext
-                "initialized"
-                (LifeCycle.handleInitialized lspClient stateActor getDynamicRegistrations)
+            |> requestHandler "initialized" (LifeCycle.handleInitialized lspClient stateActor getDynamicRegistrations)
             |> ignoreResult
 
         override __.Shutdown() =
-            () |> withReadWriteContext "shutdown" LifeCycle.handleShutdown
+            () |> requestHandler "shutdown" LifeCycle.handleShutdown
 
         override __.Exit() = ignoreNotification
 
         override __.TextDocumentHover p =
-            p |> withReadOnlyContext "textDocument/hover" Hover.handle
+            p |> requestHandler "textDocument/hover" Hover.handle
 
         override __.TextDocumentDidOpen p =
             p
-            |> withReadOnlyContext "textDocument/didOpen" TextDocumentSync.didOpen
+            |> requestHandler "textDocument/didOpen" TextDocumentSync.didOpen
             |> ignoreResult
 
         override __.TextDocumentDidChange p =
             p
-            |> withReadWriteContext "textDocument/didChange" TextDocumentSync.didChange
+            |> requestHandler "textDocument/didChange" TextDocumentSync.didChange
             |> ignoreResult
 
         override __.TextDocumentDidClose p =
             p
-            |> withReadWriteContext "textDocument/didClose" TextDocumentSync.didClose
+            |> requestHandler "textDocument/didClose" TextDocumentSync.didClose
             |> ignoreResult
 
         override __.TextDocumentWillSave p =
             p
-            |> withReadWriteContext "textDocument/willSave" TextDocumentSync.willSave
+            |> requestHandler "textDocument/willSave" TextDocumentSync.willSave
             |> ignoreResult
 
         override __.TextDocumentWillSaveWaitUntil p =
             p
-            |> withReadWriteContext "textDocument/willSaveWaitUntil" TextDocumentSync.willSaveWaitUntil
+            |> requestHandler "textDocument/willSaveWaitUntil" TextDocumentSync.willSaveWaitUntil
 
         override __.TextDocumentDidSave p =
             p
-            |> withReadWriteContext "textDocument/didSave" TextDocumentSync.didSave
+            |> requestHandler "textDocument/didSave" TextDocumentSync.didSave
             |> ignoreResult
 
         override __.TextDocumentCompletion p =
-            p |> withReadOnlyContext "textDocument/completion" Completion.handle
+            p |> requestHandler "textDocument/completion" Completion.handle
 
         override __.CompletionItemResolve p =
-            p |> withReadOnlyContext "completionItem/resolve" Completion.resolve
+            p |> requestHandler "completionItem/resolve" Completion.resolve
 
         override __.TextDocumentPrepareRename p =
-            p |> withReadOnlyContext "textDocument/prepareRename" Rename.prepare
+            p |> requestHandler "textDocument/prepareRename" Rename.prepare
 
         override __.TextDocumentRename p =
-            p |> withReadOnlyContext "textDocument/rename" Rename.handle
+            p |> requestHandler "textDocument/rename" Rename.handle
 
         override __.TextDocumentDefinition p =
-            p |> withReadOnlyContext "textDocument/definition" Definition.handle
+            p |> requestHandler "textDocument/definition" Definition.handle
 
         override __.TextDocumentReferences p =
-            p |> withReadOnlyContext "textDocument/references" References.handle
+            p |> requestHandler "textDocument/references" References.handle
 
         override __.TextDocumentDocumentHighlight p =
-            p
-            |> withReadOnlyContext "textDocument/documentHighlight" DocumentHighlight.handle
+            p |> requestHandler "textDocument/documentHighlight" DocumentHighlight.handle
 
         override __.TextDocumentDocumentLink p =
-            p |> withReadOnlyContext "textDocument/documentLink" DocumentLink.handle
+            p |> requestHandler "textDocument/documentLink" DocumentLink.handle
 
         override __.DocumentLinkResolve p =
-            p |> withReadOnlyContext "documentLink/resolve" DocumentLink.resolve
+            p |> requestHandler "documentLink/resolve" DocumentLink.resolve
 
         override __.TextDocumentTypeDefinition p =
-            p |> withReadOnlyContext "textDocument/typeDefinition" TypeDefinition.handle
+            p |> requestHandler "textDocument/typeDefinition" TypeDefinition.handle
 
         override __.TextDocumentImplementation p =
-            p |> withReadOnlyContext "textDocument/implementation" Implementation.handle
+            p |> requestHandler "textDocument/implementation" Implementation.handle
 
         override __.TextDocumentCodeAction p =
-            p |> withReadOnlyContext "textDocument/codeAction" CodeAction.handle
+            p |> requestHandler "textDocument/codeAction" CodeAction.handle
 
         override __.CodeActionResolve p =
-            p |> withReadOnlyContext "codeAction/resolve" CodeAction.resolve
+            p |> requestHandler "codeAction/resolve" CodeAction.resolve
 
         override __.TextDocumentCodeLens p =
-            p |> withReadOnlyContext "textDocument/codeLens" CodeLens.handle
+            p |> requestHandler "textDocument/codeLens" CodeLens.handle
 
         override __.CodeLensResolve p =
-            p |> withReadOnlyContext "codeLens/resolve" CodeLens.resolve
+            p |> requestHandler "codeLens/resolve" CodeLens.resolve
 
         override __.TextDocumentSignatureHelp p =
-            p |> withReadOnlyContext "textDocument/signatureHelp" SignatureHelp.handle
+            p |> requestHandler "textDocument/signatureHelp" SignatureHelp.handle
 
         override __.TextDocumentDocumentColor p =
-            p |> withReadOnlyContext "textDocument/documentColor" Color.handle
+            p |> requestHandler "textDocument/documentColor" Color.handle
 
         override __.TextDocumentColorPresentation p =
-            p |> withReadOnlyContext "textDocument/colorPresentation" Color.present
+            p |> requestHandler "textDocument/colorPresentation" Color.present
 
         override __.TextDocumentFormatting p =
-            p |> withReadOnlyContext "textDocument/formatting" DocumentFormatting.handle
+            p |> requestHandler "textDocument/formatting" DocumentFormatting.handle
 
         override __.TextDocumentRangeFormatting p =
             p
-            |> withReadOnlyContext "textDocument/rangeFormatting" DocumentRangeFormatting.handle
+            |> requestHandler "textDocument/rangeFormatting" DocumentRangeFormatting.handle
 
         override __.TextDocumentOnTypeFormatting p =
             p
-            |> withReadOnlyContext "textDocument/onTypeFormatting" DocumentOnTypeFormatting.handle
+            |> requestHandler "textDocument/onTypeFormatting" DocumentOnTypeFormatting.handle
 
         override __.TextDocumentDocumentSymbol p =
-            p |> withReadOnlyContext "textDocument/documentSymbol" DocumentSymbol.handle
+            p |> requestHandler "textDocument/documentSymbol" DocumentSymbol.handle
 
         override __.WorkspaceDidChangeWatchedFiles p =
             p
-            |> withReadWriteContext "workspace/didChangeWatchedFiles" Workspace.didChangeWatchedFiles
+            |> requestHandler "workspace/didChangeWatchedFiles" Workspace.didChangeWatchedFiles
             |> ignoreResult
 
         override __.WorkspaceDidChangeWorkspaceFolders p =
             p
-            |> withReadWriteContext "workspace/didChangeWorkspaceFolders" Workspace.didChangeWorkspaceFolders
+            |> requestHandler "workspace/didChangeWorkspaceFolders" Workspace.didChangeWorkspaceFolders
             |> ignoreResult
 
         override __.WorkspaceDidChangeConfiguration p =
             p
-            |> withReadWriteContext "workspace/didChangeConfiguration" Workspace.didChangeConfiguration
+            |> requestHandler "workspace/didChangeConfiguration" Workspace.didChangeConfiguration
             |> ignoreResult
 
         override __.WorkspaceWillCreateFiles _ =
-            ()
-            |> withReadOnlyContext "workspace/willCreateFiles" (fun _ _ -> notImplemented)
+            () |> requestHandler "workspace/willCreateFiles" (fun _ _ -> notImplemented)
 
         override __.WorkspaceDidCreateFiles _ = ignoreNotification
 
         override __.WorkspaceWillRenameFiles _ =
-            ()
-            |> withReadOnlyContext "workspace/willRenameFiles" (fun _ _ -> notImplemented)
+            () |> requestHandler "workspace/willRenameFiles" (fun _ _ -> notImplemented)
 
         override __.WorkspaceDidRenameFiles _ = ignoreNotification
 
         override __.WorkspaceWillDeleteFiles _ =
-            ()
-            |> withReadOnlyContext "workspace/willDeleteFiles" (fun _ _ -> notImplemented)
+            () |> requestHandler "workspace/willDeleteFiles" (fun _ _ -> notImplemented)
 
         override __.WorkspaceDidDeleteFiles _ = ignoreNotification
 
         override __.WorkspaceSymbol p =
-            p |> withReadOnlyContext "workspace/symbol" WorkspaceSymbol.handle
+            p |> requestHandler "workspace/symbol" WorkspaceSymbol.handle
 
         override __.WorkspaceExecuteCommand p =
-            p |> withReadOnlyContext "workspace/executeCommand" ExecuteCommand.handle
+            p |> requestHandler "workspace/executeCommand" ExecuteCommand.handle
 
         override __.TextDocumentFoldingRange p =
-            p |> withReadOnlyContext "textDocument/foldingRange" FoldingRange.handle
+            p |> requestHandler "textDocument/foldingRange" FoldingRange.handle
 
         override __.TextDocumentSelectionRange p =
-            p |> withReadOnlyContext "textDocument/selectionRange" SelectionRange.handle
+            p |> requestHandler "textDocument/selectionRange" SelectionRange.handle
 
         override __.TextDocumentSemanticTokensFull p =
-            p
-            |> withReadOnlyContext "textDocument/semanticTokens/full" SemanticTokens.handleFull
+            p |> requestHandler "textDocument/semanticTokens/full" SemanticTokens.handleFull
 
         override __.TextDocumentSemanticTokensFullDelta p =
             p
-            |> withReadOnlyContext "textDocument/semanticTokens/full/delta" SemanticTokens.handleFullDelta
+            |> requestHandler "textDocument/semanticTokens/full/delta" SemanticTokens.handleFullDelta
 
         override __.TextDocumentSemanticTokensRange p =
             p
-            |> withReadOnlyContext "textDocument/semanticTokens/range" SemanticTokens.handleRange
+            |> requestHandler "textDocument/semanticTokens/range" SemanticTokens.handleRange
 
         override __.TextDocumentInlayHint p =
-            p |> withReadOnlyContext "textDocument/inlayHint" InlayHint.handle
+            p |> requestHandler "textDocument/inlayHint" InlayHint.handle
 
         override __.InlayHintResolve p =
-            p |> withReadOnlyContext "inlayHint/resolve" InlayHint.resolve
+            p |> requestHandler "inlayHint/resolve" InlayHint.resolve
 
         override __.WindowWorkDoneProgressCancel _ = raise (NotImplementedException())
         override __.TextDocumentInlineValue _ = notImplemented
 
         override __.TextDocumentPrepareCallHierarchy p =
-            p
-            |> withReadOnlyContext "textDocument/prepareCallHierarchy" CallHierarchy.prepare
+            p |> requestHandler "textDocument/prepareCallHierarchy" CallHierarchy.prepare
 
         override __.CallHierarchyIncomingCalls p =
-            p
-            |> withReadOnlyContext "callHierarchy/incomingCalls" CallHierarchy.incomingCalls
+            p |> requestHandler "callHierarchy/incomingCalls" CallHierarchy.incomingCalls
 
         override __.CallHierarchyOutgoingCalls p =
-            p
-            |> withReadOnlyContext "callHierarchy/outgoingCalls" CallHierarchy.outgoingCalls
+            p |> requestHandler "callHierarchy/outgoingCalls" CallHierarchy.outgoingCalls
 
         override __.TextDocumentPrepareTypeHierarchy p =
-            p
-            |> withReadOnlyContext "textDocument/prepareTypeHierarchy" TypeHierarchy.prepare
+            p |> requestHandler "textDocument/prepareTypeHierarchy" TypeHierarchy.prepare
 
         override __.TypeHierarchySupertypes p =
-            p |> withReadOnlyContext "typeHierarchy/supertypes" TypeHierarchy.supertypes
+            p |> requestHandler "typeHierarchy/supertypes" TypeHierarchy.supertypes
 
         override __.TypeHierarchySubtypes p =
-            p |> withReadOnlyContext "typeHierarchy/subtypes" TypeHierarchy.subtypes
+            p |> requestHandler "typeHierarchy/subtypes" TypeHierarchy.subtypes
 
         override __.TextDocumentDeclaration p =
-            p |> withReadOnlyContext "textDocument/declaration" Declaration.handle
+            p |> requestHandler "textDocument/declaration" Declaration.handle
 
         override __.WorkspaceDiagnostic p =
-            p
-            |> withReadOnlyContext "workspace/diagnostic" Diagnostic.handleWorkspaceDiagnostic
+            p |> requestHandler "workspace/diagnostic" Diagnostic.handleWorkspaceDiagnostic
 
         override __.CancelRequest _ = ignoreNotification
         override __.NotebookDocumentDidChange _ = ignoreNotification
@@ -392,23 +377,22 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
         override __.NotebookDocumentDidSave _ = ignoreNotification
 
         override __.WorkspaceSymbolResolve p =
-            p |> withReadOnlyContext "workspaceSymbol/resolve" WorkspaceSymbol.resolve
+            p |> requestHandler "workspaceSymbol/resolve" WorkspaceSymbol.resolve
 
         override __.TextDocumentDiagnostic p =
-            p |> withReadOnlyContext "textDocument/diagnostic" Diagnostic.handle
+            p |> requestHandler "textDocument/diagnostic" Diagnostic.handle
 
         override __.TextDocumentLinkedEditingRange p =
-            p
-            |> withReadOnlyContext "textDocument/linkedEditingRange" LinkedEditingRange.handle
+            p |> requestHandler "textDocument/linkedEditingRange" LinkedEditingRange.handle
 
         override __.TextDocumentMoniker p =
-            p |> withReadOnlyContext "textDocument/moniker" Moniker.handle
+            p |> requestHandler "textDocument/moniker" Moniker.handle
 
         override __.Progress _ = ignoreNotification
         override __.SetTrace _ = ignoreNotification
 
         override __.CSharpMetadata p =
-            p |> withReadOnlyContext "csharp/metadata" CSharpMetadata.handle
+            p |> requestHandler "csharp/metadata" CSharpMetadata.handle
 
 module Server =
     let logger = Logging.getLoggerByName "LSP"

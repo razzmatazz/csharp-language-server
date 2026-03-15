@@ -62,10 +62,12 @@ module Implementation =
     }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
             match wf, symInfo with

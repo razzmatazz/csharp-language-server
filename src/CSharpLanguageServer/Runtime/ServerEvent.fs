@@ -15,9 +15,9 @@ type ServerEvent =
     | DocumentClosed of string
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
-    | RegisterRequest of string * obj * AsyncReplyChannel<int> // obj=ServerRequestMode
-    | AwaitRequestActivation of int * AsyncReplyChannel<obj> // obj=ServerState
-    | RetireRequest of int
+    | RegisterRequest of string * AsyncReplyChannel<int> // obj=ServerRequestMode
+    | RequestActivation of int * obj * option<string> * AsyncReplyChannel<obj> // obj[0] = ServerRequestMode; obj[1]=ServerState
+    | RetireRequest of int * List<ServerEvent>
     | PeriodicTimerTick
     | ProcessRequestQueue
     | PushDiagnosticsDocumentBacklogUpdate

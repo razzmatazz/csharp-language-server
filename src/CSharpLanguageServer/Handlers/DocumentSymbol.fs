@@ -309,10 +309,12 @@ module DocumentSymbol =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DocumentSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             let canEmitDocSymbolHierarchy =
                 context.ClientCapabilities.TextDocument
                 |> Option.bind _.DocumentSymbol

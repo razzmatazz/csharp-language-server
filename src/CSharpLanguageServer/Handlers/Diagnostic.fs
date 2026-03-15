@@ -56,10 +56,12 @@ module Diagnostic =
             Some registration
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: DocumentDiagnosticParams)
         : AsyncLspResult<DocumentDiagnosticReport> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             let emptyReport: RelatedFullDocumentDiagnosticReport =
                 { Kind = "full"
                   ResultId = None
@@ -180,10 +182,12 @@ module Diagnostic =
     }
 
     let handleWorkspaceDiagnostic
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: WorkspaceDiagnosticParams)
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {
+            let! context = acquireContext ReadOnly None
+
             match p.PartialResultToken with
             | None ->
                 let! diagnosticReports = getWorkspaceDiagnosticReports context.Workspace |> AsyncSeq.toArrayAsync

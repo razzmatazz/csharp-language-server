@@ -40,11 +40,13 @@ module TypeDefinition =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: TypeDefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
 
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
                 let typeSymbol =

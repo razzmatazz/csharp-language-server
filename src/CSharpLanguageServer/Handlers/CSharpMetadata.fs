@@ -11,10 +11,11 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 [<RequireQualifiedAccess>]
 module CSharpMetadata =
     let handle
-        (context: ServerRequestContext)
+        (acquireContext: ActivateServerRequest)
         (p: CSharpMetadataParams)
         : AsyncLspResult<CSharpMetadataResponse option> =
         async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
             let! ct = Async.CancellationToken
 
             let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace

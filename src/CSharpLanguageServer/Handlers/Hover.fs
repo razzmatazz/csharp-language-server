@@ -51,7 +51,9 @@ module Hover =
 
         hover |> Some
 
-    let handle (context: ServerRequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+    let handle (acquireContext: ActivateServerRequest) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+        let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+
         let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
 
         match symInfo with

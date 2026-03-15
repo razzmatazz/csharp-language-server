@@ -10,10 +10,8 @@ open CSharpLanguageServer.Types
 module LinkedEditingRange =
     let provider (cc: ClientCapabilities) = None
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
+    let registration (_s: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle
-        (context: ServerRequestContext)
-        (def: LinkedEditingRangeParams)
-        : AsyncLspResult<LinkedEditingRanges option> =
-        LspResult.notImplemented<LinkedEditingRanges option> |> async.Return
+    let handle (_a: ActivateServerRequest) (_p: LinkedEditingRangeParams) : AsyncLspResult<LinkedEditingRanges option> = async {
+        return LspResult.notImplemented<LinkedEditingRanges option>
+    }
