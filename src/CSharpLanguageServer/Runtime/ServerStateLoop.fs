@@ -101,6 +101,17 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             logger.LogWarning("serverEventLoop/RetireRequest#{requestId}: no request to retire", requestId)
 
             return state
+    | CleanupDeadlockedRequestsOnRequestQueue ->
+        let updatedQueue = state.RequestQueue |> cleanupDeadlockedRequestsOnRequestQueue
+
+        match updatedQueue with
+        | Some updatedQueue ->
+            do postServerEvent ProcessRequestQueue
+
+            return
+                { state with
+                    RequestQueue = updatedQueue }
+        | None -> return state
 
     | ProcessRequestQueue ->
         let! updatedRequestQueue =
@@ -391,8 +402,10 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 do! lspClient.TextDocumentPublishDiagnostics(resolvedDocumentDiagnostics)
                 return newState
 
+    // this has tick period of 100ms
     | PeriodicTimerTick ->
-        postServerEvent PushDiagnosticsProcessPendingDocuments
+        do postServerEvent PushDiagnosticsProcessPendingDocuments
+        do postServerEvent CleanupDeadlockedRequestsOnRequestQueue
 
         let updatedRequestQueue =
             dumpAndResetRequestStats state.Settings.DebugMode state.RequestQueue

@@ -243,6 +243,32 @@ let retireRequestFromRequestQueue serverSettings requestId requestQueue =
 
         Some newRequestQueue
 
+let cleanupDeadlockedRequestsOnRequestQueue requestQueue =
+    // the combination of StreamJsonRpc+Ionide.LanguageServerProtocol
+    // does not allow us to catch request cancellation properly
+    // when request is cancelled *before* async part of the handler
+    // runs -- here we just go after old (100ms+) requests in Enqueued state
+    // and upgrade them to Cancelled state directly
+    let deadlockThreshold = TimeSpan.FromMilliseconds(100.0)
+
+    let isDeadlockedROEnqueuedRequest (r: ServerRequest) =
+        r.Mode <> Some ReadWrite
+        && r.State = Enqueued
+        && (DateTime.Now - r.Registered) > deadlockThreshold
+
+    let haveDeadlockedRequests =
+        requestQueue.PendingRequests |> List.exists isDeadlockedROEnqueuedRequest
+
+    match haveDeadlockedRequests with
+    | false -> None
+    | true ->
+        let newPendingRequests =
+            requestQueue.PendingRequests
+            |> List.collect (fun r -> if isDeadlockedROEnqueuedRequest r then [] else [r])
+
+        let updatedRequestQueue = { requestQueue with PendingRequests = newPendingRequests }
+        Some updatedRequestQueue
+
 let processRequestQueue
     (workspaceReloadIsPending: bool)
     (serverState: obj)
