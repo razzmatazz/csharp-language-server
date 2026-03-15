@@ -49,19 +49,20 @@ module DocumentFormatting =
     }
 
     let handle
-            (acquireContext: ActivateServerRequest)
-            (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
+        (acquireContext: ActivateServerRequest)
+        (p: DocumentFormattingParams)
+        : AsyncLspResult<TextEdit[] option> =
+        async {
+            let! context = acquireContext ReadOnly (Some p.TextDocument.Uri)
 
-        let lspFormattingOptions =
-            p.Options |> context.Settings.GetEffectiveFormattingOptions
+            let lspFormattingOptions =
+                p.Options |> context.Settings.GetEffectiveFormattingOptions
 
-        let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+            let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
-        match doc with
-        | Some doc ->
-            let! textEdits = doc |> formatDocument  lspFormattingOptions
-            return textEdits |> LspResult.success
-        | None ->
-            return None |> LspResult.success
-    }
+            match doc with
+            | Some doc ->
+                let! textEdits = doc |> formatDocument lspFormattingOptions
+                return textEdits |> LspResult.success
+            | None -> return None |> LspResult.success
+        }

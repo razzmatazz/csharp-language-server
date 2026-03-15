@@ -60,7 +60,8 @@ type CSharpLspServer(lspClient: CSharpLspClient, settings: ServerSettings) =
                     state.Settings,
                     state.Workspace,
                     state.ClientCapabilities,
-                    emittedEvents.Add)
+                    emittedEvents.Add
+                )
         }
 
         let retireRequest (_: obj) =

@@ -264,9 +264,12 @@ let cleanupDeadlockedRequestsOnRequestQueue requestQueue =
     | true ->
         let newPendingRequests =
             requestQueue.PendingRequests
-            |> List.collect (fun r -> if isDeadlockedROEnqueuedRequest r then [] else [r])
+            |> List.collect (fun r -> if isDeadlockedROEnqueuedRequest r then [] else [ r ])
 
-        let updatedRequestQueue = { requestQueue with PendingRequests = newPendingRequests }
+        let updatedRequestQueue =
+            { requestQueue with
+                PendingRequests = newPendingRequests }
+
         Some updatedRequestQueue
 
 let processRequestQueue

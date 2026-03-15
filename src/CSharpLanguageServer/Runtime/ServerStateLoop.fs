@@ -84,7 +84,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             replyChannel.Reply(state)
             return state
 
-    | RetireRequest (requestId, emittedEvents) ->
+    | RetireRequest(requestId, emittedEvents) ->
         match retireRequestFromRequestQueue state.Settings requestId state.RequestQueue with
         | Some newRequestQueue ->
             let newState =
