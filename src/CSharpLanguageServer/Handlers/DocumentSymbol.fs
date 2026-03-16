@@ -161,9 +161,11 @@ module DocumentSymbol =
             let fileRange =
                 let lastLine = docText.Lines.Count - 1
                 let lastLineSpan = docText.Lines.[lastLine]
+
                 { Start = { Line = 0u; Character = 0u }
-                  End = { Line = uint32 lastLine
-                          Character = uint32 (lastLineSpan.End - lastLineSpan.Start) } }
+                  End =
+                    { Line = uint32 lastLine
+                      Character = uint32 (lastLineSpan.End - lastLineSpan.Start) } }
 
             let root: DocumentSymbol =
                 { Name = moduleName

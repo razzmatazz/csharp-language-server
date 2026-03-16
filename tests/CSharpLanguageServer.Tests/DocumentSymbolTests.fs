@@ -38,7 +38,8 @@ let ``test textDocument/documentSymbol root has file range covering entire docum
     // The root range should extend to the end of the file (not be an empty 0,0-0,0 range)
     Assert.IsTrue(
         root.Range.End.Line > 0u,
-        "Root range end line should be beyond line 0 (file range should cover the whole document)")
+        "Root range end line should be beyond line 0 (file range should cover the whole document)"
+    )
 
     // Class.cs has 16 lines (0-indexed: 0–15, with line 15 being empty after trailing newline)
     Assert.AreEqual(15u, root.Range.End.Line, "Root range end line should be the last line of the file")
@@ -73,8 +74,7 @@ let ``test textDocument/documentSymbol root has children`` () =
 
     // The namespace symbol should be among the children
     let nsSymbol =
-        root.Children.Value
-        |> Array.tryFind (fun s -> s.Kind = SymbolKind.Namespace)
+        root.Children.Value |> Array.tryFind (fun s -> s.Kind = SymbolKind.Namespace)
 
     Assert.IsTrue(nsSymbol.IsSome, "Expected a child symbol with kind Namespace")
 
@@ -104,6 +104,4 @@ let ``test textDocument/documentSymbol root range covers file with namespace`` (
     Assert.AreEqual(0u, root.Range.Start.Character)
 
     // Root range should extend to end of file, not be empty
-    Assert.IsTrue(
-        root.Range.End.Line > 0u,
-        "Root range should cover the full file, not be an empty range at 0,0")
+    Assert.IsTrue(root.Range.End.Line > 0u, "Root range should cover the full file, not be an empty range at 0,0")
