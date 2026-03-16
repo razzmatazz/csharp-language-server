@@ -231,3 +231,22 @@ let testMultiTargetWorkspace () =
 
     testHoverOnClass "folder0/Project/Class.cs" "void Class0.Method(string arg)"
     testHoverOnClass "folder1/Project/Class.cs" "void Class1.Method(string arg)"
+
+[<Test>]
+let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
+    // Some LSP clients (e.g. crush/powernap) send RootPath as a path like "/E:/proj2/fracture"
+    // which is not a valid URI on Windows. Since RootUri is valid, initialization should succeed
+    // regardless of what RootPath contains — the RootPath fallback should only be evaluated when
+    // RootUri is None.
+    //
+    // We use "::invalid" which is not a valid URI on any platform, to reproduce the issue
+    // cross-platform.
+    let setInvalidRootPath (initParams: InitializeParams) : InitializeParams =
+        { initParams with
+            RootPath = Some "::invalid" }
+
+    use client =
+        activateFixtureExt "genericProject" defaultClientProfile emptyFixturePatch setInvalidRootPath
+
+    Assert.IsTrue(client.ServerDidRespondTo "initialize")
+    Assert.IsTrue(client.ServerDidRespondTo "initialized")

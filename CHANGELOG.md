@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Fix initialization crash when RootPath is not a valid URI (e.g. with crush/powernap on Windows)
+  - Reported by @ktos in https://github.com/razzmatazz/csharp-language-server/issues/326
 * Fix the root range in DocumentSymbol is always 0,0
   - By @qrasmont in https://github.com/razzmatazz/csharp-language-server/pull/329
 * Upgrade Roslyn lib to 5.3.0, MSBuild to 18.4.0

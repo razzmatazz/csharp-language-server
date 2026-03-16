@@ -68,8 +68,8 @@ module LifeCycle =
 
             let workspaceFoldersFallbackUri: DocumentUri =
                 p.RootUri
-                |> Option.orElse (p.RootPath |> Option.map (Uri >> string))
-                |> Option.defaultValue (Directory.GetCurrentDirectory() |> (Uri >> string))
+                |> Option.orElseWith (fun () -> p.RootPath |> Option.map (Uri >> string))
+                |> Option.defaultWith (fun () -> Directory.GetCurrentDirectory() |> (Uri >> string))
 
             let workspaceFolders =
                 match p.WorkspaceFolders with
