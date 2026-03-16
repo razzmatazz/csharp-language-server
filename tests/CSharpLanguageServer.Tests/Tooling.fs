@@ -61,7 +61,13 @@ let defaultClientCapabilities =
                   Implementation = None
                   References = None
                   DocumentHighlight = None
-                  DocumentSymbol = None
+                  DocumentSymbol =
+                    Some
+                        { DynamicRegistration = None
+                          SymbolKind = None
+                          HierarchicalDocumentSymbolSupport = Some true
+                          TagSupport = None
+                          LabelSupport = None }
                   CodeLens = None
                   DocumentLink = None
                   ColorProvider = None
