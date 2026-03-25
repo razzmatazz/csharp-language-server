@@ -182,3 +182,17 @@ module LifeCycle =
         context.Emit(ClientShutdown)
         return Ok()
     }
+
+    let handleExit (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
+        // Per LSP spec: exit with code 0 if shutdown was received first, 1 otherwise.
+        let exitCode = if context.ShutdownReceived then 0 else 1
+
+        logger.LogInformation(
+            "handleExit: exiting with code {exitCode} (shutdownReceived={shutdownReceived})",
+            exitCode,
+            context.ShutdownReceived
+        )
+
+        Environment.Exit(exitCode)
+        return Ok()
+    }

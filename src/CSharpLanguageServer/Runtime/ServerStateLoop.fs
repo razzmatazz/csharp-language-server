@@ -31,7 +31,8 @@ type ServerState =
       WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
-      PeriodicTickTimer: Threading.Timer option }
+      PeriodicTickTimer: Threading.Timer option
+      ShutdownReceived: bool }
 
     static member Empty =
         { Settings = ServerSettings.Default
@@ -43,7 +44,8 @@ type ServerState =
           WorkspaceReloadPending = None
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
-          PeriodicTickTimer = None }
+          PeriodicTickTimer = None
+          ShutdownReceived = false }
 
 let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
@@ -110,7 +112,8 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                     state.LspClient.Value,
                     state.Settings,
                     state.Workspace,
-                    state.ClientCapabilities
+                    state.ClientCapabilities,
+                    state.ShutdownReceived
                 )
 
             let! result = processRequestQueue makeRequestContext requestQueue
@@ -169,7 +172,8 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
         return
             { state with
                 LspClient = None
-                PeriodicTickTimer = None }
+                PeriodicTickTimer = None
+                ShutdownReceived = true }
 
     | ClientCapabilityChange cc ->
         let experimentalCapsBoolValue boolPropName =

@@ -204,6 +204,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
             (notificationHandler ReadWrite Workspace.didChangeWorkspaceFolders)
         |> Map.add "workspace/didChangeConfiguration" (notificationHandler ReadWrite Workspace.didChangeConfiguration)
         |> Map.add "$/setTrace" (notificationHandler ReadWrite Trace.handleSetTrace)
+        |> Map.add "exit" (notificationHandler ReadWrite LifeCycle.handleExit)
 
     callHandlers, notificationHandlers
 

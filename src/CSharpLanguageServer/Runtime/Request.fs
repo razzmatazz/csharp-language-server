@@ -35,7 +35,8 @@ type ServerRequestContext
         lspClient: ILspClient,
         settings: ServerSettings,
         workspace: LspWorkspace,
-        clientCapabilities: ClientCapabilities
+        clientCapabilities: ClientCapabilities,
+        shutdownReceived: bool
     ) =
     let bufferedEvents = ResizeArray<ServerEvent>()
 
@@ -44,6 +45,7 @@ type ServerRequestContext
     member _.Settings = settings
     member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
+    member _.ShutdownReceived = shutdownReceived
 
     member _.Emit(event: ServerEvent) =
         match requestMode with

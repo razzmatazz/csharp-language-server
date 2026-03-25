@@ -123,7 +123,8 @@ let private makeTestServerRequestContext (mode: ServerRequestMode) =
         new NoOpLspClient() :> ILspClient,
         ServerSettings.Default,
         LspWorkspace.Empty,
-        emptyClientCapabilities
+        emptyClientCapabilities,
+        false
     )
 
 // ---------------------------------------------------------------------------
