@@ -11,7 +11,8 @@ type ServerSettings =
       ApplyFormattingOptions: bool
       UseMetadataUris: bool
       RazorSupport: bool
-      DebugMode: bool }
+      DebugMode: bool
+      SolutionLoadDelay: int option }
 
     member this.GetEffectiveFormattingOptions options =
         if this.ApplyFormattingOptions then Some options else None
@@ -22,22 +23,34 @@ type ServerSettings =
           ApplyFormattingOptions = false
           UseMetadataUris = false
           RazorSupport = false
-          DebugMode = false }
+          DebugMode = false
+          SolutionLoadDelay = None }
+
+type CSharpDebugSectionConfiguration =
+    { solutionLoadDelay: int option }
+
+    static member Default = { solutionLoadDelay = None }
 
 type CSharpSectionConfiguration =
     { solution: string option
-      applyFormattingOptions: bool option }
+      applyFormattingOptions: bool option
+      debug: CSharpDebugSectionConfiguration option }
 
     static member Default =
         { solution = None
-          applyFormattingOptions = None }
+          applyFormattingOptions = None
+          debug = None }
 
 let applyCSharpSectionConfigurationOnSettings oldSettings csharpSectionConfig =
     { oldSettings with
         SolutionPath = csharpSectionConfig.solution |> Option.orElse oldSettings.SolutionPath
         ApplyFormattingOptions =
             csharpSectionConfig.applyFormattingOptions
-            |> Option.defaultValue oldSettings.ApplyFormattingOptions }
+            |> Option.defaultValue oldSettings.ApplyFormattingOptions
+        SolutionLoadDelay =
+            csharpSectionConfig.debug
+            |> Option.bind _.solutionLoadDelay
+            |> Option.orElse oldSettings.SolutionLoadDelay }
 
 type DidChangeConfigurationSettingsDto =
     { csharp: CSharpSectionConfiguration option }

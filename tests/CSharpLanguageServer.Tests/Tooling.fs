@@ -29,7 +29,8 @@ let emptyClientCapabilities: ClientCapabilities =
 
 type ClientProfile =
     { LoggingEnabled: bool
-      ClientCapabilities: ClientCapabilities }
+      ClientCapabilities: ClientCapabilities
+      SolutionLoadDelay: int option }
 
 let defaultClientCapabilities =
     { emptyClientCapabilities with
@@ -104,7 +105,8 @@ let defaultClientCapabilities =
 
 let defaultClientProfile =
     { LoggingEnabled = false
-      ClientCapabilities = defaultClientCapabilities }
+      ClientCapabilities = defaultClientCapabilities
+      SolutionLoadDelay = None }
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)
@@ -175,7 +177,8 @@ type ClientState =
 let initialClientState =
     { ClientProfile =
         { LoggingEnabled = false
-          ClientCapabilities = emptyClientCapabilities }
+          ClientCapabilities = emptyClientCapabilities
+          SolutionLoadDelay = None }
       LoggingEnabled = false
       ProjectDir = None
       ProcessStartInfo = None
@@ -435,7 +438,16 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
 
                 let getSectionConfiguration (section: string) : Option<JToken> =
                     match section with
-                    | "csharp" -> {| metadataUris = true |} |> serialize |> Some
+                    | "csharp" ->
+                        let debugObj =
+                            match state.ClientProfile.SolutionLoadDelay with
+                            | Some ms -> Some {| solutionLoadDelay = ms |}
+                            | None -> None
+
+                        {| metadataUris = true
+                           debug = debugObj |}
+                        |> serialize
+                        |> Some
                     | _ -> None
 
                 let configurationPerSection =
@@ -1033,6 +1045,14 @@ let activateFixtureWithLoggingEnabled fixtureName =
         fixtureName
         { defaultClientProfile with
             LoggingEnabled = true }
+        emptyFixturePatch
+        id
+
+let activateFixtureWithSolutionLoadDelay fixtureName (delayMs: int) =
+    activateFixtureExt
+        fixtureName
+        { defaultClientProfile with
+            SolutionLoadDelay = Some delayMs }
         emptyFixturePatch
         id
 

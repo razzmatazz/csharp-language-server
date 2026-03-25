@@ -415,6 +415,12 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 return newState
 
     | RequestQueueDrained ->
+        match state.Settings.SolutionLoadDelay with
+        | Some ms when ms > 0 ->
+            logger.LogInformation("SolutionLoadDelay is set to {ms}ms, waiting before loading solution..", ms)
+            do! Async.Sleep ms
+        | _ -> ()
+
         let! updatedWorkspace =
             workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.ClientCapabilities state.Workspace
 
