@@ -1,0 +1,18 @@
+namespace CSharpLanguageServer.Handlers
+
+open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.JsonRpc
+open Microsoft.Extensions.Logging
+
+open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Logging
+
+[<RequireQualifiedAccess>]
+module Trace =
+    let private logger = Logging.getLoggerByName "Trace"
+
+    let handleSetTrace (context: ServerRequestContext) (p: SetTraceParams) : Async<LspResult<unit>> = async {
+        logger.LogDebug("handleSetTrace: trace level changed to {traceLevel}", p.Value)
+        context.Emit(TraceLevelChange p.Value)
+        return Ok()
+    }

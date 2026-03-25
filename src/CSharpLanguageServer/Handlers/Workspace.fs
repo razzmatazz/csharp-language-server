@@ -111,13 +111,10 @@ module Workspace =
         : Async<LspResult<unit>> =
 
         let windowShowMessage (m: string) =
-            match context.LspClient with
-            | Some lspClient ->
-                lspClient.WindowShowMessage(
-                    { Type = MessageType.Info
-                      Message = sprintf "csharp-ls: %s" m }
-                )
-            | None -> async.Return()
+            context.LspClient.WindowShowMessage(
+                { Type = MessageType.Info
+                  Message = sprintf "csharp-ls: %s" m }
+            )
 
         async {
             for change in p.Changes do

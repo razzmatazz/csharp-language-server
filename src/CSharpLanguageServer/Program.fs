@@ -10,6 +10,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Diagnostics
+open CSharpLanguageServer.Runtime.JsonRpcServer
 
 type CLIArguments =
     | [<AltCommandLine("-v")>] Version
@@ -18,6 +19,7 @@ type CLIArguments =
     | Debug
     | Diagnose
     | [<AltCommandLine("-f")>] Features of features: string
+    | RpcLog of path: string
 
     interface IArgParserTemplate with
         member s.Usage =
@@ -28,15 +30,16 @@ type CLIArguments =
             | Debug -> "enable debug mode"
             | Diagnose -> "run diagnostics"
             | Features _ -> "enable optional features, comma-separated: [metadata-uris, razor-support]"
+            | RpcLog _ -> "write RPC wire log to file (READ/WRITE/ERROR/...)"
 
-let parseLogLevel (debugMode: bool) (logLevelArg: string option) =
+let parseLogLevel (logLevelArg: string option) =
     match logLevelArg with
     | Some "error" -> LogLevel.Error
     | Some "warning" -> LogLevel.Warning
     | Some "info" -> LogLevel.Information
     | Some "debug" -> LogLevel.Debug
     | Some "trace" -> LogLevel.Trace
-    | _ -> if debugMode then LogLevel.Debug else LogLevel.Information
+    | _ -> LogLevel.Information
 
 [<EntryPoint>]
 let entry args =
@@ -53,7 +56,7 @@ let entry args =
             exit 0)
 
         let debugMode: bool = serverArgs.Contains Debug
-        let logLevel = serverArgs.TryGetResult <@ LogLevel @> |> parseLogLevel debugMode
+        let logLevel = serverArgs.TryGetResult <@ LogLevel @> |> parseLogLevel
 
         let features: Set<string> =
             serverArgs.TryGetResult <@ Features @>
@@ -71,6 +74,24 @@ let entry args =
                 RazorSupport = features.Contains "razor-support"
                 LogLevel = logLevel }
 
+        let makeRpcLogCallback (path: string) : RpcLogEntry -> unit =
+            let writer = new System.IO.StreamWriter(path, append = false)
+
+            fun entry ->
+                let line =
+                    match entry with
+                    | RpcRead msg -> sprintf "READ  %s" (string msg)
+                    | RpcWrite msg -> sprintf "WRITE %s" (string msg)
+                    | RpcError text -> sprintf "ERROR %s" text
+                    | RpcWarn text -> sprintf "WARN  %s" text
+                    | RpcDebug text -> sprintf "DEBUG %s" text
+
+                writer.WriteLine(line)
+                writer.Flush()
+
+        let rpcLogCallback: (RpcLogEntry -> unit) option =
+            serverArgs.TryGetResult <@ RpcLog @> |> Option.map makeRpcLogCallback
+
         let exitCode =
             match serverArgs.TryGetResult <@ Diagnose @> with
             | Some _ ->
@@ -78,7 +99,26 @@ let entry args =
                 diagnose settings |> Async.RunSynchronously
             | _ ->
                 Logging.setupLogging settings.LogLevel
-                Server.start settings
+
+                let jsonRpcLogger = Logging.getLoggerByName "JsonRpcServer"
+
+                let jsonRpcLogCallback (entry: RpcLogEntry) =
+                    match entry with
+                    | RpcError text -> jsonRpcLogger.LogError("RPC error: {Message}", text)
+                    | RpcWarn text -> jsonRpcLogger.LogWarning("RPC warning: {Message}", text)
+                    | RpcDebug text -> jsonRpcLogger.LogDebug("RPC debug: {Message}", text)
+                    | RpcRead _ -> ()
+                    | RpcWrite _ -> ()
+
+                let combinedRpcLogCallback =
+                    match rpcLogCallback with
+                    | Some fileCallback ->
+                        Some(fun entry ->
+                            fileCallback entry
+                            jsonRpcLogCallback entry)
+                    | None -> Some jsonRpcLogCallback
+
+                Server.start settings combinedRpcLogCallback
 
         exitCode
     with

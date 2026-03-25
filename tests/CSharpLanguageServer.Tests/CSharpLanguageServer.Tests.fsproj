@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
+    <Compile Include="InitializationTests.fs" />
     <Compile Include="RenameTests.fs" />
     <Compile Include="CodeActionTests.fs" />
     <Compile Include="DiagnosticTests.fs" />
@@ -17,7 +18,6 @@
     <Compile Include="DocumentHighlightTests.fs" />
     <Compile Include="DocumentSymbolTests.fs" />
     <Compile Include="HoverTests.fs" />
-    <Compile Include="InitializationTests.fs" />
     <Compile Include="ReferenceTests.fs" />
     <Compile Include="DefinitionTests.fs" />
     <Compile Include="DocumentFormattingTests.fs" />
@@ -31,8 +31,10 @@
     <Compile Include="ImplementationTests.fs" />
     <Compile Include="CSharpMetadataTests.fs" />
     <Compile Include="ProgressReporterTests.fs" />
+    <Compile Include="RequestSchedulingTests.fs" />
     <Compile Include="DocumentSyncTests.fs" />
     <Compile Include="CallHierarchyTests.fs" />
+    <Compile Include="JsonRpcServerTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
