@@ -839,11 +839,9 @@ type ClientController(clientProfile: ClientProfile) =
 
         log "OK, 'initialize' request complete"
 
-        let _ =
-            client.PostAndReply<Result<JToken, JToken>>(fun rc ->
-                SendServerRpcRequest("initialized", JObject(), Some rc))
+        client.Post(SendServerRpcNotification("initialized", JObject()))
 
-        log "OK, 'initialized' request complete"
+        log "OK, 'initialized' notification sent"
 
         this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
 
@@ -925,6 +923,15 @@ type ClientController(clientProfile: ClientProfile) =
             m.Source = Client
             && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
             && (m.Message.["method"] |> string) = rpcMethod)
+
+    member __.ClientDidSendNotification(rpcMethod: string) =
+        let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
+
+        rpcLog
+        |> Seq.exists (fun m ->
+            m.Source = Client
+            && (string m.Message["method"]) = rpcMethod
+            && m.Message["id"] |> isNull)
 
     member __.ServerMessageLogContains(pred: string -> bool) : bool =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)

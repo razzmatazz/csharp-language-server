@@ -1,48 +1,73 @@
 namespace CSharpLanguageServer.Lsp
 
+open Newtonsoft.Json.Linq
+
 open Ionide.LanguageServerProtocol
+open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-type CSharpLspClient(sendServerNotification: ClientNotificationSender, sendServerRequest: ClientRequestSender) =
+type CSharpLspClient
+    (
+        sendServerNotification: string -> JToken -> unit,
+        sendServerRequest_: string -> JToken -> Async<Result<JToken, JToken>>
+    ) =
     inherit LspClient()
 
+    let sendServerRequest m (p: JToken) : AsyncLspResult<'TResult> = async {
+        let! result = sendServerRequest_ m p
+
+        return
+            match result with
+            | Result.Ok jtoken -> jtoken |> deserialize |> Result.Ok
+            | Result.Error err -> failwith "TODO"
+    }
+
     override __.WindowShowMessage p =
-        sendServerNotification "window/showMessage" (box p) |> Async.Ignore
+        sendServerNotification "window/showMessage" (serialize p)
+        async.Return()
 
     // TODO: Send notifications / requests to client only if client support it
 
-    override __.WindowShowMessageRequest p =
-        sendServerRequest.Send "window/showMessageRequest" (box p)
+    override __.WindowShowMessageRequest p : AsyncLspResult<Types.MessageActionItem option> =
+        sendServerRequest "window/showMessageRequest" (serialize p)
 
     override __.WindowLogMessage p =
-        sendServerNotification "window/logMessage" (box p) |> Async.Ignore
+        sendServerNotification "window/logMessage" (serialize p)
+        async.Return()
 
     override __.TelemetryEvent p =
-        sendServerNotification "telemetry/event" (box p) |> Async.Ignore
+        sendServerNotification "telemetry/event" (serialize p)
+        async.Return()
 
     override __.ClientRegisterCapability p =
-        sendServerRequest.Send "client/registerCapability" (box p)
+        sendServerRequest "client/registerCapability" (serialize p)
 
     override __.ClientUnregisterCapability p =
-        sendServerRequest.Send "client/unregisterCapability" (box p)
+        sendServerRequest "client/unregisterCapability" (serialize p)
 
-    override __.WorkspaceWorkspaceFolders() =
-        sendServerRequest.Send "workspace/workspaceFolders" ()
+    override __.WorkspaceWorkspaceFolders() : AsyncLspResult<Types.WorkspaceFolder[] option> =
+        sendServerRequest "workspace/workspaceFolders" (JValue.CreateNull())
 
-    override __.WorkspaceConfiguration p =
-        sendServerRequest.Send "workspace/configuration" (box p)
+    override __.WorkspaceConfiguration p : AsyncLspResult<JToken[]> =
+        sendServerRequest "workspace/configuration" (serialize p)
 
-    override __.WorkspaceApplyEdit p =
-        sendServerRequest.Send "workspace/applyEdit" (box p)
+    override __.WorkspaceApplyEdit p : AsyncLspResult<Types.ApplyWorkspaceEditResult> =
+        sendServerRequest "workspace/applyEdit" (serialize p)
 
     override __.WorkspaceSemanticTokensRefresh() =
-        sendServerNotification "workspace/semanticTokens/refresh" ()
+        sendServerRequest "workspace/semanticTokens/refresh" (JValue.CreateNull())
 
     override __.TextDocumentPublishDiagnostics p =
-        sendServerNotification "textDocument/publishDiagnostics" (box p) |> Async.Ignore
+        sendServerNotification "textDocument/publishDiagnostics" (serialize p)
+        async.Return()
 
     override __.WindowWorkDoneProgressCreate createParams =
-        sendServerRequest.Send "window/workDoneProgress/create" (box createParams)
+        sendServerRequest "window/workDoneProgress/create" (serialize createParams)
+
+    override __.LogTrace p =
+        sendServerNotification "$/logTrace" (serialize p)
+        async.Return()
 
     override __.Progress progressParams =
-        sendServerNotification "$/progress" (box progressParams) |> Async.Ignore
+        sendServerNotification "$/progress" (serialize progressParams)
+        async.Return()

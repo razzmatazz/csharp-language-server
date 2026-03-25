@@ -208,8 +208,7 @@ module Diagnostic =
                             { Token = partialResultToken
                               Value = serialize reportPartialResult }
 
-                    let lspClient = context.LspClient.Value
-                    do! lspClient.Progress(progressParams)
+                    do! context.LspClient.Progress(progressParams)
                 }
 
                 do!

@@ -25,6 +25,7 @@ type ServerState =
     { Settings: ServerSettings
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
+      TraceLevel: TraceValues
       Workspace: LspWorkspace
       RequestQueue: RequestQueue
       WorkspaceReloadPending: DateTime option
@@ -36,6 +37,7 @@ type ServerState =
         { Settings = ServerSettings.Default
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
+          TraceLevel = TraceValues.Off
           Workspace = LspWorkspace.Empty
           RequestQueue = RequestQueue.Empty
           WorkspaceReloadPending = None
@@ -56,76 +58,95 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         return newState
 
-    | RegisterRequest(requestName, requestMode, replyChannel) ->
+    | TraceLevelChange newTraceLevel ->
+        Logging.setLspTraceLevel newTraceLevel
+
+        return
+            { state with
+                TraceLevel = newTraceLevel }
+
+    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
-        let newRequest, updatedRequestQueue =
-            registerRequestToRequestQueue requestName (requestMode :?> ServerRequestMode) state.RequestQueue
-
-        replyChannel.Reply(newRequest.Id)
+        let newRequestQueue =
+            state.RequestQueue
+            |> registerRequest requestRpcOrdinal requestName (requestMode :?> ServerRequestMode) replyChannel
 
         let newState =
             { state with
-                RequestQueue = updatedRequestQueue }
+                RequestQueue = newRequestQueue }
 
         return newState
 
-    | AwaitRequestActivation(requestId, replyChannel) ->
-        match addActivationListenerForRequestOnRequestQueue requestId replyChannel state.RequestQueue with
-        | Some(_request, updatedRequestQueue) ->
-            let updatedState =
-                { state with
-                    RequestQueue = updatedRequestQueue }
+    | LeaveRequestContext(requestRpcOrdinal, bufferedEvents) ->
+        let newRequestQueue =
+            state.RequestQueue |> finishRequest requestRpcOrdinal bufferedEvents
 
-            return updatedState
+        let newState =
+            { state with
+                RequestQueue = newRequestQueue }
 
-        | None ->
-            // Request is already running or finished, send it the current state immediately
-            replyChannel.Reply(state)
-            return state
-
-    | RetireRequest requestId ->
-        match retireRequestFromRequestQueue state.Settings requestId state.RequestQueue with
-        | Some newRequestQueue ->
-            let newState =
-                { state with
-                    RequestQueue = newRequestQueue }
-
-            postServerEvent ProcessRequestQueue
-            return newState
-
-        | None ->
-            logger.LogWarning("serverEventLoop/RetireRequest#{requestId}: not request to retire", requestId)
-
-            return state
+        postServerEvent ProcessRequestQueue
+        return newState
 
     | ProcessRequestQueue ->
-        let! updatedRequestQueue =
-            processRequestQueue
-                state.WorkspaceReloadPending.IsSome
-                state
-                state.Workspace
-                state.Settings
-                state.RequestQueue
+        let (retiredRequest, requestQueue) =
+            state.RequestQueue |> retireNextFinishedRequest state.Settings
 
-        match updatedRequestQueue with
-        | Some updatedRequestQueue ->
-            // continue processing msgs from the queue
+        match retiredRequest with
+        | Some retiredRequest ->
+            // Replay the retired request's buffered events, then continue
+            // in the next round so they are processed before further work.
+            retiredRequest.BufferedEvents |> List.iter postServerEvent
             postServerEvent ProcessRequestQueue
 
-            let newState =
+            return
                 { state with
-                    RequestQueue = updatedRequestQueue }
+                    RequestQueue = requestQueue }
+        | None ->
+            let makeRequestContext requestMode =
+                ServerRequestContext(
+                    requestMode,
+                    state.LspClient.Value,
+                    state.Settings,
+                    state.Workspace,
+                    state.ClientCapabilities
+                )
 
-            return newState
+            let! result = processRequestQueue makeRequestContext requestQueue
 
-        | None -> return state
+            match result with
+            | Activated(_activatedRequest, updatedRequestQueue) ->
+                postServerEvent ProcessRequestQueue
+
+                return
+                    { state with
+                        RequestQueue = updatedRequestQueue }
+
+            | Drained ->
+                postServerEvent RequestQueueDrained
+
+                return
+                    { state with
+                        RequestQueue = requestQueue }
+
+            | Waiting ->
+                return
+                    { state with
+                        RequestQueue = requestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
         let newWorkspace = workspaceFrom workspaceFolders
         return { state with Workspace = newWorkspace }
 
-    | ClientInitialize lspClient ->
+    | ServerStarted lspClient ->
+        Logging.setLspTraceClient (Some lspClient)
+
+        return
+            { state with
+                LspClient = Some lspClient }
+
+    | ClientInitialize ->
         let timer =
             new Threading.Timer(
                 Threading.TimerCallback(fun _ -> do postServerEvent PeriodicTimerTick),
@@ -136,10 +157,11 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         return
             { state with
-                LspClient = Some lspClient
                 PeriodicTickTimer = Some timer }
 
     | ClientShutdown ->
+        Logging.setLspTraceClient None
+
         match state.PeriodicTickTimer with
         | Some timer -> timer.Dispose()
         | None -> ()
@@ -388,6 +410,18 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 do! lspClient.TextDocumentPublishDiagnostics(resolvedDocumentDiagnostics)
                 return newState
 
+    | RequestQueueDrained ->
+        let! updatedWorkspace =
+            workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.ClientCapabilities state.Workspace
+
+        postServerEvent ProcessRequestQueue
+
+        return
+            { state with
+                Workspace = updatedWorkspace
+                WorkspaceReloadPending = None
+                RequestQueue = state.RequestQueue |> enterDispatchingMode }
+
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
 
@@ -403,17 +437,14 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         match solutionReloadDeadline < DateTime.Now with
         | true ->
-            let! updatedWorkspace =
-                workspaceWithSolutionsLoaded
-                    state.Settings
-                    state.LspClient.Value
-                    state.ClientCapabilities
-                    state.Workspace
+            match enterDrainingMode state.RequestQueue with
+            | Some updatedRequestQueue ->
+                postServerEvent ProcessRequestQueue
 
-            return
-                { state with
-                    Workspace = updatedWorkspace
-                    WorkspaceReloadPending = None }
+                return
+                    { state with
+                        RequestQueue = updatedRequestQueue }
+            | None -> return state
 
         | false -> return state
 

@@ -52,6 +52,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
         | _ -> failwith "U2.C1 is expected"
 
+    Thread.Sleep(250)
+
     // test the file has been reverted on the in-memory solution by pulling
     // the diagnostics for the file and validating there are no errors
     do
@@ -95,6 +97,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         match report5 with
         | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
         | _ -> failwith "U2.C1 is expected"
+
+    Thread.Sleep(250)
 
     do
         let report6: DocumentDiagnosticReport option =
@@ -147,6 +151,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         | Some(U2.C1 report) -> Assert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
         | _ -> failwith "U2.C1 is expected"
 
+    Thread.Sleep(250)
+
     // test the file has been reverted on the in-memory solution by pulling
     // the diagnostics for the file and validating there are no errors
     do
@@ -191,6 +197,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
         | Some(U2.C1 report) ->
             Assert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error after save")
         | _ -> failwith "U2.C1 is expected"
+
+    Thread.Sleep(250)
 
     do
         let report6: DocumentDiagnosticReport option =

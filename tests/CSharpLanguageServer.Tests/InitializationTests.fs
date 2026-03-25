@@ -133,7 +133,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
     Assert.AreEqual(null, serverCaps.MonikerProvider)
 
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ServerDidRespondTo "initialized")
+    Assert.IsTrue(client.ClientDidSendNotification "initialized")
 
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
@@ -142,7 +142,7 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
     Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
 
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ServerDidRespondTo "initialized")
+    Assert.IsTrue(client.ClientDidSendNotification "initialized")
 
     assertHoverWorks
         client
@@ -249,4 +249,4 @@ let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
         activateFixtureExt "genericProject" defaultClientProfile emptyFixturePatch setInvalidRootPath
 
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ServerDidRespondTo "initialized")
+    Assert.IsTrue(client.ClientDidSendNotification "initialized")

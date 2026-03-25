@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Runtime
 
 open System
+open System.Collections.Generic
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
@@ -11,29 +12,42 @@ open CSharpLanguageServer.Lsp.Workspace
 type ServerRequestMode =
     | ReadOnly
     | ReadWrite
+    | ReadOnlyBackground
 
-type ServerRequestState = | Enqueued
+type ServerRequestState =
+    | Pending
+    | Running
+    | Finished
 
 type ServerRequest =
     { State: ServerRequestState
-      Name: string
-      Id: int
-      Registered: DateTime
       Mode: ServerRequestMode
-      ActivationListeners: AsyncReplyChannel<obj> list // obj=ServerState
-      RunningSince: option<DateTime> }
+      Name: string
+      RpcOrdinal: int64
+      Registered: DateTime
+      ActivationRC: AsyncReplyChannel<obj> // obj=ServerRequestContext
+      RunningSince: option<DateTime>
+      BufferedEvents: ServerEvent list }
 
 type ServerRequestContext
     (
-        mode: ServerRequestMode,
-        lspClient: ILspClient option,
+        requestMode: ServerRequestMode,
+        lspClient: ILspClient,
         settings: ServerSettings,
         workspace: LspWorkspace,
-        clientCapabilities: ClientCapabilities,
-        emit: ServerEvent -> unit
+        clientCapabilities: ClientCapabilities
     ) =
+    let bufferedEvents = ResizeArray<ServerEvent>()
+
+    member _.RequestMode = requestMode
     member _.LspClient = lspClient
     member _.Settings = settings
     member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
-    member _.Emit = emit
+
+    member _.Emit(event: ServerEvent) =
+        match requestMode with
+        | ReadOnlyBackground -> invalidOp "Emit is not allowed on ReadOnlyBackground requests"
+        | _ -> bufferedEvents.Add(event)
+
+    member _.GetBufferedEvents() : ServerEvent list = bufferedEvents |> List.ofSeq

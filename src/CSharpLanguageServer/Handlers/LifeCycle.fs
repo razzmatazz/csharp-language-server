@@ -21,17 +21,22 @@ module LifeCycle =
     let private logger = Logging.getLoggerByName "LifeCycle"
 
     let handleInitialize
-        (lspClient: ILspClient)
         (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
         (context: ServerRequestContext)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
-            context.Emit(ClientInitialize lspClient)
+            context.Emit(ClientInitialize)
 
-            // context.State.LspClient has not been initialized yet thus context.WindowShowMessage will not work
+            // Set trace level immediately so logging during initialization is forwarded
+            // via $/logTrace (and console stderr is suppressed). The Emit also updates
+            // ServerState when the buffered event replays after this handler returns.
+            let initialTraceLevel = p.Trace |> Option.defaultValue TraceValues.Off
+            Logging.setLspTraceLevel initialTraceLevel
+            context.Emit(TraceLevelChange initialTraceLevel)
+
             let windowShowMessage m =
-                lspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
+                context.LspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
 
             let serverName = "csharp-ls"
             let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
