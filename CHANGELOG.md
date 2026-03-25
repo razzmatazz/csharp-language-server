@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Add custom JSON-RPC server implementation, rewrite how requests are scheduled
+  - This should improve performance significantly and fix some of the file/state tracking issues that have been seen since 0.22.0
+  - Support for $/logTrace has been added
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/330
 * Fix initialization crash when RootPath is not a valid URI (e.g. with crush/powernap on Windows)
   - Reported by @ktos in https://github.com/razzmatazz/csharp-language-server/issues/326
 * Fix the root range in DocumentSymbol is always 0,0
