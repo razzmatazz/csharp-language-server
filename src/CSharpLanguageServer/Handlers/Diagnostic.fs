@@ -165,6 +165,10 @@ module Diagnostic =
             for project in solutionProjects do
                 Async.Start(generateProjectDiagnosticReports wf project)
 
+        // if there were no projects at all, complete the channel immediately so the consumer loop below doesn't hang
+        if numProjectsBeingProcessed = 0 then
+            channel.Writer.Complete()
+
         // eat from channel and yield diagnostic reports as they come
         while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
             let mutable item = ReportingDoneForProject
