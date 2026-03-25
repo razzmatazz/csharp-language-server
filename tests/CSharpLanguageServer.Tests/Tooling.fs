@@ -418,6 +418,11 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
                     (String.Format("{0} {1}", value |> indexJToken "kind", value |> indexJToken "message"))
 
                 state
+            | "$/logTrace" ->
+                let p = p |> deserialize<LogTraceParams>
+                let prefix = p.Verbose |> Option.map (sprintf "%s: ") |> Option.defaultValue ""
+                logMessage "$/logTrace" (sprintf "%s%s" prefix p.Message)
+                state
             | "client/registerCapability" ->
                 logMessage
                     "ClientRpcCall"
@@ -812,7 +817,7 @@ type ClientController(clientProfile: ClientProfile) =
               ClientInfo = None
               Locale = None
               InitializationOptions = None
-              Trace = None
+              Trace = Some TraceValues.Verbose
               WorkspaceFolders = None }
             |> initializeParamsUpdate
 
