@@ -41,29 +41,34 @@ Once installed, your editor's LSP client should automatically detect and start
 ## Command Line Arguments
 
 ```
-USAGE: csharp-ls [--help]
-                 [--version]
-                 [--loglevel <level>]
-                 [--solution <solution>]
-                 [--debug]
-                 [--diagnose]
-                 [--features <features>]
+USAGE: csharp-ls [--help] [--version] [--loglevel <level>] [--solution <solution>]
+                 [--debug] [--diagnose] [--features <features>] [--rpclog <path>]
 
 OPTIONS:
 
     --version, -v         display versioning information
     --loglevel, -l <level>
-                          set log level, <trace|debug|info|warning|error>; default is `info`
+                          set log level for stderr console output,
+                          <trace|debug|info|warning|error>; default is `info`
     --solution, -s <solution>
                           specify .sln file to load (relative to CWD)
     --debug               enable debug mode
     --diagnose            run diagnostics
     --features, -f <features>
                           enable optional features, comma-separated: [metadata-uris, razor-support]
+    --rpclog <path>       write RPC wire log to file (READ/WRITE/ERROR/...)
     --help                display this list of options.
 ```
 
 See `csharp-ls --help`.
+
+### LSP Tracing
+
+csharp-ls supports the LSP `$/setTrace` and `$/logTrace` notifications. When a
+client sets tracing to `messages` or `verbose`, the server forwards its internal
+log output as `$/logTrace` notifications. This is independent of `--loglevel`,
+which only controls stderr console output. In VS Code, tracing can be enabled
+via the `[langId].trace.server` setting.
 
 ## Experimental Client Capabilities
 
