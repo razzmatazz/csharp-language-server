@@ -27,6 +27,20 @@ type LspWorkspace =
 
     static member Empty = { Folders = []; OpenDocs = Map.empty }
 
+let workspaceWithSolutionPathOverridesFrom (existing: LspWorkspace) (workspace: LspWorkspace) =
+    let folders =
+        workspace.Folders
+        |> List.map (fun wf ->
+            let override' =
+                existing.Folders
+                |> List.tryFind (fun ewf -> ewf.Uri = wf.Uri)
+                |> Option.bind _.SolutionPathOverride
+
+            { wf with
+                SolutionPathOverride = override' })
+
+    { workspace with Folders = folders }
+
 let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
     if workspaceFolders.Length = 0 then
         failwith "workspaceFrom: at least 1 workspace folder must be provided!"
@@ -150,42 +164,36 @@ let workspaceDocumentSymbol
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
 
-let workspaceWithSolutionsLoaded
-    (config: CSharpConfiguration)
-    (lspClient: ILspClient)
-    (clientCapabilities: ClientCapabilities)
-    workspace
-    =
-    async {
-        let progressReporter = ProgressReporter(lspClient, clientCapabilities)
+let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) workspace = async {
+    let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
-        let beginMessage = sprintf "Loading workspace"
+    let beginMessage = sprintf "Loading workspace"
 
-        do! progressReporter.Begin(beginMessage)
+    do! progressReporter.Begin(beginMessage)
 
-        let mutable updatedWorkspace = workspace
-        let mutable folderNum = 1
+    let mutable updatedWorkspace = workspace
+    let mutable folderNum = 1
 
-        for wf in workspace.Folders do
-            let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
+    for wf in workspace.Folders do
+        let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
 
-            let beginMessage =
-                sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum workspace.Folders.Length
+        let beginMessage =
+            sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum workspace.Folders.Length
 
-            do! progressReporter.Report(message = beginMessage)
+        do! progressReporter.Report(message = beginMessage)
 
-            let! newSolution =
-                solutionLoadSolutionWithPathOrOnDir lspClient progressReporter config.solution wfRootDir.Value
+        let! newSolution =
+            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir.Value
 
-            let updatedWf = { wf with Solution = newSolution }
-            updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
+        let updatedWf = { wf with Solution = newSolution }
+        updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
 
-            do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+        do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
 
-            folderNum <- folderNum + 1
+        folderNum <- folderNum + 1
 
-        let endMessage = sprintf "Finished loading workspace"
-        do! progressReporter.End(endMessage)
+    let endMessage = sprintf "Finished loading workspace"
+    do! progressReporter.End(endMessage)
 
-        return updatedWorkspace
-    }
+    return updatedWorkspace
+}

@@ -205,7 +205,11 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
 
     callHandlers, notificationHandlers
 
-let startCore (config: CSharpConfiguration) (rpcLogCallback: (RpcLogEntry -> unit) option) =
+let startCore
+    (config: CSharpConfiguration)
+    (initialWorkspace: LspWorkspace option)
+    (rpcLogCallback: (RpcLogEntry -> unit) option)
+    =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
@@ -213,7 +217,8 @@ let startCore (config: CSharpConfiguration) (rpcLogCallback: (RpcLogEntry -> uni
         MailboxProcessor.Start(
             serverEventLoop
                 { ServerState.Empty with
-                    Config = config }
+                    Config = config
+                    Workspace = initialWorkspace |> Option.defaultValue LspWorkspace.Empty }
         )
 
     let rpcServer =
@@ -228,9 +233,9 @@ let startCore (config: CSharpConfiguration) (rpcLogCallback: (RpcLogEntry -> uni
 
     0 // OK
 
-let start (config: CSharpConfiguration) rpcLogCallback =
+let start (config: CSharpConfiguration) (initialWorkspace: LspWorkspace option) rpcLogCallback =
     try
-        let result = startCore config rpcLogCallback
+        let result = startCore config initialWorkspace rpcLogCallback
         int result
     with ex ->
         logger.LogError("{name} crashed", ex, Process.GetCurrentProcess().ProcessName)

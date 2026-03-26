@@ -13,8 +13,7 @@ type CSharpDebugConfiguration =
           debugMode = None }
 
 type CSharpConfiguration =
-    { solution: string option
-      logLevel: string option
+    { logLevel: string option
       applyFormattingOptions: bool option
       useMetadataUris: bool option
       razorSupport: bool option
@@ -27,16 +26,14 @@ type CSharpConfiguration =
             None
 
     static member Default =
-        { solution = None
-          logLevel = None
+        { logLevel = None
           applyFormattingOptions = None
           useMetadataUris = None
           razorSupport = None
           debug = None }
 
 let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharpConfiguration) =
-    { solution = newConfig.solution |> Option.orElse oldConfig.solution
-      logLevel = newConfig.logLevel |> Option.orElse oldConfig.logLevel
+    { logLevel = newConfig.logLevel |> Option.orElse oldConfig.logLevel
       applyFormattingOptions =
         newConfig.applyFormattingOptions
         |> Option.orElse oldConfig.applyFormattingOptions

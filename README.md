@@ -37,9 +37,6 @@ Once installed, your editor's LSP client should automatically detect and start
 Settings are read from the `csharp` workspace configuration section
 (`workspace/configuration`) and can also be provided via `workspace/didChangeConfiguration`.
 
-- `csharp.solution` - path to the `.sln` file to load, relative to the workspace
-  root; optional — the server will search for a solution automatically if not set
-
 - `csharp.logLevel` - log level for server output forwarded via `$/logTrace`;
   one of `trace`, `debug`, `info`, `warning`, `error`; defaults to `info`
 

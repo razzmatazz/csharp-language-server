@@ -30,6 +30,11 @@ type LspWorkspaceFolder =
     {
         Uri: string
         Name: string
+
+        /// When set, the solution loader uses this path directly instead of
+        /// auto-discovering a solution under Uri. Set from the --solution CLI flag.
+        SolutionPathOverride: string option
+
         RoslynWorkspace: Workspace option
         Solution: Solution option
 
@@ -40,6 +45,7 @@ type LspWorkspaceFolder =
     static member Empty =
         { Uri = Directory.GetCurrentDirectory() |> Uri |> string
           Name = "(no name)"
+          SolutionPathOverride = None
           RoslynWorkspace = None
           Solution = None
           DecompiledSymbolMetadata = Map.empty }

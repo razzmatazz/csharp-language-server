@@ -49,15 +49,7 @@ type ServerState =
 
 let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
-    | SettingsChange newConfig ->
-        let newState: ServerState = { state with Config = newConfig }
-
-        let solutionChanged = not (state.Config.solution = newState.Config.solution)
-
-        if solutionChanged then
-            postServerEvent (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 250)))
-
-        return newState
+    | SettingsChange newConfig -> return { state with Config = newConfig }
 
     | TraceLevelChange newTraceLevel ->
         Logging.setLspTraceLevel newTraceLevel
@@ -138,7 +130,10 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                         RequestQueue = requestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
-        let newWorkspace = workspaceFrom workspaceFolders
+        let newWorkspace =
+            workspaceFrom workspaceFolders
+            |> workspaceWithSolutionPathOverridesFrom state.Workspace
+
         return { state with Workspace = newWorkspace }
 
     | ServerStarted lspClient ->
@@ -421,7 +416,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
         | _ -> ()
 
         let! updatedWorkspace =
-            workspaceWithSolutionsLoaded state.Config state.LspClient.Value state.ClientCapabilities state.Workspace
+            workspaceWithSolutionsLoaded state.LspClient.Value state.ClientCapabilities state.Workspace
 
         postServerEvent ProcessRequestQueue
 

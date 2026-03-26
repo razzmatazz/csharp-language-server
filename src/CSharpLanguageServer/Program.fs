@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Program
 
 open System
+open System.IO
 open System.Reflection
 
 open Argu
@@ -8,6 +9,8 @@ open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Diagnostics
 open CSharpLanguageServer.Runtime.JsonRpcServer
@@ -68,7 +71,6 @@ let entry args =
 
         let config =
             { CSharpConfiguration.Default with
-                solution = serverArgs.TryGetResult <@ Solution @>
                 logLevel = Some logLevel
                 useMetadataUris = Some(features.Contains "metadata-uris")
                 razorSupport = Some(features.Contains "razor-support")
@@ -77,8 +79,21 @@ let entry args =
                         { CSharpDebugConfiguration.Default with
                             debugMode = Some debugMode } }
 
+        let initialWorkspace =
+            serverArgs.TryGetResult <@ Solution @>
+            |> Option.map (fun slnPath ->
+                let slnFullPath = Path.GetFullPath slnPath
+                let folderUri = Path.GetDirectoryName slnFullPath |> Uri |> string
+
+                { LspWorkspace.Empty with
+                    Folders =
+                        [ { LspWorkspaceFolder.Empty with
+                              Uri = folderUri
+                              Name = Path.GetFileNameWithoutExtension slnFullPath
+                              SolutionPathOverride = Some slnFullPath } ] })
+
         let makeRpcLogCallback (path: string) : RpcLogEntry -> unit =
-            let writer = new System.IO.StreamWriter(path, append = false)
+            let writer = new StreamWriter(path, append = false)
 
             fun entry ->
                 let line =
@@ -121,7 +136,7 @@ let entry args =
                             jsonRpcLogCallback entry)
                     | None -> Some jsonRpcLogCallback
 
-                Server.start config combinedRpcLogCallback
+                Server.start config initialWorkspace combinedRpcLogCallback
 
         exitCode
     with
