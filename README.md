@@ -33,10 +33,31 @@ Once installed, your editor's LSP client should automatically detect and start
 # Settings
 
 ## Configuration
-- `csharp.solution` - solution to load, optional
+
+Settings are read from the `csharp` workspace configuration section
+(`workspace/configuration`) and can also be provided via `workspace/didChangeConfiguration`.
+
+- `csharp.solution` - path to the `.sln` file to load, relative to the workspace
+  root; optional — the server will search for a solution automatically if not set
+
+- `csharp.logLevel` - log level for server output forwarded via `$/logTrace`;
+  one of `trace`, `debug`, `info`, `warning`, `error`; defaults to `info`
 
 - `csharp.applyFormattingOptions` - use formatting options as supplied by the
-  client (may override `.editorconfig` values), defaults to `false`
+  client (may override `.editorconfig` values); defaults to `false`
+
+- `csharp.useMetadataUris` - serve decompiled metadata sources under `csharp:/`
+  URIs instead of temp files; defaults to `false`
+
+- `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
+  defaults to `false`
+
+- `csharp.debug.solutionLoadDelay` - delay in milliseconds before loading the
+  solution after the workspace is ready; useful for slow MSBuild environments;
+  optional
+
+- `csharp.debug.debugMode` - enable debug mode, which logs periodic request
+  queue statistics; defaults to `false`
 
 ## Command Line Arguments
 
@@ -48,8 +69,8 @@ OPTIONS:
 
     --version, -v         display versioning information
     --loglevel, -l <level>
-                          set log level for stderr console output,
-                          <trace|debug|info|warning|error>; default is `info`
+                          set log level (<trace|debug|info|warning|error>);
+                          equivalent to csharp.logLevel; default is `info`
     --solution, -s <solution>
                           specify .sln file to load (relative to CWD)
     --debug               enable debug mode
@@ -73,12 +94,13 @@ via the `[langId].trace.server` setting.
 ## Experimental Client Capabilities
 
 ### Decompiled Code/Metadata URIs
-`csharp:/` metadata URIs can be enabled by setting the
-`experimental.csharp.metadataUris` client capability to `true`.
+`csharp:/` metadata URIs can be enabled via the `csharp.useMetadataUris`
+configuration setting, the `--features metadata-uris` CLI flag, or by setting
+the `experimental.csharp.metadataUris` client capability to `true`.
 
 ### Razor (.cshtml) support
-Can be enabled by passing in the `razor-support` feature to the server using the
-`--features` command line flag.
+Can be enabled via the `csharp.razorSupport` configuration setting or by passing
+the `--features razor-support` CLI flag.
 
 # Clients
 
