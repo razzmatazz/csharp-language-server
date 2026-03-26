@@ -88,7 +88,7 @@ log output as `$/logTrace` notifications. This is independent of `--loglevel`,
 which only controls stderr console output. In VS Code, tracing can be enabled
 via the `[langId].trace.server` setting.
 
-## Experimental Client Capabilities
+## Extended Client Capabilities
 
 ### Decompiled Code/Metadata URIs
 `csharp:/` metadata URIs can be enabled via the `csharp.useMetadataUris`
