@@ -28,7 +28,7 @@ module DocumentRangeFormatting =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
@@ -42,8 +42,7 @@ module DocumentRangeFormatting =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: ServerRequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        let lspFormattingOptions =
-            p.Options |> context.Settings.GetEffectiveFormattingOptions
+        let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument

@@ -24,7 +24,7 @@ type ServerEvent =
     | PushDiagnosticsDocumentBacklogUpdate
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
-    | SettingsChange of ServerSettings
+    | SettingsChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder

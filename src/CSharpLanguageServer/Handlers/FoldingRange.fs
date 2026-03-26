@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 module FoldingRange =
     let provider (_c: ClientCapabilities) : bool option = None
 
-    let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
     let handle (_c: ServerRequestContext) (_p: FoldingRangeParams) : AsyncLspResult<FoldingRange array option> =
         LspResult.notImplemented<FoldingRange array option> |> async.Return

@@ -35,7 +35,10 @@ module Workspace =
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let didChangeWatchedFilesRegistration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let didChangeWatchedFilesRegistration
+        (_config: CSharpConfiguration)
+        (cc: ClientCapabilities)
+        : Registration option =
         match dynamicRegistrationForDidChangeWatchedFiles cc with
         | false -> None
         | true ->
@@ -157,12 +160,8 @@ module Workspace =
             match csharpSettingsMaybe with
             | None -> ()
             | Some csharpSettings ->
-                let prevSettings = context.Settings
-
-                let newSettings =
-                    applyCSharpSectionConfigurationOnSettings prevSettings csharpSettings
-
-                context.Emit(SettingsChange newSettings)
+                let newConfig = mergeCSharpConfiguration context.Config csharpSettings
+                context.Emit(SettingsChange newConfig)
 
             return Ok()
         }

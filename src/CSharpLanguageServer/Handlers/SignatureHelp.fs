@@ -73,7 +73,7 @@ module SignatureHelp =
                   WorkDoneProgress = None
                   RetriggerCharacters = None }
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
@@ -81,7 +81,7 @@ module SignatureHelp =
                 { TriggerCharacters = Some([| "("; ","; "<"; "{"; "[" |])
                   RetriggerCharacters = None
                   WorkDoneProgress = None
-                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

@@ -81,7 +81,7 @@ let private makeTestRequest ordinal name mode state =
       RunningSince = (if state = Running then Some DateTime.UtcNow else None)
       BufferedEvents = [] }
 
-let private defaultSettings: ServerSettings = ServerSettings.Default
+let private defaultSettings: CSharpConfiguration = CSharpConfiguration.Default
 
 /// Minimal ILspClient stub for constructing ServerRequestContext in tests.
 type private NoOpLspClient() =
@@ -121,7 +121,7 @@ let private makeTestServerRequestContext (mode: ServerRequestMode) =
     ServerRequestContext(
         mode,
         new NoOpLspClient() :> ILspClient,
-        ServerSettings.Default,
+        CSharpConfiguration.Default,
         LspWorkspace.Empty,
         emptyClientCapabilities,
         false

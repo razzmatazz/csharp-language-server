@@ -22,7 +22,7 @@ open CSharpLanguageServer.Runtime.RequestScheduling
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
 type ServerState =
-    { Settings: ServerSettings
+    { Config: CSharpConfiguration
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       TraceLevel: TraceValues
@@ -35,7 +35,7 @@ type ServerState =
       ShutdownReceived: bool }
 
     static member Empty =
-        { Settings = ServerSettings.Default
+        { Config = CSharpConfiguration.Default
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
           TraceLevel = TraceValues.Off
@@ -49,11 +49,10 @@ type ServerState =
 
 let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
-    | SettingsChange newSettings ->
-        let newState: ServerState = { state with Settings = newSettings }
+    | SettingsChange newConfig ->
+        let newState: ServerState = { state with Config = newConfig }
 
-        let solutionChanged =
-            not (state.Settings.SolutionPath = newState.Settings.SolutionPath)
+        let solutionChanged = not (state.Config.solution = newState.Config.solution)
 
         if solutionChanged then
             postServerEvent (WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 250)))
@@ -93,7 +92,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
     | ProcessRequestQueue ->
         let (retiredRequest, requestQueue) =
-            state.RequestQueue |> retireNextFinishedRequest state.Settings
+            state.RequestQueue |> retireNextFinishedRequest state.Config
 
         match retiredRequest with
         | Some retiredRequest ->
@@ -110,7 +109,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 ServerRequestContext(
                     requestMode,
                     state.LspClient.Value,
-                    state.Settings,
+                    state.Config,
                     state.Workspace,
                     state.ClientCapabilities,
                     state.ShutdownReceived
@@ -184,18 +183,16 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 let v = t :?> JValue
                 v.Value :?> bool)
 
-        let oldSettings = state.Settings
-
-        let newSettings =
-            { oldSettings with
-                UseMetadataUris =
+        let newConfig =
+            { state.Config with
+                useMetadataUris =
                     experimentalCapsBoolValue "csharp.metadataUris"
-                    |> Option.defaultValue oldSettings.UseMetadataUris }
+                    |> Option.orElse state.Config.useMetadataUris }
 
         return
             { state with
                 ClientCapabilities = cc
-                Settings = newSettings }
+                Config = newConfig }
 
     | WorkspaceFolderChange updatedWf ->
         let updatedWorkspaceFolderList =
@@ -415,14 +412,16 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 return newState
 
     | RequestQueueDrained ->
-        match state.Settings.SolutionLoadDelay with
+        let solutionLoadDelay = state.Config.debug |> Option.bind _.solutionLoadDelay
+
+        match solutionLoadDelay with
         | Some ms when ms > 0 ->
             logger.LogInformation("SolutionLoadDelay is set to {ms}ms, waiting before loading solution..", ms)
             do! Async.Sleep ms
         | _ -> ()
 
         let! updatedWorkspace =
-            workspaceWithSolutionsLoaded state.Settings state.LspClient.Value state.ClientCapabilities state.Workspace
+            workspaceWithSolutionsLoaded state.Config state.LspClient.Value state.ClientCapabilities state.Workspace
 
         postServerEvent ProcessRequestQueue
 
@@ -435,8 +434,10 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let updatedRequestQueue =
-            dumpAndResetRequestStats state.Settings.DebugMode state.RequestQueue
+        let debugMode =
+            state.Config.debug |> Option.bind _.debugMode |> Option.defaultValue false
+
+        let updatedRequestQueue = dumpAndResetRequestStats debugMode state.RequestQueue
 
         let state =
             { state with

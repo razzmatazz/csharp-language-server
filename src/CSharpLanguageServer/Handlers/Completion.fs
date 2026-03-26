@@ -143,12 +143,12 @@ module Completion =
                   WorkDoneProgress = None
                   CompletionItem = None }
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: CompletionRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   ResolveProvider = Some true
                   TriggerCharacters = Some [| "."; "'" |]
                   AllCommitCharacters = None

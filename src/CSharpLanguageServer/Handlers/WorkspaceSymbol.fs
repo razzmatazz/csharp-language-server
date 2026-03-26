@@ -27,7 +27,7 @@ module WorkspaceSymbol =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->

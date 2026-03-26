@@ -27,12 +27,12 @@ module Implementation =
         | true -> None
         | false -> Some(U3.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: ImplementationRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   Id = None
                   WorkDoneProgress = None }
 
@@ -41,7 +41,7 @@ module Implementation =
                   Method = "textDocument/implementation"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let findImplLocationsOfSymbol wf settings project (sym: ISymbol) = async {
+    let findImplLocationsOfSymbol wf config project (sym: ISymbol) = async {
         let! ct = Async.CancellationToken
 
         let! impls =
@@ -53,7 +53,7 @@ module Implementation =
         let locations = System.Collections.Generic.List<Location>()
 
         for i in impls do
-            let! implLocations, wf = workspaceFolderSymbolLocations updatedWf settings i project
+            let! implLocations, wf = workspaceFolderSymbolLocations updatedWf config i project
 
             locations.AddRange(implLocations)
             updatedWf <- wf
@@ -70,7 +70,7 @@ module Implementation =
 
             match wf, symInfo with
             | Some wf, Some(sym, project, _) ->
-                let! impls, updatedWf = findImplLocationsOfSymbol wf context.Settings project sym
+                let! impls, updatedWf = findImplLocationsOfSymbol wf context.Config project sym
                 context.Emit(WorkspaceFolderChange updatedWf)
 
                 return impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success

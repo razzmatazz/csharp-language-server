@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 module Moniker =
     let provider (_cc: ClientCapabilities) = None
 
-    let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
     let handle (_context: ServerRequestContext) (_p: MonikerParams) : AsyncLspResult<Moniker array option> =
         LspResult.notImplemented<Moniker array option> |> async.Return

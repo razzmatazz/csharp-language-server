@@ -33,7 +33,7 @@ module DocumentOnTypeFormatting =
                 { FirstTriggerCharacter = ";"
                   MoreTriggerCharacter = Some([| "}"; ")" |]) }
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
@@ -71,8 +71,7 @@ module DocumentOnTypeFormatting =
             | _ -> None
 
     let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        let lspFormattingOptions =
-            p.Options |> context.Settings.GetEffectiveFormattingOptions
+        let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument

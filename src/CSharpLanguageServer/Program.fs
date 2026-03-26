@@ -56,7 +56,7 @@ let entry args =
             exit 0)
 
         let debugMode: bool = serverArgs.Contains Debug
-        let logLevel = serverArgs.TryGetResult <@ LogLevel @> |> parseLogLevel
+        let logLevel = serverArgs.TryGetResult <@ LogLevel @> |> Option.defaultValue "info"
 
         let features: Set<string> =
             serverArgs.TryGetResult <@ Features @>
@@ -66,13 +66,16 @@ let entry args =
             |> Seq.filter (String.IsNullOrWhiteSpace >> not)
             |> Set.ofSeq
 
-        let settings =
-            { ServerSettings.Default with
-                DebugMode = debugMode
-                SolutionPath = serverArgs.TryGetResult <@ Solution @>
-                UseMetadataUris = features.Contains "metadata-uris"
-                RazorSupport = features.Contains "razor-support"
-                LogLevel = logLevel }
+        let config =
+            { CSharpConfiguration.Default with
+                solution = serverArgs.TryGetResult <@ Solution @>
+                logLevel = Some logLevel
+                useMetadataUris = Some(features.Contains "metadata-uris")
+                razorSupport = Some(features.Contains "razor-support")
+                debug =
+                    Some
+                        { CSharpDebugConfiguration.Default with
+                            debugMode = Some debugMode } }
 
         let makeRpcLogCallback (path: string) : RpcLogEntry -> unit =
             let writer = new System.IO.StreamWriter(path, append = false)
@@ -96,9 +99,9 @@ let entry args =
             match serverArgs.TryGetResult <@ Diagnose @> with
             | Some _ ->
                 Logging.setupLogging LogLevel.Trace
-                diagnose settings |> Async.RunSynchronously
+                diagnose config |> Async.RunSynchronously
             | _ ->
-                Logging.setupLogging settings.LogLevel
+                Logging.setupLogging (parseLogLevel config.logLevel)
 
                 let jsonRpcLogger = Logging.getLoggerByName "JsonRpcServer"
 
@@ -118,7 +121,7 @@ let entry args =
                             jsonRpcLogCallback entry)
                     | None -> Some jsonRpcLogCallback
 
-                Server.start settings combinedRpcLogCallback
+                Server.start config combinedRpcLogCallback
 
         exitCode
     with

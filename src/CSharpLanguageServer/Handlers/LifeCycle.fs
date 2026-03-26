@@ -21,7 +21,7 @@ module LifeCycle =
     let private logger = Logging.getLoggerByName "LifeCycle"
 
     let handleInitialize
-        (getServerCapabilities: ServerSettings -> InitializeParams -> ServerCapabilities)
+        (getServerCapabilities: CSharpConfiguration -> InitializeParams -> ServerCapabilities)
         (context: ServerRequestContext)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
@@ -41,7 +41,7 @@ module LifeCycle =
             let serverName = "csharp-ls"
             let serverVersion = Assembly.GetExecutingAssembly().GetName().Version |> string
             logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
-            logger.LogInformation("initial server settings: {settings}", context.Settings |> string)
+            logger.LogInformation("initial csharp config: {config}", context.Config |> string)
 
             do! windowShowMessage (sprintf "csharp-ls: initializing, version %s" serverVersion)
 
@@ -88,7 +88,7 @@ module LifeCycle =
             context.Emit(WorkspaceConfigurationChanged workspaceFolders)
 
             let initializeResult =
-                let serverCapabilities = getServerCapabilities context.Settings p
+                let serverCapabilities = getServerCapabilities context.Config p
 
                 let assemblyVersion =
                     Assembly.GetExecutingAssembly().GetName().Version
@@ -108,7 +108,7 @@ module LifeCycle =
     let handleInitialized
         (lspClient: ILspClient)
         (serverActor: MailboxProcessor<ServerEvent>)
-        (getDynamicRegistrations: ServerSettings -> ClientCapabilities -> Registration list)
+        (getDynamicRegistrations: CSharpConfiguration -> ClientCapabilities -> Registration list)
         (context: ServerRequestContext)
         (_p: unit)
         : Async<LspResult<unit>> =
@@ -119,7 +119,7 @@ module LifeCycle =
 
             let registrationParams =
                 { Registrations =
-                    getDynamicRegistrations context.Settings context.ClientCapabilities
+                    getDynamicRegistrations context.Config context.ClientCapabilities
                     |> List.toArray }
 
             logger.LogDebug("handleInitialized: ClientRegisterCapability..")
@@ -149,17 +149,13 @@ module LifeCycle =
                     workspaceCSharpConfig
                     |> Option.fromResult
                     |> Option.bind Seq.tryHead
-                    |> Option.bind deserialize<CSharpSectionConfiguration option>
+                    |> Option.bind deserialize<CSharpConfiguration option>
 
                 match csharpConfig with
                 | None -> ()
                 | Some csharpConfig ->
-                    let prevSettings = context.Settings
-
-                    let newSettings =
-                        applyCSharpSectionConfigurationOnSettings prevSettings csharpConfig
-
-                    context.Emit(SettingsChange newSettings)
+                    let newConfig = mergeCSharpConfiguration context.Config csharpConfig
+                    context.Emit(SettingsChange newConfig)
 
             with ex ->
                 logger.LogWarning(

@@ -330,7 +330,7 @@ module CodeAction =
         |> Option.bind _.DynamicRegistration
         |> Option.defaultValue false
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
@@ -338,7 +338,7 @@ module CodeAction =
                 { CodeActionKinds = None
                   ResolveProvider = Some true
                   WorkDoneProgress = None
-                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

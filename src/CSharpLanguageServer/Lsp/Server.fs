@@ -23,10 +23,7 @@ open CSharpLanguageServer.Util
 
 let logger = Logging.getLoggerByName "Lsp.Server"
 
-let getDynamicRegistrations
-    (serverSettings: ServerSettings)
-    (clientCapabilities: ClientCapabilities)
-    : Registration list =
+let getDynamicRegistrations (config: CSharpConfiguration) (clientCapabilities: ClientCapabilities) : Registration list =
     [ CallHierarchy.registration
       CodeAction.registration
       CodeLens.registration
@@ -64,9 +61,9 @@ let getDynamicRegistrations
       TypeHierarchy.registration
       Workspace.didChangeWatchedFilesRegistration
       WorkspaceSymbol.registration ]
-    |> List.choose (fun regFunc -> regFunc serverSettings clientCapabilities)
+    |> List.choose (fun regFunc -> regFunc config clientCapabilities)
 
-let getServerCapabilities (settings: ServerSettings) (lspClient: InitializeParams) =
+let getServerCapabilities (config: CSharpConfiguration) (lspClient: InitializeParams) =
     { ServerCapabilities.Default with
         TextDocumentSync = TextDocumentSync.provider lspClient.Capabilities |> Option.map U2.C1
         CompletionProvider = Completion.provider lspClient.Capabilities
@@ -97,7 +94,7 @@ let getServerCapabilities (settings: ServerSettings) (lspClient: InitializeParam
         TypeHierarchyProvider = TypeHierarchy.provider lspClient.Capabilities
         // InlineValueProvider = InlineValue.provider lspClient.Capabilities
         InlayHintProvider = InlayHint.provider lspClient.Capabilities
-        DiagnosticProvider = Diagnostic.provider settings lspClient.Capabilities
+        DiagnosticProvider = Diagnostic.provider config lspClient.Capabilities
         WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities
         Workspace = Workspace.provider lspClient.Capabilities }
 
@@ -208,7 +205,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
 
     callHandlers, notificationHandlers
 
-let startCore settings (rpcLogCallback: (RpcLogEntry -> unit) option) =
+let startCore (config: CSharpConfiguration) (rpcLogCallback: (RpcLogEntry -> unit) option) =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
@@ -216,7 +213,7 @@ let startCore settings (rpcLogCallback: (RpcLogEntry -> unit) option) =
         MailboxProcessor.Start(
             serverEventLoop
                 { ServerState.Empty with
-                    Settings = settings }
+                    Config = config }
         )
 
     let rpcServer =
@@ -231,9 +228,9 @@ let startCore settings (rpcLogCallback: (RpcLogEntry -> unit) option) =
 
     0 // OK
 
-let start options rpcLogCallback =
+let start (config: CSharpConfiguration) rpcLogCallback =
     try
-        let result = startCore options rpcLogCallback
+        let result = startCore config rpcLogCallback
         int result
     with ex ->
         logger.LogError("{name} crashed", ex, Process.GetCurrentProcess().ProcessName)

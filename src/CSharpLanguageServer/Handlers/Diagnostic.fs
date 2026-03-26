@@ -32,21 +32,21 @@ module Diagnostic =
           Id = None }
 
     let provider
-        (settings: ServerSettings)
+        (config: CSharpConfiguration)
         (cc: ClientCapabilities)
         : U2<DiagnosticOptions, DiagnosticRegistrationOptions> option =
         match dynamicRegistration cc with
         | true -> None
         | false ->
-            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments config
 
             registrationOptions documentSelector |> U2.C2 |> Some
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
-            let documentSelector = documentSelectorForCSharpAndRazorDocuments settings
+            let documentSelector = documentSelectorForCSharpAndRazorDocuments config
 
             let registration =
                 { Id = Guid.NewGuid() |> string

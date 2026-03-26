@@ -33,7 +33,7 @@ type ServerRequestContext
     (
         requestMode: ServerRequestMode,
         lspClient: ILspClient,
-        settings: ServerSettings,
+        config: CSharpConfiguration,
         workspace: LspWorkspace,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
@@ -42,7 +42,7 @@ type ServerRequestContext
 
     member _.RequestMode = requestMode
     member _.LspClient = lspClient
-    member _.Settings = settings
+    member _.Config = config
     member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived

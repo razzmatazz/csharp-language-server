@@ -57,24 +57,24 @@ module TextDocumentSync =
                     Save = Some(U2.C2 { IncludeText = Some true })
                     Change = Some TextDocumentSyncKind.Incremental }
 
-    let didOpenRegistration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let didOpenRegistration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string
                   Method = "textDocument/didOpen"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let didChangeRegistration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let didChangeRegistration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   SyncKind = TextDocumentSyncKind.Incremental }
 
             Some
@@ -82,12 +82,12 @@ module TextDocumentSync =
                   Method = "textDocument/didChange"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let didSaveRegistration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let didSaveRegistration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   IncludeText = Some true }
 
             Some
@@ -95,21 +95,22 @@ module TextDocumentSync =
                   Method = "textDocument/didSave"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let didCloseRegistration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let didCloseRegistration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string
                   Method = "textDocument/didClose"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let willSaveRegistration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let willSaveRegistration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
-    let willSaveWaitUntilRegistration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let willSaveWaitUntilRegistration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option =
+        None
 
     let didOpenCshtmlFile wf (p: DidOpenTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
         let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf

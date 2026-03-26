@@ -27,12 +27,12 @@ module CallHierarchy =
         | true -> None
         | false -> Some(U3.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: CallHierarchyRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   Id = None
                   WorkDoneProgress = None }
 
@@ -56,7 +56,7 @@ module CallHierarchy =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
+                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 

@@ -25,12 +25,12 @@ module TypeDefinition =
         | true -> None
         | false -> Some(U3.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: TypeDefinitionRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   Id = None
                   WorkDoneProgress = None }
 
@@ -60,7 +60,7 @@ module TypeDefinition =
                     | None -> async.Return([], wf)
                     | Some symbol -> async {
                         let! aggregatedLspLocations, updatedWf =
-                            workspaceFolderSymbolLocations wf context.Settings symbol project
+                            workspaceFolderSymbolLocations wf context.Config symbol project
 
                         context.Emit(WorkspaceFolderChange updatedWf)
                         return aggregatedLspLocations, updatedWf

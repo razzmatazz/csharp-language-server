@@ -255,7 +255,7 @@ let finishRequest requestRpcOrdinal (bufferedEvents: ServerEvent list) (requestQ
 /// Returns `(updatedQueue, Some retiredRequest)` if a request was retired, or
 /// `(requestQueue, None)` if nothing is eligible.
 let retireNextFinishedRequest
-    (serverSettings: ServerSettings)
+    (config: CSharpConfiguration)
     (requestQueue: RequestQueue)
     : ServerRequest option * RequestQueue =
 
@@ -270,11 +270,13 @@ let retireNextFinishedRequest
             | _, ReadOnlyBackground -> findRetirable rest
             | _ -> None
 
+    let debugMode = config.debug |> Option.bind _.debugMode |> Option.defaultValue false
+
     match findRetirable sortedRequests with
     | None -> (None, requestQueue)
     | Some(ordinal, request) ->
         let newStats =
-            if serverSettings.DebugMode then
+            if debugMode then
                 requestQueue.Stats
                 |> Map.change request.Name (updateRequestStats requestQueue request)
             else

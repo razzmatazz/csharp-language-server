@@ -251,7 +251,7 @@ module InlayHint =
 
             Some(U3.C2 inlayHintOptions)
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->

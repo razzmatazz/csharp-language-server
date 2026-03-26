@@ -33,12 +33,12 @@ module TypeHierarchy =
         | true -> None
         | false -> Some(U3.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: TypeHierarchyRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   Id = None
                   WorkDoneProgress = None }
 
@@ -54,7 +54,7 @@ module TypeHierarchy =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
+                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 
@@ -90,7 +90,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in supertypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Settings typeSym project
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
@@ -146,7 +146,7 @@ module TypeHierarchy =
                 let mutable updatedWf = wf
 
                 for typeSym in subtypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Settings typeSym project
+                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
 
                     let typeSymItems =
                         locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)

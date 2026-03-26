@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 module LinkedEditingRange =
     let provider (cc: ClientCapabilities) = None
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
     let handle
         (context: ServerRequestContext)

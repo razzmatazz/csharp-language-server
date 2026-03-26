@@ -24,12 +24,12 @@ module Definition =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DefinitionRegistrationOptions =
-                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some
+                { DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some
                   WorkDoneProgress = None }
 
             Some
@@ -44,7 +44,7 @@ module Definition =
         async {
             match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
             | Some wf, Some(symbol, project, _) ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Settings symbol project
+                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
                 context.Emit(WorkspaceFolderChange updatedWf)
 

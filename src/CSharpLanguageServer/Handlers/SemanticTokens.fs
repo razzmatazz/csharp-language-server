@@ -178,7 +178,7 @@ module SemanticTokens =
 
             Some(U2.C1 semanticTokensOptions)
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->

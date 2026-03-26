@@ -27,7 +27,7 @@ module DocumentFormatting =
         | true -> None
         | false -> Some(U2.C1 true)
 
-    let registration (_settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
@@ -49,8 +49,7 @@ module DocumentFormatting =
     }
 
     let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
-        let lspFormattingOptions =
-            p.Options |> context.Settings.GetEffectiveFormattingOptions
+        let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 

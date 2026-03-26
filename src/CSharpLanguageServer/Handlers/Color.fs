@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 module Color =
     let provider (cc: ClientCapabilities) = None
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option = None
+    let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
     let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return

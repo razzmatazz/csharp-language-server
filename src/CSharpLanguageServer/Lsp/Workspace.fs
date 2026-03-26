@@ -151,7 +151,7 @@ let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
 
 let workspaceWithSolutionsLoaded
-    (settings: ServerSettings)
+    (config: CSharpConfiguration)
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
     workspace
@@ -175,7 +175,7 @@ let workspaceWithSolutionsLoaded
             do! progressReporter.Report(message = beginMessage)
 
             let! newSolution =
-                solutionLoadSolutionWithPathOrOnDir lspClient progressReporter settings.SolutionPath wfRootDir.Value
+                solutionLoadSolutionWithPathOrOnDir lspClient progressReporter config.solution wfRootDir.Value
 
             let updatedWf = { wf with Solution = newSolution }
             updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace

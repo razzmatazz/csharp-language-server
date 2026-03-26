@@ -10,7 +10,7 @@ open CSharpLanguageServer.Types
 module Declaration =
     let provider (_cc: ClientCapabilities) : bool option = None
 
-    let registration (_settings: ServerSettings) (_cc: ClientCapabilities) : Registration option = None
+    let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
     let handle
         (_context: ServerRequestContext)

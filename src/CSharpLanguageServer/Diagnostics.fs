@@ -63,8 +63,8 @@ module Diagnostics =
                       ShowMessage = None
                       ShowDocument = None } }
 
-    let diagnose (settings: ServerSettings) : Async<int> = async {
-        logger.LogDebug("diagnose: settings={settings}", settings)
+    let diagnose (config: CSharpConfiguration) : Async<int> = async {
+        logger.LogDebug("diagnose: config={config}", config)
 
         initializeMSBuild ()
 

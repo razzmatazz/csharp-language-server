@@ -299,14 +299,14 @@ module DocumentSymbol =
         | true -> None
         | false -> true |> U2.C1 |> Some
 
-    let registration (settings: ServerSettings) (cc: ClientCapabilities) : Registration option =
+    let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
         | false -> None
         | true ->
             let registerOptions: DocumentSymbolRegistrationOptions =
                 { Label = None
                   WorkDoneProgress = None
-                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments settings |> Some }
+                  DocumentSelector = documentSelectorForCSharpAndRazorDocuments config |> Some }
 
             Some
                 { Id = Guid.NewGuid() |> string

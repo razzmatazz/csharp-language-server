@@ -220,14 +220,14 @@ let workspaceFolderSymbolLocationsInMetadata wf project symbol = async {
 
 let workspaceFolderResolveSymbolLocation
     (wf: LspWorkspaceFolder)
-    (settings: ServerSettings)
+    (config: CSharpConfiguration)
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
     =
     match l.IsInMetadata, l.IsInSource with
     | true, _ ->
-        match settings.UseMetadataUris with
+        match config.useMetadataUris |> Option.defaultValue false with
         | true -> workspaceFolderSymbolLocationsInMetadata wf project symbol
         | false -> ([], wf) |> async.Return
 
@@ -244,7 +244,7 @@ let workspaceFolderResolveSymbolLocation
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
 let workspaceFolderSymbolLocations
     folder
-    (settings: ServerSettings)
+    (config: CSharpConfiguration)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (project: Microsoft.CodeAnalysis.Project)
     =
@@ -253,7 +253,7 @@ let workspaceFolderSymbolLocations
         let mutable aggregatedLspLocations = []
 
         for l in symbol.Locations do
-            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation wf settings project symbol l
+            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation wf config project symbol l
 
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
             wf <- updatedWf

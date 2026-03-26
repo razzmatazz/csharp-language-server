@@ -3,57 +3,56 @@ module CSharpLanguageServer.Types
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
-open Microsoft.Extensions.Logging
 
-type ServerSettings =
-    { SolutionPath: string option
-      LogLevel: LogLevel
-      ApplyFormattingOptions: bool
-      UseMetadataUris: bool
-      RazorSupport: bool
-      DebugMode: bool
-      SolutionLoadDelay: int option }
+type CSharpDebugConfiguration =
+    { solutionLoadDelay: int option
+      debugMode: bool option }
+
+    static member Default =
+        { solutionLoadDelay = None
+          debugMode = None }
+
+type CSharpConfiguration =
+    { solution: string option
+      logLevel: string option
+      applyFormattingOptions: bool option
+      useMetadataUris: bool option
+      razorSupport: bool option
+      debug: CSharpDebugConfiguration option }
 
     member this.GetEffectiveFormattingOptions options =
-        if this.ApplyFormattingOptions then Some options else None
-
-    static member Default: ServerSettings =
-        { SolutionPath = None
-          LogLevel = LogLevel.Information
-          ApplyFormattingOptions = false
-          UseMetadataUris = false
-          RazorSupport = false
-          DebugMode = false
-          SolutionLoadDelay = None }
-
-type CSharpDebugSectionConfiguration =
-    { solutionLoadDelay: int option }
-
-    static member Default = { solutionLoadDelay = None }
-
-type CSharpSectionConfiguration =
-    { solution: string option
-      applyFormattingOptions: bool option
-      debug: CSharpDebugSectionConfiguration option }
+        if this.applyFormattingOptions |> Option.defaultValue false then
+            Some options
+        else
+            None
 
     static member Default =
         { solution = None
+          logLevel = None
           applyFormattingOptions = None
+          useMetadataUris = None
+          razorSupport = None
           debug = None }
 
-let applyCSharpSectionConfigurationOnSettings oldSettings csharpSectionConfig =
-    { oldSettings with
-        SolutionPath = csharpSectionConfig.solution |> Option.orElse oldSettings.SolutionPath
-        ApplyFormattingOptions =
-            csharpSectionConfig.applyFormattingOptions
-            |> Option.defaultValue oldSettings.ApplyFormattingOptions
-        SolutionLoadDelay =
-            csharpSectionConfig.debug
-            |> Option.bind _.solutionLoadDelay
-            |> Option.orElse oldSettings.SolutionLoadDelay }
+let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharpConfiguration) =
+    { solution = newConfig.solution |> Option.orElse oldConfig.solution
+      logLevel = newConfig.logLevel |> Option.orElse oldConfig.logLevel
+      applyFormattingOptions =
+        newConfig.applyFormattingOptions
+        |> Option.orElse oldConfig.applyFormattingOptions
+      useMetadataUris = newConfig.useMetadataUris |> Option.orElse oldConfig.useMetadataUris
+      razorSupport = newConfig.razorSupport |> Option.orElse oldConfig.razorSupport
+      debug =
+        match newConfig.debug with
+        | Some newDebug ->
+            Some
+                { solutionLoadDelay =
+                    newDebug.solutionLoadDelay
+                    |> Option.orElse (oldConfig.debug |> Option.bind _.solutionLoadDelay)
+                  debugMode = newDebug.debugMode |> Option.orElse (oldConfig.debug |> Option.bind _.debugMode) }
+        | None -> oldConfig.debug }
 
-type DidChangeConfigurationSettingsDto =
-    { csharp: CSharpSectionConfiguration option }
+type DidChangeConfigurationSettingsDto = { csharp: CSharpConfiguration option }
 
 type CSharpMetadataInformation =
     { ProjectName: string
@@ -91,8 +90,8 @@ let razorCsharpDocumentFilter: TextDocumentFilter =
 let documentSelectorForCSharpDocuments: DocumentSelector =
     [| csharpDocumentFilter |> U2.C1 |]
 
-let documentSelectorForCSharpAndRazorDocuments (settings: ServerSettings) : DocumentSelector =
-    match settings.RazorSupport with
+let documentSelectorForCSharpAndRazorDocuments (config: CSharpConfiguration) : DocumentSelector =
+    match config.razorSupport |> Option.defaultValue false with
     | true -> [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
     | false -> [| csharpDocumentFilter |> U2.C1 |]
 
