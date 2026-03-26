@@ -59,9 +59,9 @@ module LifeCycle =
 
             initializeMSBuild ()
 
-            logger.LogDebug("handleInitialize: p.ClientInfo: {clientInfo}", p.ClientInfo |> Option.map serialize)
+            logger.LogDebug("handleInitialize: p.ClientInfo: {clientInfo}", p.ClientInfo)
 
-            logger.LogDebug("handleInitialize: p.Capabilities: {caps}", serialize p.Capabilities)
+            logger.LogDebug("handleInitialize: p.Capabilities: {caps}", p.Capabilities)
             context.Emit(ClientCapabilityChange p.Capabilities)
 
             logger.LogDebug(
@@ -85,7 +85,7 @@ module LifeCycle =
 
             logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 
-            context.Emit(WorkspaceConfigurationChanged workspaceFolders)
+            context.Emit(WorkspaceReconfigured workspaceFolders)
 
             let initializeResult =
                 let serverCapabilities = getServerCapabilities context.Config p
@@ -155,7 +155,7 @@ module LifeCycle =
                 | None -> ()
                 | Some csharpConfig ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                    context.Emit(SettingsChange newConfig)
+                    context.Emit(ServerReconfigured newConfig)
 
             with ex ->
                 logger.LogWarning(

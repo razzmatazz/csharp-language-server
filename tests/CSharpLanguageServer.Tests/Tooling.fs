@@ -782,13 +782,16 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     member __.SolutionDir: string = solutionDir.Value
 
-    member this.LoadSolution
+    /// Copies the fixture, starts the server process, and completes the initialize/initialized
+    /// handshake — but does NOT wait for the workspace to finish loading.
+    /// Call WaitForSolutionLoad() (or WaitForProgressEnd) separately when ready.
+    member this.StartServer
         (
             fixtureName: string,
             patchSolutionDir: string -> unit,
             initializeParamsUpdate: InitializeParams -> InitializeParams
         ) =
-        let log = logMessage "LoadSolution"
+        let log = logMessage "StartServer"
 
         // solution can only be loaded once for LspTestClient instance
         if solutionLoaded then
@@ -805,7 +808,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
             |> DirectoryInfo
 
         if not sourceTestDataDir.Exists then
-            failwithf "LspTestClient.LoadSolution(): no such test data dir \"%s\"" sourceTestDataDir.FullName
+            failwithf "LspTestClient.StartServer(): no such test data dir \"%s\"" sourceTestDataDir.FullName
 
         let tempSolutionDir = prepareTempTestDirFrom sourceTestDataDir
         patchSolutionDir tempSolutionDir
@@ -854,7 +857,17 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         log "OK, 'initialized' notification sent"
 
+    member this.WaitForSolutionLoad() =
         this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
+
+    member this.LoadSolution
+        (
+            fixtureName: string,
+            patchSolutionDir: string -> unit,
+            initializeParamsUpdate: InitializeParams -> InitializeParams
+        ) =
+        this.StartServer(fixtureName, patchSolutionDir, initializeParamsUpdate)
+        this.WaitForSolutionLoad()
 
     member __.WaitForProgressEnd(messagePred: (string -> bool)) =
         let timeoutMS = 20 * 1000

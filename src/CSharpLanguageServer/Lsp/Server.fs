@@ -215,10 +215,11 @@ let startCore
 
     let stateActor =
         MailboxProcessor.Start(
+            let workspace = initialWorkspace |> Option.defaultValue LspWorkspace.Empty |> Uninitialized
             serverEventLoop
                 { ServerState.Empty with
                     Config = config
-                    Workspace = initialWorkspace |> Option.defaultValue LspWorkspace.Empty }
+                    Workspace = workspace }
         )
 
     let rpcServer =

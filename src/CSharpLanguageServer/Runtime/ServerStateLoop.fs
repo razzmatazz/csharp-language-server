@@ -21,14 +21,25 @@ open CSharpLanguageServer.Runtime.RequestScheduling
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
+type ServerLspWorkspace =
+    | Empty
+    | Uninitialized of LspWorkspace
+    | Loading of LspWorkspace
+    | Ready of LspWorkspace
+
+let withReadyWorkspaceOrFail (ws: ServerLspWorkspace) (op: LspWorkspace -> LspWorkspace) =
+    match ws with
+    | Ready ws -> ws |> op |> Ready
+    | _ -> failwithf "applyOnReadyWorkspaceOrFail: expected a 'Ready' LspWorkspace but have '%s'" (string ws)
+
 type ServerState =
     { Config: CSharpConfiguration
       LspClient: ILspClient option
       ClientCapabilities: ClientCapabilities
       TraceLevel: TraceValues
-      Workspace: LspWorkspace
+      Workspace: ServerLspWorkspace
+      PendingWorkspaceReconfiguration: LspWorkspace option
       RequestQueue: RequestQueue
-      WorkspaceReloadPending: DateTime option
       PushDiagnosticsDocumentBacklog: string list
       PushDiagnosticsCurrentDocTask: (string * Task) option
       PeriodicTickTimer: Threading.Timer option
@@ -39,9 +50,10 @@ type ServerState =
           LspClient = None
           ClientCapabilities = emptyClientCapabilities
           TraceLevel = TraceValues.Off
-          Workspace = LspWorkspace.Empty
-          RequestQueue = RequestQueue.Empty
+          Workspace = Empty
+          PendingWorkspaceReconfiguration = None
           WorkspaceReloadPending = None
+          RequestQueue = RequestQueue.Empty
           PushDiagnosticsDocumentBacklog = []
           PushDiagnosticsCurrentDocTask = None
           PeriodicTickTimer = None
@@ -49,7 +61,7 @@ type ServerState =
 
 let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
-    | SettingsChange newConfig -> return { state with Config = newConfig }
+    | ServerReconfigured newConfig -> return { state with Config = newConfig }
 
     | TraceLevelChange newTraceLevel ->
         Logging.setLspTraceLevel newTraceLevel
@@ -83,6 +95,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
         return newState
 
     | ProcessRequestQueue ->
+        // Check if there are any requests to retire and do so.
         let (retiredRequest, requestQueue) =
             state.RequestQueue |> retireNextFinishedRequest state.Config
 
@@ -97,12 +110,19 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 { state with
                     RequestQueue = requestQueue }
         | None ->
+            // OK, there were no requests to retire, actually process
+            // request queue.
             let makeRequestContext requestMode =
+                let readyWorkspace =
+                    match state.Workspace with
+                    | Ready ws -> ws
+                    | _ -> failwithf "Expected 'Ready' LspWorkspace but have '%s' for state.Workspace" (string state.Workspace)
+
                 ServerRequestContext(
                     requestMode,
                     state.LspClient.Value,
                     state.Config,
-                    state.Workspace,
+                    readyWorkspace,
                     state.ClientCapabilities,
                     state.ShutdownReceived
                 )
@@ -129,12 +149,32 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                     { state with
                         RequestQueue = requestQueue }
 
-    | WorkspaceConfigurationChanged workspaceFolders ->
+    | WorkspaceReconfigured workspaceFolders ->
+        let newWorkspace = workspaceFrom workspaceFolders
+        return { state with PendingWorkspaceReconfiguration = Some newWorkspace }
+
+        (*
+        let currentWs =
+            match state.Workspace with
+            | Empty -> None
+            | Uninitialized ws -> Some ws
+            | Loading ws -> Some ws
+            | Ready ws -> Some ws
+
         let newWorkspace =
-            workspaceFrom workspaceFolders
-            |> workspaceWithSolutionPathOverridesFrom state.Workspace
+            match currentWs with
+            | Some currentWs ->
+                newWorkspace |> workspaceWithSolutionPathOverridesFrom currentWs
+            | None ->
+                newWorkspace
 
         return { state with Workspace = newWorkspace }
+        *)
+
+
+    | WorkspaceLoadResult result ->
+        failwith "not implemented, WorkspaceLoadResult"
+        return state
 
     | ServerStarted lspClient ->
         Logging.setLspTraceClient (Some lspClient)
@@ -190,61 +230,63 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 Config = newConfig }
 
     | WorkspaceFolderChange updatedWf ->
-        let updatedWorkspaceFolderList =
-            state.Workspace.Folders
-            |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
+        let doWsFolderChange ws =
+            let updatedWorkspaceFolderList =
+                ws.Folders
+                |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
 
-        // request queue may have been blocked due to workspace folder(s)
-        // not having solution loaded yet
-        postServerEvent ProcessRequestQueue
+            // request queue may have been blocked due to workspace folder(s)
+            // not having solution loaded yet
+            postServerEvent ProcessRequestQueue
 
-        let newWorkspace =
-            { state.Workspace with
+            { ws with
                 Folders = updatedWorkspaceFolderList }
 
-        let newState = { state with Workspace = newWorkspace }
-
-        return newState
+        let newWorkspace = withReadyWorkspaceOrFail state.Workspace doWsFolderChange
+        return { state with Workspace = newWorkspace }
 
     | DocumentOpened(uri, ver, timestamp) ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
+        let doDocumentOpenedProcessing ws =
+            postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = { Version = ver; Touched = timestamp }
-        let newOpenDocs = state.Workspace.OpenDocs |> Map.add uri openDocInfo
+            let openDocInfo = { Version = ver; Touched = timestamp }
+            let newOpenDocs = ws.OpenDocs |> Map.add uri openDocInfo
 
-        return
-            { state with
-                Workspace =
-                    { state.Workspace with
-                        OpenDocs = newOpenDocs } }
+            { ws with
+                OpenDocs = newOpenDocs }
+
+        let newWorkspace = withReadyWorkspaceOrFail state.Workspace doDocumentOpenedProcessing
+        return { state with Workspace = newWorkspace }
 
     | DocumentClosed uri ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
+        let doDocumentClosedProcessing ws =
+            postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let newOpenDocVersions = state.Workspace.OpenDocs |> Map.remove uri
+            let newOpenDocVersions = ws.OpenDocs |> Map.remove uri
 
-        return
-            { state with
-                Workspace =
-                    { state.Workspace with
-                        OpenDocs = newOpenDocVersions } }
+            { ws with
+                OpenDocs = newOpenDocVersions }
+
+        let newWorkspace = withReadyWorkspaceOrFail state.Workspace doDocumentClosedProcessing
+        return { state with Workspace = newWorkspace }
 
     | DocumentTouched(uri, timestamp) ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
+        let doDocumentTouchedProcessing ws =
+            postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = state.Workspace.OpenDocs |> Map.tryFind uri
+            let openDocInfo = ws.OpenDocs |> Map.tryFind uri
 
-        match openDocInfo with
-        | None -> return state
-        | Some openDocInfo ->
-            let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
-            let newOpenDocVersions = state.Workspace.OpenDocs |> Map.add uri updatedOpenDocInfo
+            match openDocInfo with
+            | None -> ws
+            | Some openDocInfo ->
+                let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
+                let newOpenDocVersions = ws.OpenDocs |> Map.add uri updatedOpenDocInfo
 
-            return
-                { state with
-                    Workspace =
-                        { state.Workspace with
-                            OpenDocs = newOpenDocVersions } }
+                { ws with
+                    OpenDocs = newOpenDocVersions }
+
+        let newWorkspace = withReadyWorkspaceOrFail state.Workspace doDocumentTouchedProcessing
+        return { state with Workspace = newWorkspace }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
@@ -438,11 +480,8 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             { state with
                 RequestQueue = updatedRequestQueue }
 
-        let solutionReloadDeadline =
-            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays 1)
-
-        match solutionReloadDeadline < DateTime.Now with
-        | true ->
+        match state.PendingWorkspaceReconfiguration with
+        | Some pendingWs ->
             match enterDrainingMode state.RequestQueue with
             | Some updatedRequestQueue ->
                 postServerEvent ProcessRequestQueue
@@ -452,9 +491,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                         RequestQueue = updatedRequestQueue }
             | None -> return state
 
-        | false -> return state
-
-}
+        | None -> return state
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
     let rec loop state = async {

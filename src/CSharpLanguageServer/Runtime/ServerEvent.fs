@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 type ServerEvent =
@@ -24,8 +25,9 @@ type ServerEvent =
     | PushDiagnosticsDocumentBacklogUpdate
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
-    | SettingsChange of CSharpConfiguration
+    | ServerReconfigured of CSharpConfiguration
     | TraceLevelChange of TraceValues
-    | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceLoadResult of Result<LspWorkspace, Exception>
+    | WorkspaceReconfigured of WorkspaceFolder list
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan

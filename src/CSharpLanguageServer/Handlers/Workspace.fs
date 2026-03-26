@@ -161,7 +161,7 @@ module Workspace =
             | None -> ()
             | Some csharpSettings ->
                 let newConfig = mergeCSharpConfiguration context.Config csharpSettings
-                context.Emit(SettingsChange newConfig)
+                context.Emit(ServerReconfigured newConfig)
 
             return Ok()
         }
@@ -181,7 +181,7 @@ module Workspace =
                 |> Seq.append p.Event.Added
                 |> List.ofSeq
 
-            context.Emit(WorkspaceConfigurationChanged updatedWorkspaceFolders)
+            context.Emit(WorkspaceReconfigured updatedWorkspaceFolders)
 
             context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 

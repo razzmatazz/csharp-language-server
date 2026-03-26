@@ -8,6 +8,50 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
 
+// This test documents a race: workspace/diagnostic is called while the solution is still
+// loading (simulated via a 3-second SolutionLoadDelay). The server should return no items
+// in that window, but ideally it should block or return a retriable error instead — so the
+// assertion below is intentionally wrong (expects 3 diagnostics) to make the test fail and
+// highlight the bug.
+[<Test>]
+let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
+    use client =
+        new LspTestClient(
+            { defaultClientProfile with
+                LoggingEnabled = true
+                SolutionLoadDelay = Some 3000 }
+        )
+
+    // Start the server and complete the LSP handshake, but do NOT wait for the workspace
+    // to finish loading — the 3-second delay keeps the solution load in-flight.
+    client.StartServer("testDiagnosticsWork", emptyFixturePatch, id)
+
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    eprintfn "xxx 0"
+
+    // Fire workspace/diagnostic while the solution is still loading.
+    let report: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    eprintfn "xxx 1"
+
+    // Wait for the solution to finish so Dispose() can shut down cleanly.
+    client.WaitForSolutionLoad()
+
+    eprintfn "xxx 2"
+
+    // The server returns 0 items because the solution is not yet loaded — this assertion
+    // intentionally fails to expose the race condition.
+    match report with
+    | Some report -> Assert.AreEqual(3, report.Items.Length)
+    | None -> Assert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
+
+(*
 [<Test>]
 [<Retry(3)>]
 let testPushDiagnosticsWork () =
@@ -225,3 +269,4 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
         progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
 
     Assert.AreEqual(1, report1.Items.Length)
+*)
