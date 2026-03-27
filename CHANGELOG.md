@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Fixes a crash in symbolGetMetadataName for some symbols in Roslyn documents
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/332
 * Add custom JSON-RPC server implementation, rewrite how requests are scheduled
   - This should improve performance significantly and fix some of the file/state tracking issues that have been seen since 0.22.0
   - Support for $/logTrace has been added
