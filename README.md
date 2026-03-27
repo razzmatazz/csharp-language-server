@@ -50,8 +50,7 @@ Settings are read from the `csharp` workspace configuration section
   defaults to `false`
 
 - `csharp.debug.solutionLoadDelay` - delay in milliseconds before loading the
-  solution after the workspace is ready; useful for slow MSBuild environments;
-  optional
+  solution after the workspace is ready
 
 - `csharp.debug.debugMode` - enable debug mode, which logs periodic request
   queue statistics; defaults to `false`
