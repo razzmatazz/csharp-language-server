@@ -31,10 +31,6 @@ type JsonRpcCallHandler = JsonRpcRequestContext -> Async<Result<JToken, JToken>>
 
 type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
 
-type WriteQueuePriority =
-    | NormalPriority
-    | LowPriority
-
 type JsonRpcServerState =
     {
         StdIn: Stream option
@@ -42,7 +38,6 @@ type JsonRpcServerState =
         PendingRead: Async<unit> option
         PendingWrite: Async<unit> option
         WriteQueue: JObject list
-        LowPriorityWriteQueue: JObject list
         CallHandlers: Map<string, JsonRpcCallHandler>
         NotificationHandlers: Map<string, JsonRpcNotificationHandler>
         NextOutboundRequestId: int
@@ -63,7 +58,6 @@ let emptyServerState =
       PendingRead = None
       PendingWrite = None
       WriteQueue = []
-      LowPriorityWriteQueue = []
       CallHandlers = Map.empty
       NotificationHandlers = Map.empty
       NextOutboundRequestId = 1
@@ -78,7 +72,7 @@ type JsonRpcServerEvent =
     | Shutdown
     | InboundMessage of Result<JObject option, Exception>
     | WriteComplete
-    | SendNotification of method: string * methodParams: JToken * priority: WriteQueuePriority
+    | SendNotification of method: string * methodParams: JToken
     | SendCall of method: string * methodParams: JToken * AsyncReplyChannel<Result<JToken, JToken>>
     | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
     | HandlerFailed of wireIdKey: string * exn
@@ -223,9 +217,8 @@ let startWrite postEvent (stdout: Stream) (msg: JObject) =
     writeOp
 
 /// Enqueue a message for writing. If no write is in progress, start one immediately;
-/// otherwise append to the appropriate queue based on priority.
-/// Normal-priority messages are drained before low-priority ones.
-let enqueueWrite postEvent (state: JsonRpcServerState) (priority: WriteQueuePriority) (msg: JObject) =
+/// otherwise append to the queue.
+let enqueueWrite postEvent (state: JsonRpcServerState) (msg: JObject) =
     match state.PendingWrite, state.StdOut with
     | None, Some stdout ->
         let writeOp = startWrite postEvent stdout msg
@@ -233,13 +226,8 @@ let enqueueWrite postEvent (state: JsonRpcServerState) (priority: WriteQueuePrio
         { state with
             PendingWrite = Some writeOp }
     | _, _ ->
-        match priority with
-        | NormalPriority ->
-            { state with
-                WriteQueue = state.WriteQueue @ [ msg ] }
-        | LowPriority ->
-            { state with
-                LowPriorityWriteQueue = state.LowPriorityWriteQueue @ [ msg ] }
+        { state with
+            WriteQueue = state.WriteQueue @ [ msg ] }
 
 let makeError (code: int) (message: string) =
     JObject(JProperty("code", code), JProperty("message", message))
@@ -315,7 +303,7 @@ let handleInboundMessage state postEvent (msg: JObject) =
                 let errorResponse =
                     makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
 
-                enqueueWrite postEvent state NormalPriority errorResponse
+                enqueueWrite postEvent state errorResponse
         | None ->
             // Notification (no "id") — dispatch to notification handlers, never send a response
             // Special handling for $/cancelRequest
@@ -396,19 +384,13 @@ let processEvent state postEvent ev =
             PendingRead = Some readOp }
 
     | WriteComplete ->
-        match state.WriteQueue, state.LowPriorityWriteQueue, state.StdOut with
-        | nextMsg :: rest, _, Some stdout ->
+        match state.WriteQueue, state.StdOut with
+        | nextMsg :: rest, Some stdout ->
             let writeOp = startWrite postEvent stdout nextMsg
 
             { state with
                 PendingWrite = Some writeOp
                 WriteQueue = rest }
-        | [], nextMsg :: rest, Some stdout ->
-            let writeOp = startWrite postEvent stdout nextMsg
-
-            { state with
-                PendingWrite = Some writeOp
-                LowPriorityWriteQueue = rest }
         | _ -> { state with PendingWrite = None }
 
     | InboundMessage result ->
@@ -444,11 +426,11 @@ let processEvent state postEvent ev =
             PendingRead = None
             ShutdownWaiters = [] }
 
-    | SendNotification(method, methodParams, priority) ->
+    | SendNotification(method, methodParams) ->
         let msg =
             JObject(JProperty("jsonrpc", "2.0"), JProperty("method", method), JProperty("params", methodParams))
 
-        enqueueWrite postEvent state priority msg
+        enqueueWrite postEvent state msg
 
     | SendCall(method, methodParams, replyChannel) ->
         let id = state.NextOutboundRequestId
@@ -466,7 +448,7 @@ let processEvent state postEvent ev =
                 NextOutboundRequestId = id + 1
                 PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id replyChannel }
 
-        enqueueWrite postEvent newState NormalPriority msg
+        enqueueWrite postEvent newState msg
 
     | HandlerCompleted(wireIdKey, result) ->
         let ctx = state.RunningInboundRequests |> Map.find wireIdKey
@@ -485,11 +467,11 @@ let processEvent state postEvent ev =
                     JProperty("result", returnValue)
                 )
 
-            enqueueWrite postEvent newState NormalPriority response
+            enqueueWrite postEvent newState response
         | Error error ->
             let errorResponse = makeErrorResponse ctx.WireId.Value error
 
-            enqueueWrite postEvent newState NormalPriority errorResponse
+            enqueueWrite postEvent newState errorResponse
 
     | HandlerFailed(wireIdKey, ex) ->
         postEvent (
@@ -510,7 +492,7 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
 
-            enqueueWrite postEvent newState NormalPriority errorResponse
+            enqueueWrite postEvent newState errorResponse
         | None -> newState
 
     | HandlerCancelled wireIdKey ->
@@ -527,7 +509,7 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
 
-            enqueueWrite postEvent newState NormalPriority errorResponse
+            enqueueWrite postEvent newState errorResponse
         | None -> newState
 
     | NotificationHandlerFailed(method, ex) ->
@@ -600,14 +582,7 @@ let startJsonRpcServer
     server
 
 let sendJsonRpcNotification (server: MailboxProcessor<JsonRpcServerEvent>) (method: string) (methodParams: JToken) =
-    server.Post(SendNotification(method, methodParams, NormalPriority))
-
-let sendJsonRpcNotificationWithLowPriority
-    (server: MailboxProcessor<JsonRpcServerEvent>)
-    (method: string)
-    (methodParams: JToken)
-    =
-    server.Post(SendNotification(method, methodParams, LowPriority))
+    server.Post(SendNotification(method, methodParams))
 
 let sendJsonRpcCall (server: MailboxProcessor<JsonRpcServerEvent>) (method: string) (methodParams: JToken) =
     server.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))

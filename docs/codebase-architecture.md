@@ -105,7 +105,7 @@ Program.fs  →  Server.start (Lsp/Server.fs)
 A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<JsonRpcServerEvent>`**:
 
 - **Inbound:** Reads `Content-Length`-framed messages from stdin, deserializes JSON, dispatches by looking up `method` in the `callHandlers` or `notificationHandlers` maps.
-- **Outbound:** Writes `Content-Length`-framed JSON to stdout. Two-priority write queue: `NormalPriority` and `LowPriority`.
+- **Outbound:** Writes `Content-Length`-framed JSON to stdout.
 - **Cancellation:** Handles `$/cancelRequest` natively via `CancellationTokenSource` keyed by request ID.
 - **Server→Client calls:** Manages `PendingOutboundCalls` keyed by request ID for round-trip server→client requests.
 
