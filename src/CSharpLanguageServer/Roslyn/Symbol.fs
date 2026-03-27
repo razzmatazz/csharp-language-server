@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Roslyn.Symbol
 
 open System
-open System.Collections.Generic
 open System.IO
 open System.Threading
 open System.Text.RegularExpressions
@@ -76,19 +75,16 @@ type DocumentSymbolCollectorForMatchingSymbolName(documentUri, sym: ISymbol) =
         base.Visit node
 
 let symbolGetMetadataName' (containingType: INamedTypeSymbol) =
-    let stack = Stack<string>()
-    stack.Push containingType.MetadataName
-    let mutable ns = containingType.ContainingNamespace
+    let unfoldNamespace (ns: INamespaceSymbol) =
+        if ns = null || ns.IsGlobalNamespace then
+            None
+        else
+            Some(ns.Name, ns.ContainingNamespace)
 
-    let mutable doContinue = true
+    let namespaceParts =
+        Seq.unfold unfoldNamespace containingType.ContainingNamespace |> Seq.rev
 
-    while doContinue do
-        stack.Push ns.Name
-        ns <- ns.ContainingNamespace
-
-        doContinue <- ns <> null && not ns.IsGlobalNamespace
-
-    String.Join(".", stack)
+    Seq.append namespaceParts [ containingType.MetadataName ] |> String.concat "."
 
 let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
     match symbol with
