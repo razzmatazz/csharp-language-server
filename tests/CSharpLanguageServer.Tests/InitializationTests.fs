@@ -6,7 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-let assertHoverWorks (client: ClientController) file pos expectedMarkupContent =
+let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
     use classFile = client.Open(file)
 
     let hover0Params: HoverParams =

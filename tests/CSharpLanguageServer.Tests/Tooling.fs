@@ -27,7 +27,7 @@ let emptyClientCapabilities: ClientCapabilities =
       General = None
       Experimental = None }
 
-type ClientProfile =
+type LspClientProfile =
     { LoggingEnabled: bool
       ClientCapabilities: ClientCapabilities
       SolutionLoadDelay: int option }
@@ -144,7 +144,7 @@ let makeServerProcessInfo projectTempDir =
 
     processStartInfo
 
-type ClientServerRpcRequestInfo =
+type LspClientServerRpcRequestInfo =
     { Method: string
       RpcRequestMsg: JObject
       ResultReplyChannel: option<AsyncReplyChannel<Result<JToken, JToken>>> }
@@ -158,8 +158,8 @@ type RpcMessageLogEntry =
       TimestampMS: int
       Message: JObject }
 
-type ClientState =
-    { ClientProfile: ClientProfile
+type LspClientState =
+    { ClientProfile: LspClientProfile
       LoggingEnabled: bool
       ProjectDir: string option
       ProcessStartInfo: ProcessStartInfo option
@@ -167,7 +167,7 @@ type ClientState =
       ServerStderrLineReadTask: Task
       ServerStdoutJsonRpcMessageRead: Task
       NextRpcRequestId: int
-      OutstandingServerRpcReqs: Map<int, ClientServerRpcRequestInfo>
+      OutstandingServerRpcReqs: Map<int, LspClientServerRpcRequestInfo>
       SetupTimestamp: DateTime
       RpcLog: RpcMessageLogEntry list
       ServerInfo: InitializeResultServerInfo option
@@ -193,11 +193,11 @@ let initialClientState =
       ServerCapabilities = None
       PushDiagnostics = Map.empty }
 
-type ClientEvent =
-    | UpdateState of (ClientState -> ClientState)
-    | ServerStartRequest of ClientProfile * string * AsyncReplyChannel<ClientState>
+type LspClientEvent =
+    | UpdateState of (LspClientState -> LspClientState)
+    | ServerStartRequest of LspClientProfile * string * AsyncReplyChannel<LspClientState>
     | ServerStopRequest of AsyncReplyChannel<unit>
-    | GetState of AsyncReplyChannel<ClientState>
+    | GetState of AsyncReplyChannel<LspClientState>
     | ServerStderrLineRead of string option
     | RpcMessageReceived of Result<JObject option, Exception>
     | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<Result<JToken, JToken>>>
@@ -209,8 +209,7 @@ type ClientEvent =
     | EmitLogMessage of DateTime * string * string
     | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
 
-let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : Async<ClientState> = async {
-
+let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) msg : Async<LspClientState> = async {
     let logMessage logger msg =
         post (EmitLogMessage(DateTime.Now, logger, msg))
 
@@ -588,7 +587,7 @@ let processClientEvent (state: ClientState) (post: ClientEvent -> unit) msg : As
         return state
 }
 
-let clientEventLoop (initialState: ClientState) (inbox: MailboxProcessor<ClientEvent>) =
+let clientEventLoop (initialState: LspClientState) (inbox: MailboxProcessor<LspClientEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
         let! newState = processClientEvent state inbox.Post msg
@@ -666,7 +665,7 @@ let fileUriForProjectDir projectDir filename =
     | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
     | _ -> "file://" + projectDir + "/" + filename
 
-type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, filename: string) =
+type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: string, filename: string) =
 
     let mutable fileContents: option<string> = None
     let mutable fileVersion: int = 1
@@ -750,7 +749,7 @@ type FileController(client: MailboxProcessor<ClientEvent>, projectDir: string, f
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
-type ClientController(clientProfile: ClientProfile) =
+type LspTestClient(clientProfile: LspClientProfile) =
     let client = MailboxProcessor.Start(clientEventLoop initialClientState)
 
     let mutable solutionDir: string option = None
@@ -791,9 +790,9 @@ type ClientController(clientProfile: ClientProfile) =
         ) =
         let log = logMessage "LoadSolution"
 
-        // solution can only be loaded once for ClientController instance
+        // solution can only be loaded once for LspTestClient instance
         if solutionLoaded then
-            failwith "Solution has already been loaded for this ClientController!"
+            failwith "Solution has already been loaded for this LspTestClient!"
 
         solutionLoaded <- true
 
@@ -806,7 +805,7 @@ type ClientController(clientProfile: ClientProfile) =
             |> DirectoryInfo
 
         if not sourceTestDataDir.Exists then
-            failwithf "ClientController.Prepare(): no such test data dir \"%s\"" sourceTestDataDir.FullName
+            failwithf "LspTestClient.LoadSolution(): no such test data dir \"%s\"" sourceTestDataDir.FullName
 
         let tempSolutionDir = prepareTempTestDirFrom sourceTestDataDir
         patchSolutionDir tempSolutionDir
@@ -989,13 +988,13 @@ type ClientController(clientProfile: ClientProfile) =
         | Error errorJToken ->
             failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
 
-    member __.Open(filename: string) : FileController =
-        let file = new FileController(client, solutionDir.Value, filename)
+    member __.Open(filename: string) : LspDocumentHandle =
+        let file = new LspDocumentHandle(client, solutionDir.Value, filename)
         file.OpenWithTextFromDisk()
         file
 
-    member __.OpenWithText(filename: string, text: string) : FileController =
-        let file = new FileController(client, solutionDir.Value, filename)
+    member __.OpenWithText(filename: string, text: string) : LspDocumentHandle =
+        let file = new LspDocumentHandle(client, solutionDir.Value, filename)
         file.OpenWithText(text)
         file
 
@@ -1011,7 +1010,7 @@ let activateFixtureExt
     activeClientsSemaphore.Wait()
 
     try
-        let client = new ClientController(clientProfile)
+        let client = new LspTestClient(clientProfile)
         client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
         client
     finally
@@ -1070,7 +1069,7 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
     if stopwatch.Elapsed >= timeout then
         Assert.Fail(failureMessage)
 
-let getWorkspaceDiagnosticsForUri (client: ClientController) uri =
+let getWorkspaceDiagnosticsForUri (client: LspTestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
           PartialResultToken = None

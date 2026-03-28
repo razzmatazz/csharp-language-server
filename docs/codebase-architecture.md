@@ -263,11 +263,12 @@ Tests do **not** use in-process hosting. Instead:
 
 ### 7.3 Key Test Classes
 
-#### `ClientController` (primary test API)
+#### `LspTestClient` (primary test API)
 
 ```fsharp
-use client = new ClientController(fixtureName, settings)
-client.LoadSolution()   // copies fixture → temp dir, starts server, initialize + initialized,
+use client = new LspTestClient(clientProfile)
+client.LoadSolution(fixtureName, patchSolutionDir, initializeParamsUpdate)
+                        // copies fixture → temp dir, starts server, initialize + initialized,
                         // waits for "Finished loading workspace" progress event
 
 let result: HoverResult = client.Request("textDocument/hover", hoverParams)
@@ -278,11 +279,11 @@ client.ServerMessageLogContains(fun m -> ...)       // message log assertion
 client.WaitForProgressEnd(fun p -> ...)             // poll for $/progress end (20s timeout)
 ```
 
-#### `FileController` (single-document management)
+#### `LspDocumentHandle` (single-document management)
 
 ```fsharp
 use file = client.Open "Project/Class.cs"    // sends textDocument/didOpen
-file.Edit(range, newText)                     // sends textDocument/didChange
+file.Change(newText)                          // sends textDocument/didChange
 file.Save()                                   // sends textDocument/didSave
 // Dispose sends textDocument/didClose
 ```
@@ -299,7 +300,7 @@ file.Save()                                   // sends textDocument/didSave
 [<Test>]
 let testSomething () =
     use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/Class.cs"
+    use doc = client.Open "Project/Class.cs"
 
     let result: SomeType =
         client.Request("textDocument/someMethod", someParams)
@@ -330,5 +331,5 @@ let testSomething () =
    - Add to `configureRpcServer` in the appropriate handler map (`callHandlers` or
      `notificationHandlers`) with the correct `ServerRequestMode`
 4. **Write tests** — create `tests/.../NewFeatureTests.fs`, add a fixture under
-   `Fixtures/` if needed, use `ClientController` + `FileController` pattern
+   `Fixtures/` if needed, use `LspTestClient` + `LspDocumentHandle` pattern
 5. **Add test file to test `.fsproj`**
