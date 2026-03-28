@@ -111,62 +111,10 @@ A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<Js
 
 ### 3.3 Handler Registration (`Lsp/Server.fs` — the central wiring file)
 
-The `configureRpcServer` function (lines ~102–175) builds two maps:
-
-#### Call Handlers (`Map<string, JsonRpcCallHandler>`)
-
-| Method | Handler | Mode |
-|--------|---------|------|
-| `initialize` | `LifeCycle.handleInitialize` | ReadWrite |
-| `textDocument/definition` | `Definition.handle` | ReadOnly |
-| `textDocument/hover` | `Hover.handle` | ReadOnly |
-| `textDocument/completion` | `Completion.handle` | ReadOnly |
-| `textDocument/references` | `References.handle` | ReadOnly |
-| `textDocument/codeAction` | `CodeAction.handle` | ReadOnly |
-| `codeAction/resolve` | `CodeAction.resolve` | ReadOnly |
-| `textDocument/rename` | `Rename.handle` | ReadWrite |
-| `textDocument/prepareRename` | `Rename.prepare` | ReadOnly |
-| `textDocument/diagnostic` | `Diagnostic.handle` | ReadOnlyBackground |
-| `workspace/diagnostic` | `Diagnostic.handleWorkspaceDiagnostic` | ReadOnlyBackground |
-| `textDocument/documentSymbol` | `DocumentSymbol.handle` | ReadOnly |
-| `textDocument/documentHighlight` | `DocumentHighlight.handle` | ReadOnly |
-| `workspace/symbol` | `WorkspaceSymbol.handle` | ReadOnly |
-| `textDocument/implementation` | `Implementation.handle` | ReadOnly |
-| `textDocument/formatting` | `DocumentFormatting.handle` | ReadOnly |
-| `textDocument/rangeFormatting` | `DocumentRangeFormatting.handle` | ReadOnly |
-| `textDocument/onTypeFormatting` | `DocumentOnTypeFormatting.handle` | ReadOnly |
-| `textDocument/typeDefinition` | `TypeDefinition.handle` | ReadOnly |
-| `textDocument/signatureHelp` | `SignatureHelp.handle` | ReadOnly |
-| `textDocument/semanticTokens/full` | `SemanticTokens.handleFull` | ReadOnly |
-| `textDocument/semanticTokens/full/delta` | `SemanticTokens.handleFullDelta` | ReadOnly |
-| `textDocument/semanticTokens/range` | `SemanticTokens.handleRange` | ReadOnly |
-| `textDocument/prepareCallHierarchy` | `CallHierarchy.prepare` | ReadOnly |
-| `callHierarchy/incomingCalls` | `CallHierarchy.incomingCalls` | ReadOnly |
-| `callHierarchy/outgoingCalls` | `CallHierarchy.outgoingCalls` | ReadOnly |
-| `textDocument/prepareTypeHierarchy` | `TypeHierarchy.prepare` | ReadOnly |
-| `typeHierarchy/supertypes` | `TypeHierarchy.supertypes` | ReadOnly |
-| `typeHierarchy/subtypes` | `TypeHierarchy.subtypes` | ReadOnly |
-| `textDocument/codeLens` | `CodeLens.handle` | ReadOnly |
-| `codeLens/resolve` | `CodeLens.resolve` | ReadOnly |
-| `textDocument/inlayHint` | `InlayHint.handle` | ReadOnly |
-| `csharp/metadata` | `CSharpMetadata.handle` | ReadOnly |
-| `shutdown` | `LifeCycle.handleShutdown` | ReadWrite |
-
-#### Notification Handlers (`Map<string, JsonRpcNotificationHandler>`)
-
-| Method | Handler | Mode |
-|--------|---------|------|
-| `initialized` | `LifeCycle.handleInitialized` | ReadWrite |
-| `textDocument/didOpen` | `TextDocumentSync.didOpen` | ReadWrite |
-| `textDocument/didChange` | `TextDocumentSync.didChange` | ReadWrite |
-| `textDocument/didClose` | `TextDocumentSync.didClose` | ReadWrite |
-| `textDocument/willSave` | `TextDocumentSync.willSave` | ReadOnly |
-| `textDocument/willSaveWaitUntil` | `TextDocumentSync.willSaveWaitUntil` | ReadOnly |
-| `textDocument/didSave` | `TextDocumentSync.didSave` | ReadWrite |
-| `workspace/didChangeWatchedFiles` | `Workspace.didChangeWatchedFiles` | ReadWrite |
-| `workspace/didChangeWorkspaceFolders` | `Workspace.didChangeWorkspaceFolders` | ReadWrite |
-| `workspace/didChangeConfiguration` | `Workspace.didChangeConfiguration` | ReadOnly |
-| `$/setTrace` | `Trace.handleSetTrace` | ReadWrite |
+The `configureRpcServer` function (lines ~102–175) builds two maps: one for **call handlers** 
+(request/response) and one for **notification handlers** (fire-and-forget). Each handler is 
+mapped to its LSP method name and assigned a `ServerRequestMode` (`ReadOnly`, `ReadWrite`, or 
+`ReadOnlyBackground`) that controls concurrent scheduling.
 
 ### 3.4 Handler Wrapping
 
