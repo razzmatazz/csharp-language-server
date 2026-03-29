@@ -235,42 +235,23 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     | DocumentOpened(uri, ver, timestamp) ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = { Version = ver; Touched = timestamp }
-        let newOpenDocs = state.Workspace.OpenDocs |> Map.add uri openDocInfo
-
         return
             { state with
-                Workspace =
-                    { state.Workspace with
-                        OpenDocs = newOpenDocs } }
+                Workspace = state.Workspace |> workspaceWithDocOpened uri ver timestamp }
 
     | DocumentClosed uri ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let newOpenDocVersions = state.Workspace.OpenDocs |> Map.remove uri
-
         return
             { state with
-                Workspace =
-                    { state.Workspace with
-                        OpenDocs = newOpenDocVersions } }
+                Workspace = state.Workspace |> workspaceWithDocClosed uri }
 
     | DocumentTouched(uri, timestamp) ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        let openDocInfo = state.Workspace.OpenDocs |> Map.tryFind uri
-
-        match openDocInfo with
+        match state.Workspace |> workspaceWithDocTouched uri timestamp with
         | None -> return state
-        | Some openDocInfo ->
-            let updatedOpenDocInfo = { openDocInfo with Touched = timestamp }
-            let newOpenDocVersions = state.Workspace.OpenDocs |> Map.add uri updatedOpenDocInfo
-
-            return
-                { state with
-                    Workspace =
-                        { state.Workspace with
-                            OpenDocs = newOpenDocVersions } }
+        | Some newWorkspace -> return { state with Workspace = newWorkspace }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we

@@ -164,6 +164,26 @@ let workspaceDocumentSymbol
 let workspaceDocumentVersion workspace uri =
     uri |> workspace.OpenDocs.TryFind |> Option.map _.Version
 
+let workspaceWithDocOpened (uri: string) (ver: int) (timestamp: DateTime) (workspace: LspWorkspace) =
+    let openDocInfo = { Version = ver; Touched = timestamp }
+
+    { workspace with
+        OpenDocs = workspace.OpenDocs |> Map.add uri openDocInfo }
+
+let workspaceWithDocClosed (uri: string) (workspace: LspWorkspace) =
+    { workspace with
+        OpenDocs = workspace.OpenDocs |> Map.remove uri }
+
+let workspaceWithDocTouched (uri: string) (timestamp: DateTime) (workspace: LspWorkspace) =
+    match workspace.OpenDocs |> Map.tryFind uri with
+    | None -> None
+    | Some openDocInfo ->
+        let updated = { openDocInfo with Touched = timestamp }
+
+        Some
+            { workspace with
+                OpenDocs = workspace.OpenDocs |> Map.add uri updated }
+
 let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) workspace = async {
     let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
