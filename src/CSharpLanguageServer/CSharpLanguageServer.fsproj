@@ -39,6 +39,7 @@
     <Compile Include="Runtime/JsonRpcServer.fs" />
     <Compile Include="Runtime/Request.fs" />
     <Compile Include="Runtime/RequestScheduling.fs" />
+    <Compile Include="Runtime/PushDiagnostics.fs" />
     <Compile Include="Runtime/ServerStateLoop.fs" />
     <Compile Include="Handlers/CSharpMetadata.fs" />
     <Compile Include="Handlers/CallHierarchy.fs" />

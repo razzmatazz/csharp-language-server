@@ -38,6 +38,7 @@ csharp-language-server/
 │   │   ├── JsonRpcServer.fs         # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
 │   │   ├── Request.fs               # RequestContext, RequestMode, RequestEffects
 │   │   ├── RequestScheduling.fs     # Concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
+│   │   ├── PushDiagnostics.fs       # Push-diagnostics state machine (PushDiagnosticsState + handlers)
 │   │   └── ServerStateLoop.fs       # Main state machine + ServerEvent DU (MailboxProcessor<ServerEvent>)
 │   │
 │   ├── Roslyn/                      # ── Roslyn/Microsoft.CodeAnalysis integration ──
@@ -136,10 +137,10 @@ Sophisticated concurrent request queue:
 
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
 
-Also defines the `ServerEvent` discriminated union (previously its own `ServerEvent.fs`).
+Also defines the `ServerEvent` discriminated union.
 
 A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (settings, workspace, client
-capabilities, trace level, request queue, diagnostic backlog). Processes events like:
+capabilities, trace level, request queue, push-diagnostics state). Processes events like:
 
 - `ClientInitialize`
 - `TraceLevelChange`
@@ -147,6 +148,24 @@ capabilities, trace level, request queue, diagnostic backlog). Processes events 
 - `DocumentOpened` / `DocumentChanged` / `DocumentClosed`
 - `PushDiagnosticsProcessPendingDocuments`
 - etc.
+
+### 3.7 Push Diagnostics (`Runtime/PushDiagnostics.fs`)
+
+Encapsulates the background push-diagnostics pipeline, which pro-actively publishes
+`textDocument/publishDiagnostics` notifications to clients that do not support pull
+diagnostics.
+
+**`PushDiagnosticsState`** holds:
+- `DocumentBacklog` — ordered list of open document URIs awaiting diagnosis (most-recently-touched first)
+- `CurrentDocTask` — optional `(uri * Task)` for the single in-flight resolution task
+
+**Pure handler functions** (called from `ServerStateLoop.processServerEvent`):
+
+| Function | Triggered by | What it does |
+|---|---|---|
+| `handleBacklogUpdate` | `PushDiagnosticsDocumentBacklogUpdate` | Rebuilds the backlog from all open docs, sorted by `Touched` descending |
+| `handleProcessPending` | `PushDiagnosticsProcessPendingDocuments` | Pops the next URI, starts a background Roslyn semantic-model task; no-ops if a task is already running or pull diagnostics is supported by the client |
+| `handleResolution` | `PushDiagnosticsDocumentDiagnosticsResolution` | Clears `CurrentDocTask`, publishes diagnostics via `ILspClient.TextDocumentPublishDiagnostics`, chains the next `ProcessPendingDocuments` event |
 
 ---
 

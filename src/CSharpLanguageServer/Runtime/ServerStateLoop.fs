@@ -2,7 +2,6 @@ module CSharpLanguageServer.Runtime.ServerStateLoop
 
 open System
 open System.Threading
-open System.Threading.Tasks
 
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
@@ -10,14 +9,13 @@ open Microsoft.Extensions.Logging
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Runtime.PushDiagnostics
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
@@ -51,8 +49,7 @@ type ServerState =
       Workspace: LspWorkspace
       RequestQueue: RequestQueue
       WorkspaceReloadPending: DateTime option
-      PushDiagnosticsDocumentBacklog: string list
-      PushDiagnosticsCurrentDocTask: (string * Task) option
+      PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool }
 
@@ -64,8 +61,7 @@ type ServerState =
           Workspace = LspWorkspace.Empty
           RequestQueue = RequestQueue.Empty
           WorkspaceReloadPending = None
-          PushDiagnosticsDocumentBacklog = []
-          PushDiagnosticsCurrentDocTask = None
+          PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
           ShutdownReceived = false }
 
@@ -142,14 +138,12 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 return
                     { state with
                         RequestQueue = updatedRequestQueue }
-
             | Drained ->
                 postServerEvent RequestQueueDrained
 
                 return
                     { state with
                         RequestQueue = requestQueue }
-
             | Waiting ->
                 return
                     { state with
@@ -272,146 +266,29 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 WorkspaceReloadPending = newSolutionReloadDeadline |> Some }
 
     | PushDiagnosticsDocumentBacklogUpdate ->
-        // here we build new backlog for background diagnostics processing
-        // which will consider documents by their last modification date
-        // for processing first
-        let newBacklog =
-            state.Workspace.OpenDocs
-            |> Seq.sortByDescending (fun kv -> kv.Value.Touched)
-            |> Seq.map (fun kv -> kv.Key)
-            |> List.ofSeq
+        let newPD =
+            PushDiagnostics.handleBacklogUpdate state.Workspace state.PushDiagnostics
 
-        return
-            { state with
-                PushDiagnosticsDocumentBacklog = newBacklog }
+        return { state with PushDiagnostics = newPD }
 
     | PushDiagnosticsProcessPendingDocuments ->
-        match state.PushDiagnosticsCurrentDocTask with
-        | Some _ ->
-            // another document is still being processed, do nothing
-            return state
-        | None ->
-            // try pull next doc from the backlog to process
-            let nextDocUri, newBacklog =
-                match state.PushDiagnosticsDocumentBacklog with
-                | [] -> (None, [])
-                | uri :: remainder -> (Some uri, remainder)
+        let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
 
-            // push diagnostic is enabled only if pull diagnostics is
-            // not reported to be supported by the client
-            let diagnosticPullSupported =
-                state.ClientCapabilities.TextDocument
-                |> Option.map _.Diagnostic
-                |> Option.map _.IsSome
-                |> Option.defaultValue false
+        let! newPD =
+            PushDiagnostics.handleProcessPending
+                state.Workspace
+                state.ClientCapabilities
+                postResolution
+                state.PushDiagnostics
 
-            match diagnosticPullSupported, nextDocUri with
-            | false, Some docUri ->
-                let newState =
-                    { state with
-                        PushDiagnosticsDocumentBacklog = newBacklog }
-
-                let wf, docForUri = docUri |> workspaceDocument state.Workspace AnyDocument
-                let wfPathToUri = workspaceFolderPathToUri wf.Value
-
-                match wf, docForUri with
-                | Some wf, None ->
-                    let cshtmlPath = workspaceFolderUriToPath wf docUri |> _.Value
-
-                    match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
-                    | Some(_, compilation, cshtmlTree) ->
-                        let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
-
-                        match semanticModelMaybe with
-                        | None ->
-                            Error(Exception "could not GetSemanticModelAsync")
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postServerEvent
-
-                        | Some semanticModel ->
-                            let diagnostics =
-                                semanticModel.GetDiagnostics()
-                                |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
-                                |> Seq.filter (fun (_, uri) -> uri = docUri)
-                                |> Seq.map fst
-                                |> Array.ofSeq
-
-                            Ok(docUri, None, diagnostics)
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postServerEvent
-
-                    | None ->
-                        // could not find document for this enqueued uri
-                        logger.LogDebug(
-                            "PushDiagnosticsProcessPendingDocuments: could not find document w/ uri \"{docUri}\"",
-                            string docUri
-                        )
-
-                        ()
-
-                    return newState
-
-                | Some wf, Some doc ->
-                    let resolveDocumentDiagnostics () : Task = task {
-                        let! semanticModelMaybe = doc.GetSemanticModelAsync()
-
-                        match semanticModelMaybe |> Option.ofObj with
-                        | None ->
-                            Error(Exception("could not GetSemanticModelAsync"))
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postServerEvent
-
-                        | Some semanticModel ->
-                            let diagnostics =
-                                semanticModel.GetDiagnostics()
-                                |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
-                                |> Seq.map fst
-                                |> Array.ofSeq
-
-                            Ok(docUri, None, diagnostics)
-                            |> PushDiagnosticsDocumentDiagnosticsResolution
-                            |> postServerEvent
-                    }
-
-                    let newTask = Task.Run(resolveDocumentDiagnostics)
-
-                    let newState =
-                        { newState with
-                            PushDiagnosticsCurrentDocTask = Some(docUri, newTask) }
-
-                    return newState
-
-                | _, _ -> return newState
-
-            | _, _ ->
-                // backlog is empty or pull diagnostics is enabled instead,--nothing to do
-                return state
+        return { state with PushDiagnostics = newPD }
 
     | PushDiagnosticsDocumentDiagnosticsResolution result ->
-        // enqueue processing for the next doc on the queue (if any)
-        postServerEvent PushDiagnosticsProcessPendingDocuments
+        let postProcessPending () =
+            postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let newState =
-            { state with
-                PushDiagnosticsCurrentDocTask = None }
-
-        match result with
-        | Error exn ->
-            logger.LogDebug("PushDiagnosticsDocumentDiagnosticsResolution: {exn}", exn)
-            return newState
-
-        | Ok(docUri, version, diagnostics) ->
-            match state.LspClient with
-            | None -> return newState
-
-            | Some lspClient ->
-                let resolvedDocumentDiagnostics =
-                    { Uri = docUri
-                      Version = version
-                      Diagnostics = diagnostics }
-
-                do! lspClient.TextDocumentPublishDiagnostics(resolvedDocumentDiagnostics)
-                return newState
+        let! newPD = PushDiagnostics.handleResolution state.LspClient postProcessPending result state.PushDiagnostics
+        return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
         let solutionLoadDelay = state.Config.debug |> Option.bind _.solutionLoadDelay
