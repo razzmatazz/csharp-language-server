@@ -314,7 +314,7 @@ module DocumentSymbol =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DocumentSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> =
         async {

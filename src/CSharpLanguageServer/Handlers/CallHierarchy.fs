@@ -49,29 +49,25 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Event
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let prepare
-        (context: ServerRequestContext)
-        (p: CallHierarchyPrepareParams)
-        : AsyncLspResult<CallHierarchyItem[] option> =
-        async {
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+    let prepare (context: RequestContext) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
+        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
+        | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
+            let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
-                return
-                    locations
-                    |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success
+            return
+                locations
+                |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
+                |> Seq.toArray
+                |> Some
+                |> LspResult.success
 
-            | _ -> return None |> LspResult.success
-        }
+        | _ -> return None |> LspResult.success
+    }
 
     let incomingCalls
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: CallHierarchyIncomingCallsParams)
         : AsyncLspResult<CallHierarchyIncomingCall[] option> =
         async {
@@ -115,7 +111,7 @@ module CallHierarchy =
         }
 
     let outgoingCalls
-        (_context: ServerRequestContext)
+        (_context: RequestContext)
         (_: CallHierarchyOutgoingCallsParams)
         : AsyncLspResult<CallHierarchyOutgoingCall[] option> =
         async {

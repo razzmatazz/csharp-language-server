@@ -62,7 +62,7 @@ module Implementation =
     }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
@@ -71,7 +71,7 @@ module Implementation =
             match wf, symInfo with
             | Some wf, Some(sym, project, _) ->
                 let! impls, updatedWf = findImplLocationsOfSymbol wf context.Config project sym
-                context.Emit(WorkspaceFolderChange updatedWf)
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
                 return impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
 

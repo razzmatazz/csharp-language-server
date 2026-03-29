@@ -38,7 +38,7 @@ module Definition =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
@@ -46,7 +46,7 @@ module Definition =
             | Some wf, Some(symbol, project, _) ->
                 let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
                 return locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success
 

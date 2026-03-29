@@ -12,8 +12,8 @@ module Color =
 
     let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
+    let handle (context: RequestContext) (p: DocumentColorParams) : AsyncLspResult<ColorInformation[]> =
         LspResult.notImplemented<ColorInformation[]> |> async.Return
 
-    let present (context: ServerRequestContext) (p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> =
+    let present (context: RequestContext) (p: ColorPresentationParams) : AsyncLspResult<ColorPresentation[]> =
         LspResult.notImplemented<ColorPresentation[]> |> async.Return

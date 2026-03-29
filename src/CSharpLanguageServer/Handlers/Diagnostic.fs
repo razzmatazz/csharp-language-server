@@ -55,47 +55,43 @@ module Diagnostic =
 
             Some registration
 
-    let handle
-        (context: ServerRequestContext)
-        (p: DocumentDiagnosticParams)
-        : AsyncLspResult<DocumentDiagnosticReport> =
-        async {
-            let emptyReport: RelatedFullDocumentDiagnosticReport =
-                { Kind = "full"
-                  ResultId = None
-                  Items = [||]
-                  RelatedDocuments = None }
+    let handle (context: RequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
+        let emptyReport: RelatedFullDocumentDiagnosticReport =
+            { Kind = "full"
+              ResultId = None
+              Items = [||]
+              RelatedDocuments = None }
 
-            let! wf, semModel = p.TextDocument.Uri |> workspaceDocumentSemanticModel context.Workspace
+        let! wf, semModel = p.TextDocument.Uri |> workspaceDocumentSemanticModel context.Workspace
 
-            match wf, semModel with
-            | Some wf, Some semanticModel ->
-                let! ct = Async.CancellationToken
+        match wf, semModel with
+        | Some wf, Some semanticModel ->
+            let! ct = Async.CancellationToken
 
-                let wfPathToUri = workspaceFolderPathToUri wf
+            let wfPathToUri = workspaceFolderPathToUri wf
 
-                let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
-                    let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
+            let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
+                let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
 
-                    match documentIsCshtml with
-                    | true ->
-                        // this particular diagnostic (CS8019: Unnecessary using directive.) does not
-                        // have proper line mapping information and appears out of place on cshtml files
-                        d.Id <> "CS8019"
+                match documentIsCshtml with
+                | true ->
+                    // this particular diagnostic (CS8019: Unnecessary using directive.) does not
+                    // have proper line mapping information and appears out of place on cshtml files
+                    d.Id <> "CS8019"
 
-                    | false -> true
+                | false -> true
 
-                let diagnostics =
-                    semanticModel.GetDiagnostics()
-                    |> Seq.filter diagnosticIsToBeListed
-                    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
-                    |> Seq.map fst
-                    |> Array.ofSeq
+            let diagnostics =
+                semanticModel.GetDiagnostics()
+                |> Seq.filter diagnosticIsToBeListed
+                |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+                |> Seq.map fst
+                |> Array.ofSeq
 
-                return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
+            return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
 
-            | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
-        }
+        | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
+    }
 
     type WorkspaceDiagnosticsReportsChannelItem =
         | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
@@ -184,7 +180,7 @@ module Diagnostic =
     }
 
     let handleWorkspaceDiagnostic
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: WorkspaceDiagnosticParams)
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {

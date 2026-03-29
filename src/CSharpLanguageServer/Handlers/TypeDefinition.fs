@@ -40,7 +40,7 @@ module TypeDefinition =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: TypeDefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
 
@@ -62,7 +62,7 @@ module TypeDefinition =
                         let! aggregatedLspLocations, updatedWf =
                             workspaceFolderSymbolLocations wf context.Config symbol project
 
-                        context.Emit(WorkspaceFolderChange updatedWf)
+                        context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
                         return aggregatedLspLocations, updatedWf
                       }
 

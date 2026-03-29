@@ -113,7 +113,7 @@ module SemanticTokens =
         (deltaLine, deltaChar, cLen, cToken, cModifiers)
 
     let private getSemanticTokensRange
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (uri: string)
         (range: Range option)
         : AsyncLspResult<SemanticTokens option> =
@@ -198,18 +198,15 @@ module SemanticTokens =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
-    let handleFull (context: ServerRequestContext) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =
+    let handleFull (context: RequestContext) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =
         getSemanticTokensRange context p.TextDocument.Uri None
 
     let handleFullDelta
-        (_context: ServerRequestContext)
+        (_context: RequestContext)
         (_p: SemanticTokensDeltaParams)
         : AsyncLspResult<U2<SemanticTokens, SemanticTokensDelta> option> =
         LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>
         |> async.Return
 
-    let handleRange
-        (context: ServerRequestContext)
-        (p: SemanticTokensRangeParams)
-        : AsyncLspResult<SemanticTokens option> =
+    let handleRange (context: RequestContext) (p: SemanticTokensRangeParams) : AsyncLspResult<SemanticTokens option> =
         getSemanticTokensRange context p.TextDocument.Uri (Some p.Range)
