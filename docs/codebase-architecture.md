@@ -36,10 +36,9 @@ csharp-language-server/
 │   │
 │   ├── Runtime/                     # ── JSON-RPC transport & scheduling ──
 │   │   ├── JsonRpcServer.fs         # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
-│   │   ├── Request.fs               # ServerRequestContext, ServerRequestMode
+│   │   ├── Request.fs               # RequestContext, RequestMode, RequestEffects
 │   │   ├── RequestScheduling.fs     # Concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
-│   │   ├── ServerEvent.fs           # ServerEvent discriminated union
-│   │   └── ServerStateLoop.fs       # Main state machine (MailboxProcessor<ServerEvent>)
+│   │   └── ServerStateLoop.fs       # Main state machine + ServerEvent DU (MailboxProcessor<ServerEvent>)
 │   │
 │   ├── Roslyn/                      # ── Roslyn/Microsoft.CodeAnalysis integration ──
 │   │   ├── Conversions.fs           # LSP ↔ Roslyn type conversions
@@ -61,7 +60,7 @@ csharp-language-server/
     │   ├── aspnetProject/
     │   ├── multiFolderWorkspace/
     │   └── ...
-    └── *Tests.fs                          # 24 test files (one per feature area)
+    └── *Tests.fs                          # test files (one per feature area)
 ```
 
 ---
@@ -120,10 +119,10 @@ mapped to its LSP method name and assigned a `ServerRequestMode` (`ReadOnly`, `R
 
 The `wrapHandler` function in `Lsp/Server.fs` bridges raw JSON-RPC ↔ typed handlers:
 
-1. Posts `EnterRequestContext` to the state actor → receives a `ServerRequestContext`
+1. Posts `EnterRequestContext` to the state actor → receives a `RequestContext`
 2. Deserializes `JToken` params to the handler's typed parameter type
 3. Calls the handler
-4. On completion, posts `LeaveRequestContext` with buffered events
+4. On completion, posts `LeaveRequestContext` with the accumulated `RequestEffects`
 
 ### 3.5 Request Scheduling (`Runtime/RequestScheduling.fs`)
 
@@ -133,9 +132,11 @@ Sophisticated concurrent request queue:
 - **`ReadWrite`** requests run serially, blocking until all prior requests retire
 - **`ReadOnlyBackground`** requests (e.g. diagnostics) never block other requests
 - **Draining mode** — used before workspace reloads; only requests up to a certain ordinal activate, then signals `Drained`
-- **Event buffering** — handlers emit `ServerEvent`s into a `ServerRequestContext` buffer; events replay into the state loop only when the request retires in ordinal order (preserving serial mutation semantics)
+- **Effects buffering** — handlers accumulate side-effects into a `RequestEffects` record inside `RequestContext`; effects are applied into the state loop only when the request retires in ordinal order (preserving serial mutation semantics)
 
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
+
+Also defines the `ServerEvent` discriminated union (previously its own `ServerEvent.fs`).
 
 A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (settings, workspace, client
 capabilities, trace level, request queue, diagnostic backlog). Processes events like:
@@ -165,18 +166,20 @@ let registration (clientCapabilities: ClientCapabilities option) : Registration 
     Some { Id = "...; Method = "..."; RegisterOptions = Some ... }
 
 // The actual request handler
-let handle (context: ServerRequestContext) (p: SomeParams) : AsyncLspResult<SomeResult option> =
+let handle (context: RequestContext) (p: SomeParams) : AsyncLspResult<SomeResult option> =
     async {
         // Use context.Workspace, context.ClientCapabilities, etc.
         // Return LspResult.success ...
     }
 
 // Optional: resolve, prepare, etc. for multi-step protocols
-let resolve (context: ServerRequestContext) (p: ResolveParams) : AsyncLspResult<ResolvedResult> = ...
+let resolve (context: RequestContext) (p: ResolveParams) : AsyncLspResult<ResolvedResult> = ...
 ```
 
 **Key types:**
-- `ServerRequestContext` — provides access to workspace, client capabilities, client proxy, settings, trace level, and an event buffer for emitting side effects
+- `RequestContext` — provides access to workspace, client capabilities, client proxy, settings, and a `RequestEffects` buffer for accumulating side effects
+- `RequestMode` — `ReadOnly` | `ReadWrite` | `ReadOnlyBackground`; controls concurrent scheduling
+- `RequestEffects` — immutable record accumulating all state mutations a handler wishes to make (e.g. `DocumentOpened`, `TraceLevelChange`, `WorkspaceReloadRequested`); applied to `ServerState` after the request retires
 - `AsyncLspResult<'T>` — `Async<LspResult<'T>>` where `LspResult` carries either `Ok` or a JSON-RPC error
 
 ---
@@ -294,6 +297,19 @@ file.Save()                                   // sends textDocument/didSave
 `.cshtml`, `.editorconfig`, `global.json`, `.txt`) to a temp directory, filtering out
 `bin`/`obj`. On macOS, prepends `/private` to the temp path.
 
+Available fixtures:
+
+| Fixture | Purpose |
+|---------|---------|
+| `genericProject` | General-purpose C# project used by most tests |
+| `aspnetProject` | ASP.NET project with controllers, views, and Razor files |
+| `multiFolderWorkspace` | Two separate project folders for multi-root workspace tests |
+| `multiTargetProject` | Project targeting multiple TFMs |
+| `projectWithEditorConfig` | Project with an `.editorconfig` for formatting tests |
+| `projectWithSlnx` | Project using a `.slnx` solution file |
+| `testDiagnosticsWork` | Project with deliberate errors for diagnostic tests |
+| `testReferenceWorksDotnet8` | Project pinned to .NET 8 for reference/Go-to-def tests |
+
 ### 7.5 Typical Test Pattern
 
 ```fsharp
@@ -316,6 +332,10 @@ let testSomething () =
 | JSON-RPC transport unit tests | `JsonRpcServerTests.fs` | Calls `startJsonRpcServer` with in-memory streams (no process) |
 | Progress reporter unit tests | `ProgressReporterTests.fs` | Uses a `TrackingLspClientStub` mock |
 | CLI diagnose command tests | `DiagnoseCommandTests.fs` | Spawns process with `--diagnose` flag |
+| Request scheduling unit tests | `RequestSchedulingTests.fs` | Tests `RequestQueue` directly with no server process |
+| CSharp metadata (go-to-decompiled) integration tests | `CSharpMetadataTests.fs` | Integration tests via `LspTestClient` |
+| Call hierarchy integration tests | `CallHierarchyTests.fs` | Integration tests via `LspTestClient` |
+| Internal / cross-cutting tests | `InternalTests.fs` | Tests for internal utilities and cross-cutting concerns |
 
 ---
 
