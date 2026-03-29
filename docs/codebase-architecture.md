@@ -135,6 +135,9 @@ Sophisticated concurrent request queue:
 - **Draining mode** — used before workspace reloads; only requests up to a certain ordinal activate, then signals `Drained`
 - **Effects buffering** — handlers accumulate side-effects into a `RequestEffects` record inside `RequestContext`; effects are applied into the state loop only when the request retires in ordinal order (preserving serial mutation semantics)
 
+`processRequestQueue` is the single entry point for advancing the queue each tick. Retirement is checked first on every
+call: a finished request is always replayed before any new request is activated.
+
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
 
 Also defines the `ServerEvent` discriminated union.
@@ -151,23 +154,8 @@ capabilities, trace level, request queue, push-diagnostics state). Processes eve
 
 ### 3.7 Push Diagnostics (`Runtime/PushDiagnostics.fs`)
 
-Encapsulates the background push-diagnostics pipeline, which pro-actively publishes
-`textDocument/publishDiagnostics` notifications to clients that do not support pull
-diagnostics.
-
-**`PushDiagnosticsState`** holds:
-- `DocumentBacklog` — ordered list of open document URIs awaiting diagnosis (most-recently-touched first)
-- `CurrentDocTask` — optional `(uri * Task)` for the single in-flight resolution task
-
-**Pure handler functions** (called from `ServerStateLoop.processServerEvent`):
-
-| Function | Triggered by | What it does |
-|---|---|---|
-| `handleBacklogUpdate` | `PushDiagnosticsDocumentBacklogUpdate` | Rebuilds the backlog from all open docs, sorted by `Touched` descending |
-| `handleProcessPending` | `PushDiagnosticsProcessPendingDocuments` | Pops the next URI, starts a background Roslyn semantic-model task; no-ops if a task is already running or pull diagnostics is supported by the client |
-| `handleResolution` | `PushDiagnosticsDocumentDiagnosticsResolution` | Clears `CurrentDocTask`, publishes diagnostics via `ILspClient.TextDocumentPublishDiagnostics`, chains the next `ProcessPendingDocuments` event |
-
----
+Encapsulates the background push-diagnostics pipeline, which pro-actively publishes `textDocument/publishDiagnostics`
+notifications to clients that do not support pull diagnostics.
 
 ## 4. Handler Module Pattern
 

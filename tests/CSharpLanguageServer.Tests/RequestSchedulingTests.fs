@@ -180,51 +180,65 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     Assert.AreEqual(1, req.BufferedServerEvents.Length)
 
 // ---------------------------------------------------------------------------
-// retireNextFinishedRequest
+// processRequestQueue — Retired cases
 // ---------------------------------------------------------------------------
 
 [<Test>]
-let ``retireNextFinishedRequest retires lowest-ordinal finished request`` () =
+let ``processRequestQueue returns Retired for lowest-ordinal finished request`` () =
     let queue =
         { RequestQueue.Empty with
+            WatermarkRpcOrdinal = 2L
             Requests =
                 Map.ofList
                     [ (1L, makeTestRequest 1L "a" ReadOnly Finished)
                       (2L, makeTestRequest 2L "b" ReadOnly Pending) ] }
 
-    let (retired, updatedQueue) = retireNextFinishedRequest defaultSettings queue
+    let result =
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
-    Assert.IsTrue(retired.IsSome)
-    Assert.AreEqual("a", retired.Value.Name)
-    Assert.AreEqual(1, updatedQueue.Requests.Count)
-    Assert.IsTrue(updatedQueue.Requests.ContainsKey(2L))
+    match result with
+    | Retired(retiredRequest, updatedQueue) ->
+        Assert.AreEqual("a", retiredRequest.Name)
+        Assert.AreEqual(1, updatedQueue.Requests.Count)
+        Assert.IsTrue(updatedQueue.Requests.ContainsKey(2L))
+    | other -> Assert.Fail($"Expected Retired but got {other}")
 
 [<Test>]
-let ``retireNextFinishedRequest returns None when head is still running`` () =
+let ``processRequestQueue returns Waiting when head is still Running`` () =
     let queue =
         { RequestQueue.Empty with
+            WatermarkRpcOrdinal = 2L
             Requests =
                 Map.ofList
                     [ (1L, makeTestRequest 1L "a" ReadOnly Running)
                       (2L, makeTestRequest 2L "b" ReadOnly Finished) ] }
 
-    let (retired, _updatedQueue) = retireNextFinishedRequest defaultSettings queue
+    let result =
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
-    Assert.IsTrue(retired.IsNone)
+    match result with
+    | Waiting -> ()
+    | other -> Assert.Fail($"Expected Waiting but got {other}")
 
 [<Test>]
-let ``retireNextFinishedRequest skips running ReadOnlyBackground`` () =
+let ``processRequestQueue returns Retired skipping running ReadOnlyBackground`` () =
     let queue =
         { RequestQueue.Empty with
+            WatermarkRpcOrdinal = 2L
             Requests =
                 Map.ofList
                     [ (1L, makeTestRequest 1L "bg" ReadOnlyBackground Running)
                       (2L, makeTestRequest 2L "normal" ReadOnly Finished) ] }
 
-    let (retired, updatedQueue) = retireNextFinishedRequest defaultSettings queue
+    let result =
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
-    Assert.IsTrue(retired.IsSome)
-    Assert.AreEqual("normal", retired.Value.Name)
+    match result with
+    | Retired(retiredRequest, _) -> Assert.AreEqual("normal", retiredRequest.Name)
+    | other -> Assert.Fail($"Expected Retired but got {other}")
 
 // ---------------------------------------------------------------------------
 // enterDrainingMode / enterDispatchingMode
@@ -272,7 +286,7 @@ let ``enterDispatchingMode resets to Dispatching`` () =
 [<Test>]
 let ``processRequestQueue returns Waiting on empty queue`` () =
     let result =
-        processRequestQueue makeTestServerRequestContext RequestQueue.Empty
+        processRequestQueue defaultSettings makeTestServerRequestContext RequestQueue.Empty
         |> Async.RunSynchronously
 
     match result with
@@ -291,7 +305,8 @@ let ``processRequestQueue returns Waiting when no request can be activated`` () 
                       (2L, makeTestRequest 2L "ro" ReadOnly Pending) ] }
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Waiting -> ()
@@ -305,7 +320,8 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
@@ -323,7 +339,8 @@ let ``processRequestQueue activates a pending ReadWrite request when queue is id
         RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite rc
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
@@ -369,7 +386,8 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
                         RunningSince = Some DateTime.UtcNow } }
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Waiting -> ()
@@ -386,7 +404,8 @@ let ``processRequestQueue does not activate ReadWrite request when there is a ga
         RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite rc
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Waiting -> ()
@@ -409,7 +428,8 @@ let ``processRequestQueue does not activate ReadOnly past a gap even when earlie
                       (5L, makeTestRequest 5L "textDocument/references" ReadOnly Pending) ] }
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Waiting -> ()
@@ -457,7 +477,8 @@ let ``processRequestQueue returns Drained when all requests up to drain ordinal 
             Requests = Map.ofList [ (5L, makeTestRequest 5L "later" ReadOnly Pending) ] }
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Drained -> ()
@@ -475,7 +496,8 @@ let ``processRequestQueue activates ReadWrite request when only ReadOnlyBackgrou
                       (2L, makeTestRequest 2L "textDocument/rename" ReadWrite Pending) ] }
 
     let result =
-        processRequestQueue makeTestServerRequestContext queue |> Async.RunSynchronously
+        processRequestQueue defaultSettings makeTestServerRequestContext queue
+        |> Async.RunSynchronously
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->

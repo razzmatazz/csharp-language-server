@@ -65,6 +65,16 @@ type ServerState =
           PeriodicTickTimer = None
           ShutdownReceived = false }
 
+let makeRequestContext (state: ServerState) (requestMode: RequestMode) =
+    RequestContext(
+        requestMode,
+        state.LspClient.Value,
+        state.Config,
+        state.Workspace,
+        state.ClientCapabilities,
+        state.ShutdownReceived
+    )
+
 let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     match ev with
     | SettingsChange newConfig -> return { state with Config = newConfig }
@@ -83,31 +93,27 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             state.RequestQueue
             |> registerRequest requestRpcOrdinal requestName requestMode replyChannel
 
-        let newState =
+        return
             { state with
                 RequestQueue = newRequestQueue }
 
-        return newState
-
     | LeaveRequestContext(requestRpcOrdinal, bufferedServerEvents) ->
+        postServerEvent ProcessRequestQueue
+
         let bufferedServerEvents = bufferedServerEvents |> List.map (fun e -> e :> obj)
 
         let newRequestQueue =
             state.RequestQueue |> finishRequest requestRpcOrdinal bufferedServerEvents
 
-        let newState =
+        return
             { state with
                 RequestQueue = newRequestQueue }
 
-        postServerEvent ProcessRequestQueue
-        return newState
-
     | ProcessRequestQueue ->
-        let (retiredRequest, requestQueue) =
-            state.RequestQueue |> retireNextFinishedRequest state.Config
+        let! result = processRequestQueue state.Config (makeRequestContext state) state.RequestQueue
 
-        match retiredRequest with
-        | Some retiredRequest ->
+        match result with
+        | Retired(retiredRequest, updatedRequestQueue) ->
             // Replay the retired request's buffered events, then continue
             // in the next round so they are processed before further work.
             retiredRequest.BufferedServerEvents
@@ -117,37 +123,26 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
             return
                 { state with
-                    RequestQueue = requestQueue }
-        | None ->
-            let makeRequestContext (requestMode: RequestMode) =
-                RequestContext(
-                    requestMode,
-                    state.LspClient.Value,
-                    state.Config,
-                    state.Workspace,
-                    state.ClientCapabilities,
-                    state.ShutdownReceived
-                )
+                    RequestQueue = updatedRequestQueue }
 
-            let! result = processRequestQueue makeRequestContext requestQueue
+        | Activated(_activatedRequest, updatedRequestQueue) ->
+            postServerEvent ProcessRequestQueue
 
-            match result with
-            | Activated(_activatedRequest, updatedRequestQueue) ->
-                postServerEvent ProcessRequestQueue
+            return
+                { state with
+                    RequestQueue = updatedRequestQueue }
 
-                return
-                    { state with
-                        RequestQueue = updatedRequestQueue }
-            | Drained ->
-                postServerEvent RequestQueueDrained
+        | Drained ->
+            postServerEvent RequestQueueDrained
 
-                return
-                    { state with
-                        RequestQueue = requestQueue }
-            | Waiting ->
-                return
-                    { state with
-                        RequestQueue = requestQueue }
+            return
+                { state with
+                    RequestQueue = state.RequestQueue }
+
+        | Waiting ->
+            return
+                { state with
+                    RequestQueue = state.RequestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
         let newWorkspace =
