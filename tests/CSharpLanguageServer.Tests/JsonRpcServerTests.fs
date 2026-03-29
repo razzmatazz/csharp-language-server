@@ -1122,3 +1122,182 @@ let testOtherRequestsStillWorkAfterCancellation () =
     Assert.AreEqual("ok", string fastResponse.Value.["result"])
 
     server.Post(Shutdown)
+
+// ---- Write priority tests ----
+
+/// A stream wrapper that blocks writes until signalled, allowing us to keep
+/// the writer busy while we queue up messages at different priorities.
+type private GatedStream(inner: MemoryStream) =
+    inherit Stream()
+    let gate = new ManualResetEventSlim(true)
+    member _.Block() = gate.Reset()
+    member _.Unblock() = gate.Set()
+    override _.CanRead = inner.CanRead
+    override _.CanSeek = inner.CanSeek
+    override _.CanWrite = inner.CanWrite
+    override _.Length = inner.Length
+
+    override _.Position
+        with get () = inner.Position
+        and set v = inner.Position <- v
+
+    override _.Flush() = inner.Flush()
+    override _.Read(buffer, offset, count) = inner.Read(buffer, offset, count)
+    override _.Seek(offset, origin) = inner.Seek(offset, origin)
+    override _.SetLength(value) = inner.SetLength(value)
+
+    override _.Write(buffer, offset, count) =
+        gate.Wait()
+        inner.Write(buffer, offset, count)
+
+    override _.WriteAsync(buffer, offset, count, ct) =
+        gate.Wait(ct)
+        inner.WriteAsync(buffer, offset, count, ct)
+
+    override _.FlushAsync(ct) = inner.FlushAsync(ct)
+
+[<Test>]
+let testNormalPriorityNotificationsSentBeforeLowPriority () =
+    // 1. Start server, send an initial notification to start a write
+    // 2. Block stdout so the write stays in progress
+    // 3. Queue low-priority notifications, then normal-priority ones
+    // 4. Unblock stdout — normal should come out before low
+    let inner = new MemoryStream()
+    let stdout = new GatedStream(inner)
+
+    let stdin = makeInputStream []
+
+    let server =
+        startJsonRpcServer stdin (stdout :> Stream) None (fun _ -> Map.empty, Map.empty)
+
+    // Send the first notification — this starts the first write
+    sendJsonRpcNotification server "initial" (JObject(JProperty("seq", 0)))
+
+    // Wait for the first write to begin
+    waitUntil 5000 (fun () -> inner.Length > 0L) |> ignore
+
+    // Now block the stream — subsequent writes will queue
+    stdout.Block()
+
+    // Send another normal notification to saturate the pending write
+    // (the WriteComplete for the first write will try to write this one, and block)
+    sendJsonRpcNotification server "filler" (JObject(JProperty("seq", 1)))
+
+    // Give the actor time to process the first WriteComplete and start writing the filler
+    Thread.Sleep 200
+
+    // Now queue low-priority notifications
+    for i in 1..3 do
+        sendJsonRpcNotificationWithLowPriority server "low" (JObject(JProperty("seq", 10 + i)))
+
+    // Then queue normal-priority notifications
+    for i in 1..3 do
+        sendJsonRpcNotification server "normal" (JObject(JProperty("seq", 20 + i)))
+
+    // Give the actor time to process all the SendNotification events
+    Thread.Sleep 200
+
+    // Unblock — all queued messages should now drain
+    stdout.Unblock()
+
+    // initial + filler + 3 low + 3 normal = 8
+    let totalExpected = 8
+    let messages = waitForMessages inner totalExpected 5000
+
+    Assert.AreEqual(
+        totalExpected,
+        messages.Length,
+        sprintf "Expected %d messages but got %d" totalExpected messages.Length
+    )
+
+    // First two are the initial and filler (already written/in-progress before queueing)
+    // After that, the 3 normal-priority should come before the 3 low-priority
+    let queuedMessages = messages |> List.skip 2
+    let queuedMethods = queuedMessages |> List.map (fun m -> string m.["method"])
+
+    Assert.AreEqual(
+        [ "normal"; "normal"; "normal"; "low"; "low"; "low" ],
+        queuedMethods,
+        "Normal-priority notifications should be written before low-priority ones"
+    )
+
+[<Test>]
+let testLowPriorityNotificationsAreEventuallyWritten () =
+    // Verify low-priority messages are not dropped — they arrive after normal ones drain
+    let stdin = makeInputStream []
+    let stdout = new MemoryStream()
+
+    let server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    // Send only low-priority notifications
+    for i in 1..3 do
+        sendJsonRpcNotificationWithLowPriority server "$/progress" (JObject(JProperty("index", i)))
+
+    let messages = waitForMessages stdout 3 5000
+
+    Assert.AreEqual(3, messages.Length, "Expected all 3 low-priority notifications to be written")
+
+    for i in 0..2 do
+        Assert.AreEqual("$/progress", string messages.[i].["method"])
+        Assert.AreEqual(i + 1, int (messages.[i].SelectToken("params.index")))
+
+[<Test>]
+let testNormalNotificationsPreemptQueuedLowPriority () =
+    // Queue a mix of low and normal notifications while a write is in progress,
+    // then verify normal ones are written before low ones.
+    let inner = new MemoryStream()
+    let stdout = new GatedStream(inner)
+
+    let stdin = makeInputStream []
+
+    let server =
+        startJsonRpcServer stdin (stdout :> Stream) None (fun _ -> Map.empty, Map.empty)
+
+    // Send the first notification to start a write
+    sendJsonRpcNotification server "initial" (JObject(JProperty("seq", 0)))
+
+    // Wait for the first write to begin
+    waitUntil 5000 (fun () -> inner.Length > 0L) |> ignore
+
+    // Block the stream so writes queue up
+    stdout.Block()
+
+    // Send another normal one that will saturate the pending write slot
+    sendJsonRpcNotification server "filler" (JObject(JProperty("seq", 1)))
+
+    // Give the actor time to process the first WriteComplete and start the filler write (which blocks)
+    Thread.Sleep 300
+
+    // Now queue: low, low, normal, normal, low
+    sendJsonRpcNotificationWithLowPriority server "low" (JObject(JProperty("seq", 10)))
+    sendJsonRpcNotificationWithLowPriority server "low" (JObject(JProperty("seq", 11)))
+    sendJsonRpcNotification server "normal" (JObject(JProperty("seq", 20)))
+    sendJsonRpcNotification server "normal" (JObject(JProperty("seq", 21)))
+    sendJsonRpcNotificationWithLowPriority server "low" (JObject(JProperty("seq", 12)))
+
+    // Give the actor time to process all SendNotification events
+    Thread.Sleep 300
+
+    // Unblock — all queued messages should now drain
+    stdout.Unblock()
+
+    // initial + filler + 2 normal + 3 low = 7
+    let totalExpected = 7
+    let messages = waitForMessages inner totalExpected 5000
+
+    Assert.AreEqual(
+        totalExpected,
+        messages.Length,
+        sprintf "Expected %d messages but got %d" totalExpected messages.Length
+    )
+
+    // Skip initial and filler (already written/in-progress before queueing)
+    let queuedMethods =
+        messages |> List.skip 2 |> List.map (fun m -> string m.["method"])
+
+    // Normal-priority should drain first, then low-priority
+    Assert.AreEqual(
+        [ "normal"; "normal"; "low"; "low"; "low" ],
+        queuedMethods,
+        "Normal-priority notifications should be written before low-priority ones"
+    )
