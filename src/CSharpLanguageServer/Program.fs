@@ -13,7 +13,8 @@ open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Diagnostics
-open CSharpLanguageServer.Runtime.JsonRpcServer
+open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.JsonRpc
 
 type CLIArguments =
     | [<AltCommandLine("-v")>] Version
@@ -92,7 +93,7 @@ let entry args =
                               Name = Path.GetFileNameWithoutExtension slnFullPath
                               SolutionPathOverride = Some slnFullPath } ] })
 
-        let makeRpcLogCallback (path: string) : RpcLogEntry -> unit =
+        let makeRpcLogCallback (path: string) : JsonRpcLogEntry -> unit =
             let writer = new StreamWriter(path, append = false)
 
             fun entry ->
@@ -107,7 +108,7 @@ let entry args =
                 writer.WriteLine(line)
                 writer.Flush()
 
-        let rpcLogCallback: (RpcLogEntry -> unit) option =
+        let rpcLogCallback: (JsonRpcLogEntry -> unit) option =
             serverArgs.TryGetResult <@ RpcLog @> |> Option.map makeRpcLogCallback
 
         let exitCode =
@@ -118,9 +119,9 @@ let entry args =
             | _ ->
                 Logging.setupLogging (parseLogLevel config.logLevel)
 
-                let jsonRpcLogger = Logging.getLoggerByName "JsonRpcServer"
+                let jsonRpcLogger = Logging.getLoggerByName "JsonRpcTransport"
 
-                let jsonRpcLogCallback (entry: RpcLogEntry) =
+                let jsonRpcLogCallback (entry: JsonRpcLogEntry) =
                     match entry with
                     | RpcError text -> jsonRpcLogger.LogError("RPC error: {Message}", text)
                     | RpcWarn text -> jsonRpcLogger.LogWarning("RPC warning: {Message}", text)

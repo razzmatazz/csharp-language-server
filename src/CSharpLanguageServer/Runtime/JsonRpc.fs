@@ -1,4 +1,4 @@
-module CSharpLanguageServer.Runtime.JsonRpcServer
+module CSharpLanguageServer.Runtime.JsonRpc
 
 open System
 open System.IO
@@ -13,7 +13,7 @@ open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
 
-type RpcLogEntry =
+type JsonRpcLogEntry =
     | RpcRead of JObject
     | RpcWrite of JObject
     | RpcError of string
@@ -27,15 +27,19 @@ type JsonRpcRequestContext =
       Params: JToken option
       CancellationTokenSource: CancellationTokenSource option }
 
-type JsonRpcCallHandler = JsonRpcRequestContext -> Async<Result<JToken, JToken>>
-
-type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
-
-type WriteQueuePriority =
+type JsonRpcWriteQueuePriority =
     | NormalPriority
     | LowPriority
 
-type JsonRpcServerState =
+type JsonRpcCallHandler = JsonRpcRequestContext -> Async<Result<JToken, JToken>>
+
+type JsonRpcCallHandlerMap = Map<string, JsonRpcCallHandler>
+
+type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
+
+type JsonRpcNotificationHandlerMap = Map<string, JsonRpcNotificationHandler>
+
+type JsonRpcTransportState =
     {
         StdIn: Stream option
         StdOut: Stream option
@@ -43,21 +47,21 @@ type JsonRpcServerState =
         PendingWrite: Async<unit> option
         WriteQueue: JObject list
         LowPriorityWriteQueue: JObject list
-        CallHandlers: Map<string, JsonRpcCallHandler>
-        NotificationHandlers: Map<string, JsonRpcNotificationHandler>
+        CallHandlers: JsonRpcCallHandlerMap
+        NotificationHandlers: JsonRpcNotificationHandlerMap
         NextOutboundRequestId: int
         NextInboundRequestOrdinal: int64
-        /// Outbound calls (server → client) awaiting a response, keyed by the request ID we assigned.
+        /// Outbound calls awaiting a response, keyed by the request ID we assigned.
         PendingOutboundCalls: Map<int, AsyncReplyChannel<Result<JToken, JToken>>>
-        /// Inbound requests (client → server) currently being handled, keyed by wire ID (string representation).
+        /// Inbound requests currently being handled, keyed by wire ID (string representation).
         RunningInboundRequests: Map<string, JsonRpcRequestContext>
-        /// Channels waiting to be notified when the server shuts down.
+        /// Channels waiting to be notified when the transport shuts down.
         ShutdownWaiters: AsyncReplyChannel<unit> list
         /// Optional callback invoked with each raw RPC log entry.
-        RpcLogEntryCallback: (RpcLogEntry -> unit) option
+        RpcLogEntryCallback: (JsonRpcLogEntry -> unit) option
     }
 
-let emptyServerState =
+let emptyTransportState =
     { StdIn = None
       StdOut = None
       PendingRead = None
@@ -73,12 +77,12 @@ let emptyServerState =
       ShutdownWaiters = []
       RpcLogEntryCallback = None }
 
-type JsonRpcServerEvent =
+type JsonRpcTransportEvent =
     | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
     | Shutdown
     | InboundMessage of Result<JObject option, Exception>
     | WriteComplete
-    | SendNotification of method: string * methodParams: JToken * priority: WriteQueuePriority
+    | SendNotification of method: string * methodParams: JToken * priority: JsonRpcWriteQueuePriority
     | SendCall of method: string * methodParams: JToken * AsyncReplyChannel<Result<JToken, JToken>>
     | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
     | HandlerFailed of wireIdKey: string * exn
@@ -86,7 +90,7 @@ type JsonRpcServerEvent =
     | CancelRequest of wireIdKey: string
     | NotificationHandlerFailed of method: string * exn
     | AwaitShutdown of AsyncReplyChannel<unit>
-    | WriteRpcLogEntry of RpcLogEntry
+    | WriteRpcLogEntry of JsonRpcLogEntry
 
 let readBytes (stream: Stream) (buffer: byte[]) (count: int) = async {
     let rec loop pos remaining = async {
@@ -225,7 +229,7 @@ let startWrite postEvent (stdout: Stream) (msg: JObject) =
 /// Enqueue a message for writing. If no write is in progress, start one immediately;
 /// otherwise append to the appropriate queue based on priority.
 /// Normal-priority messages are drained before low-priority ones.
-let enqueueWrite postEvent (state: JsonRpcServerState) (priority: WriteQueuePriority) (msg: JObject) =
+let enqueueWrite postEvent (state: JsonRpcTransportState) (priority: JsonRpcWriteQueuePriority) (msg: JObject) =
     match state.PendingWrite, state.StdOut with
     | None, Some stdout ->
         let writeOp = startWrite postEvent stdout msg
@@ -565,7 +569,7 @@ let processEvent state postEvent ev =
         state.RpcLogEntryCallback |> Option.iter (fun cb -> cb entry)
         state
 
-let eventLoop (initialState: JsonRpcServerState) (inbox: MailboxProcessor<JsonRpcServerEvent>) =
+let eventLoop (initialState: JsonRpcTransportState) (inbox: MailboxProcessor<JsonRpcTransportEvent>) =
     let rec loop state = async {
         let! ev = inbox.Receive()
 
@@ -581,35 +585,38 @@ let eventLoop (initialState: JsonRpcServerState) (inbox: MailboxProcessor<JsonRp
 
     loop initialState
 
-let startJsonRpcServer
+let startJsonRpcTransport
     (stdin: Stream)
     (stdout: Stream)
-    (rpcLogCallback: (RpcLogEntry -> unit) option)
-    (configure:
-        MailboxProcessor<JsonRpcServerEvent>
-            -> Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>)
+    (rpcLogCallback: (JsonRpcLogEntry -> unit) option)
+    (configure: MailboxProcessor<JsonRpcTransportEvent> -> JsonRpcCallHandlerMap * JsonRpcNotificationHandlerMap)
     =
 
     let initialState =
-        { emptyServerState with
+        { emptyTransportState with
             RpcLogEntryCallback = rpcLogCallback }
 
-    let server = MailboxProcessor.Start(eventLoop initialState)
-    let callHandlers, notificationHandlers = configure server
-    server.Post(Start(stdin, stdout, callHandlers, notificationHandlers))
-    server
+    let transport = MailboxProcessor.Start(eventLoop initialState)
+    let callHandlers, notificationHandlers = configure transport
+    transport.Post(Start(stdin, stdout, callHandlers, notificationHandlers))
+    transport
 
-let sendJsonRpcNotification (server: MailboxProcessor<JsonRpcServerEvent>) (method: string) (methodParams: JToken) =
-    server.Post(SendNotification(method, methodParams, NormalPriority))
-
-let sendJsonRpcNotificationWithLowPriority
-    (server: MailboxProcessor<JsonRpcServerEvent>)
+let sendJsonRpcNotification
+    (transport: MailboxProcessor<JsonRpcTransportEvent>)
     (method: string)
     (methodParams: JToken)
     =
-    server.Post(SendNotification(method, methodParams, LowPriority))
+    transport.Post(SendNotification(method, methodParams, NormalPriority))
 
-let sendJsonRpcCall (server: MailboxProcessor<JsonRpcServerEvent>) (method: string) (methodParams: JToken) =
-    server.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))
+let sendJsonRpcNotificationWithLowPriority
+    (transport: MailboxProcessor<JsonRpcTransportEvent>)
+    (method: string)
+    (methodParams: JToken)
+    =
+    transport.Post(SendNotification(method, methodParams, LowPriority))
 
-let awaitJsonRpcServerShutdown (server: MailboxProcessor<JsonRpcServerEvent>) = server.PostAndAsyncReply(AwaitShutdown)
+let sendJsonRpcCall (transport: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
+    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))
+
+let awaitJsonRpcTransportShutdown (transport: MailboxProcessor<JsonRpcTransportEvent>) =
+    transport.PostAndAsyncReply(AwaitShutdown)
