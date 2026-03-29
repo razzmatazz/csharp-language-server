@@ -132,6 +132,13 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
     Assert.AreEqual(null, serverCaps.MonikerProvider)
 
+    Assert.AreEqual(
+        true
+        |> U3<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>.C1
+        |> Some,
+        serverCaps.FoldingRangeProvider
+    )
+
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
     Assert.IsTrue(client.ClientDidSendNotification "initialized")
 
