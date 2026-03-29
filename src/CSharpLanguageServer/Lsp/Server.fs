@@ -85,7 +85,7 @@ let getServerCapabilities (config: CSharpConfiguration) (lspClient: InitializePa
         DocumentRangeFormattingProvider = DocumentRangeFormatting.provider lspClient.Capabilities
         DocumentOnTypeFormattingProvider = DocumentOnTypeFormatting.provider lspClient.Capabilities
         RenameProvider = Rename.provider lspClient.Capabilities
-        // FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
+        FoldingRangeProvider = FoldingRange.provider lspClient.Capabilities
         ExecuteCommandProvider = ExecuteCommand.provider lspClient.Capabilities
         // SelectionRangeProvider = SelectionRange.provider lspClient.Capabilities
         // LinkedEditingRangeProvider = LinkedEditingRange.provider lspClient.Capabilities
@@ -221,6 +221,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
         |> Map.add "textDocument/codeLens" (callHandler ReadOnly CodeLens.handle)
         |> Map.add "codeLens/resolve" (callHandler ReadOnly CodeLens.resolve)
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
+        |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
 
     let notificationHandlers: Map<string, JsonRpcNotificationHandler> =
         Map.empty
