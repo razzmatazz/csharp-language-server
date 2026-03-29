@@ -47,29 +47,25 @@ module TypeHierarchy =
                   Method = "textDocument/prepareTypeHierarchy"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let prepare
-        (context: ServerRequestContext)
-        (p: TypeHierarchyPrepareParams)
-        : AsyncLspResult<TypeHierarchyItem[] option> =
-        async {
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+    let prepare (context: RequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
+        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
+        | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
+            let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
-                return
-                    symLocations
-                    |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success
+            return
+                symLocations
+                |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
+                |> Seq.toArray
+                |> Some
+                |> LspResult.success
 
-            | _, _ -> return None |> LspResult.success
-        }
+        | _, _ -> return None |> LspResult.success
+    }
 
     let supertypes
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: TypeHierarchySupertypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
@@ -99,7 +95,7 @@ module TypeHierarchy =
 
                     updatedWf <- wf
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
                 return items |> Seq.toArray |> Some |> LspResult.success
 
@@ -107,7 +103,7 @@ module TypeHierarchy =
         }
 
     let subtypes
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: TypeHierarchySubtypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
@@ -155,7 +151,7 @@ module TypeHierarchy =
 
                     updatedWf <- wf
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
                 return items |> Seq.toArray |> Some |> LspResult.success
 

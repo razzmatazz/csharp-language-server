@@ -8,48 +8,102 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.WorkspaceFolder
 
-type ServerRequestMode =
+type RequestMode =
     | ReadOnly
     | ReadWrite
     | ReadOnlyBackground
 
-type ServerRequestState =
-    | Pending
-    | Running
-    | Finished
+type RequestEffects =
+    { ClientInitializeEmitted: bool
+      ClientShutdownEmitted: bool
+      ClientCapabilityChange: ClientCapabilities option
+      DocumentClosed: string list
+      DocumentOpened: (string * int * DateTime) list
+      DocumentTouched: (string * DateTime) list
+      SettingsChange: CSharpConfiguration option
+      TraceLevelChange: TraceValues option
+      WorkspaceConfigurationChanged: WorkspaceFolder list option
+      WorkspaceFolderChange: LspWorkspaceFolder list
+      WorkspaceReloadRequested: TimeSpan list }
 
-type ServerRequest =
-    { State: ServerRequestState
-      Mode: ServerRequestMode
-      Name: string
-      RpcOrdinal: int64
-      Registered: DateTime
-      ActivationRC: AsyncReplyChannel<obj> // obj=ServerRequestContext
-      RunningSince: option<DateTime>
-      BufferedEvents: ServerEvent list }
+    static member Empty =
+        { ClientInitializeEmitted = false
+          ClientShutdownEmitted = false
+          ClientCapabilityChange = None
+          DocumentClosed = []
+          DocumentOpened = []
+          DocumentTouched = []
+          SettingsChange = None
+          TraceLevelChange = None
+          WorkspaceConfigurationChanged = None
+          WorkspaceFolderChange = []
+          WorkspaceReloadRequested = [] }
 
-type ServerRequestContext
+    member this.WithClientInitialize() =
+        { this with
+            ClientInitializeEmitted = true }
+
+    member this.WithClientShutdown() =
+        { this with
+            ClientShutdownEmitted = true }
+
+    member this.WithClientCapabilityChange(capabilities) =
+        { this with
+            ClientCapabilityChange = Some capabilities }
+
+    member this.WithDocumentClosed(uri) =
+        { this with
+            DocumentClosed = this.DocumentClosed @ [ uri ] }
+
+    member this.WithDocumentOpened(uri, version, timestamp) =
+        { this with
+            DocumentOpened = this.DocumentOpened @ [ (uri, version, timestamp) ] }
+
+    member this.WithDocumentTouched(uri, timestamp) =
+        { this with
+            DocumentTouched = this.DocumentTouched @ [ (uri, timestamp) ] }
+
+    member this.WithSettingsChange(config) =
+        { this with
+            SettingsChange = Some config }
+
+    member this.WithTraceLevelChange(traceLevel) =
+        { this with
+            TraceLevelChange = Some traceLevel }
+
+    member this.WithWorkspaceConfigurationChanged(folders) =
+        { this with
+            WorkspaceConfigurationChanged = Some folders }
+
+    member this.WithWorkspaceFolderChange(folder) =
+        { this with
+            WorkspaceFolderChange = this.WorkspaceFolderChange @ [ folder ] }
+
+    member this.WithWorkspaceReloadRequested(delay) =
+        { this with
+            WorkspaceReloadRequested = this.WorkspaceReloadRequested @ [ delay ] }
+
+type RequestContext
     (
-        requestMode: ServerRequestMode,
+        requestMode: RequestMode,
         lspClient: ILspClient,
         config: CSharpConfiguration,
         workspace: LspWorkspace,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
     ) =
-    let bufferedEvents = ResizeArray<ServerEvent>()
+    let mutable effects = RequestEffects.Empty
 
-    member _.RequestMode = requestMode
     member _.LspClient = lspClient
     member _.Config = config
     member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
+    member _.Effects = effects
 
-    member _.Emit(event: ServerEvent) =
-        match requestMode with
-        | ReadOnlyBackground -> invalidOp "Emit is not allowed on ReadOnlyBackground requests"
-        | _ -> bufferedEvents.Add(event)
-
-    member _.GetBufferedEvents() : ServerEvent list = bufferedEvents |> List.ofSeq
+    member _.UpdateEffects(update: RequestEffects -> RequestEffects) =
+        match requestMode.IsReadOnlyBackground with
+        | false -> effects <- update effects
+        | true -> invalidOp "Effects are not allowed for this request"

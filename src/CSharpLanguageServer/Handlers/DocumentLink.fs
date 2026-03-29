@@ -12,8 +12,8 @@ module DocumentLink =
 
     let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: ServerRequestContext) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> =
+    let handle (context: RequestContext) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> =
         LspResult.notImplemented<DocumentLink[] option> |> async.Return
 
-    let resolve (context: ServerRequestContext) (p: DocumentLink) : AsyncLspResult<DocumentLink> =
+    let resolve (context: RequestContext) (p: DocumentLink) : AsyncLspResult<DocumentLink> =
         LspResult.notImplemented<DocumentLink> |> async.Return

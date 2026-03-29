@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Runtime.ServerStateLoop
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Tests.Tooling
 
@@ -19,7 +20,7 @@ open CSharpLanguageServer.Tests.Tooling
 
 /// Creates a dummy AsyncReplyChannel<obj> using a MailboxProcessor.
 /// The `onReply` callback receives the value sent through the channel.
-let private makeDummyReplyChannel (onReply: obj -> unit) : AsyncReplyChannel<obj> =
+let private makeDummyReplyChannel (onReply: obj -> unit) : AsyncReplyChannel<RequestContext> =
     let mbox =
         MailboxProcessor<AsyncReplyChannel<obj>>.Start(fun inbox -> async {
             let! rc = inbox.Receive()
@@ -47,7 +48,7 @@ let private makeDummyReplyChannel (onReply: obj -> unit) : AsyncReplyChannel<obj
     // the reply value — we only need a valid record field.
     //
     // Simplest approach: spin up a tiny mailbox just to produce the channel.
-    let mutable captured: AsyncReplyChannel<obj> option = None
+    let mutable captured: AsyncReplyChannel<RequestContext> option = None
 
     let agent =
         MailboxProcessor.Start(fun inbox -> async {
@@ -56,7 +57,7 @@ let private makeDummyReplyChannel (onReply: obj -> unit) : AsyncReplyChannel<obj
         })
 
     let replyTask =
-        agent.PostAndAsyncReply(fun (rc: AsyncReplyChannel<obj>) ->
+        agent.PostAndAsyncReply(fun (rc: AsyncReplyChannel<RequestContext>) ->
             captured <- Some rc
             ())
 
@@ -69,17 +70,17 @@ let private makeDummyReplyChannel (onReply: obj -> unit) : AsyncReplyChannel<obj
 
 /// A simpler helper: produce a ServerRequest record suitable for testing.
 /// The ActivationRC is a real channel but we don't exercise it in pure tests.
-let private makeTestRequest ordinal name mode state =
+let private makeTestRequest ordinal name mode phase =
     let rc = makeDummyReplyChannel ignore
 
-    { State = state
+    { Phase = phase
       Mode = mode
       Name = name
       RpcOrdinal = ordinal
       Registered = DateTime.UtcNow
       ActivationRC = rc
-      RunningSince = (if state = Running then Some DateTime.UtcNow else None)
-      BufferedEvents = [] }
+      RunningSince = (if phase = Running then Some DateTime.UtcNow else None)
+      BufferedServerEvents = [] }
 
 let private defaultSettings: CSharpConfiguration = CSharpConfiguration.Default
 
@@ -117,8 +118,8 @@ type private NoOpLspClient() =
                       FailedChange = None }
         }
 
-let private makeTestServerRequestContext (mode: ServerRequestMode) =
-    ServerRequestContext(
+let private makeTestServerRequestContext (mode: RequestMode) =
+    RequestContext(
         mode,
         new NoOpLspClient() :> ILspClient,
         CSharpConfiguration.Default,
@@ -141,7 +142,7 @@ let ``registerRequest adds a Pending request to the queue`` () =
     Assert.AreEqual(1, queue.Requests.Count)
 
     let req = queue.Requests.[1L]
-    Assert.AreEqual(Pending, req.State)
+    Assert.AreEqual(Pending, req.Phase)
     Assert.AreEqual("textDocument/hover", req.Name)
     Assert.AreEqual(ReadOnly, req.Mode)
     Assert.AreEqual(1L, req.RpcOrdinal)
@@ -171,12 +172,12 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     let queue =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
 
-    let events = [ ProcessRequestQueue ]
+    let events = [ ProcessRequestQueue :> obj ]
     let updated = queue |> finishRequest 1L events
 
     let req = updated.Requests.[1L]
-    Assert.AreEqual(Finished, req.State)
-    Assert.AreEqual(1, req.BufferedEvents.Length)
+    Assert.AreEqual(Finished, req.Phase)
+    Assert.AreEqual(1, req.BufferedServerEvents.Length)
 
 // ---------------------------------------------------------------------------
 // retireNextFinishedRequest
@@ -310,7 +311,7 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
     | Activated(activatedRequest, _updatedQueue) ->
         Assert.AreEqual("textDocument/hover", activatedRequest.Name)
         Assert.AreEqual(ReadOnly, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.State)
+        Assert.AreEqual(Running, activatedRequest.Phase)
         Assert.IsTrue(activatedRequest.RunningSince.IsSome)
     | other -> Assert.Fail($"Expected Activated but got {other}")
 
@@ -328,7 +329,7 @@ let ``processRequestQueue activates a pending ReadWrite request when queue is id
     | Activated(activatedRequest, _updatedQueue) ->
         Assert.AreEqual("textDocument/rename", activatedRequest.Name)
         Assert.AreEqual(ReadWrite, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.State)
+        Assert.AreEqual(Running, activatedRequest.Phase)
         Assert.IsTrue(activatedRequest.RunningSince.IsSome)
     | other -> Assert.Fail($"Expected Activated but got {other}")
 
@@ -364,7 +365,7 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
                 |> Map.add
                     1L
                     { queue.Requests.[1L] with
-                        State = Running
+                        Phase = Running
                         RunningSince = Some DateTime.UtcNow } }
 
     let result =
@@ -480,6 +481,6 @@ let ``processRequestQueue activates ReadWrite request when only ReadOnlyBackgrou
     | Activated(activatedRequest, _updatedQueue) ->
         Assert.AreEqual("textDocument/rename", activatedRequest.Name)
         Assert.AreEqual(ReadWrite, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.State)
+        Assert.AreEqual(Running, activatedRequest.Phase)
         Assert.IsTrue(activatedRequest.RunningSince.IsSome)
     | other -> Assert.Fail($"Expected Activated but got {other}")

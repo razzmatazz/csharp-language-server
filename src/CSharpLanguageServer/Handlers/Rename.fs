@@ -112,7 +112,7 @@ module Rename =
                   Method = "textDocument/rename"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let prepare (context: ServerRequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
+    let prepare (context: RequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
 
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
@@ -172,7 +172,7 @@ module Rename =
             return rangeWithPlaceholderMaybe |> LspResult.success
     }
 
-    let handle (context: ServerRequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
+    let handle (context: RequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
         match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
         | Some wf, Some(symbol, project, _) ->
             let! ct = Async.CancellationToken

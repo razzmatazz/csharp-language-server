@@ -41,7 +41,7 @@ module WorkspaceSymbol =
                   RegisterOptions = registrationOptions |> serialize |> Some }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: WorkspaceSymbolParams)
         : AsyncLspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> =
         async {
@@ -96,5 +96,5 @@ module WorkspaceSymbol =
                 |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
+    let resolve (_context: RequestContext) (_p: WorkspaceSymbol) : AsyncLspResult<WorkspaceSymbol> =
         LspResult.notImplemented<WorkspaceSymbol> |> async.Return

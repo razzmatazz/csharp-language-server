@@ -41,7 +41,7 @@ module DocumentRangeFormatting =
                   Method = "textDocument/rangeFormatting"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+    let handle (context: RequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, docForUri =

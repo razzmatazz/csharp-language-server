@@ -54,7 +54,7 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let private tryReloadDocumentOnUri logger (context: ServerRequestContext) uri = async {
+    let private tryReloadDocumentOnUri logger (context: RequestContext) uri = async {
         let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
         match wf, doc with
@@ -70,7 +70,7 @@ module Workspace =
                     { wf with
                         Solution = Some updatedDoc.Project.Solution }
 
-                context.Emit(WorkspaceFolderChange updatedWf)
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             | None -> ()
 
         | Some wf, None ->
@@ -84,7 +84,7 @@ module Workspace =
                 let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath fileText
 
                 match newDocMaybe with
-                | Some newDoc -> context.Emit(WorkspaceFolderChange updatedWf)
+                | Some newDoc -> context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
                 | None -> ()
             | None -> ()
@@ -92,7 +92,7 @@ module Workspace =
         | _, _ -> ()
     }
 
-    let private removeDocument (context: ServerRequestContext) uri =
+    let private removeDocument (context: RequestContext) uri =
         let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
 
         match wf, doc with
@@ -103,15 +103,12 @@ module Workspace =
                 { wf with
                     Solution = Some updatedProject.Solution }
 
-            context.Emit(WorkspaceFolderChange updatedWf)
-            context.Emit(DocumentClosed uri)
+            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+            context.UpdateEffects(_.WithDocumentClosed(uri))
 
         | _, _ -> ()
 
-    let didChangeWatchedFiles
-        (context: ServerRequestContext)
-        (p: DidChangeWatchedFilesParams)
-        : Async<LspResult<unit>> =
+    let didChangeWatchedFiles (context: RequestContext) (p: DidChangeWatchedFilesParams) : Async<LspResult<unit>> =
 
         let windowShowMessage (m: string) =
             context.LspClient.WindowShowMessage(
@@ -124,12 +121,12 @@ module Workspace =
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
-                    context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
                 | ".sln"
                 | ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
-                    context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
                 | ".cs" ->
                     match change.Type with
@@ -148,7 +145,7 @@ module Workspace =
         }
 
     let didChangeConfiguration
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (configParams: DidChangeConfigurationParams)
         : Async<LspResult<unit>> =
         async {
@@ -161,13 +158,13 @@ module Workspace =
             | None -> ()
             | Some csharpSettings ->
                 let newConfig = mergeCSharpConfiguration context.Config csharpSettings
-                context.Emit(SettingsChange newConfig)
+                context.UpdateEffects(_.WithSettingsChange(newConfig))
 
             return Ok()
         }
 
     let didChangeWorkspaceFolders
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DidChangeWorkspaceFoldersParams)
         : Async<LspResult<unit>> =
         async {
@@ -181,9 +178,9 @@ module Workspace =
                 |> Seq.append p.Event.Added
                 |> List.ofSeq
 
-            context.Emit(WorkspaceConfigurationChanged updatedWorkspaceFolders)
+            context.UpdateEffects(_.WithWorkspaceConfigurationChanged(updatedWorkspaceFolders))
 
-            context.Emit(WorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+            context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
 
             return Ok()
         }

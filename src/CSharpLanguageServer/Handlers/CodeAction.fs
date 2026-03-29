@@ -345,75 +345,71 @@ module CodeAction =
                   Method = "textDocument/codeAction"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle
-        (context: ServerRequestContext)
-        (p: CodeActionParams)
-        : AsyncLspResult<TextDocumentCodeActionResult option> =
-        async {
-            let wf, docForUri =
-                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+    let handle (context: RequestContext) (p: CodeActionParams) : AsyncLspResult<TextDocumentCodeActionResult option> = async {
+        let wf, docForUri =
+            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
-            match wf, docForUri with
-            | Some wf, Some doc ->
-                let! ct = Async.CancellationToken
-                let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
-                let textSpan = Range.toTextSpan docText.Lines p.Range
+        match wf, docForUri with
+        | Some wf, Some doc ->
+            let! ct = Async.CancellationToken
+            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            let textSpan = Range.toTextSpan docText.Lines p.Range
 
-                let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
+            let! roslynCodeActions = getRoslynCodeActions doc textSpan ct
 
-                let clientSupportsCodeActionEditResolveWithEditAndData =
-                    context.ClientCapabilities.TextDocument
-                    |> Option.bind _.CodeAction
-                    |> Option.bind _.ResolveSupport
-                    |> Option.map (_.Properties >> Array.contains "edit")
-                    |> Option.defaultValue false
+            let clientSupportsCodeActionEditResolveWithEditAndData =
+                context.ClientCapabilities.TextDocument
+                |> Option.bind _.CodeAction
+                |> Option.bind _.ResolveSupport
+                |> Option.map (_.Properties >> Array.contains "edit")
+                |> Option.defaultValue false
 
-                let! lspCodeActions =
-                    match clientSupportsCodeActionEditResolveWithEditAndData with
-                    | true -> async {
-                        let toUnresolvedLspCodeAction (ca: string * Microsoft.CodeAnalysis.CodeActions.CodeAction) =
-                            let caTitle, ca = ca
-                            let lspCa = roslynCodeActionToUnresolvedLspCodeAction caTitle ca
+            let! lspCodeActions =
+                match clientSupportsCodeActionEditResolveWithEditAndData with
+                | true -> async {
+                    let toUnresolvedLspCodeAction (ca: string * Microsoft.CodeAnalysis.CodeActions.CodeAction) =
+                        let caTitle, ca = ca
+                        let lspCa = roslynCodeActionToUnresolvedLspCodeAction caTitle ca
 
-                            let resolutionData: CSharpCodeActionResolutionData =
-                                { TextDocumentUri = p.TextDocument.Uri
-                                  Range = p.Range }
+                        let resolutionData: CSharpCodeActionResolutionData =
+                            { TextDocumentUri = p.TextDocument.Uri
+                              Range = p.Range }
 
-                            { lspCa with
-                                Data = resolutionData |> serialize |> Some }
+                        { lspCa with
+                            Data = resolutionData |> serialize |> Some }
 
-                        return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
-                      }
+                    return roslynCodeActions |> Seq.map toUnresolvedLspCodeAction |> Array.ofSeq
+                  }
 
-                    | false -> async {
-                        let results = List<CodeAction option>()
+                | false -> async {
+                    let results = List<CodeAction option>()
 
-                        for caTitle, ca in roslynCodeActions do
-                            let! maybeLspCa =
-                                roslynCodeActionToResolvedLspCodeAction
-                                    wf
-                                    (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
-                                    doc
-                                    ct
-                                    caTitle
-                                    ca
+                    for caTitle, ca in roslynCodeActions do
+                        let! maybeLspCa =
+                            roslynCodeActionToResolvedLspCodeAction
+                                wf
+                                (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
+                                doc
+                                ct
+                                caTitle
+                                ca
 
-                            results.Add(maybeLspCa)
+                        results.Add(maybeLspCa)
 
-                        return results |> Seq.choose id |> Array.ofSeq
-                      }
+                    return results |> Seq.choose id |> Array.ofSeq
+                  }
 
-                return
-                    lspCodeActions
-                    |> Seq.map U2<Command, CodeAction>.C2
-                    |> Array.ofSeq
-                    |> Some
-                    |> LspResult.success
+            return
+                lspCodeActions
+                |> Seq.map U2<Command, CodeAction>.C2
+                |> Array.ofSeq
+                |> Some
+                |> LspResult.success
 
-            | _, _ -> return None |> LspResult.success
-        }
+        | _, _ -> return None |> LspResult.success
+    }
 
-    let resolve (context: ServerRequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
+    let resolve (context: RequestContext) (p: CodeAction) : AsyncLspResult<CodeAction> = async {
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 

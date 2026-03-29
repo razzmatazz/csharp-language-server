@@ -16,6 +16,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Runtime.ServerStateLoop
 open CSharpLanguageServer.Runtime.JsonRpcServer
 open CSharpLanguageServer.Lsp.Workspace
@@ -98,19 +99,55 @@ let getServerCapabilities (config: CSharpConfiguration) (lspClient: InitializePa
         WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities
         Workspace = Workspace.provider lspClient.Capabilities }
 
+let requestEffectsToServerEvents (effects: RequestEffects) : ServerEvent list =
+    let events = ResizeArray<ServerEvent>()
+
+    if effects.ClientInitializeEmitted then
+        events.Add(ClientInitialize)
+
+    if effects.ClientShutdownEmitted then
+        events.Add(ClientShutdown)
+
+    effects.ClientCapabilityChange
+    |> Option.iter (fun caps -> events.Add(ClientCapabilityChange caps))
+
+    effects.DocumentClosed |> List.iter (fun uri -> events.Add(DocumentClosed uri))
+
+    effects.DocumentOpened
+    |> List.iter (fun (uri, version, timestamp) -> events.Add(DocumentOpened(uri, version, timestamp)))
+
+    effects.DocumentTouched
+    |> List.iter (fun (uri, timestamp) -> events.Add(DocumentTouched(uri, timestamp)))
+
+    effects.SettingsChange
+    |> Option.iter (fun cfg -> events.Add(SettingsChange cfg))
+
+    effects.TraceLevelChange
+    |> Option.iter (fun level -> events.Add(TraceLevelChange level))
+
+    effects.WorkspaceConfigurationChanged
+    |> Option.iter (fun folders -> events.Add(WorkspaceConfigurationChanged folders))
+
+    effects.WorkspaceFolderChange
+    |> List.iter (fun folder -> events.Add(WorkspaceFolderChange folder))
+
+    effects.WorkspaceReloadRequested
+    |> List.iter (fun delay -> events.Add(WorkspaceReloadRequested delay))
+
+    events |> List.ofSeq
+
 let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: MailboxProcessor<JsonRpcServerEvent>) =
     let lspClient =
         new CSharpLspClient(sendJsonRpcNotification rpcServer, sendJsonRpcCall rpcServer)
 
-    let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: ServerRequestMode) fn jsonRpcCtx = async {
-        let mutable requestCtx: ServerRequestContext option = None
+    let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
+        let mutable requestCtx: RequestContext option = None
 
         try
-            let! serverRequestCtxObj =
+            let! ctx =
                 stateActor.PostAndAsyncReply(fun rc ->
                     EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
 
-            let ctx = serverRequestCtxObj :?> ServerRequestContext
             requestCtx <- Some ctx
 
             let fnParams =
@@ -123,9 +160,10 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
             return unwrapResult result
         finally
             let bufferedEvents =
-                match requestCtx with
-                | Some ctx -> ctx.GetBufferedEvents()
-                | None -> []
+                requestCtx
+                |> Option.map _.Effects
+                |> Option.map requestEffectsToServerEvents
+                |> Option.defaultValue []
 
             stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, bufferedEvents))
     }
@@ -188,7 +226,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
         Map.empty
         |> Map.add
             "initialized"
-            (notificationHandler ReadWrite (LifeCycle.handleInitialized lspClient stateActor getDynamicRegistrations))
+            (notificationHandler ReadWrite (LifeCycle.handleInitialized lspClient getDynamicRegistrations))
         |> Map.add "textDocument/didOpen" (notificationHandler ReadWrite TextDocumentSync.didOpen)
         |> Map.add "textDocument/didChange" (notificationHandler ReadWrite TextDocumentSync.didChange)
         |> Map.add "textDocument/didClose" (notificationHandler ReadWrite TextDocumentSync.didClose)

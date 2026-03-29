@@ -48,7 +48,7 @@ module DocumentFormatting =
         return textEdits |> Some
     }
 
-    let handle (context: ServerRequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
+    let handle (context: RequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> =
         let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, doc = p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument

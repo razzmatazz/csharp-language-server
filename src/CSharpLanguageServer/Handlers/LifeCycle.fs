@@ -22,18 +22,18 @@ module LifeCycle =
 
     let handleInitialize
         (getServerCapabilities: CSharpConfiguration -> InitializeParams -> ServerCapabilities)
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: InitializeParams)
         : Async<LspResult<InitializeResult>> =
         async {
-            context.Emit(ClientInitialize)
+            context.UpdateEffects(_.WithClientInitialize())
 
             // Set trace level immediately so logging during initialization is forwarded
             // via $/logTrace (and console stderr is suppressed). The Emit also updates
             // ServerState when the buffered event replays after this handler returns.
             let initialTraceLevel = p.Trace |> Option.defaultValue TraceValues.Off
             Logging.setLspTraceLevel initialTraceLevel
-            context.Emit(TraceLevelChange initialTraceLevel)
+            context.UpdateEffects(_.WithTraceLevelChange(initialTraceLevel))
 
             let windowShowMessage m =
                 context.LspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
@@ -62,7 +62,7 @@ module LifeCycle =
             logger.LogDebug("handleInitialize: p.ClientInfo: {clientInfo}", p.ClientInfo |> Option.map serialize)
 
             logger.LogDebug("handleInitialize: p.Capabilities: {caps}", serialize p.Capabilities)
-            context.Emit(ClientCapabilityChange p.Capabilities)
+            context.UpdateEffects(_.WithClientCapabilityChange(p.Capabilities))
 
             logger.LogDebug(
                 "handleInitialize: p.RootPath={rootPath}, p.RootUri={rootUri}, p.WorkspaceFolders={wf}",
@@ -85,7 +85,7 @@ module LifeCycle =
 
             logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 
-            context.Emit(WorkspaceConfigurationChanged workspaceFolders)
+            context.UpdateEffects(_.WithWorkspaceConfigurationChanged(workspaceFolders))
 
             let initializeResult =
                 let serverCapabilities = getServerCapabilities context.Config p
@@ -107,9 +107,8 @@ module LifeCycle =
 
     let handleInitialized
         (lspClient: ILspClient)
-        (serverActor: MailboxProcessor<ServerEvent>)
         (getDynamicRegistrations: CSharpConfiguration -> ClientCapabilities -> Registration list)
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (_p: unit)
         : Async<LspResult<unit>> =
         async {
@@ -155,7 +154,7 @@ module LifeCycle =
                 | None -> ()
                 | Some csharpConfig ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                    context.Emit(SettingsChange newConfig)
+                    context.UpdateEffects(_.WithSettingsChange(newConfig))
 
             with ex ->
                 logger.LogWarning(
@@ -166,20 +165,20 @@ module LifeCycle =
             //
             // start loading workspace
             //
-            serverActor.Post(WorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
+            context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
 
             logger.LogDebug("handleInitialized: Ok")
 
             return Ok()
         }
 
-    let handleShutdown (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
-        context.Emit(ClientCapabilityChange emptyClientCapabilities)
-        context.Emit(ClientShutdown)
+    let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit>> = async {
+        context.UpdateEffects(_.WithClientCapabilityChange(emptyClientCapabilities))
+        context.UpdateEffects(_.WithClientShutdown())
         return Ok()
     }
 
-    let handleExit (context: ServerRequestContext) (_: unit) : Async<LspResult<unit>> = async {
+    let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit>> = async {
         // Per LSP spec: exit with code 0 if shutdown was received first, 1 otherwise.
         let exitCode = if context.ShutdownReceived then 0 else 1
 

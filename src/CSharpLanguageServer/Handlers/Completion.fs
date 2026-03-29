@@ -236,7 +236,7 @@ module Completion =
 
     let getCompletionsForRazorDocument
         (p: CompletionParams)
-        (context: ServerRequestContext)
+        (context: RequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
 
         async {
@@ -327,7 +327,7 @@ module Completion =
 
     let getCompletionsForCSharpDocument
         (p: CompletionParams)
-        (context: ServerRequestContext)
+        (context: RequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
             let wf, docForUri =
@@ -368,7 +368,7 @@ module Completion =
         }
 
     let handle
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: CompletionParams)
         : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
         async {
@@ -415,7 +415,7 @@ module Completion =
                     |> LspResult.success
         }
 
-    let resolve (_context: ServerRequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+    let resolve (_context: RequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
         let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize<string option>

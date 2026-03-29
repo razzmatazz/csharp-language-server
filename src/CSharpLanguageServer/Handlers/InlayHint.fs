@@ -266,7 +266,7 @@ module InlayHint =
                   Method = "textDocument/inlayHint"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
+    let handle (context: RequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
 
@@ -286,5 +286,5 @@ module InlayHint =
             return inlayHints |> Seq.toArray |> Some |> LspResult.success
     }
 
-    let resolve (_context: ServerRequestContext) (_p: InlayHint) : AsyncLspResult<InlayHint> =
+    let resolve (_context: RequestContext) (_p: InlayHint) : AsyncLspResult<InlayHint> =
         LspResult.notImplemented<InlayHint> |> async.Return

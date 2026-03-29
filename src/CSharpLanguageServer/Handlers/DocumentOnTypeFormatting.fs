@@ -70,7 +70,7 @@ module DocumentOnTypeFormatting =
                     None
             | _ -> None
 
-    let handle (context: ServerRequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
+    let handle (context: RequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
         let wf, docForUri =

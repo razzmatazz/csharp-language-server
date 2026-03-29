@@ -14,9 +14,20 @@ open CSharpLanguageServer.Logging
 
 let logger = Logging.getLoggerByName "Runtime.RequestScheduling"
 
-type RequestQueueMode =
-    | Dispatching
-    | DrainingUpTo of int64
+type RequestPhase =
+    | Pending
+    | Running
+    | Finished
+
+and RequestInfo =
+    { Phase: RequestPhase
+      Mode: RequestMode
+      Name: string
+      RpcOrdinal: int64
+      Registered: DateTime
+      ActivationRC: AsyncReplyChannel<RequestContext>
+      RunningSince: option<DateTime>
+      BufferedServerEvents: obj list } // obj=ServerEvent
 
 type RequestMetrics =
     { Count: int
@@ -28,12 +39,16 @@ type RequestMetrics =
           TotalDuration = TimeSpan.Zero
           MaxDuration = TimeSpan.Zero }
 
+type RequestQueueMode =
+    | Dispatching
+    | DrainingUpTo of int64
+
 /// Manages the scheduling and lifecycle of LSP requests.
 ///
 /// Request lifecycle:
 /// - A request enters the queue in `Pending` state, tracked by its RPC ordinal.
-/// - It is activated by sending a `ServerRequestContext` (produced by
-///   `makeServerRequestContext`) through its `ActivationRC` reply channel,
+/// - It is activated by sending a `RequestContext` (produced by
+///   `makeRequestContext`) through its `ActivationRC` reply channel,
 ///   transitioning it to `Running`.
 /// - When the handler completes (or fails), the request moves to `Finished`
 ///   and its buffered events are stored on the `ServerRequest` record.
@@ -42,7 +57,7 @@ type RequestMetrics =
 ///   state loop so they are applied to the current server state.
 ///
 /// Event buffering:
-/// - Handlers call `ServerRequestContext.Emit` to record state-changing events.
+/// - Handlers call `RequestContext.UpdateEffects` to record state-changing events.
 ///   These are buffered in-memory on the context (not sent to the state actor
 ///   immediately) and only replayed when the request is retired, preserving
 ///   the serial mutation invariant.
@@ -53,7 +68,7 @@ type RequestMetrics =
 /// - `ReadOnlyBackground` requests do not block retirement of later requests
 ///   and may be retired out of order (they are simply skipped over during the
 ///   ordinal walk).
-/// - Calling `ServerRequestContext.Emit` on a `ReadOnlyBackground` request
+/// - Calling `RequestContext.UpdateEffects` on a `ReadOnlyBackground` request
 ///   throws `InvalidOperationException`.
 ///
 /// Concurrency rules:
@@ -84,7 +99,7 @@ type RequestQueue =
         /// above the watermark must not be activated because the missing ordinals
         /// could turn out to be ReadWrite and would need to run first.
         WatermarkRpcOrdinal: int64
-        Requests: Map<int64, ServerRequest>
+        Requests: Map<int64, RequestInfo>
         Stats: Map<string, RequestMetrics>
         LastStatsDumpTime: DateTime
     }
@@ -96,7 +111,7 @@ type RequestQueue =
           Stats = Map.empty
           LastStatsDumpTime = DateTime.MinValue }
 
-let updateRequestStats requestQueue (request: ServerRequest) (stats: RequestMetrics option) : RequestMetrics option =
+let updateRequestStats requestQueue (request: RequestInfo) (stats: RequestMetrics option) : RequestMetrics option =
     let requestExecutionDuration: TimeSpan =
         match request.RunningSince with
         | Some startTime -> DateTime.Now - startTime
@@ -159,7 +174,7 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
         | ReadWrite -> "RW"
         | ReadOnlyBackground -> "ROBg"
 
-    let formatDuration (request: ServerRequest) =
+    let formatDuration (request: RequestInfo) =
         let elapsed =
             match request.RunningSince with
             | Some start -> DateTime.Now - start
@@ -167,7 +182,7 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
 
         elapsed.TotalMilliseconds.ToString("F0")
 
-    let headerRow = [ "Ordinal"; "Name"; "Mode"; "State"; "Duration (ms)"; "Events" ]
+    let headerRow = [ "Ordinal"; "Name"; "Mode"; "Phase"; "Duration (ms)" ]
 
     let dataRows =
         sortedRequests
@@ -175,9 +190,8 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
             [ string ordinal
               $"\"{r.Name}\""
               formatMode r.Mode
-              formatState r.State
-              formatDuration r
-              string r.BufferedEvents.Length ])
+              formatState r.Phase
+              formatDuration r ])
 
     formatInColumns (headerRow :: dataRows)
 
@@ -210,14 +224,14 @@ let dumpAndResetRequestStats (debugMode: bool) (requestQueue: RequestQueue) : Re
 
 let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
     let newRequest =
-        { State = Pending
+        { Phase = Pending
           Name = requestName
           RpcOrdinal = requestRpcOrdinal
           Mode = requestMode
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
           RunningSince = None
-          BufferedEvents = [] }
+          BufferedServerEvents = [] }
 
     let newRequests = requestQueue.Requests |> Map.add requestRpcOrdinal newRequest
 
@@ -233,13 +247,13 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
         WatermarkRpcOrdinal = advanceWatermark requestQueue.WatermarkRpcOrdinal }
 
 /// Transitions a running request to Finished and stores its buffered events.
-let finishRequest requestRpcOrdinal (bufferedEvents: ServerEvent list) (requestQueue: RequestQueue) =
+let finishRequest requestRpcOrdinal (bufferedServerEvents: obj list) (requestQueue: RequestQueue) =
     let request = requestQueue.Requests |> Map.find requestRpcOrdinal
 
     let finishedRequest =
         { request with
-            State = Finished
-            BufferedEvents = bufferedEvents }
+            Phase = Finished
+            BufferedServerEvents = bufferedServerEvents }
 
     { requestQueue with
         Requests = requestQueue.Requests |> Map.add requestRpcOrdinal finishedRequest }
@@ -257,7 +271,7 @@ let finishRequest requestRpcOrdinal (bufferedEvents: ServerEvent list) (requestQ
 let retireNextFinishedRequest
     (config: CSharpConfiguration)
     (requestQueue: RequestQueue)
-    : ServerRequest option * RequestQueue =
+    : RequestInfo option * RequestQueue =
 
     let sortedRequests = requestQueue.Requests |> Map.toList |> List.sortBy fst
 
@@ -265,7 +279,7 @@ let retireNextFinishedRequest
         match remaining with
         | [] -> None
         | (ordinal, request) :: rest ->
-            match request.State, request.Mode with
+            match request.Phase, request.Mode with
             | Finished, _ -> Some(ordinal, request)
             | _, ReadOnlyBackground -> findRetirable rest
             | _ -> None
@@ -312,20 +326,20 @@ let enterDispatchingMode (requestQueue: RequestQueue) : RequestQueue =
 /// Activates a request: replies on its channel, marks it as `Running`, and
 /// returns the updated queue.
 let activateRequest
-    (makeServerRequestContext: ServerRequestMode -> ServerRequestContext)
+    (makeRequestContext: RequestMode -> RequestContext)
     (ordinal: int64)
-    (request: ServerRequest)
+    (request: RequestInfo)
     (requestQueue: RequestQueue)
-    : ServerRequest * RequestQueue =
+    : RequestInfo * RequestQueue =
 
-    let serverRequestCtx = makeServerRequestContext request.Mode
-    request.ActivationRC.Reply(serverRequestCtx :> obj)
+    let requestCtx = makeRequestContext request.Mode
+    request.ActivationRC.Reply(requestCtx)
 
     let activatedRequest =
         { request with
-            State = Running
+            Phase = Running
             RunningSince = Some DateTime.Now
-            BufferedEvents = [] }
+            BufferedServerEvents = [] }
 
     activatedRequest,
     { requestQueue with
@@ -344,11 +358,11 @@ let isDrained (requestQueue: RequestQueue) : bool =
 
 /// Returns the sorted list of pending requests eligible for activation,
 /// respecting the drain ordinal when in `DrainingUpTo` mode.
-let eligiblePendingRequests (requestQueue: RequestQueue) : (int64 * ServerRequest) list =
+let eligiblePendingRequests (requestQueue: RequestQueue) : (int64 * RequestInfo) list =
     let allPending =
         requestQueue.Requests
         |> Map.toList
-        |> List.filter (fun (_, r) -> r.State = Pending)
+        |> List.filter (fun (_, r) -> r.Phase = Pending)
         |> List.sortBy fst
 
     match requestQueue.Mode with
@@ -359,8 +373,8 @@ let eligiblePendingRequests (requestQueue: RequestQueue) : (int64 * ServerReques
 /// queue state.
 let canActivateRequest
     (requestQueue: RequestQueue)
-    (pendingRequests: (int64 * ServerRequest) list)
-    (requestRpcOrdinal: int64, request: ServerRequest)
+    (pendingRequests: (int64 * RequestInfo) list)
+    (requestRpcOrdinal: int64, request: RequestInfo)
     : bool =
     // Never activate a request past the watermark — there are gaps (missing
     // ordinals) before it that could later be filled by ReadWrite requests.
@@ -374,7 +388,7 @@ let canActivateRequest
             // running requests. ReadOnlyBackground requests never emit events and
             // must not block write requests (or workspace reloads).
             requestQueue.Requests
-            |> Map.exists (fun _ r -> r.State = Running && r.Mode <> ReadOnlyBackground)
+            |> Map.exists (fun _ r -> r.Phase = Running && r.Mode <> ReadOnlyBackground)
             |> not
 
         | ReadOnly
@@ -385,7 +399,7 @@ let canActivateRequest
             //   - not past the next pending write request
             let hasRunningWrite =
                 requestQueue.Requests
-                |> Map.exists (fun _ r -> r.State = Running && r.Mode = ReadWrite)
+                |> Map.exists (fun _ r -> r.Phase = Running && r.Mode = ReadWrite)
 
             if hasRunningWrite then
                 false
@@ -401,11 +415,11 @@ let canActivateRequest
 
 type ProcessRequestQueueResult =
     | Waiting
-    | Activated of ServerRequest * RequestQueue
+    | Activated of RequestInfo * RequestQueue
     | Drained
 
 let processRequestQueue
-    (makeServerRequestContext: ServerRequestMode -> ServerRequestContext)
+    (makeRequestContext: RequestMode -> RequestContext)
     (requestQueue: RequestQueue)
     : Async<ProcessRequestQueueResult> =
     async {
@@ -422,7 +436,7 @@ let processRequestQueue
             | None -> return Waiting
             | Some(ordinal, request) ->
                 let activatedRequest, updatedQueue =
-                    activateRequest makeServerRequestContext ordinal request requestQueue
+                    activateRequest makeRequestContext ordinal request requestQueue
 
                 return Activated(activatedRequest, updatedQueue)
     }

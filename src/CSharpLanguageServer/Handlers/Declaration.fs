@@ -13,7 +13,7 @@ module Declaration =
     let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
     let handle
-        (_context: ServerRequestContext)
+        (_context: RequestContext)
         (_p: DeclarationParams)
         : AsyncLspResult<U2<Declaration, DeclarationLink array> option> =
         LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>

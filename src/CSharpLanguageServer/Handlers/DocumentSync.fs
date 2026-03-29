@@ -135,7 +135,7 @@ module TextDocumentSync =
 
     let didOpenCsharpFile
         wf
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DidOpenTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
@@ -170,7 +170,7 @@ module TextDocumentSync =
                     return newDocMaybe |> Option.map (fun _ -> updatedWf)
         }
 
-    let didOpen (context: ServerRequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with
@@ -185,8 +185,8 @@ module TextDocumentSync =
             match updatedWf with
             | None -> ()
             | Some updatedWf ->
-                context.Emit(WorkspaceFolderChange updatedWf)
-                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                context.UpdateEffects(_.WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
             return Ok()
     }
@@ -214,7 +214,7 @@ module TextDocumentSync =
 
     let didChangeCsharpFile
         wf
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DidChangeTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
@@ -233,7 +233,7 @@ module TextDocumentSync =
                 return Some updatedWf
         }
 
-    let didChange (context: ServerRequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didChange (context: RequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with
@@ -248,23 +248,23 @@ module TextDocumentSync =
             match updatedWf with
             | None -> ()
             | Some updatedWf ->
-                context.Emit(WorkspaceFolderChange updatedWf)
-                context.Emit(DocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                context.UpdateEffects(_.WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
 
             return Ok()
     }
 
-    let willSave (_context: ServerRequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+    let willSave (_context: RequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         return Ok()
     }
 
     let willSaveWaitUntil
-        (_context: ServerRequestContext)
+        (_context: RequestContext)
         (_p: WillSaveTextDocumentParams)
         : AsyncLspResult<TextEdit[] option> =
         async { return LspResult.notImplemented<TextEdit[] option> }
 
-    let didSave (context: ServerRequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didSave (context: RequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
         return Ok()
     }
 
@@ -298,7 +298,7 @@ module TextDocumentSync =
 
     let didCloseCsharpFile
         wf
-        (context: ServerRequestContext)
+        (context: RequestContext)
         (p: DidCloseTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
@@ -329,7 +329,7 @@ module TextDocumentSync =
             | _, _ -> return None
         }
 
-    let didClose (context: ServerRequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didClose (context: RequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
         let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
 
         match wf with
@@ -342,10 +342,10 @@ module TextDocumentSync =
                     didCloseCsharpFile wf context p
 
             match updatedWf with
-            | Some updatedWf -> context.Emit(WorkspaceFolderChange updatedWf)
+            | Some updatedWf -> context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             | None -> ()
 
-            context.Emit(DocumentClosed p.TextDocument.Uri)
+            context.UpdateEffects(_.WithDocumentClosed(p.TextDocument.Uri))
 
             return Ok()
     }

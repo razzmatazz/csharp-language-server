@@ -21,6 +21,28 @@ open CSharpLanguageServer.Runtime.RequestScheduling
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
+type ServerEvent =
+    | ServerStarted of ILspClient
+    | ClientInitialize
+    | ClientShutdown
+    | ClientCapabilityChange of ClientCapabilities
+    | DocumentClosed of string
+    | DocumentOpened of string * int * DateTime
+    | DocumentTouched of string * DateTime
+    | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
+    | LeaveRequestContext of int64 * ServerEvent list
+    | PeriodicTimerTick
+    | ProcessRequestQueue
+    | RequestQueueDrained
+    | PushDiagnosticsDocumentBacklogUpdate
+    | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
+    | PushDiagnosticsProcessPendingDocuments
+    | SettingsChange of CSharpConfiguration
+    | TraceLevelChange of TraceValues
+    | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceFolderChange of LspWorkspaceFolder
+    | WorkspaceReloadRequested of TimeSpan
+
 type ServerState =
     { Config: CSharpConfiguration
       LspClient: ILspClient option
@@ -63,7 +85,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         let newRequestQueue =
             state.RequestQueue
-            |> registerRequest requestRpcOrdinal requestName (requestMode :?> ServerRequestMode) replyChannel
+            |> registerRequest requestRpcOrdinal requestName requestMode replyChannel
 
         let newState =
             { state with
@@ -71,9 +93,11 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
         return newState
 
-    | LeaveRequestContext(requestRpcOrdinal, bufferedEvents) ->
+    | LeaveRequestContext(requestRpcOrdinal, bufferedServerEvents) ->
+        let bufferedServerEvents = bufferedServerEvents |> List.map (fun e -> e :> obj)
+
         let newRequestQueue =
-            state.RequestQueue |> finishRequest requestRpcOrdinal bufferedEvents
+            state.RequestQueue |> finishRequest requestRpcOrdinal bufferedServerEvents
 
         let newState =
             { state with
@@ -90,15 +114,17 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
         | Some retiredRequest ->
             // Replay the retired request's buffered events, then continue
             // in the next round so they are processed before further work.
-            retiredRequest.BufferedEvents |> List.iter postServerEvent
+            retiredRequest.BufferedServerEvents
+            |> List.iter (fun ev -> postServerEvent (ev :?> ServerEvent))
+
             postServerEvent ProcessRequestQueue
 
             return
                 { state with
                     RequestQueue = requestQueue }
         | None ->
-            let makeRequestContext requestMode =
-                ServerRequestContext(
+            let makeRequestContext (requestMode: RequestMode) =
+                RequestContext(
                     requestMode,
                     state.LspClient.Value,
                     state.Config,

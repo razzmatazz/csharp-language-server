@@ -117,7 +117,7 @@ module CodeLens =
                   Method = "textDocument/codeLens"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: ServerRequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
+    let handle (context: RequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
         let wf, docForUri =
             p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
@@ -149,7 +149,7 @@ module CodeLens =
             return codeLens |> Array.ofSeq |> Some |> LspResult.success
     }
 
-    let resolve (context: ServerRequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
+    let resolve (context: RequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
         let! ct = Async.CancellationToken
 
         let lensData: CodeLensData =
