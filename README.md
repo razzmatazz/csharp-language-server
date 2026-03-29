@@ -10,15 +10,17 @@ warranty of any kind.
 
 # Documentation
 
+See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
+
 See [docs/features.md](docs/features.md) for a more detailed discussion regarding features
 and customization provided with csharp-ls.
-
-See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for server troubleshooting and
 diagnostics.
 
 See [docs/contributing.md](docs/contributing.md) for build instructions and codebase overview.
+
+See [docs/codebase-architecture.md](docs/codebase-architecture.md) for an overview of the project structure, LSP message handling, request scheduling, and test infrastructure.
 
 # Quick Start
 
