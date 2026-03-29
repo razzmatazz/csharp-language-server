@@ -13,6 +13,7 @@ let private foldingRangeRequest (doc: LspDocumentHandle) : FoldingRangeParams =
 let private getRanges (client: LspTestClient) (doc: LspDocumentHandle) : FoldingRange array =
     let result: FoldingRange array option =
         client.Request("textDocument/foldingRange", foldingRangeRequest doc)
+
     result |> Option.defaultValue Array.empty
 
 [<Test>]
@@ -35,8 +36,7 @@ let ``textDocument/foldingRange includes a range for the namespace`` () =
     // "namespace Project.FoldingRangeTest { ... }" spans from line 3 to near end
     let hasNamespace =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
 
     Assert.IsTrue(hasNamespace, sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges)
 
@@ -50,8 +50,7 @@ let ``textDocument/foldingRange includes a range for the class`` () =
     // "public class FoldingSubject" opens on line 8 (0-indexed) { ... }
     let hasClass =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 8u && r.EndLine > 8u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 8u && r.EndLine > 8u && r.Kind = None)
 
     Assert.IsTrue(hasClass, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
 
@@ -65,8 +64,7 @@ let ``textDocument/foldingRange includes a range for a method`` () =
     // "public string Greet()" opens on line 29 (0-indexed)
     let hasMethod =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 29u && r.EndLine > 29u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 29u && r.EndLine > 29u && r.Kind = None)
 
     Assert.IsTrue(hasMethod, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
 
@@ -80,8 +78,7 @@ let ``textDocument/foldingRange includes a range for a constructor`` () =
     // constructor "public FoldingRangeTestClass(...)" is on line 17
     let hasConstructor =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
 
     Assert.IsTrue(hasConstructor, sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges)
 
@@ -95,8 +92,7 @@ let ``textDocument/foldingRange includes a range for a property`` () =
     // "public int Value { get; set; }" is on line 23
     let hasProperty =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
 
     Assert.IsTrue(hasProperty, sprintf "Expected a property folding range starting at line 23, got: %A" ranges)
 
@@ -110,8 +106,7 @@ let ``textDocument/foldingRange includes imports range for multiple usings`` () 
     // "using System;" is on line 0, "using System.Collections.Generic;" is on line 1
     let hasImports =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 0u && r.EndLine = 1u && r.Kind = Some FoldingRangeKind.Imports)
+        |> Array.exists (fun r -> r.StartLine = 0u && r.EndLine = 1u && r.Kind = Some FoldingRangeKind.Imports)
 
     Assert.IsTrue(hasImports, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
 
@@ -125,8 +120,7 @@ let ``textDocument/foldingRange includes region range`` () =
     // "#region Fields" is on line 10 (0-indexed), "#endregion" is on line 15
     let hasRegion =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 10u && r.EndLine = 15u && r.Kind = Some FoldingRangeKind.Region)
+        |> Array.exists (fun r -> r.StartLine = 10u && r.EndLine = 15u && r.Kind = Some FoldingRangeKind.Region)
 
     Assert.IsTrue(hasRegion, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
 
@@ -140,8 +134,7 @@ let ``textDocument/foldingRange includes multi-line comment range`` () =
     // "/* This is a\n   multi-line comment */" is on lines 31-32 (0-indexed)
     let hasComment =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 31u && r.EndLine = 32u && r.Kind = Some FoldingRangeKind.Comment)
+        |> Array.exists (fun r -> r.StartLine = 31u && r.EndLine = 32u && r.Kind = Some FoldingRangeKind.Comment)
 
     Assert.IsTrue(hasComment, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
 
@@ -155,8 +148,7 @@ let ``textDocument/foldingRange includes interface range`` () =
     // "public interface IFoldable" is on line 43
     let hasInterface =
         ranges
-        |> Array.exists (fun r ->
-            r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
+        |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
 
     Assert.IsTrue(hasInterface, sprintf "Expected an interface folding range starting at line 43, got: %A" ranges)
 
@@ -184,11 +176,9 @@ let ``textDocument/foldingRange on simple class file returns method ranges`` () 
     let ranges = getRanges client doc
 
     // Class.cs: class opens on line 2, MethodA on line 4, MethodB on line 10
-    let hasClass =
-        ranges |> Array.exists (fun r -> r.StartLine = 2u && r.Kind = None)
+    let hasClass = ranges |> Array.exists (fun r -> r.StartLine = 2u && r.Kind = None)
 
-    let hasMethodA =
-        ranges |> Array.exists (fun r -> r.StartLine = 4u && r.Kind = None)
+    let hasMethodA = ranges |> Array.exists (fun r -> r.StartLine = 4u && r.Kind = None)
 
     let hasMethodB =
         ranges |> Array.exists (fun r -> r.StartLine = 10u && r.Kind = None)

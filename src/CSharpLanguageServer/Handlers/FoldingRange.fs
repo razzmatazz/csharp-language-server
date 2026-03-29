@@ -57,8 +57,17 @@ module FoldingRange =
         if startLine >= endLine then
             None
         else
-            let startChar = if lineFoldingOnly then None else Some(uint32 lineSpan.Start.Character)
-            let endChar = if lineFoldingOnly then None else Some(uint32 lineSpan.End.Character)
+            let startChar =
+                if lineFoldingOnly then
+                    None
+                else
+                    Some(uint32 lineSpan.Start.Character)
+
+            let endChar =
+                if lineFoldingOnly then
+                    None
+                else
+                    Some(uint32 lineSpan.End.Character)
 
             Some
                 { StartLine = startLine
@@ -74,8 +83,7 @@ module FoldingRange =
         let ranges = ResizeArray<FoldingRange>()
 
         let add span kind =
-            makeFoldingRange lines span kind lineFoldingOnly
-            |> Option.iter ranges.Add
+            makeFoldingRange lines span kind lineFoldingOnly |> Option.iter ranges.Add
 
         member __.Ranges = ranges |> Seq.toArray
 
@@ -107,9 +115,13 @@ module FoldingRange =
             add node.Span None
             // Fold the using group inside the namespace if there are multiple usings
             let usings = node.Usings
+
             if usings.Count > 1 then
-                let span = TextSpan.FromBounds(usings.[0].Span.Start, usings.[usings.Count - 1].Span.End)
+                let span =
+                    TextSpan.FromBounds(usings.[0].Span.Start, usings.[usings.Count - 1].Span.End)
+
                 add span (Some FoldingRangeKind.Imports)
+
             base.VisitNamespaceDeclaration(node)
 
         // FileScopedNamespaceDeclarationSyntax intentionally not folded
@@ -133,6 +145,7 @@ module FoldingRange =
             // Only fold properties that have an accessor list (i.e. { get; set; } or a body)
             if not (isNull node.AccessorList) then
                 add node.Span None
+
             base.VisitPropertyDeclaration(node)
 
         override this.VisitIndexerDeclaration(node: IndexerDeclarationSyntax) =
@@ -155,9 +168,13 @@ module FoldingRange =
 
         override this.VisitCompilationUnit(node: CompilationUnitSyntax) =
             let usings = node.Usings
+
             if usings.Count > 1 then
-                let span = TextSpan.FromBounds(usings.[0].Span.Start, usings.[usings.Count - 1].Span.End)
+                let span =
+                    TextSpan.FromBounds(usings.[0].Span.Start, usings.[usings.Count - 1].Span.End)
+
                 add span (Some FoldingRangeKind.Imports)
+
             base.VisitCompilationUnit(node)
 
         // ── Trivia: block comments ─────────────────────────────────────────
@@ -165,8 +182,7 @@ module FoldingRange =
         override this.VisitTrivia(trivia: SyntaxTrivia) =
             match trivia.Kind() with
             | SyntaxKind.MultiLineCommentTrivia
-            | SyntaxKind.MultiLineDocumentationCommentTrivia ->
-                add trivia.Span (Some FoldingRangeKind.Comment)
+            | SyntaxKind.MultiLineDocumentationCommentTrivia -> add trivia.Span (Some FoldingRangeKind.Comment)
             | _ -> ()
 
             base.VisitTrivia(trivia)
@@ -178,7 +194,8 @@ module FoldingRange =
             |> Option.bind _.LineFoldingOnly
             |> Option.defaultValue false
 
-        let _wf, docMaybe = p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+        let _wf, docMaybe =
+            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
 
         match docMaybe with
         | None -> return None |> LspResult.success
@@ -205,6 +222,7 @@ module FoldingRange =
                             let start = regionStarts.[regionStarts.Count - 1]
                             regionStarts.RemoveAt(regionStarts.Count - 1)
                             let span = TextSpan.FromBounds(start.Span.Start, trivia.Span.End)
+
                             makeFoldingRange sourceText.Lines span (Some FoldingRangeKind.Region) lineFoldingOnly
                             |> Option.iter result.Add
                     | _ -> ()
