@@ -10,7 +10,7 @@ and customization provided with csharp-ls.
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for server troubleshooting and
+See [docs/troubleshooting.md](docs/troubleshooting.md) for server troubleshooting and
 diagnostics.
 
 csharp-ls is MIT-licensed (see [LICENSE](LICENSE)) and is provided with no
