@@ -79,7 +79,7 @@ type JsonRpcTransportEvent =
     | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
     | Shutdown
     | InboundMessage of Result<JObject option, Exception>
-    | WriteComplete
+    | MessageWriteComplete of success: bool * message: OutboundMessage
     | SendNotification of method: string * methodParams: JToken * AsyncReplyChannel<unit>
     | SendCall of method: string * methodParams: JToken * AsyncReplyChannel<Result<JToken, JToken>>
     | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
@@ -198,31 +198,27 @@ let startRead postEvent (stdin: Stream) =
     Async.Start readOp
     readOp
 
-let writeMessage (stdout: Stream) (msg: JObject) = async {
-    let responseBytes = msg |> string |> Encoding.UTF8.GetBytes
+let writeMessage postEvent (stdout: Stream) msg = async {
+    try
+        let responseBytes = msg.Payload |> string |> Encoding.UTF8.GetBytes
 
-    let header =
-        sprintf "Content-Length: %d\r\n\r\n" responseBytes.Length
-        |> Encoding.ASCII.GetBytes
+        let header =
+            sprintf "Content-Length: %d\r\n\r\n" responseBytes.Length
+            |> Encoding.ASCII.GetBytes
 
-    do! stdout.WriteAsync(header, 0, header.Length) |> Async.AwaitTask
-    do! stdout.WriteAsync(responseBytes, 0, responseBytes.Length) |> Async.AwaitTask
-    do! stdout.FlushAsync() |> Async.AwaitTask
+        do! stdout.WriteAsync(header, 0, header.Length) |> Async.AwaitTask
+        do! stdout.WriteAsync(responseBytes, 0, responseBytes.Length) |> Async.AwaitTask
+        do! stdout.FlushAsync() |> Async.AwaitTask
+
+        postEvent (WriteRpcLogEntry(RpcWrite msg.Payload))
+        postEvent (MessageWriteComplete(true, msg))
+    with ex ->
+        postEvent (WriteRpcLogEntry(RpcError(sprintf "startWrite: write error: %s" (string ex))))
+        postEvent (MessageWriteComplete(false, msg))
 }
 
-let startWrite postEvent (stdout: Stream) msg =
-    let writeOp = async {
-        try
-            do! writeMessage stdout msg.Payload
-            postEvent (WriteRpcLogEntry(RpcWrite msg.Payload))
-            postEvent WriteComplete
-            msg.CompletionRC |> Option.iter _.Reply()
-        with ex ->
-            postEvent (WriteRpcLogEntry(RpcError(sprintf "startWrite: write error: %s" (string ex))))
-            postEvent WriteComplete
-            msg.CompletionRC |> Option.iter _.Reply()
-    }
-
+let startMessageWrite postEvent (stdout: Stream) msg =
+    let writeOp = (writeMessage postEvent stdout msg)
     Async.Start writeOp
     writeOp
 
@@ -231,7 +227,7 @@ let startWrite postEvent (stdout: Stream) msg =
 let enqueueOutboundMessage postEvent (state: JsonRpcTransportState) (msg: OutboundMessage) =
     match state.PendingWrite, state.StdOut with
     | None, Some stdout ->
-        let writeOp = startWrite postEvent stdout msg
+        let writeOp = startMessageWrite postEvent stdout msg
 
         { state with
             PendingWrite = Some writeOp }
@@ -397,10 +393,12 @@ let processEvent state postEvent ev =
             NotificationHandlers = notificationHandlers
             PendingRead = Some readOp }
 
-    | WriteComplete ->
+    | MessageWriteComplete(_success, msg) ->
+        msg.CompletionRC |> Option.iter _.Reply()
+
         match state.WriteQueue, state.StdOut with
         | nextMsg :: rest, Some stdout ->
-            let writeOp = startWrite postEvent stdout nextMsg
+            let writeOp = startMessageWrite postEvent stdout nextMsg
 
             { state with
                 PendingWrite = Some writeOp
@@ -444,14 +442,11 @@ let processEvent state postEvent ev =
         let msg =
             JObject(JProperty("jsonrpc", "2.0"), JProperty("method", method), JProperty("params", methodParams))
 
-        let newState =
-            enqueueOutboundMessage
-                postEvent
-                state
-                { Payload = msg
-                  CompletionRC = Some rc }
-
-        newState
+        enqueueOutboundMessage
+            postEvent
+            state
+            { Payload = msg
+              CompletionRC = Some rc }
 
     | SendCall(method, methodParams, replyChannel) ->
         let id = state.NextOutboundRequestId
