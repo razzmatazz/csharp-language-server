@@ -35,13 +35,17 @@ type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
 
 type JsonRpcNotificationHandlerMap = Map<string, JsonRpcNotificationHandler>
 
+type OutboundMessage =
+    { Payload: JObject
+      CompletionRC: option<AsyncReplyChannel<unit>> }
+
 type JsonRpcTransportState =
     {
         StdIn: Stream option
         StdOut: Stream option
         PendingRead: Async<unit> option
         PendingWrite: Async<unit> option
-        WriteQueue: JObject list
+        WriteQueue: OutboundMessage list
         CallHandlers: JsonRpcCallHandlerMap
         NotificationHandlers: JsonRpcNotificationHandlerMap
         NextOutboundRequestId: int
@@ -76,7 +80,7 @@ type JsonRpcTransportEvent =
     | Shutdown
     | InboundMessage of Result<JObject option, Exception>
     | WriteComplete
-    | SendNotification of method: string * methodParams: JToken
+    | SendNotification of method: string * methodParams: JToken * AsyncReplyChannel<unit>
     | SendCall of method: string * methodParams: JToken * AsyncReplyChannel<Result<JToken, JToken>>
     | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
     | HandlerFailed of wireIdKey: string * exn
@@ -206,15 +210,17 @@ let writeMessage (stdout: Stream) (msg: JObject) = async {
     do! stdout.FlushAsync() |> Async.AwaitTask
 }
 
-let startWrite postEvent (stdout: Stream) (msg: JObject) =
+let startWrite postEvent (stdout: Stream) msg =
     let writeOp = async {
         try
-            do! writeMessage stdout msg
-            postEvent (WriteRpcLogEntry(RpcWrite msg))
+            do! writeMessage stdout msg.Payload
+            postEvent (WriteRpcLogEntry(RpcWrite msg.Payload))
+            postEvent WriteComplete
+            msg.CompletionRC |> Option.iter _.Reply()
         with ex ->
             postEvent (WriteRpcLogEntry(RpcError(sprintf "startWrite: write error: %s" (string ex))))
-
-        postEvent WriteComplete
+            postEvent WriteComplete
+            msg.CompletionRC |> Option.iter _.Reply()
     }
 
     Async.Start writeOp
@@ -222,7 +228,7 @@ let startWrite postEvent (stdout: Stream) (msg: JObject) =
 
 /// Enqueue a message for writing. If no write is in progress, start one immediately;
 /// otherwise append to the queue.
-let enqueueWrite postEvent (state: JsonRpcTransportState) (msg: JObject) =
+let enqueueOutboundMessage postEvent (state: JsonRpcTransportState) (msg: OutboundMessage) =
     match state.PendingWrite, state.StdOut with
     | None, Some stdout ->
         let writeOp = startWrite postEvent stdout msg
@@ -307,7 +313,11 @@ let handleInboundMessage state postEvent (msg: JObject) =
                 let errorResponse =
                     makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
 
-                enqueueWrite postEvent state errorResponse
+                enqueueOutboundMessage
+                    postEvent
+                    state
+                    { Payload = errorResponse
+                      CompletionRC = None }
         | None ->
             // Notification (no "id") — dispatch to notification handlers, never send a response
             // Special handling for $/cancelRequest
@@ -430,11 +440,18 @@ let processEvent state postEvent ev =
             PendingRead = None
             ShutdownWaiters = [] }
 
-    | SendNotification(method, methodParams) ->
+    | SendNotification(method, methodParams, rc) ->
         let msg =
             JObject(JProperty("jsonrpc", "2.0"), JProperty("method", method), JProperty("params", methodParams))
 
-        enqueueWrite postEvent state msg
+        let newState =
+            enqueueOutboundMessage
+                postEvent
+                state
+                { Payload = msg
+                  CompletionRC = Some rc }
+
+        newState
 
     | SendCall(method, methodParams, replyChannel) ->
         let id = state.NextOutboundRequestId
@@ -452,7 +469,7 @@ let processEvent state postEvent ev =
                 NextOutboundRequestId = id + 1
                 PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id replyChannel }
 
-        enqueueWrite postEvent newState msg
+        enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
 
     | HandlerCompleted(wireIdKey, result) ->
         let ctx = state.RunningInboundRequests |> Map.find wireIdKey
@@ -471,11 +488,19 @@ let processEvent state postEvent ev =
                     JProperty("result", returnValue)
                 )
 
-            enqueueWrite postEvent newState response
+            enqueueOutboundMessage
+                postEvent
+                newState
+                { Payload = response
+                  CompletionRC = None }
         | Error error ->
             let errorResponse = makeErrorResponse ctx.WireId.Value error
 
-            enqueueWrite postEvent newState errorResponse
+            enqueueOutboundMessage
+                postEvent
+                newState
+                { Payload = errorResponse
+                  CompletionRC = None }
 
     | HandlerFailed(wireIdKey, ex) ->
         postEvent (
@@ -496,7 +521,11 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
 
-            enqueueWrite postEvent newState errorResponse
+            enqueueOutboundMessage
+                postEvent
+                newState
+                { Payload = errorResponse
+                  CompletionRC = None }
         | None -> newState
 
     | HandlerCancelled wireIdKey ->
@@ -513,7 +542,11 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
 
-            enqueueWrite postEvent newState errorResponse
+            enqueueOutboundMessage
+                postEvent
+                newState
+                { Payload = errorResponse
+                  CompletionRC = None }
         | None -> newState
 
     | NotificationHandlerFailed(method, ex) ->
@@ -584,7 +617,7 @@ let startJsonRpcTransport
     transport
 
 let sendJsonRpcNotification (server: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
-    server.Post(SendNotification(method, methodParams))
+    server.PostAndAsyncReply(fun rc -> SendNotification(method, methodParams, rc))
 
 let sendJsonRpcCall (transport: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
     transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))
