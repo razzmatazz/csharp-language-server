@@ -487,6 +487,7 @@ let testSendNotificationWritesProperJsonRpcNotification () =
     let body = JObject(JProperty("message", "hello from server"))
 
     sendJsonRpcNotification server "window/logMessage" body
+    |> Async.RunSynchronously
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
@@ -509,7 +510,8 @@ let testSendMultipleNotificationsAllWritten () =
 
     for i in 1..notifCount do
         let body = JObject(JProperty("index", i))
-        sendJsonRpcNotification server "test/notif" body
+
+        sendJsonRpcNotification server "test/notif" body |> Async.RunSynchronously
 
     let messages = waitForMessages stdout notifCount 5000
 
@@ -800,7 +802,9 @@ let testMixedInboundRequestsAndOutboundNotifications () =
 
     // Also send a notification from the server side
     let notifBody = JObject(JProperty("kind", "info"))
+
     sendJsonRpcNotification server "window/logMessage" notifBody
+    |> Async.RunSynchronously
 
     // Wait for both messages to be written (response + notification)
     let allMsgs = waitForMessages stdout 2 5000

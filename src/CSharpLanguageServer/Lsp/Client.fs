@@ -8,7 +8,7 @@ open Ionide.LanguageServerProtocol.Server
 
 type CSharpLspClient
     (
-        sendServerNotification: string -> JToken -> unit,
+        sendServerNotification: string -> JToken -> Async<unit>,
         sendServerRequest_: string -> JToken -> Async<Result<JToken, JToken>>
     ) =
     inherit LspClient()
@@ -24,7 +24,6 @@ type CSharpLspClient
 
     override __.WindowShowMessage p =
         sendServerNotification "window/showMessage" (serialize p)
-        async.Return()
 
     // TODO: Send notifications / requests to client only if client support it
 
@@ -33,11 +32,9 @@ type CSharpLspClient
 
     override __.WindowLogMessage p =
         sendServerNotification "window/logMessage" (serialize p)
-        async.Return()
 
     override __.TelemetryEvent p =
         sendServerNotification "telemetry/event" (serialize p)
-        async.Return()
 
     override __.ClientRegisterCapability p =
         sendServerRequest "client/registerCapability" (serialize p)
@@ -59,15 +56,12 @@ type CSharpLspClient
 
     override __.TextDocumentPublishDiagnostics p =
         sendServerNotification "textDocument/publishDiagnostics" (serialize p)
-        async.Return()
 
     override __.WindowWorkDoneProgressCreate createParams =
         sendServerRequest "window/workDoneProgress/create" (serialize createParams)
 
     override __.LogTrace p =
         sendServerNotification "$/logTrace" (serialize p)
-        async.Return()
 
     override __.Progress progressParams =
         sendServerNotification "$/progress" (serialize progressParams)
-        async.Return()
