@@ -11,6 +11,7 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Runtime.JsonRpc
 
 let logger = Logging.getLoggerByName "Runtime.RequestScheduling"
 
@@ -24,6 +25,7 @@ and RequestInfo =
       Mode: RequestMode
       Name: string
       RpcOrdinal: int64
+      RpcWriteQueue: JsonRpcWriteQueue
       Registered: DateTime
       ActivationRC: AsyncReplyChannel<RequestContext>
       RunningSince: option<DateTime>
@@ -222,11 +224,12 @@ let dumpAndResetRequestStats (debugMode: bool) (requestQueue: RequestQueue) : Re
     else
         requestQueue
 
-let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
+let registerRequest requestRpcOrdinal requestName rpcWriteQueue requestMode activationReplyChannel (requestQueue: RequestQueue) =
     let newRequest =
         { Phase = Pending
           Name = requestName
           RpcOrdinal = requestRpcOrdinal
+          RpcWriteQueue = rpcWriteQueue
           Mode = requestMode
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel

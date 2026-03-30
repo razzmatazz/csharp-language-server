@@ -143,13 +143,13 @@ let configureRpcTransport
     let lspClient =
         new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
-    let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
+    let wrapHandler (unwrapResult: LspResult<_> -> 'r) (rpcWriteQueue: JsonRpcWriteQueue) (requestMode: RequestMode) fn jsonRpcCtx = async {
         let mutable requestCtx: RequestContext option = None
 
         try
             let! ctx =
                 stateActor.PostAndAsyncReply(fun rc ->
-                    EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
+                    EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, rpcWriteQueue, requestMode, rc))
 
             requestCtx <- Some ctx
 
@@ -171,7 +171,7 @@ let configureRpcTransport
             stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, bufferedEvents))
     }
 
-    let callHandler requestMode fn : JsonRpcCallHandler =
+    let callHandler rpcWriteQueue requestMode fn : JsonRpcCallHandler =
         let serializeNullable value =
             if isNull (box value) then
                 Newtonsoft.Json.Linq.JValue.CreateNull() :> Newtonsoft.Json.Linq.JToken
@@ -183,48 +183,48 @@ let configureRpcTransport
             | Ok value -> value |> serializeNullable |> Ok
             | Error error -> error |> serialize |> Error
 
-        wrapHandler unwrapResult requestMode fn
+        wrapHandler unwrapResult rpcWriteQueue requestMode fn
 
-    let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore requestMode fn
+    let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore NormalWriteQueue requestMode fn
 
     let callHandlers: JsonRpcCallHandlerMap =
         Map.empty
-        |> Map.add "initialize" (callHandler ReadWrite (LifeCycle.handleInitialize getServerCapabilities))
-        |> Map.add "codeAction/resolve" (callHandler ReadOnly CodeAction.resolve)
-        |> Map.add "csharp/metadata" (callHandler ReadOnly CSharpMetadata.handle)
-        |> Map.add "textDocument/codeAction" (callHandler ReadOnly CodeAction.handle)
-        |> Map.add "textDocument/completion" (callHandler ReadOnly Completion.handle)
-        |> Map.add "completionItem/resolve" (callHandler ReadOnly Completion.resolve)
-        |> Map.add "textDocument/definition" (callHandler ReadOnly Definition.handle)
-        |> Map.add "textDocument/hover" (callHandler ReadOnly Hover.handle)
-        |> Map.add "textDocument/references" (callHandler ReadOnly References.handle)
-        |> Map.add "workspace/diagnostic" (callHandler ReadOnlyBackground Diagnostic.handleWorkspaceDiagnostic)
-        |> Map.add "textDocument/diagnostic" (callHandler ReadOnly Diagnostic.handle)
-        |> Map.add "textDocument/documentSymbol" (callHandler ReadOnly DocumentSymbol.handle)
-        |> Map.add "textDocument/documentHighlight" (callHandler ReadOnly DocumentHighlight.handle)
-        |> Map.add "workspace/symbol" (callHandler ReadOnly WorkspaceSymbol.handle)
-        |> Map.add "textDocument/implementation" (callHandler ReadOnly Implementation.handle)
-        |> Map.add "textDocument/prepareRename" (callHandler ReadOnly Rename.prepare)
-        |> Map.add "textDocument/rename" (callHandler ReadOnly Rename.handle)
-        |> Map.add "textDocument/formatting" (callHandler ReadOnly DocumentFormatting.handle)
-        |> Map.add "textDocument/rangeFormatting" (callHandler ReadOnly DocumentRangeFormatting.handle)
-        |> Map.add "textDocument/onTypeFormatting" (callHandler ReadOnly DocumentOnTypeFormatting.handle)
-        |> Map.add "textDocument/typeDefinition" (callHandler ReadOnly TypeDefinition.handle)
-        |> Map.add "textDocument/signatureHelp" (callHandler ReadOnly SignatureHelp.handle)
-        |> Map.add "textDocument/semanticTokens/full" (callHandler ReadOnly SemanticTokens.handleFull)
-        |> Map.add "textDocument/semanticTokens/full/delta" (callHandler ReadOnly SemanticTokens.handleFullDelta)
-        |> Map.add "textDocument/semanticTokens/range" (callHandler ReadOnly SemanticTokens.handleRange)
-        |> Map.add "textDocument/prepareCallHierarchy" (callHandler ReadOnly CallHierarchy.prepare)
-        |> Map.add "callHierarchy/incomingCalls" (callHandler ReadOnly CallHierarchy.incomingCalls)
-        |> Map.add "callHierarchy/outgoingCalls" (callHandler ReadOnly CallHierarchy.outgoingCalls)
-        |> Map.add "textDocument/prepareTypeHierarchy" (callHandler ReadOnly TypeHierarchy.prepare)
-        |> Map.add "typeHierarchy/supertypes" (callHandler ReadOnly TypeHierarchy.supertypes)
-        |> Map.add "typeHierarchy/subtypes" (callHandler ReadOnly TypeHierarchy.subtypes)
-        |> Map.add "shutdown" (callHandler ReadWrite LifeCycle.handleShutdown)
-        |> Map.add "textDocument/codeLens" (callHandler ReadOnly CodeLens.handle)
-        |> Map.add "codeLens/resolve" (callHandler ReadOnly CodeLens.resolve)
-        |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
-        |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
+        |> Map.add "initialize" (callHandler NormalWriteQueue ReadWrite (LifeCycle.handleInitialize getServerCapabilities))
+        |> Map.add "codeAction/resolve" (callHandler NormalWriteQueue ReadOnly CodeAction.resolve)
+        |> Map.add "csharp/metadata" (callHandler NormalWriteQueue ReadOnly CSharpMetadata.handle)
+        |> Map.add "textDocument/codeAction" (callHandler NormalWriteQueue ReadOnly CodeAction.handle)
+        |> Map.add "textDocument/completion" (callHandler NormalWriteQueue ReadOnly Completion.handle)
+        |> Map.add "completionItem/resolve" (callHandler NormalWriteQueue ReadOnly Completion.resolve)
+        |> Map.add "textDocument/definition" (callHandler NormalWriteQueue ReadOnly Definition.handle)
+        |> Map.add "textDocument/hover" (callHandler NormalWriteQueue ReadOnly Hover.handle)
+        |> Map.add "textDocument/references" (callHandler NormalWriteQueue ReadOnly References.handle)
+        |> Map.add "workspace/diagnostic" (callHandler NormalWriteQueue ReadOnlyBackground Diagnostic.handleWorkspaceDiagnostic)
+        |> Map.add "textDocument/diagnostic" (callHandler NormalWriteQueue ReadOnly Diagnostic.handle)
+        |> Map.add "textDocument/documentSymbol" (callHandler NormalWriteQueue ReadOnly DocumentSymbol.handle)
+        |> Map.add "textDocument/documentHighlight" (callHandler NormalWriteQueue ReadOnly DocumentHighlight.handle)
+        |> Map.add "workspace/symbol" (callHandler NormalWriteQueue ReadOnly WorkspaceSymbol.handle)
+        |> Map.add "textDocument/implementation" (callHandler NormalWriteQueue ReadOnly Implementation.handle)
+        |> Map.add "textDocument/prepareRename" (callHandler NormalWriteQueue ReadOnly Rename.prepare)
+        |> Map.add "textDocument/rename" (callHandler NormalWriteQueue ReadOnly Rename.handle)
+        |> Map.add "textDocument/formatting" (callHandler NormalWriteQueue ReadOnly DocumentFormatting.handle)
+        |> Map.add "textDocument/rangeFormatting" (callHandler NormalWriteQueue ReadOnly DocumentRangeFormatting.handle)
+        |> Map.add "textDocument/onTypeFormatting" (callHandler NormalWriteQueue ReadOnly DocumentOnTypeFormatting.handle)
+        |> Map.add "textDocument/typeDefinition" (callHandler NormalWriteQueue ReadOnly TypeDefinition.handle)
+        |> Map.add "textDocument/signatureHelp" (callHandler NormalWriteQueue ReadOnly SignatureHelp.handle)
+        |> Map.add "textDocument/semanticTokens/full" (callHandler NormalWriteQueue ReadOnly SemanticTokens.handleFull)
+        |> Map.add "textDocument/semanticTokens/full/delta" (callHandler NormalWriteQueue ReadOnly SemanticTokens.handleFullDelta)
+        |> Map.add "textDocument/semanticTokens/range" (callHandler NormalWriteQueue ReadOnly SemanticTokens.handleRange)
+        |> Map.add "textDocument/prepareCallHierarchy" (callHandler NormalWriteQueue ReadOnly CallHierarchy.prepare)
+        |> Map.add "callHierarchy/incomingCalls" (callHandler NormalWriteQueue ReadOnly CallHierarchy.incomingCalls)
+        |> Map.add "callHierarchy/outgoingCalls" (callHandler NormalWriteQueue ReadOnly CallHierarchy.outgoingCalls)
+        |> Map.add "textDocument/prepareTypeHierarchy" (callHandler NormalWriteQueue ReadOnly TypeHierarchy.prepare)
+        |> Map.add "typeHierarchy/supertypes" (callHandler NormalWriteQueue ReadOnly TypeHierarchy.supertypes)
+        |> Map.add "typeHierarchy/subtypes" (callHandler NormalWriteQueue ReadOnly TypeHierarchy.subtypes)
+        |> Map.add "shutdown" (callHandler NormalWriteQueue ReadWrite LifeCycle.handleShutdown)
+        |> Map.add "textDocument/codeLens" (callHandler NormalWriteQueue ReadOnly CodeLens.handle)
+        |> Map.add "codeLens/resolve" (callHandler NormalWriteQueue ReadOnly CodeLens.resolve)
+        |> Map.add "textDocument/inlayHint" (callHandler NormalWriteQueue ReadOnly InlayHint.handle)
+        |> Map.add "textDocument/foldingRange" (callHandler NormalWriteQueue ReadOnly FoldingRange.handle)
 
     let notificationHandlers: JsonRpcNotificationHandlerMap =
         Map.empty

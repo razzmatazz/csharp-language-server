@@ -14,6 +14,7 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
+open CSharpLanguageServer.Runtime.JsonRpc
 open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Runtime.PushDiagnostics
 
@@ -27,7 +28,7 @@ type ServerEvent =
     | DocumentClosed of string
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
-    | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
+    | EnterRequestContext of int64 * string * JsonRpcWriteQueue * RequestMode * AsyncReplyChannel<RequestContext>
     | LeaveRequestContext of int64 * ServerEvent list
     | PeriodicTimerTick
     | ProcessRequestQueue
@@ -86,12 +87,12 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             { state with
                 TraceLevel = newTraceLevel }
 
-    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, replyChannel) ->
+    | EnterRequestContext(requestRpcOrdinal, requestName, rpcWriteQueue, requestMode, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
         let newRequestQueue =
             state.RequestQueue
-            |> registerRequest requestRpcOrdinal requestName requestMode replyChannel
+            |> registerRequest requestRpcOrdinal requestName rpcWriteQueue requestMode replyChannel
 
         return
             { state with

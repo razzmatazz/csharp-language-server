@@ -27,13 +27,13 @@ type JsonRpcRequestContext =
       Params: JToken option
       CancellationTokenSource: CancellationTokenSource option }
 
-type JsonRpcWriteQueuePriority =
-    | NormalRpcWriteQueuePriority
-    | LowRpcWriteQueuePriority
+type JsonRpcWriteQueue =
+    | NormalWriteQueue
+    | LowPriorityWriteQueue
 
 type JsonRpcCallHandler = JsonRpcRequestContext -> Async<Result<JToken, JToken>>
 
-type JsonRpcCallHandlerMap = Map<string, JsonRpcCallHandler>
+type JsonRpcCallHandlerMap = Map<string, JsonRpcWriteQueue * JsonRpcCallHandler>
 
 type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
 
@@ -45,7 +45,7 @@ type JsonRpcTransportState =
         StdOut: Stream option
         PendingRead: Async<unit> option
         PendingWrite: Async<unit> option
-        WriteQueue: JObject list
+        NormalWriteQueue: JObject list
         LowPriorityWriteQueue: JObject list
         CallHandlers: JsonRpcCallHandlerMap
         NotificationHandlers: JsonRpcNotificationHandlerMap
@@ -66,7 +66,7 @@ let emptyTransportState =
       StdOut = None
       PendingRead = None
       PendingWrite = None
-      WriteQueue = []
+      NormalWriteQueue = []
       LowPriorityWriteQueue = []
       CallHandlers = Map.empty
       NotificationHandlers = Map.empty
@@ -78,19 +78,19 @@ let emptyTransportState =
       RpcLogEntryCallback = None }
 
 type JsonRpcTransportEvent =
-    | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
+    | Start of Stream * Stream * JsonRpcCallHandlerMap * JsonRpcNotificationHandlerMap
     | Shutdown
     | InboundMessage of Result<JObject option, Exception>
     | WriteComplete
-    | SendNotification of method: string * methodParams: JToken * priority: JsonRpcWriteQueuePriority
+    | SendNotification of method: string * methodParams: JToken * writeQueue: JsonRpcWriteQueue
     | SendCall of
         method: string *
         methodParams: JToken *
-        priority: JsonRpcWriteQueuePriority *
+        writeQueue: JsonRpcWriteQueue *
         AsyncReplyChannel<Result<JToken, JToken>>
-    | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
-    | HandlerFailed of wireIdKey: string * exn
-    | HandlerCancelled of wireIdKey: string
+    | HandlerCompleted of wireIdKey: string * writeQueue: JsonRpcWriteQueue * result: Result<JToken, JToken>
+    | HandlerFailed of wireIdKey: string * writeQueue: JsonRpcWriteQueue * exn
+    | HandlerCancelled of wireIdKey: string * writeQueue: JsonRpcWriteQueue
     | CancelRequest of wireIdKey: string
     | NotificationHandlerFailed of method: string * exn
     | AwaitShutdown of AsyncReplyChannel<unit>
@@ -231,9 +231,9 @@ let startWrite postEvent (stdout: Stream) (msg: JObject) =
     writeOp
 
 /// Enqueue a message for writing. If no write is in progress, start one immediately;
-/// otherwise append to the appropriate queue based on priority.
+/// otherwise append to the appropriate queue based on write queue/priority.
 /// Normal-priority messages are drained before low-priority ones.
-let enqueueWrite postEvent (state: JsonRpcTransportState) (priority: JsonRpcWriteQueuePriority) (msg: JObject) =
+let enqueueWrite postEvent (state: JsonRpcTransportState) (writeQueue: JsonRpcWriteQueue) (msg: JObject) =
     match state.PendingWrite, state.StdOut with
     | None, Some stdout ->
         let writeOp = startWrite postEvent stdout msg
@@ -241,11 +241,11 @@ let enqueueWrite postEvent (state: JsonRpcTransportState) (priority: JsonRpcWrit
         { state with
             PendingWrite = Some writeOp }
     | _, _ ->
-        match priority with
-        | NormalRpcWriteQueuePriority ->
+        match writeQueue with
+        | NormalWriteQueue ->
             { state with
-                WriteQueue = state.WriteQueue @ [ msg ] }
-        | LowRpcWriteQueuePriority ->
+                NormalWriteQueue = state.NormalWriteQueue @ [ msg ] }
+        | LowPriorityWriteQueue ->
             { state with
                 LowPriorityWriteQueue = state.LowPriorityWriteQueue @ [ msg ] }
 
@@ -258,13 +258,13 @@ let makeErrorResponse (id: JToken) (error: JToken) =
 /// Start an inbound request handler asynchronously with a CancellationTokenSource.
 /// The handler runs on the thread pool; on completion/failure/cancellation, an event
 /// is posted back to the actor.
-let startCallHandler postEvent (handler: JsonRpcCallHandler) (context: JsonRpcRequestContext) =
+let startCallHandler postEvent writeQueuePrio (handler: JsonRpcCallHandler) (context: JsonRpcRequestContext) =
     let wireIdKey = string context.WireId.Value
     let cts = context.CancellationTokenSource
 
     let handlerAsync = async {
         let! response = handler context
-        postEvent (HandlerCompleted(wireIdKey, response))
+        postEvent (HandlerCompleted(wireIdKey, writeQueuePrio, response))
     }
 
     Async.StartWithContinuations(
@@ -272,9 +272,9 @@ let startCallHandler postEvent (handler: JsonRpcCallHandler) (context: JsonRpcRe
         (fun () -> ()), // success: already posted HandlerCompleted inside the async
         (fun ex ->
             match ex with
-            | :? OperationCanceledException -> postEvent (HandlerCancelled wireIdKey)
-            | _ -> postEvent (HandlerFailed(wireIdKey, ex))),
-        (fun _cancelEx -> postEvent (HandlerCancelled wireIdKey)),
+            | :? OperationCanceledException -> postEvent (HandlerCancelled (wireIdKey, writeQueuePrio))
+            | _ -> postEvent (HandlerFailed(wireIdKey, writeQueuePrio, ex))),
+        (fun _cancelEx -> postEvent (HandlerCancelled (wireIdKey, writeQueuePrio))),
         cancellationToken = (cts |> Option.map _.Token |> Option.defaultValue CancellationToken.None)
     )
 
@@ -304,7 +304,7 @@ let handleInboundMessage state postEvent (msg: JObject) =
             let wireIdKey = string requestId
 
             match state.CallHandlers |> Map.tryFind m with
-            | Some handler ->
+            | Some (writeQueuePrio, handler) ->
                 let cts = new CancellationTokenSource()
 
                 let context =
@@ -314,7 +314,7 @@ let handleInboundMessage state postEvent (msg: JObject) =
                       Params = msg.SelectToken("params") |> Option.ofObj
                       CancellationTokenSource = Some cts }
 
-                do startCallHandler postEvent handler context
+                do startCallHandler postEvent writeQueuePrio handler context
 
                 { state with
                     NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
@@ -323,7 +323,7 @@ let handleInboundMessage state postEvent (msg: JObject) =
                 let errorResponse =
                     makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
 
-                enqueueWrite postEvent state NormalRpcWriteQueuePriority errorResponse
+                enqueueWrite postEvent state NormalWriteQueue errorResponse
         | None ->
             // Notification (no "id") — dispatch to notification handlers, never send a response
             // Special handling for $/cancelRequest
@@ -404,13 +404,13 @@ let processEvent state postEvent ev =
             PendingRead = Some readOp }
 
     | WriteComplete ->
-        match state.WriteQueue, state.LowPriorityWriteQueue, state.StdOut with
+        match state.NormalWriteQueue, state.LowPriorityWriteQueue, state.StdOut with
         | nextMsg :: rest, _, Some stdout ->
             let writeOp = startWrite postEvent stdout nextMsg
 
             { state with
                 PendingWrite = Some writeOp
-                WriteQueue = rest }
+                NormalWriteQueue = rest }
         | [], nextMsg :: rest, Some stdout ->
             let writeOp = startWrite postEvent stdout nextMsg
 
@@ -476,7 +476,7 @@ let processEvent state postEvent ev =
 
         enqueueWrite postEvent newState writeQueuePrio msg
 
-    | HandlerCompleted(wireIdKey, result) ->
+    | HandlerCompleted(wireIdKey, writeQueuePrio, result) ->
         let ctx = state.RunningInboundRequests |> Map.find wireIdKey
         do ctx.CancellationTokenSource |> Option.iter _.Dispose()
 
@@ -493,13 +493,13 @@ let processEvent state postEvent ev =
                     JProperty("result", returnValue)
                 )
 
-            enqueueWrite postEvent newState NormalRpcWriteQueuePriority response
+            enqueueWrite postEvent newState writeQueuePrio response
         | Error error ->
             let errorResponse = makeErrorResponse ctx.WireId.Value error
 
-            enqueueWrite postEvent newState NormalRpcWriteQueuePriority errorResponse
+            enqueueWrite postEvent newState writeQueuePrio errorResponse
 
-    | HandlerFailed(wireIdKey, ex) ->
+    | HandlerFailed(wireIdKey, writeQueue, ex) ->
         postEvent (
             WriteRpcLogEntry(RpcError(sprintf "processEvent: handler failed for request %s: %s" wireIdKey (string ex)))
         )
@@ -518,10 +518,10 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
 
-            enqueueWrite postEvent newState NormalRpcWriteQueuePriority errorResponse
+            enqueueWrite postEvent newState writeQueue errorResponse
         | None -> newState
 
-    | HandlerCancelled wireIdKey ->
+    | HandlerCancelled (wireIdKey, writeQueue) ->
         let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
 
         ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
@@ -535,7 +535,7 @@ let processEvent state postEvent ev =
             let errorResponse =
                 makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
 
-            enqueueWrite postEvent newState NormalRpcWriteQueuePriority errorResponse
+            enqueueWrite postEvent newState writeQueue errorResponse
         | None -> newState
 
     | NotificationHandlerFailed(method, ex) ->
@@ -610,24 +610,24 @@ let sendJsonRpcNotification
     (method: string)
     (methodParams: JToken)
     =
-    transport.Post(SendNotification(method, methodParams, NormalRpcWriteQueuePriority))
+    transport.Post(SendNotification(method, methodParams, NormalWriteQueue))
 
 let sendJsonRpcNotificationWithLowPriority
     (transport: MailboxProcessor<JsonRpcTransportEvent>)
     (method: string)
     (methodParams: JToken)
     =
-    transport.Post(SendNotification(method, methodParams, LowRpcWriteQueuePriority))
+    transport.Post(SendNotification(method, methodParams, LowPriorityWriteQueue))
 
 let sendJsonRpcCall (transport: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
-    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, NormalRpcWriteQueuePriority, rc))
+    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, NormalWriteQueue, rc))
 
 let sendJsonRpcCallWithLowPriority
     (transport: MailboxProcessor<JsonRpcTransportEvent>)
     (method: string)
     (methodParams: JToken)
     =
-    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, LowRpcWriteQueuePriority, rc))
+    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, LowPriorityWriteQueue, rc))
 
 let awaitJsonRpcTransportShutdown (transport: MailboxProcessor<JsonRpcTransportEvent>) =
     transport.PostAndAsyncReply(AwaitShutdown)
