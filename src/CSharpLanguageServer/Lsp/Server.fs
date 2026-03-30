@@ -16,9 +16,9 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.JsonRpc
 open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Runtime.ServerStateLoop
-open CSharpLanguageServer.Runtime.JsonRpcServer
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 
@@ -136,9 +136,12 @@ let requestEffectsToServerEvents (effects: RequestEffects) : ServerEvent list =
 
     events |> List.ofSeq
 
-let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: MailboxProcessor<JsonRpcServerEvent>) =
+let configureRpcTransport
+    (stateActor: MailboxProcessor<ServerEvent>)
+    (rpcTransport: MailboxProcessor<JsonRpcTransportEvent>)
+    =
     let lspClient =
-        new CSharpLspClient(sendJsonRpcNotification rpcServer, sendJsonRpcCall rpcServer)
+        new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
     let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
         let mutable requestCtx: RequestContext option = None
@@ -184,7 +187,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
 
     let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore requestMode fn
 
-    let callHandlers: Map<string, JsonRpcCallHandler> =
+    let callHandlers: JsonRpcCallHandlerMap =
         Map.empty
         |> Map.add "initialize" (callHandler ReadWrite (LifeCycle.handleInitialize getServerCapabilities))
         |> Map.add "codeAction/resolve" (callHandler ReadOnly CodeAction.resolve)
@@ -223,7 +226,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
         |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
 
-    let notificationHandlers: Map<string, JsonRpcNotificationHandler> =
+    let notificationHandlers: JsonRpcNotificationHandlerMap =
         Map.empty
         |> Map.add
             "initialized"
@@ -247,7 +250,7 @@ let configureRpcServer (stateActor: MailboxProcessor<ServerEvent>) (rpcServer: M
 let startCore
     (config: CSharpConfiguration)
     (initialWorkspace: LspWorkspace option)
-    (rpcLogCallback: (RpcLogEntry -> unit) option)
+    (rpcLogCallback: (JsonRpcLogEntry -> unit) option)
     =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
@@ -260,15 +263,15 @@ let startCore
                     Workspace = initialWorkspace |> Option.defaultValue LspWorkspace.Empty }
         )
 
-    let rpcServer =
-        startJsonRpcServer input output rpcLogCallback (fun rpcServer ->
+    let rpcTransport =
+        startJsonRpcTransport input output rpcLogCallback (fun rpcTransport ->
             let lspClient =
-                new CSharpLspClient(sendJsonRpcNotification rpcServer, sendJsonRpcCall rpcServer)
+                new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
             stateActor.Post(ServerStarted lspClient)
-            configureRpcServer stateActor rpcServer)
+            configureRpcTransport stateActor rpcTransport)
 
-    rpcServer.PostAndAsyncReply(AwaitShutdown) |> Async.RunSynchronously
+    rpcTransport.PostAndAsyncReply(AwaitShutdown) |> Async.RunSynchronously
 
     0 // OK
 

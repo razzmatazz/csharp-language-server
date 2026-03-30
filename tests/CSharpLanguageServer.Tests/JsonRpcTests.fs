@@ -1,4 +1,4 @@
-module CSharpLanguageServer.Tests.JsonRpcServerTests
+module CSharpLanguageServer.Tests.JsonRpcTests
 
 open System
 open System.IO
@@ -10,7 +10,7 @@ open NUnit.Framework
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Logging
-open CSharpLanguageServer.Runtime.JsonRpcServer
+open CSharpLanguageServer.Runtime.JsonRpc
 
 /// Helper: encode a JSON-RPC message with Content-Length framing into bytes.
 let private encodeMessage (json: string) =
@@ -103,7 +103,7 @@ let testBasicMethodInvocationReturnsResponse () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
@@ -132,7 +132,7 @@ let testHandlerReturningEmptyResultProducesResponse () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
     Assert.IsTrue(responseOpt.IsSome, "Expected a response")
@@ -152,7 +152,8 @@ let testUnregisteredMethodReturnsMethodNotFoundError () =
     let stdin = makeInputStream [ string request ]
     let stdout = new MemoryStream()
 
-    let _server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
@@ -192,7 +193,7 @@ let testMultipleRequestsAreHandledSequentially () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     let responses = waitForMessages stdout 2 5000
 
@@ -222,7 +223,7 @@ let testContentLengthFramingIsCorrect () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     waitUntil 5000 (fun () -> stdout.Length > 0L) |> ignore
     Thread.Sleep 100
@@ -259,7 +260,8 @@ let testMessageWithIdButNoMethodIsTreatedAsResponseAndDroppedIfUnmatched () =
     let stdin = makeInputStream [ string malformed ]
     let stdout = new MemoryStream()
 
-    let _server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
     Assert.AreEqual(0L, stdout.Length, "Expected no output for unmatched response")
@@ -272,7 +274,8 @@ let testMessageWithNoMethodOrIdIsIgnored () =
     let stdin = makeInputStream [ string malformed ]
     let stdout = new MemoryStream()
 
-    let _server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
     Assert.AreEqual(0L, stdout.Length, "Expected no output for message with no method or id")
@@ -303,7 +306,7 @@ let testNotificationIsDispatchedToHandler () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> Map.empty, notificationHandlings)
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, notificationHandlings)
 
     // Wait for the notification to be processed
     waitUntil 5000 (fun () -> received.Value) |> ignore
@@ -331,7 +334,7 @@ let testNotificationHandlerReceivesCorrectParams () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> Map.empty, notificationHandlings)
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, notificationHandlings)
 
     waitUntil 5000 (fun () -> capturedParams.Value <> "") |> ignore
 
@@ -346,7 +349,8 @@ let testUnregisteredNotificationDoesNotCrash () =
     let stdout = new MemoryStream()
 
     // No notification handlers registered
-    let _server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
     Assert.AreEqual(0L, stdout.Length, "Expected no output for unregistered notification")
@@ -378,7 +382,7 @@ let testMixedRequestsAndNotificationsWork () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, notificationHandlings)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, notificationHandlings)
 
     // Wait for the request response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
@@ -419,7 +423,7 @@ let testNotificationWithIdIsRoutedAsRequest () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, notificationHandlings)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, notificationHandlings)
 
     waitUntil 5000 (fun () -> requestHandlerCalled.Value) |> ignore
 
@@ -455,7 +459,7 @@ let testWriteQueueDrainsAllResponses () =
     let stdout = new MemoryStream()
 
     let _server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     let responses = waitForMessages stdout requestCount 10000
 
@@ -478,7 +482,7 @@ let testSendNotificationWritesProperJsonRpcNotification () =
     let stdin = makeInputStream []
     let stdout = new MemoryStream()
 
-    let server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let body = JObject(JProperty("message", "hello from server"))
 
@@ -499,7 +503,7 @@ let testSendMultipleNotificationsAllWritten () =
     let stdin = makeInputStream []
     let stdout = new MemoryStream()
 
-    let server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let notifCount = 5
 
@@ -530,7 +534,7 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let body = JObject(JProperty("items", JArray("a", "b")))
 
@@ -579,7 +583,7 @@ let testSendRequestAssignsIncrementingIds () =
     let stdin = makeInputStream []
     let stdout = new MemoryStream()
 
-    let server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     // Fire two requests (we won't resolve them — just check the outbound IDs)
     let _reply1 = sendJsonRpcCall server "test/req1" (JObject()) |> Async.StartAsTask
@@ -607,7 +611,8 @@ let testInboundResponseForUnknownIdIsHandledGracefully () =
     let stdin = makeInputStream [ string unknownResponse ]
     let stdout = new MemoryStream()
 
-    let _server = startJsonRpcServer stdin stdout None (fun _ -> Map.empty, Map.empty)
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     // Should not crash and should produce no output
     Async.Sleep 500 |> Async.RunSynchronously
@@ -624,7 +629,7 @@ let testSendCallReturnsErrorOnMethodNotFound () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
         sendJsonRpcCall server "test/unknown" (JObject()) |> Async.StartAsTask
@@ -670,7 +675,7 @@ let testSendCallReturnsErrorWithData () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
         sendJsonRpcCall server "test/failing" (JObject()) |> Async.StartAsTask
@@ -722,7 +727,7 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let reply1Task = sendJsonRpcCall server "test/ok" (JObject()) |> Async.StartAsTask
 
@@ -791,7 +796,7 @@ let testMixedInboundRequestsAndOutboundNotifications () =
     let stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer stdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     // Also send a notification from the server side
     let notifBody = JObject(JProperty("kind", "info"))
@@ -846,7 +851,7 @@ let testCancelRequestCancelsRunningHandler () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     // Send the slow request
     let request =
@@ -899,7 +904,7 @@ let testCancelRequestForUnknownIdIsIgnored () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let cancelNotification =
         JObject(
@@ -931,7 +936,7 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     // Send the request
     let request =
@@ -1004,7 +1009,7 @@ let testHandlerObservesCancellationToken () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     // Send the request
     let request =
@@ -1065,7 +1070,7 @@ let testOtherRequestsStillWorkAfterCancellation () =
     use stdout = new MemoryStream()
 
     let server =
-        startJsonRpcServer serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
+        startJsonRpcTransport serverStdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     // Send a slow request (will be cancelled)
     let slowRequest =

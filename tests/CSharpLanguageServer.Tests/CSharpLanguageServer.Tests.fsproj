@@ -35,7 +35,7 @@
     <Compile Include="DocumentSyncTests.fs" />
     <Compile Include="CallHierarchyTests.fs" />
     <Compile Include="FoldingRangeTests.fs" />
-    <Compile Include="JsonRpcServerTests.fs" />
+    <Compile Include="JsonRpcTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

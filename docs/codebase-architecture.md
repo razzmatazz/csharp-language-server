@@ -35,7 +35,7 @@ csharp-language-server/
 │   │   └── WorkspaceFolder.fs       # Multi-root workspace folder management
 │   │
 │   ├── Runtime/                     # ── JSON-RPC transport & scheduling ──
-│   │   ├── JsonRpcServer.fs         # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
+│   │   ├── JsonRpc.fs               # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
 │   │   ├── Request.fs               # RequestContext, RequestMode, RequestEffects
 │   │   ├── RequestScheduling.fs     # Concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
 │   │   ├── PushDiagnostics.fs       # Push-diagnostics state machine (PushDiagnosticsState + handlers)
@@ -49,7 +49,7 @@ csharp-language-server/
 │   │   └── WorkspaceServices.fs     # Custom workspace services
 │   │
 │   └── Handlers/                    # ── LSP method handlers (one per feature, 35 files) ──
-│       ├── LifeCycle.fs              # initialize, initialized, shutdown
+│       ├── LifeCycle.fs             # initialize, initialized, shutdown
 │       └── (...)
 │
 └── tests/CSharpLanguageServer.Tests/  # ── Test project ──
@@ -96,13 +96,13 @@ Program.fs  →  Server.start (Lsp/Server.fs)
                 ├─ Creates ServerStateLoop (MailboxProcessor<ServerEvent>)
                 ├─ Creates CSharpLspClient (Lsp/Client.fs)
                 ├─ Calls configureRpcServer() to build handler maps
-                └─ Starts JsonRpcServer (Runtime/JsonRpcServer.fs)
+                └─ Starts JsonRpcTransport (Runtime/JsonRpc.fs)
                      └─ Reads/writes JSON-RPC over stdin/stdout
 ```
 
-### 3.2 JSON-RPC Transport (`Runtime/JsonRpcServer.fs`)
+### 3.2 JSON-RPC Transport (`Runtime/JsonRpc.fs`)
 
-A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<JsonRpcServerEvent>`**:
+A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<JsonRpcTransportEvent>`**:
 
 - **Inbound:** Reads `Content-Length`-framed messages from stdin, deserializes JSON, dispatches by looking up `method` in the `callHandlers` or `notificationHandlers` maps.
 - **Outbound:** Writes `Content-Length`-framed JSON to stdout.
@@ -336,7 +336,7 @@ let testSomething () =
 
 | Category | File | How it works |
 |----------|------|-------------|
-| JSON-RPC transport unit tests | `JsonRpcServerTests.fs` | Calls `startJsonRpcServer` with in-memory streams (no process) |
+| JSON-RPC transport unit tests | `JsonRpcTests.fs` | Calls `startJsonRpcTransport` with in-memory streams (no process) |
 | Progress reporter unit tests | `ProgressReporterTests.fs` | Uses a `TrackingLspClientStub` mock |
 | CLI diagnose command tests | `DiagnoseCommandTests.fs` | Spawns process with `--diagnose` flag |
 | Request scheduling unit tests | `RequestSchedulingTests.fs` | Tests `RequestQueue` directly with no server process |
