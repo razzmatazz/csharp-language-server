@@ -118,7 +118,11 @@ module SemanticTokens =
         (range: Range option)
         : AsyncLspResult<SemanticTokens option> =
         async {
-            let wf, docMaybe = uri |> workspaceDocument context.Workspace UserDocument
+            let! wfMaybe = uri |> context.GetWorkspaceFolder
+
+            let docMaybe =
+                wfMaybe
+                |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf UserDocument uri |> Option.map fst)
 
             match docMaybe with
             | None -> return None |> LspResult.success

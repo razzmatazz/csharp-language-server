@@ -50,20 +50,27 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
     let prepare (context: RequestContext) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
-        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-        | Some wf, Some(symbol, project, _) when isCallableSymbol symbol ->
-            let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+        match wf with
+        | None -> return None |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-            return
-                locations
-                |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
-                |> Seq.toArray
-                |> Some
-                |> LspResult.success
+            match symInfo with
+            | Some(symbol, project, _) when isCallableSymbol symbol ->
+                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-        | _ -> return None |> LspResult.success
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+
+                return
+                    locations
+                    |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
+                    |> Seq.toArray
+                    |> Some
+                    |> LspResult.success
+
+            | _ -> return None |> LspResult.success
     }
 
     let incomingCalls
@@ -88,26 +95,32 @@ module CallHierarchy =
                     { From = CallHierarchyItem.fromSymbolAndLocation info.CallingSymbol loc
                       FromRanges = fromRanges })
 
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some(symbol, _, _) ->
-                let! callers =
-                    SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
-                    |> Async.AwaitTask
+            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
 
-                let wfPathToUri = workspaceFolderPathToUri wf
+            match wf with
+            | None -> return None |> LspResult.success
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
 
-                // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
-                // we will miss many callers. Maybe it should have some change in LSP protocol.
-                return
-                    callers
-                    |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
-                    |> Seq.collect (toCallHierarchyIncomingCalls wfPathToUri)
-                    |> Seq.distinct
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success
+                match symInfo with
+                | None -> return LspResult.success None
+                | Some(symbol, _, _) ->
+                    let! callers =
+                        SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                        |> Async.AwaitTask
 
-            | _, _ -> return None |> LspResult.success
+                    let wfPathToUri = workspaceFolderPathToUri wf
+
+                    // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
+                    // we will miss many callers. Maybe it should have some change in LSP protocol.
+                    return
+                        callers
+                        |> Seq.filter (fun info -> info.IsDirect && isCallableSymbol info.CallingSymbol)
+                        |> Seq.collect (toCallHierarchyIncomingCalls wfPathToUri)
+                        |> Seq.distinct
+                        |> Seq.toArray
+                        |> Some
+                        |> LspResult.success
         }
 
     let outgoingCalls

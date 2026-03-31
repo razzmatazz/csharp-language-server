@@ -118,8 +118,13 @@ module CodeLens =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
-        let wf, docForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+
+        let docForUri =
+            wfMaybe
+            |> Option.bind (fun wf ->
+                workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
+                |> Option.map fst)
 
         match docForUri with
         | None -> return None |> LspResult.success
@@ -158,36 +163,42 @@ module CodeLens =
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
-        match! workspaceDocumentSymbol context.Workspace AnyDocument lensData.DocumentUri lensData.Position with
-        | Some wf, Some(symbol, _, _) ->
-            let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
-                |> Async.AwaitTask
+        let! wf = lensData.DocumentUri |> context.GetWorkspaceFolder
 
-            // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
-            // (l.SourceTree.FilePath, l.SourceSpan)
-            let refNum =
-                refs
-                |> Seq.collect _.Locations
-                |> Seq.map _.Location
-                |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
-                |> Seq.length
+        match wf with
+        | None -> return p |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument lensData.DocumentUri lensData.Position
 
-            let title = sprintf "%d Reference(s)" refNum
+            match symInfo with
+            | None -> return p |> LspResult.success
+            | Some(symbol, _, _) ->
+                let! refs =
+                    SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                    |> Async.AwaitTask
 
-            let arg: ReferenceParams =
-                { TextDocument = { Uri = lensData.DocumentUri }
-                  Position = lensData.Position
-                  WorkDoneToken = None
-                  PartialResultToken = None
-                  Context = { IncludeDeclaration = true } }
+                // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
+                // (l.SourceTree.FilePath, l.SourceSpan)
+                let refNum =
+                    refs
+                    |> Seq.collect _.Locations
+                    |> Seq.map _.Location
+                    |> Seq.distinctBy (fun l -> (l.GetMappedLineSpan().Path, l.SourceSpan))
+                    |> Seq.length
 
-            let command =
-                { Title = title
-                  Command = "textDocument/references"
-                  Arguments = Some [| arg |> serialize |] }
+                let title = sprintf "%d Reference(s)" refNum
 
-            return { p with Command = Some command } |> LspResult.success
+                let arg: ReferenceParams =
+                    { TextDocument = { Uri = lensData.DocumentUri }
+                      Position = lensData.Position
+                      WorkDoneToken = None
+                      PartialResultToken = None
+                      Context = { IncludeDeclaration = true } }
 
-        | _, _ -> return p |> LspResult.success
+                let command =
+                    { Title = title
+                      Command = "textDocument/references"
+                      Arguments = Some [| arg |> serialize |] }
+
+                return { p with Command = Some command } |> LspResult.success
     }

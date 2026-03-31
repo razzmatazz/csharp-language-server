@@ -13,7 +13,7 @@ module CSharpMetadata =
     let handle (context: RequestContext) (p: CSharpMetadataParams) : AsyncLspResult<CSharpMetadataResponse option> = async {
         let! ct = Async.CancellationToken
 
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
         match wf with
         | Some wf ->

@@ -45,28 +45,34 @@ module TypeDefinition =
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
 
         async {
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, project, _) ->
-                let typeSymbol =
-                    match symbol with
-                    | :? ILocalSymbol as localSymbol -> Some localSymbol.Type
-                    | :? IFieldSymbol as fieldSymbol -> Some fieldSymbol.Type
-                    | :? IPropertySymbol as propertySymbol -> Some propertySymbol.Type
-                    | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
-                    | _ -> None
+            let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-                let! locations, wf =
-                    match typeSymbol with
-                    | None -> async.Return([], wf)
-                    | Some symbol -> async {
-                        let! aggregatedLspLocations, updatedWf =
-                            workspaceFolderSymbolLocations wf context.Config symbol project
+            match wf with
+            | None -> return None |> LspResult.success
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-                        context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-                        return aggregatedLspLocations, updatedWf
-                      }
+                match symInfo with
+                | None -> return LspResult.success None
+                | Some(symbol, project, _) ->
+                    let typeSymbol =
+                        match symbol with
+                        | :? ILocalSymbol as localSymbol -> Some localSymbol.Type
+                        | :? IFieldSymbol as fieldSymbol -> Some fieldSymbol.Type
+                        | :? IPropertySymbol as propertySymbol -> Some propertySymbol.Type
+                        | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
+                        | _ -> None
 
-                return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+                    let! locations, wf =
+                        match typeSymbol with
+                        | None -> async.Return([], wf)
+                        | Some symbol -> async {
+                            let! aggregatedLspLocations, updatedWf =
+                                workspaceFolderSymbolLocations wf context.Config symbol project
 
-            | _, _ -> return None |> LspResult.success
+                            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                            return aggregatedLspLocations, updatedWf
+                          }
+
+                    return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
         }

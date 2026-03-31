@@ -62,122 +62,130 @@ module Diagnostic =
               Items = [||]
               RelatedDocuments = None }
 
-        let! wf, semModel = p.TextDocument.Uri |> workspaceDocumentSemanticModel context.Workspace
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-        match wf, semModel with
-        | Some wf, Some semanticModel ->
-            let! ct = Async.CancellationToken
+        match wf with
+        | None -> return emptyReport |> U2.C1 |> LspResult.success
+        | Some wf ->
+            let! semModel = workspaceFolderDocumentSemanticModel wf p.TextDocument.Uri
 
-            let wfPathToUri = workspaceFolderPathToUri wf
+            match semModel with
+            | Some semanticModel ->
+                let! ct = Async.CancellationToken
 
-            let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
-                let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
+                let wfPathToUri = workspaceFolderPathToUri wf
 
-                match documentIsCshtml with
-                | true ->
-                    // this particular diagnostic (CS8019: Unnecessary using directive.) does not
-                    // have proper line mapping information and appears out of place on cshtml files
-                    d.Id <> "CS8019"
+                let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
+                    let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
 
-                | false -> true
+                    match documentIsCshtml with
+                    | true ->
+                        // this particular diagnostic (CS8019: Unnecessary using directive.) does not
+                        // have proper line mapping information and appears out of place on cshtml files
+                        d.Id <> "CS8019"
 
-            let diagnostics =
-                semanticModel.GetDiagnostics()
-                |> Seq.filter diagnosticIsToBeListed
-                |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
-                |> Seq.map fst
-                |> Array.ofSeq
+                    | false -> true
 
-            return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
+                let diagnostics =
+                    semanticModel.GetDiagnostics()
+                    |> Seq.filter diagnosticIsToBeListed
+                    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+                    |> Seq.map fst
+                    |> Array.ofSeq
 
-        | _, _ -> return emptyReport |> U2.C1 |> LspResult.success
+                return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
+
+            | None -> return emptyReport |> U2.C1 |> LspResult.success
     }
 
     type WorkspaceDiagnosticsReportsChannelItem =
         | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
         | ReportingDoneForProject
 
-    let private getWorkspaceDiagnosticReports (workspace: LspWorkspace) : AsyncSeq<WorkspaceDocumentDiagnosticReport> = asyncSeq {
+    let private getWorkspaceDiagnosticReports
+        (workspaceFolders: LspWorkspaceFolder list)
+        : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
+        asyncSeq {
 
-        let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
+            let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
 
-        let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
-            let! ct = Async.CancellationToken
+            let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
+                let! ct = Async.CancellationToken
 
-            let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+                let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-            match compilation |> Option.ofObj with
-            | None -> ()
-            | Some compilation ->
-                let pathToUri = workspaceFolderPathToUri wf
+                match compilation |> Option.ofObj with
+                | None -> ()
+                | Some compilation ->
+                    let pathToUri = workspaceFolderPathToUri wf
 
-                let diagnosticsByDocument =
-                    compilation.GetDiagnostics(ct)
-                    |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
-                    |> Seq.groupBy snd
+                    let diagnosticsByDocument =
+                        compilation.GetDiagnostics(ct)
+                        |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
+                        |> Seq.groupBy snd
 
-                for uri, items in diagnosticsByDocument do
-                    let items = items |> Seq.map fst |> Array.ofSeq
+                    for uri, items in diagnosticsByDocument do
+                        let items = items |> Seq.map fst |> Array.ofSeq
 
-                    let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
-                        { Kind = "full"
-                          ResultId = None
-                          Uri = uri
-                          Items = items
-                          Version = None }
+                        let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
+                            { Kind = "full"
+                              ResultId = None
+                              Uri = uri
+                              Items = items
+                              Version = None }
 
-                    let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
+                        let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
 
-                    do!
-                        channel.Writer.WriteAsync(DiagnosticsReport documentReport)
-                        |> _.AsTask()
-                        |> Async.AwaitTask
+                        do!
+                            channel.Writer.WriteAsync(DiagnosticsReport documentReport)
+                            |> _.AsTask()
+                            |> Async.AwaitTask
+            }
+
+            let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
+                try
+                    do! generateProjectDiagnosticReports' wf project
+                with _ ->
+                    ()
+
+                do!
+                    channel.Writer.WriteAsync(ReportingDoneForProject)
+                    |> _.AsTask()
+                    |> Async.AwaitTask
+            }
+
+            // generate project diagnostics in parallel
+            let mutable numProjectsBeingProcessed = 0
+
+            for wf in workspaceFolders do
+                let solutionProjects =
+                    wf.Solution
+                    |> Option.map _.Projects
+                    |> Option.defaultValue Seq.empty
+                    |> List.ofSeq
+
+                numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
+
+                for project in solutionProjects do
+                    Async.Start(generateProjectDiagnosticReports wf project)
+
+            // if there were no projects at all, complete the channel immediately so the consumer loop below doesn't hang
+            if numProjectsBeingProcessed = 0 then
+                channel.Writer.Complete()
+
+            // eat from channel and yield diagnostic reports as they come
+            while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
+                let mutable item = ReportingDoneForProject
+
+                while channel.Reader.TryRead(&item) do
+                    match item with
+                    | DiagnosticsReport r -> yield r
+                    | ReportingDoneForProject ->
+                        numProjectsBeingProcessed <- numProjectsBeingProcessed - 1
+
+                        if numProjectsBeingProcessed = 0 then
+                            channel.Writer.Complete()
         }
-
-        let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
-            try
-                do! generateProjectDiagnosticReports' wf project
-            with _ ->
-                ()
-
-            do!
-                channel.Writer.WriteAsync(ReportingDoneForProject)
-                |> _.AsTask()
-                |> Async.AwaitTask
-        }
-
-        // generate project diagnostics in parallel
-        let mutable numProjectsBeingProcessed = 0
-
-        for wf in workspace.Folders do
-            let solutionProjects =
-                wf.Solution
-                |> Option.map _.Projects
-                |> Option.defaultValue Seq.empty
-                |> List.ofSeq
-
-            numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
-
-            for project in solutionProjects do
-                Async.Start(generateProjectDiagnosticReports wf project)
-
-        // if there were no projects at all, complete the channel immediately so the consumer loop below doesn't hang
-        if numProjectsBeingProcessed = 0 then
-            channel.Writer.Complete()
-
-        // eat from channel and yield diagnostic reports as they come
-        while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
-            let mutable item = ReportingDoneForProject
-
-            while channel.Reader.TryRead(&item) do
-                match item with
-                | DiagnosticsReport r -> yield r
-                | ReportingDoneForProject ->
-                    numProjectsBeingProcessed <- numProjectsBeingProcessed - 1
-
-                    if numProjectsBeingProcessed = 0 then
-                        channel.Writer.Complete()
-    }
 
     let handleWorkspaceDiagnostic
         (context: RequestContext)
@@ -186,7 +194,8 @@ module Diagnostic =
         async {
             match p.PartialResultToken with
             | None ->
-                let! diagnosticReports = getWorkspaceDiagnosticReports context.Workspace |> AsyncSeq.toArrayAsync
+                let! workspaceFolders = context.GetWorkspaceFolderList()
+                let! diagnosticReports = getWorkspaceDiagnosticReports workspaceFolders |> AsyncSeq.toArrayAsync
 
                 let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
                     { Items = diagnosticReports }
@@ -211,9 +220,11 @@ module Diagnostic =
                     do! context.LspClient.Progress(progressParams)
                 }
 
+                let! workspaceFolders = context.GetWorkspaceFolderList()
+
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports context.Workspace)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =

@@ -26,6 +26,8 @@ type LspWorkspaceDecompiledMetadataDocument =
     { Metadata: CSharpMetadataInformation
       Document: Document }
 
+type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
+
 type LspWorkspaceFolder =
     {
         Uri: string
@@ -40,6 +42,8 @@ type LspWorkspaceFolder =
 
         /// key is (project.Path * symbol metadata name)
         DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
+
+        OpenDocs: Map<string, LspWorkspaceOpenDocInfo>
     }
 
     static member Empty =
@@ -48,7 +52,8 @@ type LspWorkspaceFolder =
           SolutionPathOverride = None
           RoslynWorkspace = None
           Solution = None
-          DecompiledSymbolMetadata = Map.empty }
+          DecompiledSymbolMetadata = Map.empty
+          OpenDocs = Map.empty }
 
 type LspWorkspaceDocumentType =
     | UserDocument // user Document from solution, on disk
@@ -456,3 +461,94 @@ let workspaceFolderWithAdditionalDocumentRemoved (wf: LspWorkspaceFolder) (uri: 
             )
 
             wf
+
+let workspaceFolderDocumentSymbol
+    (wf: LspWorkspaceFolder)
+    docType
+    (uri: DocumentUri)
+    (pos: Ionide.LanguageServerProtocol.Types.Position)
+    =
+    async {
+        match uri.EndsWith ".cshtml" with
+        | true ->
+            let cshtmlPath = workspaceFolderUriToPath wf uri
+
+            match wf.Solution, cshtmlPath with
+            | Some solution, Some cshtmlPath ->
+                let! symbolInfo = solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos
+                return symbolInfo
+
+            | _, _ -> return None
+
+        | false ->
+            let docForUri = uri |> workspaceFolderDocumentDetails wf docType
+
+            match docForUri with
+            | None -> return None
+            | Some(doc, _) ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let position = Position.toRoslynPosition sourceText.Lines pos
+                let! symbol = SymbolFinder.FindSymbolAtPositionAsync(doc, position, ct) |> Async.AwaitTask
+
+                let symbolInfo =
+                    symbol |> Option.ofObj |> Option.map (fun sym -> sym, doc.Project, Some doc)
+
+                return symbolInfo
+    }
+
+let workspaceFolderDocumentSemanticModel (wf: LspWorkspaceFolder) (uri: DocumentUri) = async {
+    if uri.EndsWith ".cshtml" then
+        let cshtmlPath = workspaceFolderUriToPath wf uri
+
+        match wf.Solution, cshtmlPath with
+        | Some solution, Some cshtmlPath ->
+            match! solutionGetRazorDocumentForPath solution cshtmlPath with
+            | None -> return None
+            | Some(_, compilation, cshtmlTree) ->
+                let semanticModel = compilation.GetSemanticModel(cshtmlTree) |> Option.ofObj
+                return semanticModel
+
+        | _, _ -> return None
+    else
+        let docAndType = workspaceFolderDocumentDetails wf AnyDocument uri
+
+        match docAndType with
+        | None -> return None
+        | Some(doc, _) ->
+            let! ct = Async.CancellationToken
+            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask |> Async.map Option.ofObj
+            return semanticModel
+}
+
+let workspaceFolderDocumentVersion (wf: LspWorkspaceFolder) (uri: string) : int option =
+    wf.OpenDocs |> Map.tryFind uri |> Option.map _.Version
+
+let workspaceFolderWithDocOpened
+    (uri: string)
+    (ver: int)
+    (timestamp: DateTime)
+    (wf: LspWorkspaceFolder)
+    : LspWorkspaceFolder =
+    let openDocInfo = { Version = ver; Touched = timestamp }
+
+    { wf with
+        OpenDocs = wf.OpenDocs |> Map.add uri openDocInfo }
+
+let workspaceFolderWithDocClosed (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
+    { wf with
+        OpenDocs = wf.OpenDocs |> Map.remove uri }
+
+let workspaceFolderWithDocTouched
+    (uri: string)
+    (timestamp: DateTime)
+    (wf: LspWorkspaceFolder)
+    : LspWorkspaceFolder option =
+    match wf.OpenDocs |> Map.tryFind uri with
+    | None -> None
+    | Some openDocInfo ->
+        let updated = { openDocInfo with Touched = timestamp }
+
+        Some
+            { wf with
+                OpenDocs = wf.OpenDocs |> Map.add uri updated }

@@ -27,7 +27,8 @@ type PushDiagnosticsState =
 /// Rebuilds the backlog from all open documents, sorted by most-recently-touched first.
 let handleBacklogUpdate (workspace: LspWorkspace) (state: PushDiagnosticsState) : PushDiagnosticsState =
     let newBacklog =
-        workspace.OpenDocs
+        workspace.Folders
+        |> Seq.collect (fun wf -> wf.OpenDocs |> Seq.map id)
         |> Seq.sortByDescending (fun kv -> kv.Value.Touched)
         |> Seq.map (fun kv -> kv.Key)
         |> List.ofSeq
@@ -71,10 +72,15 @@ let handleProcessPending
                     { state with
                         DocumentBacklog = newBacklog }
 
-                let wf, docForUri = docUri |> workspaceDocument workspace AnyDocument
-                let wfPathToUri = workspaceFolderPathToUri wf.Value
+                let wfMaybe = docUri |> workspaceFolder workspace
 
-                match wf, docForUri with
+                let docForUri =
+                    wfMaybe
+                    |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf AnyDocument docUri |> Option.map fst)
+
+                let wfPathToUri = workspaceFolderPathToUri wfMaybe.Value
+
+                match wfMaybe, docForUri with
                 | Some wf, None ->
                     let cshtmlPath = workspaceFolderUriToPath wf docUri |> _.Value
 

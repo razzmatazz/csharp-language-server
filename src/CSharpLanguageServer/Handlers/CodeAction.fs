@@ -346,10 +346,15 @@ module CodeAction =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: CodeActionParams) : AsyncLspResult<TextDocumentCodeActionResult option> = async {
-        let wf, docForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-        match wf, docForUri with
+        let docForUri =
+            wfMaybe
+            |> Option.bind (fun wf ->
+                workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
+                |> Option.map fst)
+
+        match wfMaybe, docForUri with
         | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -388,7 +393,7 @@ module CodeAction =
                         let! maybeLspCa =
                             roslynCodeActionToResolvedLspCodeAction
                                 wf
-                                (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
+                                (workspaceFolderUriUnescape wf >> workspaceFolderDocumentVersion wf)
                                 doc
                                 ct
                                 caTitle
@@ -413,11 +418,15 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let wf, docForUri =
-            resolutionData.Value.TextDocumentUri
-            |> workspaceDocument context.Workspace AnyDocument
+        let! wfMaybe = resolutionData.Value.TextDocumentUri |> context.GetWorkspaceFolder
 
-        match wf, docForUri with
+        let docForUri =
+            wfMaybe
+            |> Option.bind (fun wf ->
+                workspaceFolderDocumentDetails wf AnyDocument resolutionData.Value.TextDocumentUri
+                |> Option.map fst)
+
+        match wfMaybe, docForUri with
         | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -431,7 +440,7 @@ module CodeAction =
             let toResolvedLspCodeAction =
                 roslynCodeActionToResolvedLspCodeAction
                     wf
-                    (workspaceFolderUriUnescape wf >> workspaceDocumentVersion context.Workspace)
+                    (workspaceFolderUriUnescape wf >> workspaceFolderDocumentVersion wf)
                     doc
                     ct
 

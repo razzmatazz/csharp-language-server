@@ -139,8 +139,7 @@ module TextDocumentSync =
         (p: DidOpenTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
-            let _, docInfo =
-                workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
+            let docInfo = workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
 
             match docInfo with
             | Some(doc, docType) ->
@@ -171,7 +170,7 @@ module TextDocumentSync =
         }
 
     let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
         match wf with
         | None -> return Ok()
@@ -218,7 +217,9 @@ module TextDocumentSync =
         (p: DidChangeTextDocumentParams)
         : Async<option<LspWorkspaceFolder>> =
         async {
-            let _, doc = workspaceDocument context.Workspace UserDocument p.TextDocument.Uri
+            let doc =
+                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
+                |> Option.map fst
 
             match doc with
             | None -> return None
@@ -234,7 +235,7 @@ module TextDocumentSync =
         }
 
     let didChange (context: RequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
         match wf with
         | None -> return Ok()
@@ -306,8 +307,7 @@ module TextDocumentSync =
             // could've been changes made to the in-memory file using didChange
             // and not persisted to disk before didClose (i.e. no didSave)
 
-            let _, docInfo =
-                workspaceDocumentDetails context.Workspace AnyDocument p.TextDocument.Uri
+            let docInfo = workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
 
             let filename = p.TextDocument.Uri |> workspaceFolderUriToPath wf
 
@@ -330,7 +330,7 @@ module TextDocumentSync =
         }
 
     let didClose (context: RequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
-        let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
         match wf with
         | None -> return Ok()

@@ -240,7 +240,8 @@ module Completion =
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
 
         async {
-            let wf = p.TextDocument.Uri |> workspaceFolder context.Workspace |> _.Value
+            let! wfOption = p.TextDocument.Uri |> context.GetWorkspaceFolder
+            let wf = wfOption.Value
 
             let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf |> _.Value
 
@@ -330,8 +331,13 @@ module Completion =
         (context: RequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
-            let wf, docForUri =
-                p.TextDocument.Uri |> workspaceDocument context.Workspace AnyDocument
+            let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+
+            let docForUri =
+                wfMaybe
+                |> Option.bind (fun wf ->
+                    workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
+                    |> Option.map fst)
 
             match docForUri with
             | None -> return None

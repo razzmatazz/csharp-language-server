@@ -55,9 +55,13 @@ module Workspace =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let private tryReloadDocumentOnUri logger (context: RequestContext) uri = async {
-        let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
+        let! wfMaybe = uri |> context.GetWorkspaceFolder
 
-        match wf, doc with
+        let doc =
+            wfMaybe
+            |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf UserDocument uri |> Option.map fst)
+
+        match wfMaybe, doc with
         | Some wf, Some doc ->
             let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
 
@@ -92,10 +96,14 @@ module Workspace =
         | _, _ -> ()
     }
 
-    let private removeDocument (context: RequestContext) uri =
-        let wf, doc = uri |> workspaceDocument context.Workspace UserDocument
+    let private removeDocument (context: RequestContext) uri = async {
+        let! wfMaybe = uri |> context.GetWorkspaceFolder
 
-        match wf, doc with
+        let doc =
+            wfMaybe
+            |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf UserDocument uri |> Option.map fst)
+
+        match wfMaybe, doc with
         | Some wf, Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
@@ -107,6 +115,7 @@ module Workspace =
             context.UpdateEffects(_.WithDocumentClosed(uri))
 
         | _, _ -> ()
+    }
 
     let didChangeWatchedFiles (context: RequestContext) (p: DidChangeWatchedFilesParams) : Async<LspResult<unit>> =
 
@@ -132,7 +141,7 @@ module Workspace =
                     match change.Type with
                     | FileChangeType.Created -> do! tryReloadDocumentOnUri logger context change.Uri
                     | FileChangeType.Changed -> do! tryReloadDocumentOnUri logger context change.Uri
-                    | FileChangeType.Deleted -> do removeDocument context change.Uri
+                    | FileChangeType.Deleted -> do! removeDocument context change.Uri
                     | _ -> ()
 
                 | ".cshtml" ->
@@ -171,8 +180,10 @@ module Workspace =
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 
+            let! workspaceFolders = context.GetWorkspaceFolderList()
+
             let updatedWorkspaceFolders =
-                context.Workspace.Folders
+                workspaceFolders
                 |> Seq.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
                 |> Seq.filter wfNotInRemovedList
                 |> Seq.append p.Event.Added
