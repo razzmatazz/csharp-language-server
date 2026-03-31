@@ -146,8 +146,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
 
     | WorkspaceConfigurationChanged workspaceFolders ->
         let newWorkspace =
-            workspaceFrom workspaceFolders
-            |> workspaceWithSolutionPathOverridesFrom state.Workspace
+            workspaceFrom workspaceFolders |> workspaceWithSolutionPathOverride state.Config
 
         return { state with Workspace = newWorkspace }
 

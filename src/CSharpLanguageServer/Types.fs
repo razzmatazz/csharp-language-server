@@ -17,7 +17,8 @@ type CSharpConfiguration =
       applyFormattingOptions: bool option
       useMetadataUris: bool option
       razorSupport: bool option
-      debug: CSharpDebugConfiguration option }
+      debug: CSharpDebugConfiguration option
+      solutionPathOverride: string option }
 
     member this.GetEffectiveFormattingOptions options =
         if this.applyFormattingOptions |> Option.defaultValue false then
@@ -30,7 +31,8 @@ type CSharpConfiguration =
           applyFormattingOptions = None
           useMetadataUris = None
           razorSupport = None
-          debug = None }
+          debug = None
+          solutionPathOverride = None }
 
 let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharpConfiguration) =
     { logLevel = newConfig.logLevel |> Option.orElse oldConfig.logLevel
@@ -47,7 +49,8 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
                     newDebug.solutionLoadDelay
                     |> Option.orElse (oldConfig.debug |> Option.bind _.solutionLoadDelay)
                   debugMode = newDebug.debugMode |> Option.orElse (oldConfig.debug |> Option.bind _.debugMode) }
-        | None -> oldConfig.debug }
+        | None -> oldConfig.debug
+      solutionPathOverride = newConfig.solutionPathOverride |> Option.orElse oldConfig.solutionPathOverride }
 
 type DidChangeConfigurationSettingsDto = { csharp: CSharpConfiguration option }
 

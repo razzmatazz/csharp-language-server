@@ -247,11 +247,7 @@ let configureRpcTransport
 
     callHandlers, notificationHandlers
 
-let startCore
-    (config: CSharpConfiguration)
-    (initialWorkspace: LspWorkspace option)
-    (rpcLogCallback: (JsonRpcLogEntry -> unit) option)
-    =
+let startCore (config: CSharpConfiguration) (rpcLogCallback: (JsonRpcLogEntry -> unit) option) =
     use input = Console.OpenStandardInput()
     use output = Console.OpenStandardOutput()
 
@@ -260,7 +256,7 @@ let startCore
             serverEventLoop
                 { ServerState.Empty with
                     Config = config
-                    Workspace = initialWorkspace |> Option.defaultValue LspWorkspace.Empty }
+                    Workspace = LspWorkspace.Empty }
         )
 
     let rpcTransport =
@@ -274,11 +270,3 @@ let startCore
     rpcTransport.PostAndAsyncReply(AwaitShutdown) |> Async.RunSynchronously
 
     0 // OK
-
-let start (config: CSharpConfiguration) (initialWorkspace: LspWorkspace option) rpcLogCallback =
-    try
-        let result = startCore config initialWorkspace rpcLogCallback
-        int result
-    with ex ->
-        logger.LogError("{name} crashed", ex, Process.GetCurrentProcess().ProcessName)
-        3
