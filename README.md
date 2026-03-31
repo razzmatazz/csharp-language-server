@@ -55,6 +55,10 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
   defaults to `false`
 
+- `csharp.solutionPathOverride` - override the solution path to load; useful for
+  specifying an alternative solution when multiple exist in the workspace;
+  can also be set via the `--solution` CLI flag; defaults to `null`
+
 - `csharp.debug.solutionLoadDelay` - delay in milliseconds before loading the
   solution after the workspace is ready
 

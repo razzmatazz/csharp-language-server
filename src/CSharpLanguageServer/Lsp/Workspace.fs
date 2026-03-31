@@ -27,17 +27,16 @@ type LspWorkspace =
 
     static member Empty = { Folders = []; OpenDocs = Map.empty }
 
-let workspaceWithSolutionPathOverridesFrom (existing: LspWorkspace) (workspace: LspWorkspace) =
+let workspaceWithSolutionPathOverride (config: CSharpConfiguration) (workspace: LspWorkspace) =
     let folders =
-        workspace.Folders
-        |> List.map (fun wf ->
-            let override' =
-                existing.Folders
-                |> List.tryFind (fun ewf -> ewf.Uri = wf.Uri)
-                |> Option.bind _.SolutionPathOverride
+        match config.solutionPathOverride, workspace.Folders with
+        | Some solutionPath, firstFolder :: rest ->
+            let updatedFirstFolder =
+                { firstFolder with
+                    SolutionPathOverride = Some solutionPath }
 
-            { wf with
-                SolutionPathOverride = override' })
+            updatedFirstFolder :: rest
+        | _ -> workspace.Folders
 
     { workspace with Folders = folders }
 

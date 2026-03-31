@@ -70,6 +70,9 @@ let entry args =
             |> Seq.filter (String.IsNullOrWhiteSpace >> not)
             |> Set.ofSeq
 
+        let slnFullPath =
+            serverArgs.TryGetResult <@ Solution @> |> Option.map Path.GetFullPath
+
         let config =
             { CSharpConfiguration.Default with
                 logLevel = Some logLevel
@@ -78,20 +81,8 @@ let entry args =
                 debug =
                     Some
                         { CSharpDebugConfiguration.Default with
-                            debugMode = Some debugMode } }
-
-        let initialWorkspace =
-            serverArgs.TryGetResult <@ Solution @>
-            |> Option.map (fun slnPath ->
-                let slnFullPath = Path.GetFullPath slnPath
-                let folderUri = Path.GetDirectoryName slnFullPath |> Uri |> string
-
-                { LspWorkspace.Empty with
-                    Folders =
-                        [ { LspWorkspaceFolder.Empty with
-                              Uri = folderUri
-                              Name = Path.GetFileNameWithoutExtension slnFullPath
-                              SolutionPathOverride = Some slnFullPath } ] })
+                            debugMode = Some debugMode }
+                solutionPathOverride = slnFullPath }
 
         let makeRpcLogCallback (path: string) : JsonRpcLogEntry -> unit =
             let writer = new StreamWriter(path, append = false)
@@ -137,7 +128,7 @@ let entry args =
                             jsonRpcLogCallback entry)
                     | None -> Some jsonRpcLogCallback
 
-                Server.start config initialWorkspace combinedRpcLogCallback
+                Server.startCore config combinedRpcLogCallback
 
         exitCode
     with
