@@ -98,10 +98,14 @@ type RequestContext
 
     member _.LspClient = lspClient
     member _.Config = config
-    member _.Workspace = workspace
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
+
+    member _.GetWorkspaceFolder(uri: DocumentUri) : Async<LspWorkspaceFolder option> =
+        uri |> workspaceFolder workspace |> async.Return
+
+    member _.GetWorkspaceFolderList() : Async<LspWorkspaceFolder list> = workspace.Folders |> async.Return
 
     member _.UpdateEffects(update: RequestEffects -> RequestEffects) =
         match requestMode.IsReadOnlyBackground with

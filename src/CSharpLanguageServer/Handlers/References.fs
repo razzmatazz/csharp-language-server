@@ -43,29 +43,35 @@ module References =
 
     let handle (context: RequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         let! ct = Async.CancellationToken
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-        | Some wf, Some(symbol, _, _) ->
-            let wfPathToUri = workspaceFolderPathToUri wf
+        match wf with
+        | None -> return None |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-            let! refs =
-                SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
-                |> Async.AwaitTask
+            match symInfo with
+            | None -> return LspResult.success None
+            | Some(symbol, _, _) ->
+                let wfPathToUri = workspaceFolderPathToUri wf
 
-            let locationsFromReferencedSym (r: ReferencedSymbol) =
-                let locations = r.Locations |> Seq.map _.Location
+                let! refs =
+                    SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                    |> Async.AwaitTask
 
-                match p.Context.IncludeDeclaration with
-                | true -> locations |> Seq.append r.Definition.Locations
-                | false -> locations
+                let locationsFromReferencedSym (r: ReferencedSymbol) =
+                    let locations = r.Locations |> Seq.map _.Location
 
-            return
-                refs
-                |> Seq.collect locationsFromReferencedSym
-                |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
-                |> Seq.distinct
-                |> Seq.toArray
-                |> Some
-                |> LspResult.success
-        | _, _ -> return None |> LspResult.success
+                    match p.Context.IncludeDeclaration with
+                    | true -> locations |> Seq.append r.Definition.Locations
+                    | false -> locations
+
+                return
+                    refs
+                    |> Seq.collect locationsFromReferencedSym
+                    |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
+                    |> Seq.distinct
+                    |> Seq.toArray
+                    |> Some
+                    |> LspResult.success
     }

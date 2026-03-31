@@ -42,13 +42,19 @@ module Definition =
         (p: DefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-            | Some wf, Some(symbol, project, _) ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+            let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+            match wf with
+            | None -> return None |> LspResult.success
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-                return locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success
+                match symInfo with
+                | None -> return None |> LspResult.success
+                | Some(symbol, project, _) ->
+                    let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-            | _, _ -> return None |> LspResult.success
+                    context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+
+                    return locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success
         }

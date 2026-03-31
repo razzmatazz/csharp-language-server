@@ -78,22 +78,29 @@ module DocumentHighlight =
     }
 
     let handle (context: RequestContext) (p: DocumentHighlightParams) : AsyncLspResult<DocumentHighlight[] option> = async {
-        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-        | Some wf, Some(symbol, project, docMaybe) ->
-            if shouldHighlight symbol then
-                let wfPathToUri = workspaceFolderPathToUri wf
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-                let! highlights =
-                    getHighlights
-                        symbol
-                        project
-                        docMaybe
-                        wfPathToUri
-                        (workspaceFolderUriToPath wf p.TextDocument.Uri |> _.Value)
+        match wf with
+        | None -> return None |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-                return highlights |> Seq.toArray |> Some |> LspResult.success
-            else
-                return None |> LspResult.success
+            match symInfo with
+            | None -> return None |> LspResult.success
 
-        | _, _ -> return None |> LspResult.success
+            | Some(symbol, project, docMaybe) ->
+                if shouldHighlight symbol then
+                    let wfPathToUri = workspaceFolderPathToUri wf
+
+                    let! highlights =
+                        getHighlights
+                            symbol
+                            project
+                            docMaybe
+                            wfPathToUri
+                            (workspaceFolderUriToPath wf p.TextDocument.Uri |> _.Value)
+
+                    return highlights |> Seq.toArray |> Some |> LspResult.success
+                else
+                    return None |> LspResult.success
     }

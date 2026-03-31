@@ -114,8 +114,13 @@ module Rename =
 
     let prepare (context: RequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
 
-        let wf, docForUri =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+
+        let docForUri =
+            wfMaybe
+            |> Option.bind (fun wf ->
+                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
+                |> Option.map fst)
 
         match docForUri with
         | None -> return None |> LspResult.success
@@ -173,34 +178,40 @@ module Rename =
     }
 
     let handle (context: RequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
-        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-        | Some wf, Some(symbol, project, _) ->
-            let! ct = Async.CancellationToken
-            let originalSolution = project.Solution
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-            let! updatedSolution =
-                Renamer.RenameSymbolAsync(
-                    project.Solution,
-                    symbol,
-                    SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
-                    p.NewName,
-                    ct
-                )
-                |> Async.AwaitTask
+        match wf with
+        | None -> return None |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+
+            match symInfo with
+            | None -> return LspResult.success None
+            | Some(symbol, project, _) ->
+                let! ct = Async.CancellationToken
+                let originalSolution = project.Solution
+
+                let! updatedSolution =
+                    Renamer.RenameSymbolAsync(
+                        project.Solution,
+                        symbol,
+                        SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
+                        p.NewName,
+                        ct
+                    )
+                    |> Async.AwaitTask
 
 
-            let! docTextEdit =
-                lspDocChangesFromSolutionDiff
-                    ct
-                    wf
-                    originalSolution
-                    updatedSolution
-                    (workspaceDocumentVersion context.Workspace)
+                let! docTextEdit =
+                    lspDocChangesFromSolutionDiff
+                        ct
+                        wf
+                        originalSolution
+                        updatedSolution
+                        (workspaceFolderDocumentVersion wf)
 
-            return
-                WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)
-                |> Some
-                |> LspResult.success
-
-        | _, _ -> return None |> LspResult.success
+                return
+                    WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)
+                    |> Some
+                    |> LspResult.success
     }

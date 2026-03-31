@@ -89,8 +89,13 @@ module SignatureHelp =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
-        let wf, docMaybe =
-            p.TextDocument.Uri |> workspaceDocument context.Workspace UserDocument
+        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+
+        let docMaybe =
+            wfMaybe
+            |> Option.bind (fun wf ->
+                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
+                |> Option.map fst)
 
         match docMaybe with
         | None -> return None |> LspResult.success

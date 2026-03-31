@@ -52,9 +52,14 @@ module Hover =
         hover |> Some
 
     let handle (context: RequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
-        let! wf, symInfo = workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-        match symInfo with
-        | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success
-        | None -> return None |> LspResult.success
+        match wf with
+        | None -> return LspResult.success None
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+
+            match symInfo with
+            | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success
+            | None -> return None |> LspResult.success
     }

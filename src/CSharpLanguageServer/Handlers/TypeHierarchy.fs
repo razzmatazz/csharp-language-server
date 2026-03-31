@@ -48,20 +48,27 @@ module TypeHierarchy =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: RequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        match! workspaceDocumentSymbol context.Workspace AnyDocument p.TextDocument.Uri p.Position with
-        | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-            let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
 
-            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+        match wf with
+        | None -> return None |> LspResult.success
+        | Some wf ->
+            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
-            return
-                symLocations
-                |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
-                |> Seq.toArray
-                |> Some
-                |> LspResult.success
+            match symInfo with
+            | Some(symbol, project, _) when isTypeSymbol symbol ->
+                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-        | _, _ -> return None |> LspResult.success
+                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+
+                return
+                    symLocations
+                    |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
+                    |> Seq.toArray
+                    |> Some
+                    |> LspResult.success
+
+            | _ -> return LspResult.success None
     }
 
     let supertypes
@@ -69,37 +76,44 @@ module TypeHierarchy =
         (p: TypeHierarchySupertypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let typeSymbol = symbol :?> INamedTypeSymbol
+            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
 
-                let baseType =
-                    typeSymbol.BaseType
-                    |> Option.ofObj
-                    |> Option.filter (fun sym -> sym.SpecialType = SpecialType.None)
-                    |> Option.toList
+            match wf with
+            | None -> return None |> LspResult.success
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
 
-                let interfaces = Seq.toList typeSymbol.Interfaces
-                let supertypes = baseType @ interfaces
+                match symInfo with
+                | Some(symbol, project, _) when isTypeSymbol symbol ->
+                    let typeSymbol = symbol :?> INamedTypeSymbol
 
-                let items = System.Collections.Generic.List<TypeHierarchyItem>()
-                let mutable updatedWf = wf
+                    let baseType =
+                        typeSymbol.BaseType
+                        |> Option.ofObj
+                        |> Option.filter (fun sym -> sym.SpecialType = SpecialType.None)
+                        |> Option.toList
 
-                for typeSym in supertypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
+                    let interfaces = Seq.toList typeSymbol.Interfaces
+                    let supertypes = baseType @ interfaces
 
-                    let typeSymItems =
-                        locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
+                    let items = System.Collections.Generic.List<TypeHierarchyItem>()
+                    let mutable updatedWf = wf
 
-                    items.AddRange(typeSymItems)
+                    for typeSym in supertypes do
+                        let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
 
-                    updatedWf <- wf
+                        let typeSymItems =
+                            locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                        items.AddRange(typeSymItems)
 
-                return items |> Seq.toArray |> Some |> LspResult.success
+                        updatedWf <- wf
 
-            | _, _ -> return None |> LspResult.success
+                    context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+
+                    return items |> Seq.toArray |> Some |> LspResult.success
+
+                | _ -> return LspResult.success None
         }
 
     let subtypes
@@ -108,52 +122,77 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             let! ct = Async.CancellationToken
+            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
 
-            match! workspaceDocumentSymbol context.Workspace AnyDocument p.Item.Uri p.Item.Range.Start with
-            | Some wf, Some(symbol, project, _) when isTypeSymbol symbol ->
-                let typeSymbol = symbol :?> INamedTypeSymbol
-                // We only want immediately derived classes/interfaces/implementations here (we only need
-                // subclasses not subclasses' subclasses)
-                let findDerivedClasses' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindDerivedClassesAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
-                    |> Async.AwaitTask
+            match wf with
+            | None -> return None |> LspResult.success
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
 
-                let findDerivedInterfaces' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindDerivedInterfacesAsync(
-                        symbol,
-                        wf.Solution.Value,
-                        transitive,
-                        cancellationToken = ct
-                    )
-                    |> Async.AwaitTask
+                match symInfo with
+                | Some(symbol, project, _) when isTypeSymbol symbol ->
+                    let typeSymbol = symbol :?> INamedTypeSymbol
+                    // We only want immediately derived classes/interfaces/implementations here (we only need
+                    // subclasses not subclasses' subclasses)
+                    let findDerivedClasses'
+                        (symbol: INamedTypeSymbol)
+                        (transitive: bool)
+                        : Async<INamedTypeSymbol seq> =
+                        SymbolFinder.FindDerivedClassesAsync(
+                            symbol,
+                            wf.Solution.Value,
+                            transitive,
+                            cancellationToken = ct
+                        )
+                        |> Async.AwaitTask
 
-                let findImplementations' (symbol: INamedTypeSymbol) (transitive: bool) : Async<INamedTypeSymbol seq> =
-                    SymbolFinder.FindImplementationsAsync(symbol, wf.Solution.Value, transitive, cancellationToken = ct)
-                    |> Async.AwaitTask
+                    let findDerivedInterfaces'
+                        (symbol: INamedTypeSymbol)
+                        (transitive: bool)
+                        : Async<INamedTypeSymbol seq> =
+                        SymbolFinder.FindDerivedInterfacesAsync(
+                            symbol,
+                            wf.Solution.Value,
+                            transitive,
+                            cancellationToken = ct
+                        )
+                        |> Async.AwaitTask
 
-                let! subtypes =
-                    [ findDerivedClasses' typeSymbol false
-                      findDerivedInterfaces' typeSymbol false
-                      findImplementations' typeSymbol false ]
-                    |> Async.Parallel
-                    |> Async.map (Seq.collect id >> Seq.toList)
+                    let findImplementations'
+                        (symbol: INamedTypeSymbol)
+                        (transitive: bool)
+                        : Async<INamedTypeSymbol seq> =
+                        SymbolFinder.FindImplementationsAsync(
+                            symbol,
+                            wf.Solution.Value,
+                            transitive,
+                            cancellationToken = ct
+                        )
+                        |> Async.AwaitTask
 
-                let items = System.Collections.Generic.List<TypeHierarchyItem>()
-                let mutable updatedWf = wf
+                    let! subtypes =
+                        [ findDerivedClasses' typeSymbol false
+                          findDerivedInterfaces' typeSymbol false
+                          findImplementations' typeSymbol false ]
+                        |> Async.Parallel
+                        |> Async.map (Seq.collect id >> Seq.toList)
 
-                for typeSym in subtypes do
-                    let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
+                    let items = System.Collections.Generic.List<TypeHierarchyItem>()
+                    let mutable updatedWf = wf
 
-                    let typeSymItems =
-                        locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
+                    for typeSym in subtypes do
+                        let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
 
-                    items.AddRange(typeSymItems)
+                        let typeSymItems =
+                            locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
 
-                    updatedWf <- wf
+                        items.AddRange(typeSymItems)
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                        updatedWf <- wf
 
-                return items |> Seq.toArray |> Some |> LspResult.success
+                    context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
-            | _, _ -> return None |> LspResult.success
+                    return items |> Seq.toArray |> Some |> LspResult.success
+
+                | _ -> return None |> LspResult.success
         }

@@ -223,23 +223,36 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
     | DocumentOpened(uri, ver, timestamp) ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        return
-            { state with
-                Workspace = state.Workspace |> workspaceWithDocOpened uri ver timestamp }
+        let newWorkspace =
+            match workspaceFolder state.Workspace uri with
+            | None -> state.Workspace
+            | Some wf ->
+                workspaceFolderWithDocOpened uri ver timestamp wf
+                |> workspaceWithFolder state.Workspace
+
+        return { state with Workspace = newWorkspace }
 
     | DocumentClosed uri ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        return
-            { state with
-                Workspace = state.Workspace |> workspaceWithDocClosed uri }
+        let newWorkspace =
+            match workspaceFolder state.Workspace uri with
+            | None -> state.Workspace
+            | Some wf -> workspaceFolderWithDocClosed uri wf |> workspaceWithFolder state.Workspace
+
+        return { state with Workspace = newWorkspace }
 
     | DocumentTouched(uri, timestamp) ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
-        match state.Workspace |> workspaceWithDocTouched uri timestamp with
+        let newWorkspace =
+            workspaceFolder state.Workspace uri
+            |> Option.bind (fun wf -> workspaceFolderWithDocTouched uri timestamp wf)
+            |> Option.map (workspaceWithFolder state.Workspace)
+
+        match newWorkspace with
         | None -> return state
-        | Some newWorkspace -> return { state with Workspace = newWorkspace }
+        | Some ws -> return { state with Workspace = ws }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
