@@ -28,6 +28,8 @@ type ServerEvent =
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
+    | GetWorkspaceFolder of DocumentUri * AsyncReplyChannel<LspWorkspaceFolder option>
+    | GetWorkspaceFolderList of AsyncReplyChannel<LspWorkspaceFolder list>
     | LeaveRequestContext of int64 * ServerEvent list
     | PeriodicTimerTick
     | ProcessRequestQueue
@@ -65,17 +67,24 @@ type ServerState =
           PeriodicTickTimer = None
           ShutdownReceived = false }
 
-let makeRequestContext (state: ServerState) (requestMode: RequestMode) =
+let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
+    let getWorkspaceFolder uri =
+        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolder(uri, rc))
+
+    let getWorkspaceFolderList () =
+        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderList rc)
+
     RequestContext(
         requestMode,
         state.LspClient.Value,
         state.Config,
-        state.Workspace,
+        getWorkspaceFolder,
+        getWorkspaceFolderList,
         state.ClientCapabilities,
         state.ShutdownReceived
     )
 
-let processServerEvent state postServerEvent ev : Async<ServerState> = async {
+let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
     | SettingsChange newConfig -> return { state with Config = newConfig }
 
@@ -97,6 +106,15 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
             { state with
                 RequestQueue = newRequestQueue }
 
+    | GetWorkspaceFolder(uri, replyChannel) ->
+        let wf = uri |> workspaceFolder state.Workspace
+        replyChannel.Reply(wf)
+        return state
+
+    | GetWorkspaceFolderList replyChannel ->
+        replyChannel.Reply(state.Workspace.Folders)
+        return state
+
     | LeaveRequestContext(requestRpcOrdinal, bufferedServerEvents) ->
         postServerEvent ProcessRequestQueue
 
@@ -110,7 +128,7 @@ let processServerEvent state postServerEvent ev : Async<ServerState> = async {
                 RequestQueue = newRequestQueue }
 
     | ProcessRequestQueue ->
-        let! result = processRequestQueue state.Config (makeRequestContext state) state.RequestQueue
+        let! result = processRequestQueue state.Config (makeRequestContext state inbox) state.RequestQueue
 
         match result with
         | Retired(retiredRequest, updatedRequestQueue) ->
@@ -352,7 +370,7 @@ let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
         let! msg = inbox.Receive()
 
         try
-            let! newState = msg |> processServerEvent state inbox.Post
+            let! newState = msg |> processServerEvent state inbox.Post inbox
             return! loop newState
         with ex ->
             logger.LogError(ex, "serverEventLoop: crashed with {exception}", string ex)
