@@ -58,12 +58,17 @@ let workspaceFolder (workspace: LspWorkspace) (uri: string) =
 
     workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
 
+let workspaceTeardown (workspace: LspWorkspace) : unit =
+    workspace.Folders |> List.iter workspaceFolderTeardown
+
 let workspaceWithFolder (workspace: LspWorkspace) (updatedWf: LspWorkspaceFolder) =
     let existingW = workspace.Folders |> Seq.tryFind (fun wf -> wf.Uri = updatedWf.Uri)
 
     let updatedFolders =
         match existingW with
         | Some existingWf ->
+            do workspaceFolderTeardown existingWf
+
             let replaceByUri wf =
                 if wf.Uri = existingWf.Uri then updatedWf else wf
 

@@ -163,6 +163,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     RequestQueue = state.RequestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
+        do workspaceTeardown state.Workspace
+
         let newWorkspace =
             workspaceFrom workspaceFolders |> workspaceWithSolutionPathOverride state.Config
 
@@ -195,6 +197,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Some timer -> timer.Dispose()
         | None -> ()
 
+        do workspaceTeardown state.Workspace
+
         return
             { state with
                 LspClient = None
@@ -222,6 +226,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Config = newConfig }
 
     | WorkspaceFolderChange updatedWf ->
+        do
+            state.Workspace.Folders
+            |> List.iter (fun wf ->
+                if wf.Uri = updatedWf.Uri then
+                    workspaceFolderTeardown wf)
+
         let updatedWorkspaceFolderList =
             state.Workspace.Folders
             |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
