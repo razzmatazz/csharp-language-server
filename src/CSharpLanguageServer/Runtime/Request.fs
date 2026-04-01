@@ -1,13 +1,11 @@
 namespace CSharpLanguageServer.Runtime
 
 open System
-open System.Collections.Generic
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 
 type RequestMode =
@@ -90,7 +88,8 @@ type RequestContext
         requestMode: RequestMode,
         lspClient: ILspClient,
         config: CSharpConfiguration,
-        workspace: LspWorkspace,
+        getWorkspaceFolder: DocumentUri -> Async<LspWorkspaceFolder option>,
+        getWorkspaceFolderList: unit -> Async<LspWorkspaceFolder list>,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
     ) =
@@ -102,10 +101,8 @@ type RequestContext
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
 
-    member _.GetWorkspaceFolder(uri: DocumentUri) : Async<LspWorkspaceFolder option> =
-        uri |> workspaceFolder workspace |> async.Return
-
-    member _.GetWorkspaceFolderList() : Async<LspWorkspaceFolder list> = workspace.Folders |> async.Return
+    member _.GetWorkspaceFolder(uri) = getWorkspaceFolder uri
+    member _.GetWorkspaceFolderList = getWorkspaceFolderList
 
     member _.UpdateEffects(update: RequestEffects -> RequestEffects) =
         match requestMode.IsReadOnlyBackground with
