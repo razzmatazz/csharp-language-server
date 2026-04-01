@@ -552,3 +552,8 @@ let workspaceFolderWithDocTouched
         Some
             { wf with
                 OpenDocs = wf.OpenDocs |> Map.add uri updated }
+
+/// Release all disposable resources held by a workspace folder.
+/// Call this whenever a folder is replaced or removed from the workspace.
+let workspaceFolderTeardown (wf: LspWorkspaceFolder) : unit =
+    wf.RoslynWorkspace |> Option.iter _.Dispose()
