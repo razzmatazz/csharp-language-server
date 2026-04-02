@@ -89,7 +89,7 @@ let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: Cl
     let mutable folderNum = 1
 
     for wf in workspace.Folders do
-        let wfRootDir = wf.Uri |> workspaceFolderUriToPath wf
+        let wfRootDir = workspaceFolderUriToPath wf.Uri wf
 
         let beginMessage =
             sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum workspace.Folders.Length

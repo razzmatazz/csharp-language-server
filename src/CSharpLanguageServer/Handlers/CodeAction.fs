@@ -228,7 +228,7 @@ module CodeAction =
 
                 match newDocFilePathMaybe with
                 | Some newDocFilePath ->
-                    let newDocUri = newDocFilePath |> workspaceFolderPathToUri wf
+                    let newDocUri = workspaceFolderPathToUri newDocFilePath wf
 
                     let textEditDocument =
                         { Uri = newDocUri
@@ -259,7 +259,7 @@ module CodeAction =
                         |> Seq.map U2.C1
                         |> Array.ofSeq
 
-                    let originalDocUri = originalDoc.FilePath |> workspaceFolderPathToUri wf
+                    let originalDocUri = workspaceFolderPathToUri originalDoc.FilePath wf
 
                     let textEditDocument =
                         { Uri = originalDocUri
@@ -387,17 +387,15 @@ module CodeAction =
                   }
 
                 | false -> async {
+                    let tryGetDocVersionByUri uri =
+                        let unescapedUri = wf |> workspaceFolderUriUnescape uri
+                        wf |> workspaceFolderDocumentVersion unescapedUri
+
                     let results = List<CodeAction option>()
 
                     for caTitle, ca in roslynCodeActions do
                         let! maybeLspCa =
-                            roslynCodeActionToResolvedLspCodeAction
-                                wf
-                                (workspaceFolderUriUnescape wf >> workspaceFolderDocumentVersion wf)
-                                doc
-                                ct
-                                caTitle
-                                ca
+                            roslynCodeActionToResolvedLspCodeAction wf tryGetDocVersionByUri doc ct caTitle ca
 
                         results.Add(maybeLspCa)
 
@@ -435,12 +433,12 @@ module CodeAction =
             let selectedCodeAction =
                 roslynCodeActions |> Seq.tryFind (fun (caTitle, _) -> caTitle = p.Title)
 
+            let tryGetDocVersionByUri uri =
+                let unescapedUri = wf |> workspaceFolderUriUnescape uri
+                wf |> workspaceFolderDocumentVersion unescapedUri
+
             let toResolvedLspCodeAction =
-                roslynCodeActionToResolvedLspCodeAction
-                    wf
-                    (workspaceFolderUriUnescape wf >> workspaceFolderDocumentVersion wf)
-                    doc
-                    ct
+                roslynCodeActionToResolvedLspCodeAction wf tryGetDocVersionByUri doc ct
 
             let! lspCodeAction =
                 match selectedCodeAction with

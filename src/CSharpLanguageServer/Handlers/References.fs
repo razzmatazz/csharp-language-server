@@ -47,12 +47,12 @@ module References =
 
         match wf, solution with
         | Some wf, Some solution ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | None -> return LspResult.success None
             | Some(symbol, _, _) ->
-                let wfPathToUri = workspaceFolderPathToUri wf
+                let wfPathToUri path = workspaceFolderPathToUri path wf
 
                 let! refs =
                     SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)

@@ -61,7 +61,7 @@ module Workspace =
 
         match wf, doc with
         | Some wf, Some doc ->
-            let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
+            let docFilePathMaybe = workspaceFolderUriToPath uri wf
 
             match docFilePathMaybe with
             | Some docFilePath ->
@@ -69,20 +69,20 @@ module Workspace =
                 let updatedDoc = fileText |> SourceText.From |> doc.WithText
 
                 let updatedWf =
-                    updatedDoc.Project.Solution |> workspaceFolderWithReadySolutionReplaced wf
+                    workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution wf
 
                 context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             | None -> ()
 
         | Some wf, None ->
-            let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
+            let docFilePathMaybe = workspaceFolderUriToPath uri wf
 
             match docFilePathMaybe with
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
 
-                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath fileText
+                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded docFilePath fileText wf
 
                 match newDocMaybe with
                 | Some newDoc -> context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
@@ -102,8 +102,7 @@ module Workspace =
         | Some wf, Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            let updatedWf =
-                updatedProject.Solution |> workspaceFolderWithReadySolutionReplaced wf
+            let updatedWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution wf
 
             context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             context.UpdateEffects(_.WithDocumentClosed(uri))

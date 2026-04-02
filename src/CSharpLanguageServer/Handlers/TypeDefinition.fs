@@ -50,7 +50,7 @@ module TypeDefinition =
             match wf with
             | None -> return None |> LspResult.success
             | Some wf ->
-                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
                 match symInfo with
                 | None -> return LspResult.success None

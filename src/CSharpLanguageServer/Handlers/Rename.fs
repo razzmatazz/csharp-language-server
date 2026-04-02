@@ -58,7 +58,7 @@ module Rename =
                     |> Seq.map U2.C1
                     |> Array.ofSeq
 
-                let uri = originalDoc.FilePath |> workspaceFolderPathToUri wf
+                let uri = workspaceFolderPathToUri originalDoc.FilePath wf
 
                 let textEditDocument =
                     { Uri = uri
@@ -179,7 +179,7 @@ module Rename =
         match wf with
         | None -> return None |> LspResult.success
         | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | None -> return LspResult.success None
@@ -199,12 +199,8 @@ module Rename =
 
 
                 let! docTextEdit =
-                    lspDocChangesFromSolutionDiff
-                        ct
-                        wf
-                        originalSolution
-                        updatedSolution
-                        (workspaceFolderDocumentVersion wf)
+                    lspDocChangesFromSolutionDiff ct wf originalSolution updatedSolution (fun uri ->
+                        workspaceFolderDocumentVersion uri wf)
 
                 return
                     WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)

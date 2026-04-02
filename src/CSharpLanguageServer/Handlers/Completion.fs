@@ -247,7 +247,7 @@ module Completion =
             | _, None -> return None
             | Some wf, Some solution ->
 
-                let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf |> _.Value
+                let cshtmlPath = wf |> workspaceFolderUriToPath p.TextDocument.Uri |> _.Value
 
                 match! solutionGetRazorDocumentForPath solution cshtmlPath with
                 | None -> return None
@@ -302,7 +302,7 @@ module Completion =
                                 sourceText
 
                         let! _, doc =
-                            workspaceFolderWithDocumentAdded wf (cshtmlPath + ".cs") (newSourceText.ToString())
+                            workspaceFolderWithDocumentAdded (cshtmlPath + ".cs") (newSourceText.ToString()) wf
 
                         match doc with
                         | None -> return None

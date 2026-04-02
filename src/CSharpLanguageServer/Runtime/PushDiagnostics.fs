@@ -76,11 +76,11 @@ let handleProcessPending
 
                 let docForUri = wf |> Option.bind (workspaceFolderDocument AnyDocument docUri)
 
-                let wfPathToUri = workspaceFolderPathToUri wf.Value
+                let wfPathToUri uri = workspaceFolderPathToUri uri wf.Value
 
                 match wf, docForUri with
                 | Some wf, None ->
-                    let cshtmlPath = workspaceFolderUriToPath wf docUri |> _.Value
+                    let cshtmlPath = workspaceFolderUriToPath docUri wf |> _.Value
 
                     match wf.Solution with
                     | Ready(_, solution) ->
@@ -94,7 +94,9 @@ let handleProcessPending
                             | Some semanticModel ->
                                 let diagnostics =
                                     semanticModel.GetDiagnostics()
-                                    |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
+                                    |> Seq.map (
+                                        Diagnostic.fromRoslynDiagnostic (fun path -> workspaceFolderPathToUri path wf)
+                                    )
                                     |> Seq.filter (fun (_, uri) -> uri = docUri)
                                     |> Seq.map fst
                                     |> Array.ofSeq

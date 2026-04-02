@@ -20,7 +20,7 @@ module CSharpMetadata =
             let projectAndSymbolFromUri =
                 p.TextDocument.Uri
                 |> string
-                |> workspaceFolderParseMetadataSymbolSourceViewUri wf
+                |> fun uri -> workspaceFolderParseMetadataSymbolSourceViewUri uri wf
 
             match projectAndSymbolFromUri with
             | None -> return None |> LspResult.success
@@ -34,7 +34,7 @@ module CSharpMetadata =
 
                     match symbol with
                     | Some symbol ->
-                        let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata wf project symbol
+                        let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata project symbol wf
 
                         context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
 
