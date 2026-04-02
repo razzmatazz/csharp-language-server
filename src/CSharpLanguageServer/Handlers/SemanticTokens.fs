@@ -120,7 +120,7 @@ module SemanticTokens =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
 
-            let docMaybe = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
+            let docMaybe = wf |> Option.bind (workspaceFolderDocument AnyDocument uri)
 
             match docMaybe with
             | None -> return None |> LspResult.success
