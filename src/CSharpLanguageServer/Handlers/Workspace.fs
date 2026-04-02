@@ -173,7 +173,7 @@ module Workspace =
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 
-            let! workspaceFolders = context.GetWorkspaceFolderList()
+            let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = false)
 
             let updatedWorkspaceFolders =
                 workspaceFolders

@@ -193,7 +193,7 @@ module Diagnostic =
         async {
             match p.PartialResultToken with
             | None ->
-                let! workspaceFolders = context.GetWorkspaceFolderList()
+                let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
                 let! diagnosticReports = getWorkspaceDiagnosticReports workspaceFolders |> AsyncSeq.toArrayAsync
 
                 let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
@@ -219,7 +219,7 @@ module Diagnostic =
                     do! context.LspClient.Progress(progressParams)
                 }
 
-                let! workspaceFolders = context.GetWorkspaceFolderList()
+                let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)

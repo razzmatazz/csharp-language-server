@@ -1,6 +1,5 @@
 module CSharpLanguageServer.Lsp.Workspace
 
-open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Lsp.WorkspaceFolder
@@ -39,49 +38,22 @@ let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
     { LspWorkspace.Empty with
         Folders = folders }
 
-let workspaceFolder (workspace: LspWorkspace) (uri: string) =
+let workspaceFolder (uri: string) (workspace: LspWorkspace) =
     let workspaceFolderMatchesUri wf =
         uri.StartsWith wf.Uri || uri.StartsWith(workspaceFolderMetadataUriBase wf)
 
     workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
 
-let workspaceTeardown (workspace: LspWorkspace) : unit =
-    workspace.Folders |> List.iter workspaceFolderTeardown
-
-let workspaceWithFolder (workspace: LspWorkspace) (updatedWf: LspWorkspaceFolder) =
-    let existingW = workspace.Folders |> Seq.tryFind (fun wf -> wf.Uri = updatedWf.Uri)
-
+let workspaceWithFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWorkspace) =
     let updatedFolders =
-        match existingW with
-        | Some existingWf ->
-            do workspaceFolderTeardown existingWf
-
-            let replaceByUri wf =
-                if wf.Uri = existingWf.Uri then updatedWf else wf
-
-            workspace.Folders |> List.map replaceByUri
-        | None -> workspace.Folders @ [ updatedWf ]
+        workspace.Folders
+        |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
 
     { workspace with
         Folders = updatedFolders }
 
-let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) workspace = async {
-    let progressReporter = ProgressReporter(lspClient, clientCapabilities)
+let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
+    let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
-    do! progressReporter.Begin("Loading workspace")
-
-    let mutable updatedWorkspace = workspace
-    let mutable folderNum = 1
-
-    for wf in workspace.Folders do
-        let! updatedWf =
-            wf
-            |> workspaceFolderWithSolutionLoaded lspClient progressReporter workspace.Folders.Length folderNum
-
-        updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
-        folderNum <- folderNum + 1
-
-    do! progressReporter.End("Finished loading workspace")
-
-    return updatedWorkspace
-}
+    { workspace with
+        Folders = tornDownFolders }

@@ -89,7 +89,7 @@ type RequestContext
         lspClient: ILspClient,
         config: CSharpConfiguration,
         getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
-        getWorkspaceFolderList: unit -> Async<LspWorkspaceFolder list>,
+        getWorkspaceFolderUriList: unit -> Async<string list>,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
     ) =
@@ -100,6 +100,8 @@ type RequestContext
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
+
+    member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 
     member _.GetWorkspaceFolderReadySolution(uri) = async {
         let! wf = getWorkspaceFolder uri true
@@ -112,7 +114,19 @@ type RequestContext
             | _ -> return Some wf, None
     }
 
-    member _.GetWorkspaceFolderList = getWorkspaceFolderList
+    member _.GetWorkspaceFolderList(withSolutionReady: bool) = async {
+        let! wfUris = getWorkspaceFolderUriList ()
+        let mutable wfs = []
+
+        for uri in wfUris do
+            let! wf = getWorkspaceFolder uri withSolutionReady
+
+            match wf with
+            | None -> failwithf "no LspWorkspaceFolder resolved for URI \"%s\"!" uri
+            | Some wf -> wfs <- wf :: wfs
+
+        return wfs
+    }
 
     member _.UpdateEffects(update: RequestEffects -> RequestEffects) =
         match requestMode.IsReadOnlyBackground with
