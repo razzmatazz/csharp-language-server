@@ -107,6 +107,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = newRequestQueue }
 
     | GetWorkspaceFolder(uri, withSolutionReady, replyChannel) ->
+        // TODO handle on-demand wf solution loading
         let wf = uri |> workspaceFolder state.Workspace
 
         let wf =
@@ -123,6 +124,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | GetWorkspaceFolderList replyChannel ->
+        // TODO handle on-demand wf solution loading
         replyChannel.Reply(state.Workspace.Folders)
         return state
 
