@@ -54,7 +54,7 @@ module WorkspaceSymbol =
             let! workspaceFolders = context.GetWorkspaceFolderList()
 
             for wf in workspaceFolders do
-                let wfPathToUri = workspaceFolderPathToUri wf
+                let wfPathToUri path = workspaceFolderPathToUri path wf
 
                 let! symbols =
                     match wf.Solution with

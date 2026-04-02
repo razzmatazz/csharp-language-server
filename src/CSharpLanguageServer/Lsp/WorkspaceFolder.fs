@@ -65,7 +65,7 @@ type LspWorkspaceFolderDocumentType =
     | DecompiledDocument // Document decompiled from metadata, readonly
     | AnyDocument
 
-let workspaceFolderWithReadySolutionUpdated wf (update: Solution -> Solution) =
+let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
     match wf.Solution with
     | Pending -> failwith "wf in Pending state!"
     | Loading _ -> failwith "wf in Loading state!"
@@ -76,19 +76,18 @@ let workspaceFolderWithReadySolutionUpdated wf (update: Solution -> Solution) =
         { wf with
             Solution = Ready(workspace, updatedSolution) }
 
-let workspaceFolderWithReadySolutionReplaced wf (sln: Solution) =
-    workspaceFolderWithReadySolutionUpdated wf (fun _ -> sln)
+let workspaceFolderWithReadySolutionReplaced (sln: Solution) wf =
+    workspaceFolderWithReadySolutionUpdated (fun _ -> sln) wf
 
 // Unescape some necessary char before passing string to Uri.
 // Can't use Uri.UnescapeDataString here. For example, if uri is "file:///z%3a/src/c%23/ProjDir" ("%3a" is
 // ":" and "%23" is "#"), Uri.UnescapeDataString will unescape both "%3a" and "%23". Then Uri will think
 /// "#/ProjDir" is Fragment instead of part of LocalPath.
-let workspaceFolderUriUnescape (_wf: LspWorkspaceFolder) (uri: string) : string = uri.Replace("%3a", ":", true, null)
+let workspaceFolderUriUnescape (uri: string) (_wf: LspWorkspaceFolder) : string = uri.Replace("%3a", ":", true, null)
 
-let workspaceFolderUriToPath (wf: LspWorkspaceFolder) (uri: string) : option<string> =
+let workspaceFolderUriToPath (uri: string) (wf: LspWorkspaceFolder) : option<string> =
     try
-        uri
-        |> workspaceFolderUriUnescape wf
+        workspaceFolderUriUnescape uri wf
         |> Uri
         |> _.LocalPath
         |> Uri.UnescapeDataString
@@ -96,7 +95,7 @@ let workspaceFolderUriToPath (wf: LspWorkspaceFolder) (uri: string) : option<str
     with _ex ->
         None
 
-let workspaceFolderPathToUri (_wf: LspWorkspaceFolder) (path: string) : string =
+let workspaceFolderPathToUri (path: string) (_wf: LspWorkspaceFolder) : string =
     let metadataPrefix = "$metadata$/"
 
     if path.StartsWith metadataPrefix then
@@ -111,9 +110,9 @@ let workspaceFolderMetadataUriBase (wf: LspWorkspaceFolder) =
     |> sprintf "csharp:/%s"
 
 let workspaceFolderMetadataSymbolSourceViewUri
-    _wf
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
+    _wf
     =
     let projectFile =
         project.FilePath
@@ -126,7 +125,7 @@ let workspaceFolderMetadataSymbolSourceViewUri
 
     sprintf "csharp:/%s/decompiled/%s.cs" projectFile (Uri.EscapeDataString symbolMetadataName)
 
-let workspaceFolderParseMetadataSymbolSourceViewUri (_wf: LspWorkspaceFolder) (uri: string) : option<string * string> =
+let workspaceFolderParseMetadataSymbolSourceViewUri (uri: string) (_wf: LspWorkspaceFolder) : option<string * string> =
     let uri = uri |> Uri
 
     match uri.Scheme with
@@ -189,9 +188,9 @@ let documentFromMetadata
     }
 
 let workspaceFolderWithDocumentFromMetadata
-    wf
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
+    wf
     =
     async {
         let symbolMetadataName = symbolGetMetadataName symbol
@@ -220,15 +219,15 @@ let workspaceFolderWithDocumentFromMetadata
             return updatedWf, symbolMetadata
     }
 
-let workspaceFolderSymbolLocationsInMetadata wf project symbol = async {
+let workspaceFolderSymbolLocationsInMetadata project symbol wf = async {
     let! ct = Async.CancellationToken
 
-    let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata wf project symbol
+    let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata project symbol wf
 
     // figure out location on the document (approx implementation)
     let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-    let symbolMetadataUri = workspaceFolderMetadataSymbolSourceViewUri wf project symbol
+    let symbolMetadataUri = workspaceFolderMetadataSymbolSourceViewUri project symbol wf
 
     let collector =
         DocumentSymbolCollectorForMatchingSymbolName(symbolMetadataUri, symbol)
@@ -249,20 +248,20 @@ let workspaceFolderSymbolLocationsInMetadata wf project symbol = async {
 }
 
 let workspaceFolderResolveSymbolLocation
-    (wf: LspWorkspaceFolder)
     (config: CSharpConfiguration)
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
+    (wf: LspWorkspaceFolder)
     =
     match l.IsInMetadata, l.IsInSource with
     | true, _ ->
         match config.useMetadataUris |> Option.defaultValue false with
-        | true -> workspaceFolderSymbolLocationsInMetadata wf project symbol
+        | true -> workspaceFolderSymbolLocationsInMetadata project symbol wf
         | false -> ([], wf) |> async.Return
 
     | false, true ->
-        let wfPathToUri = workspaceFolderPathToUri wf
+        let wfPathToUri path = workspaceFolderPathToUri path wf
 
         match Location.fromRoslynLocation wfPathToUri l with
         | Some loc -> ([ loc ], wf) |> async.Return
@@ -283,7 +282,7 @@ let workspaceFolderSymbolLocations
         let mutable aggregatedLspLocations = []
 
         for l in symbol.Locations do
-            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation wf config project symbol l
+            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation config project symbol l wf
 
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
             wf <- updatedWf
@@ -311,8 +310,7 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
             | _ -> None
 
         let matchingDecompiledDocumentMaybe =
-            u
-            |> workspaceFolderParseMetadataSymbolSourceViewUri wf
+            workspaceFolderParseMetadataSymbolSourceViewUri u wf
             |> Option.bind (fun (projectPath, symbolMetadataName) ->
                 Map.tryFind (projectPath, symbolMetadataName) wf.DecompiledSymbolMetadata)
             |> Option.map (fun x -> x.Document, DecompiledDocument)
@@ -325,7 +323,7 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
 let workspaceFolderDocument docType u wf =
     workspaceFolderDocumentDetails docType u wf |> Option.map fst
 
-let workspaceFolderProjectForPath wf (filePath: string) : Project option =
+let workspaceFolderProjectForPath (filePath: string) wf : Project option =
     let docDir = Path.GetDirectoryName filePath
 
     let fileIsOnProjectDir (p: Project) =
@@ -341,8 +339,8 @@ let workspaceFolderProjectForPath wf (filePath: string) : Project option =
     | Ready(_, solution) -> findMatchingFileInSolution solution
     | _ -> None
 
-let workspaceFolderAdditionalTextDocumentForPath (wf: LspWorkspaceFolder) (filePath: string) : TextDocument option =
-    let project = workspaceFolderProjectForPath wf filePath
+let workspaceFolderAdditionalTextDocumentForPath (filePath: string) (wf: LspWorkspaceFolder) : TextDocument option =
+    let project = workspaceFolderProjectForPath filePath wf
 
     match project with
     | None -> None
@@ -352,12 +350,12 @@ let workspaceFolderAdditionalTextDocumentForPath (wf: LspWorkspaceFolder) (fileP
         |> Seq.tryHead
 
 let workspaceFolderWithDocumentAdded
-    wf
     (docFilePath: string)
     (text: string)
+    wf
     : Async<LspWorkspaceFolder * Document option> =
     async {
-        let projectOnPath = workspaceFolderProjectForPath wf docFilePath
+        let projectOnPath = workspaceFolderProjectForPath docFilePath wf
 
         match projectOnPath with
         | Some proj ->
@@ -367,8 +365,7 @@ let workspaceFolderWithDocumentAdded
             let newDoc =
                 proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
 
-            let updatedWf =
-                newDoc.Project.Solution |> workspaceFolderWithReadySolutionReplaced wf
+            let updatedWf = workspaceFolderWithReadySolutionReplaced newDoc.Project.Solution wf
 
             return updatedWf, Some newDoc
 
@@ -382,25 +379,26 @@ let workspaceFolderWithDocumentAdded
     }
 
 let workspaceFolderWithAdditionalTextDocumentTextUpdated
-    (wf: LspWorkspaceFolder)
     (textDoc: TextDocument)
     (newSourceText: SourceText)
+    (wf: LspWorkspaceFolder)
     =
-    textDoc.Project
-    |> _.RemoveAdditionalDocument(textDoc.Id)
-    |> _.AddAdditionalDocument(textDoc.Name, newSourceText, textDoc.Folders, textDoc.FilePath)
-    |> _.Project.Solution
-    |> workspaceFolderWithReadySolutionReplaced wf
+    let sln =
+        textDoc.Project
+        |> _.RemoveAdditionalDocument(textDoc.Id)
+        |> _.AddAdditionalDocument(textDoc.Name, newSourceText, textDoc.Folders, textDoc.FilePath)
+        |> _.Project.Solution
 
-let workspaceFolderWithDocumentTextUpdated (wf: LspWorkspaceFolder) (doc: Document) (newSourceText: SourceText) =
-    newSourceText
-    |> doc.WithText
-    |> _.Project.Solution
-    |> workspaceFolderWithReadySolutionReplaced wf
+    workspaceFolderWithReadySolutionReplaced sln wf
 
-let workspaceFolderWithDocumentRemoved (wf: LspWorkspaceFolder) (uri: string) : LspWorkspaceFolder =
+let workspaceFolderWithDocumentTextUpdated (doc: Document) (newSourceText: SourceText) (wf: LspWorkspaceFolder) =
+    let sln = newSourceText |> doc.WithText |> _.Project.Solution
+
+    workspaceFolderWithReadySolutionReplaced sln wf
+
+let workspaceFolderWithDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     let removeDoc (solution: Solution) =
-        let filename = uri |> workspaceFolderUriToPath wf
+        let filename = workspaceFolderUriToPath uri wf
 
         let doc =
             solution.Projects
@@ -413,14 +411,14 @@ let workspaceFolderWithDocumentRemoved (wf: LspWorkspaceFolder) (uri: string) : 
             logger.LogTrace("workspaceFolderWithDocumentRemoved: No document found for uri \"{uri}\"", uri)
             solution
 
-    workspaceFolderWithReadySolutionUpdated wf removeDoc
+    workspaceFolderWithReadySolutionUpdated removeDoc wf
 
 let workspaceFolderWithAdditionalTextDocumentAdded
-    (wf: LspWorkspaceFolder)
     (docFilePath: string)
     (text: string)
+    (wf: LspWorkspaceFolder)
     : LspWorkspaceFolder * TextDocument option =
-    let projectOnPath = workspaceFolderProjectForPath wf docFilePath
+    let projectOnPath = workspaceFolderProjectForPath docFilePath wf
 
     match projectOnPath with
     | Some project ->
@@ -439,7 +437,7 @@ let workspaceFolderWithAdditionalTextDocumentAdded
             )
 
         let updatedWf =
-            newDoc |> _.Project.Solution |> workspaceFolderWithReadySolutionReplaced wf
+            workspaceFolderWithReadySolutionReplaced (newDoc.Project.Solution) wf
 
         updatedWf, Some newDoc
 
@@ -451,13 +449,13 @@ let workspaceFolderWithAdditionalTextDocumentAdded
 
         wf, None
 
-let workspaceFolderWithAdditionalDocumentRemoved (wf: LspWorkspaceFolder) (uri: string) : LspWorkspaceFolder =
+let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
     | Pending
     | Loading _
     | Defunct -> wf
     | Ready(workspace, solution) ->
-        let filename = uri |> workspaceFolderUriToPath wf
+        let filename = workspaceFolderUriToPath uri wf
 
         let doc =
             solution.Projects
@@ -477,15 +475,15 @@ let workspaceFolderWithAdditionalDocumentRemoved (wf: LspWorkspaceFolder) (uri: 
             wf
 
 let workspaceFolderDocumentSymbol
-    (wf: LspWorkspaceFolder)
     docType
     (uri: DocumentUri)
     (pos: Ionide.LanguageServerProtocol.Types.Position)
+    (wf: LspWorkspaceFolder)
     =
     async {
         match uri.EndsWith ".cshtml" with
         | true ->
-            let cshtmlPath = workspaceFolderUriToPath wf uri
+            let cshtmlPath = workspaceFolderUriToPath uri wf
 
             match wf.Solution, cshtmlPath with
             | Ready(_, solution), Some cshtmlPath ->
@@ -511,9 +509,9 @@ let workspaceFolderDocumentSymbol
                 return symbolInfo
     }
 
-let workspaceFolderDocumentSemanticModel (wf: LspWorkspaceFolder) (uri: DocumentUri) = async {
+let workspaceFolderDocumentSemanticModel (uri: DocumentUri) (wf: LspWorkspaceFolder) = async {
     if uri.EndsWith ".cshtml" then
-        let cshtmlPath = workspaceFolderUriToPath wf uri
+        let cshtmlPath = workspaceFolderUriToPath uri wf
 
         match wf.Solution, cshtmlPath with
         | Ready(_, solution), Some cshtmlPath ->
@@ -535,7 +533,7 @@ let workspaceFolderDocumentSemanticModel (wf: LspWorkspaceFolder) (uri: Document
             return semanticModel
 }
 
-let workspaceFolderDocumentVersion (wf: LspWorkspaceFolder) (uri: string) : int option =
+let workspaceFolderDocumentVersion (uri: string) (wf: LspWorkspaceFolder) : int option =
     wf.OpenDocs |> Map.tryFind uri |> Option.map _.Version
 
 let workspaceFolderWithDocOpened

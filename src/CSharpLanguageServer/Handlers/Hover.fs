@@ -57,7 +57,7 @@ module Hover =
         match wf with
         | None -> return LspResult.success None
         | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success

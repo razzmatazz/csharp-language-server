@@ -164,7 +164,7 @@ module CodeLens =
 
         match wf, solution with
         | Some wf, Some solution ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument lensData.DocumentUri lensData.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument lensData.DocumentUri lensData.Position wf
 
             match symInfo with
             | None -> return p |> LspResult.success

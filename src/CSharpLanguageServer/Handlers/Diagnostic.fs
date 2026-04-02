@@ -67,13 +67,13 @@ module Diagnostic =
         match wf with
         | None -> return emptyReport |> U2.C1 |> LspResult.success
         | Some wf ->
-            let! semModel = workspaceFolderDocumentSemanticModel wf p.TextDocument.Uri
+            let! semModel = workspaceFolderDocumentSemanticModel p.TextDocument.Uri wf
 
             match semModel with
             | Some semanticModel ->
                 let! ct = Async.CancellationToken
 
-                let wfPathToUri = workspaceFolderPathToUri wf
+                let wfPathToUri path = workspaceFolderPathToUri path wf
 
                 let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
                     let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
@@ -117,7 +117,7 @@ module Diagnostic =
                 match compilation |> Option.ofObj with
                 | None -> ()
                 | Some compilation ->
-                    let pathToUri = workspaceFolderPathToUri wf
+                    let pathToUri path = workspaceFolderPathToUri path wf
 
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)

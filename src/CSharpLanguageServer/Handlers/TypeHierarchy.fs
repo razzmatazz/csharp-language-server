@@ -53,7 +53,7 @@ module TypeHierarchy =
         match wf with
         | None -> return None |> LspResult.success
         | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | Some(symbol, project, _) when isTypeSymbol symbol ->
@@ -81,7 +81,7 @@ module TypeHierarchy =
             match wf with
             | None -> return None |> LspResult.success
             | Some wf ->
-                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
                 match symInfo with
                 | Some(symbol, project, _) when isTypeSymbol symbol ->
@@ -126,7 +126,7 @@ module TypeHierarchy =
 
             match wf, solution with
             | Some wf, Some solution ->
-                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
                 match symInfo with
                 | Some(symbol, project, _) when isTypeSymbol symbol ->

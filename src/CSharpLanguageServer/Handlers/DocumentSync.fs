@@ -113,22 +113,22 @@ module TextDocumentSync =
         None
 
     let didOpenCshtmlFile wf (p: DidOpenTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
-        let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+        let cshtmlPath = workspaceFolderUriToPath p.TextDocument.Uri wf
         let newSourceText = SourceText.From(p.TextDocument.Text, Encoding.UTF8)
 
         match cshtmlPath with
         | None -> return None
         | Some cshtmlPath ->
-            match workspaceFolderAdditionalTextDocumentForPath wf cshtmlPath with
+            match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
             | Some doc ->
                 let updatedWf =
-                    workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc newSourceText
+                    workspaceFolderWithAdditionalTextDocumentTextUpdated doc newSourceText wf
 
                 return Some updatedWf
 
             | None ->
                 let updatedWf, _ =
-                    workspaceFolderWithAdditionalTextDocumentAdded wf cshtmlPath p.TextDocument.Text
+                    workspaceFolderWithAdditionalTextDocumentAdded cshtmlPath p.TextDocument.Text wf
 
                 return Some updatedWf
     }
@@ -149,22 +149,20 @@ module TextDocumentSync =
                     // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
                     // went out of sync with editor
                     let updatedWf =
-                        p.TextDocument.Text
-                        |> SourceText.From
-                        |> workspaceFolderWithDocumentTextUpdated wf doc
+                        workspaceFolderWithDocumentTextUpdated doc (p.TextDocument.Text |> SourceText.From) wf
 
                     return Some updatedWf
 
                 | _ -> return None
 
             | None ->
-                let docFilePathMaybe = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+                let docFilePathMaybe = workspaceFolderUriToPath p.TextDocument.Uri wf
 
                 match docFilePathMaybe with
                 | None -> return None
                 | Some docFilePath ->
                     // ok, this document is not in solution, register a new document
-                    let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded wf docFilePath p.TextDocument.Text
+                    let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded docFilePath p.TextDocument.Text wf
 
                     return newDocMaybe |> Option.map (fun _ -> updatedWf)
         }
@@ -191,10 +189,11 @@ module TextDocumentSync =
     }
 
     let didChangeCshtmlFile wf (p: DidChangeTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
-        let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+        let cshtmlPath = workspaceFolderUriToPath p.TextDocument.Uri wf
 
         let additionalDoc =
-            cshtmlPath |> Option.bind (workspaceFolderAdditionalTextDocumentForPath wf)
+            cshtmlPath
+            |> Option.bind (fun path -> workspaceFolderAdditionalTextDocumentForPath path wf)
 
         match additionalDoc with
         | None -> return None
@@ -206,7 +205,7 @@ module TextDocumentSync =
                 sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
             let updatedWf =
-                workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc updatedSourceText
+                workspaceFolderWithAdditionalTextDocumentTextUpdated doc updatedSourceText wf
 
             return Some updatedWf
     }
@@ -228,7 +227,7 @@ module TextDocumentSync =
                 let updatedSourceText =
                     sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
-                let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc updatedSourceText
+                let updatedWf = workspaceFolderWithDocumentTextUpdated doc updatedSourceText wf
                 return Some updatedWf
         }
 
@@ -274,10 +273,11 @@ module TextDocumentSync =
         //
         // if file does not exist on disk, remove it from the solution
 
-        let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+        let cshtmlPath = workspaceFolderUriToPath p.TextDocument.Uri wf
 
         let additionalDoc =
-            cshtmlPath |> Option.bind (workspaceFolderAdditionalTextDocumentForPath wf)
+            cshtmlPath
+            |> Option.bind (fun path -> workspaceFolderAdditionalTextDocumentForPath path wf)
 
         match additionalDoc, cshtmlPath with
         | Some doc, Some filename ->
@@ -285,11 +285,11 @@ module TextDocumentSync =
                 let sourceFromDisk = sourceTextFromFile filename
 
                 let updatedWf =
-                    workspaceFolderWithAdditionalTextDocumentTextUpdated wf doc sourceFromDisk
+                    workspaceFolderWithAdditionalTextDocumentTextUpdated doc sourceFromDisk wf
 
                 return Some updatedWf
             else
-                let updatedWf = workspaceFolderWithAdditionalDocumentRemoved wf p.TextDocument.Uri
+                let updatedWf = workspaceFolderWithAdditionalDocumentRemoved p.TextDocument.Uri wf
                 return Some updatedWf
 
         | _, _ -> return None
@@ -307,7 +307,7 @@ module TextDocumentSync =
 
             let docInfo = workspaceFolderDocumentDetails AnyDocument p.TextDocument.Uri wf
 
-            let filename = p.TextDocument.Uri |> workspaceFolderUriToPath wf
+            let filename = workspaceFolderUriToPath p.TextDocument.Uri wf
 
             match docInfo, filename with
             | Some(doc, docType), Some filename ->
@@ -316,10 +316,10 @@ module TextDocumentSync =
                     if File.Exists filename then
                         // reverting the file to original contents
                         let sourceFromDisk = sourceTextFromFile filename
-                        let updatedWf = workspaceFolderWithDocumentTextUpdated wf doc sourceFromDisk
+                        let updatedWf = workspaceFolderWithDocumentTextUpdated doc sourceFromDisk wf
                         return Some updatedWf
                     else
-                        let updatedWf = workspaceFolderWithDocumentRemoved wf p.TextDocument.Uri
+                        let updatedWf = workspaceFolderWithDocumentRemoved p.TextDocument.Uri wf
                         return Some updatedWf
 
                 | _ -> return None

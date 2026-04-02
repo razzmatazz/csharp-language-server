@@ -83,14 +83,14 @@ module DocumentHighlight =
         match wf with
         | None -> return None |> LspResult.success
         | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | None -> return None |> LspResult.success
 
             | Some(symbol, project, docMaybe) ->
                 if shouldHighlight symbol then
-                    let wfPathToUri = workspaceFolderPathToUri wf
+                    let wfPathToUri path = workspaceFolderPathToUri path wf
 
                     let! highlights =
                         getHighlights
@@ -98,7 +98,7 @@ module DocumentHighlight =
                             project
                             docMaybe
                             wfPathToUri
-                            (workspaceFolderUriToPath wf p.TextDocument.Uri |> _.Value)
+                            (workspaceFolderUriToPath p.TextDocument.Uri wf |> _.Value)
 
                     return highlights |> Seq.toArray |> Some |> LspResult.success
                 else

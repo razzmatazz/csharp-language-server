@@ -55,7 +55,7 @@ module CallHierarchy =
         match wf with
         | None -> return None |> LspResult.success
         | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
+            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
             | Some(symbol, project, _) when isCallableSymbol symbol ->
@@ -99,7 +99,7 @@ module CallHierarchy =
 
             match wf, solution with
             | Some wf, Some solution ->
-                let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
                 match symInfo with
                 | None -> return LspResult.success None
@@ -108,7 +108,7 @@ module CallHierarchy =
                         SymbolFinder.FindCallersAsync(symbol, solution, cancellationToken = ct)
                         |> Async.AwaitTask
 
-                    let wfPathToUri = workspaceFolderPathToUri wf
+                    let wfPathToUri path = workspaceFolderPathToUri path wf
 
                     // TODO: If we remove info.IsDirect, then we will get lots of false positive. But if we keep it,
                     // we will miss many callers. Maybe it should have some change in LSP protocol.
