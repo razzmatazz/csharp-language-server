@@ -1,23 +1,10 @@
 module CSharpLanguageServer.Lsp.Workspace
 
-open System
-open System.IO
-
-open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.Text
-open Microsoft.CodeAnalysis.FindSymbols
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
-open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.WorkspaceFolder
-open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Types
-open CSharpLanguageServer.Util
-
-let logger = Logging.getLoggerByName "Lsp.Workspace"
 
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list }
@@ -81,39 +68,20 @@ let workspaceWithFolder (workspace: LspWorkspace) (updatedWf: LspWorkspaceFolder
 let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) workspace = async {
     let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
-    let beginMessage = sprintf "Loading workspace"
-
-    do! progressReporter.Begin(beginMessage)
+    do! progressReporter.Begin("Loading workspace")
 
     let mutable updatedWorkspace = workspace
     let mutable folderNum = 1
 
     for wf in workspace.Folders do
-        let wfRootDir = workspaceFolderUriToPath wf.Uri wf
-
-        let beginMessage =
-            sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum workspace.Folders.Length
-
-        do! progressReporter.Report(message = beginMessage)
-
-        let! newSolution =
-            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir.Value
-
-        let updatedWf =
-            match newSolution with
-            | Some(workspace, solution) ->
-                { wf with
-                    Solution = Ready(workspace, solution) }
-            | None -> { wf with Solution = Defunct }
+        let! updatedWf =
+            wf
+            |> workspaceFolderWithSolutionLoaded lspClient progressReporter workspace.Folders.Length folderNum
 
         updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
-
-        do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
-
         folderNum <- folderNum + 1
 
-    let endMessage = sprintf "Finished loading workspace"
-    do! progressReporter.End(endMessage)
+    do! progressReporter.End("Finished loading workspace")
 
     return updatedWorkspace
 }

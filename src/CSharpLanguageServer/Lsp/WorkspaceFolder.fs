@@ -21,7 +21,7 @@ open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 
-let logger = Logging.getLoggerByName "WorkspaceFolder"
+let logger = Logging.getLoggerByName "Lsp.WorkspaceFolder"
 
 type LspWorkspaceDecompiledMetadataDocument =
     { Metadata: CSharpMetadataInformation
@@ -67,14 +67,15 @@ type LspWorkspaceFolderDocumentType =
 
 let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
     match wf.Solution with
-    | Pending -> failwith "wf in Pending state!"
-    | Loading _ -> failwith "wf in Loading state!"
-    | Defunct -> failwith "wf in Defunct state!"
     | Ready(workspace, solution) ->
         let updatedSolution = update solution
 
         { wf with
             Solution = Ready(workspace, updatedSolution) }
+
+    | Pending -> failwith "wf.Solution in Pending state!"
+    | Loading _ -> failwith "wf.Solution in Loading state!"
+    | Defunct -> failwith "wf.Solution in Defunct state!"
 
 let workspaceFolderWithReadySolutionReplaced (sln: Solution) wf =
     workspaceFolderWithReadySolutionUpdated (fun _ -> sln) wf
@@ -573,3 +574,34 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : unit =
     | Pending -> ()
     | Loading(workspace, _) -> workspace.Dispose()
     | Ready(workspace, _) -> workspace.Dispose()
+
+/// Load the solution for a single workspace folder, returning the updated folder.
+let workspaceFolderWithSolutionLoaded
+    (lspClient: ILspClient)
+    (progressReporter: ProgressReporter)
+    (totalFolders: int)
+    (folderNum: int)
+    (wf: LspWorkspaceFolder)
+    =
+    async {
+        let wfRootDir = workspaceFolderUriToPath wf.Uri wf
+
+        let beginMessage =
+            sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum totalFolders
+
+        do! progressReporter.Report(message = beginMessage)
+
+        let! newSolution =
+            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir.Value
+
+        let updatedWf =
+            match newSolution with
+            | Some(workspace, solution) ->
+                { wf with
+                    Solution = Ready(workspace, solution) }
+            | None -> { wf with Solution = Defunct }
+
+        do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
+
+        return updatedWf
+    }
