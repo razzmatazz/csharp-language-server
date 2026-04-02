@@ -55,13 +55,11 @@ module Workspace =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let private tryReloadDocumentOnUri logger (context: RequestContext) uri = async {
-        let! wfMaybe = uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
 
-        let doc =
-            wfMaybe
-            |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf UserDocument uri |> Option.map fst)
+        let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
 
-        match wfMaybe, doc with
+        match wf, doc with
         | Some wf, Some doc ->
             let docFilePathMaybe = uri |> workspaceFolderUriToPath wf
 
@@ -71,8 +69,7 @@ module Workspace =
                 let updatedDoc = fileText |> SourceText.From |> doc.WithText
 
                 let updatedWf =
-                    { wf with
-                        Solution = Some updatedDoc.Project.Solution }
+                    updatedDoc.Project.Solution |> workspaceFolderWithReadySolutionReplaced wf
 
                 context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             | None -> ()
@@ -97,19 +94,16 @@ module Workspace =
     }
 
     let private removeDocument (context: RequestContext) uri = async {
-        let! wfMaybe = uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
 
-        let doc =
-            wfMaybe
-            |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf UserDocument uri |> Option.map fst)
+        let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
 
-        match wfMaybe, doc with
+        match wf, doc with
         | Some wf, Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             let updatedWf =
-                { wf with
-                    Solution = Some updatedProject.Solution }
+                updatedProject.Solution |> workspaceFolderWithReadySolutionReplaced wf
 
             context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
             context.UpdateEffects(_.WithDocumentClosed(uri))

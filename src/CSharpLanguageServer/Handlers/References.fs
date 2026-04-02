@@ -43,11 +43,10 @@ module References =
 
     let handle (context: RequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
         let! ct = Async.CancellationToken
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
 
-        match wf with
-        | None -> return None |> LspResult.success
-        | Some wf ->
+        match wf, solution with
+        | Some wf, Some solution ->
             let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.TextDocument.Uri p.Position
 
             match symInfo with
@@ -56,7 +55,7 @@ module References =
                 let wfPathToUri = workspaceFolderPathToUri wf
 
                 let! refs =
-                    SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                    SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 let locationsFromReferencedSym (r: ReferencedSymbol) =
@@ -74,4 +73,6 @@ module References =
                     |> Seq.toArray
                     |> Some
                     |> LspResult.success
+
+        | _, _ -> return None |> LspResult.success
     }

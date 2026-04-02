@@ -240,90 +240,95 @@ module Completion =
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
 
         async {
-            let! wfOption = p.TextDocument.Uri |> context.GetWorkspaceFolder
-            let wf = wfOption.Value
+            let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
 
-            let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf |> _.Value
+            match wf, solution with
+            | None, _
+            | _, None -> return None
+            | Some wf, Some solution ->
 
-            match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
-            | None -> return None
-            | Some(project, compilation, cshtmlTree) ->
-                let! ct = Async.CancellationToken
-                let! sourceText = cshtmlTree.GetTextAsync() |> Async.AwaitTask
+                let cshtmlPath = p.TextDocument.Uri |> workspaceFolderUriToPath wf |> _.Value
 
-                let razorTextDocument =
-                    wf.Solution.Value
-                    |> _.Projects
-                    |> Seq.collect (fun p -> p.AdditionalDocuments)
-                    |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = Uri p.TextDocument.Uri)
-                    |> Seq.head
-
-                let! razorSourceText = razorTextDocument.GetTextAsync() |> Async.AwaitTask
-
-                //let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
-                //logger.LogInformation("posInCshtml={posInCshtml}", posInCshtml)
-
-                let pos = p.Position
-
-                let root = cshtmlTree.GetRoot()
-
-                let mutable positionAndToken: (int * SyntaxToken) option = None
-
-                for t in root.DescendantTokens() do
-                    let cshtmlSpan = cshtmlTree.GetMappedLineSpan(t.Span)
-
-                    if
-                        cshtmlSpan.StartLinePosition.Line = (int pos.Line)
-                        && cshtmlSpan.EndLinePosition.Line = (int pos.Line)
-                        && cshtmlSpan.StartLinePosition.Character <= (int pos.Character)
-                    then
-                        let tokenStartCharacterOffset =
-                            (int pos.Character - cshtmlSpan.StartLinePosition.Character)
-
-                        positionAndToken <- Some(t.Span.Start + tokenStartCharacterOffset, t)
-
-                match positionAndToken with
+                match! solutionGetRazorDocumentForPath solution cshtmlPath with
                 | None -> return None
-                | Some(position, tokenForPosition) ->
+                | Some(project, compilation, cshtmlTree) ->
+                    let! ct = Async.CancellationToken
+                    let! sourceText = cshtmlTree.GetTextAsync() |> Async.AwaitTask
 
-                    let newSourceText =
-                        let cshtmlPosition = Position.toRoslynPosition razorSourceText.Lines p.Position
-                        let charInCshtml: char = razorSourceText[cshtmlPosition - 1]
+                    let razorTextDocument =
+                        solution
+                        |> _.Projects
+                        |> Seq.collect (fun p -> p.AdditionalDocuments)
+                        |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = Uri p.TextDocument.Uri)
+                        |> Seq.head
 
-                        if charInCshtml = '.' && string tokenForPosition.Value <> "." then
-                            // a hack to make <span>@Model.|</span> autocompletion to work:
-                            // - force a dot if present on .cscshtml but missing on .cs
-                            sourceText.WithChanges(new TextChange(new TextSpan(position - 1, 0), "."))
-                        else
-                            sourceText
+                    let! razorSourceText = razorTextDocument.GetTextAsync() |> Async.AwaitTask
 
-                    let! _, doc = workspaceFolderWithDocumentAdded wf (cshtmlPath + ".cs") (newSourceText.ToString())
+                    //let posInCshtml = Position.toRoslynPosition sourceText.Lines p.Position
+                    //logger.LogInformation("posInCshtml={posInCshtml}", posInCshtml)
 
-                    match doc with
+                    let pos = p.Position
+
+                    let root = cshtmlTree.GetRoot()
+
+                    let mutable positionAndToken: (int * SyntaxToken) option = None
+
+                    for t in root.DescendantTokens() do
+                        let cshtmlSpan = cshtmlTree.GetMappedLineSpan(t.Span)
+
+                        if
+                            cshtmlSpan.StartLinePosition.Line = (int pos.Line)
+                            && cshtmlSpan.EndLinePosition.Line = (int pos.Line)
+                            && cshtmlSpan.StartLinePosition.Character <= (int pos.Character)
+                        then
+                            let tokenStartCharacterOffset =
+                                (int pos.Character - cshtmlSpan.StartLinePosition.Character)
+
+                            positionAndToken <- Some(t.Span.Start + tokenStartCharacterOffset, t)
+
+                    match positionAndToken with
                     | None -> return None
-                    | Some doc ->
-                        let completionService =
-                            Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
-                            |> RoslynCompletionServiceWrapper
+                    | Some(position, tokenForPosition) ->
 
-                        let completionOptions =
-                            RoslynCompletionOptions.Default()
-                            |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
-                            |> _.WithBool("ShowNameSuggestions", false)
+                        let newSourceText =
+                            let cshtmlPosition = Position.toRoslynPosition razorSourceText.Lines p.Position
+                            let charInCshtml: char = razorSourceText[cshtmlPosition - 1]
 
-                        let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
+                            if charInCshtml = '.' && string tokenForPosition.Value <> "." then
+                                // a hack to make <span>@Model.|</span> autocompletion to work:
+                                // - force a dot if present on .cscshtml but missing on .cs
+                                sourceText.WithChanges(new TextChange(new TextSpan(position - 1, 0), "."))
+                            else
+                                sourceText
 
-                        let! roslynCompletions =
-                            completionService.GetCompletionsAsync(
-                                doc,
-                                position,
-                                completionOptions,
-                                completionTrigger,
-                                ct
-                            )
-                            |> Async.map Option.ofObj
+                        let! _, doc =
+                            workspaceFolderWithDocumentAdded wf (cshtmlPath + ".cs") (newSourceText.ToString())
 
-                        return roslynCompletions |> Option.map (fun rcl -> rcl, doc)
+                        match doc with
+                        | None -> return None
+                        | Some doc ->
+                            let completionService =
+                                Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
+                                |> RoslynCompletionServiceWrapper
+
+                            let completionOptions =
+                                RoslynCompletionOptions.Default()
+                                |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
+                                |> _.WithBool("ShowNameSuggestions", false)
+
+                            let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
+
+                            let! roslynCompletions =
+                                completionService.GetCompletionsAsync(
+                                    doc,
+                                    position,
+                                    completionOptions,
+                                    completionTrigger,
+                                    ct
+                                )
+                                |> Async.map Option.ofObj
+
+                            return roslynCompletions |> Option.map (fun rcl -> rcl, doc)
         }
 
     let getCompletionsForCSharpDocument
@@ -331,13 +336,10 @@ module Completion =
         (context: RequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
-            let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             let docForUri =
-                wfMaybe
-                |> Option.bind (fun wf ->
-                    workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
-                    |> Option.map fst)
+                wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
             match docForUri with
             | None -> return None

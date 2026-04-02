@@ -99,7 +99,13 @@ let workspaceWithSolutionsLoaded (lspClient: ILspClient) (clientCapabilities: Cl
         let! newSolution =
             solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir.Value
 
-        let updatedWf = { wf with Solution = newSolution }
+        let updatedWf =
+            match newSolution with
+            | Some(workspace, solution) ->
+                { wf with
+                    Solution = Ready(workspace, solution) }
+            | None -> { wf with Solution = Defunct }
+
         updatedWorkspace <- updatedWf |> workspaceWithFolder updatedWorkspace
 
         do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)

@@ -48,7 +48,7 @@ module TypeHierarchy =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: RequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
         | None -> return None |> LspResult.success
@@ -76,7 +76,7 @@ module TypeHierarchy =
         (p: TypeHierarchySupertypesParams)
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
-            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.Item.Uri)
 
             match wf with
             | None -> return None |> LspResult.success
@@ -122,11 +122,10 @@ module TypeHierarchy =
         : AsyncLspResult<TypeHierarchyItem[] option> =
         async {
             let! ct = Async.CancellationToken
-            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
+            let! wf, solution = p.Item.Uri |> context.GetWorkspaceFolderReadySolution
 
-            match wf with
-            | None -> return None |> LspResult.success
-            | Some wf ->
+            match wf, solution with
+            | Some wf, Some solution ->
                 let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
 
                 match symInfo with
@@ -138,36 +137,21 @@ module TypeHierarchy =
                         (symbol: INamedTypeSymbol)
                         (transitive: bool)
                         : Async<INamedTypeSymbol seq> =
-                        SymbolFinder.FindDerivedClassesAsync(
-                            symbol,
-                            wf.Solution.Value,
-                            transitive,
-                            cancellationToken = ct
-                        )
+                        SymbolFinder.FindDerivedClassesAsync(symbol, solution, transitive, cancellationToken = ct)
                         |> Async.AwaitTask
 
                     let findDerivedInterfaces'
                         (symbol: INamedTypeSymbol)
                         (transitive: bool)
                         : Async<INamedTypeSymbol seq> =
-                        SymbolFinder.FindDerivedInterfacesAsync(
-                            symbol,
-                            wf.Solution.Value,
-                            transitive,
-                            cancellationToken = ct
-                        )
+                        SymbolFinder.FindDerivedInterfacesAsync(symbol, solution, transitive, cancellationToken = ct)
                         |> Async.AwaitTask
 
                     let findImplementations'
                         (symbol: INamedTypeSymbol)
                         (transitive: bool)
                         : Async<INamedTypeSymbol seq> =
-                        SymbolFinder.FindImplementationsAsync(
-                            symbol,
-                            wf.Solution.Value,
-                            transitive,
-                            cancellationToken = ct
-                        )
+                        SymbolFinder.FindImplementationsAsync(symbol, solution, transitive, cancellationToken = ct)
                         |> Async.AwaitTask
 
                     let! subtypes =
@@ -195,4 +179,6 @@ module TypeHierarchy =
                     return items |> Seq.toArray |> Some |> LspResult.success
 
                 | _ -> return None |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }

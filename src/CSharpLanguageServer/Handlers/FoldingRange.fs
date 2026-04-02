@@ -194,13 +194,10 @@ module FoldingRange =
             |> Option.bind _.LineFoldingOnly
             |> Option.defaultValue false
 
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docMaybe =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
         match docMaybe with
         | None -> return None |> LspResult.success

@@ -51,13 +51,10 @@ module DocumentFormatting =
     let handle (context: RequestContext) (p: DocumentFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
         let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let doc =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
         return!
             doc

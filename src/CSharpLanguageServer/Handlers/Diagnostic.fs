@@ -62,7 +62,7 @@ module Diagnostic =
               Items = [||]
               RelatedDocuments = None }
 
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
         | None -> return emptyReport |> U2.C1 |> LspResult.success
@@ -159,10 +159,9 @@ module Diagnostic =
 
             for wf in workspaceFolders do
                 let solutionProjects =
-                    wf.Solution
-                    |> Option.map _.Projects
-                    |> Option.defaultValue Seq.empty
-                    |> List.ofSeq
+                    match wf.Solution with
+                    | Ready(_, solution) -> solution.Projects |> List.ofSeq
+                    | _ -> []
 
                 numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
 

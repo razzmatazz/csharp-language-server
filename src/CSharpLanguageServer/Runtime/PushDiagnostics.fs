@@ -72,43 +72,48 @@ let handleProcessPending
                     { state with
                         DocumentBacklog = newBacklog }
 
-                let wfMaybe = docUri |> workspaceFolder workspace
+                let wf = docUri |> workspaceFolder workspace
 
-                let docForUri =
-                    wfMaybe
-                    |> Option.bind (fun wf -> workspaceFolderDocumentDetails wf AnyDocument docUri |> Option.map fst)
+                let docForUri = wf |> Option.bind (workspaceFolderDocument AnyDocument docUri)
 
-                let wfPathToUri = workspaceFolderPathToUri wfMaybe.Value
+                let wfPathToUri = workspaceFolderPathToUri wf.Value
 
-                match wfMaybe, docForUri with
+                match wf, docForUri with
                 | Some wf, None ->
                     let cshtmlPath = workspaceFolderUriToPath wf docUri |> _.Value
 
-                    match! solutionGetRazorDocumentForPath wf.Solution.Value cshtmlPath with
-                    | Some(_, compilation, cshtmlTree) ->
-                        let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
+                    match wf.Solution with
+                    | Ready(_, solution) ->
+                        match! solutionGetRazorDocumentForPath solution cshtmlPath with
+                        | Some(_, compilation, cshtmlTree) ->
+                            let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
 
-                        match semanticModelMaybe with
-                        | None -> Error(Exception "could not GetSemanticModelAsync") |> postResolution
+                            match semanticModelMaybe with
+                            | None -> Error(Exception "could not GetSemanticModelAsync") |> postResolution
 
-                        | Some semanticModel ->
-                            let diagnostics =
-                                semanticModel.GetDiagnostics()
-                                |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
-                                |> Seq.filter (fun (_, uri) -> uri = docUri)
-                                |> Seq.map fst
-                                |> Array.ofSeq
+                            | Some semanticModel ->
+                                let diagnostics =
+                                    semanticModel.GetDiagnostics()
+                                    |> Seq.map (Diagnostic.fromRoslynDiagnostic (workspaceFolderPathToUri wf))
+                                    |> Seq.filter (fun (_, uri) -> uri = docUri)
+                                    |> Seq.map fst
+                                    |> Array.ofSeq
 
-                            Ok(docUri, None, diagnostics) |> postResolution
+                                Ok(docUri, None, diagnostics) |> postResolution
 
-                    | None ->
+                        | None ->
+                            // could not find document for this enqueued uri
+                            logger.LogDebug(
+                                "handleProcessPending: could not find document w/ uri \"{docUri}\"",
+                                string docUri
+                            )
+                    | _ ->
                         // could not find document for this enqueued uri
                         logger.LogDebug(
-                            "handleProcessPending: could not find document w/ uri \"{docUri}\"",
-                            string docUri
+                            "handleProcessPending: wf folder is not in Ready state as resolved for \"{docUri}\" but is {wfState}",
+                            string docUri,
+                            wf.GetType()
                         )
-
-                        ()
 
                     return newState
 

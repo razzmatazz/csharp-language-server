@@ -44,21 +44,25 @@ module Implementation =
     let findImplLocationsOfSymbol wf config project (sym: ISymbol) = async {
         let! ct = Async.CancellationToken
 
-        let! impls =
-            SymbolFinder.FindImplementationsAsync(sym, wf.Solution.Value, cancellationToken = ct)
-            |> Async.AwaitTask
+        match wf.Solution with
+        | Ready(_, solution) ->
+            let! impls =
+                SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
+                |> Async.AwaitTask
 
-        let mutable updatedWf = wf
+            let mutable updatedWf = wf
 
-        let locations = System.Collections.Generic.List<Location>()
+            let locations = System.Collections.Generic.List<Location>()
 
-        for i in impls do
-            let! implLocations, wf = workspaceFolderSymbolLocations updatedWf config i project
+            for i in impls do
+                let! implLocations, wf = workspaceFolderSymbolLocations updatedWf config i project
 
-            locations.AddRange(implLocations)
-            updatedWf <- wf
+                locations.AddRange(implLocations)
+                updatedWf <- wf
 
-        return locations |> Seq.toArray, updatedWf
+            return locations |> Seq.toArray, updatedWf
+
+        | _ -> return [||], wf
     }
 
     let handle
@@ -66,7 +70,7 @@ module Implementation =
         (p: ImplementationParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
         async {
-            let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success
