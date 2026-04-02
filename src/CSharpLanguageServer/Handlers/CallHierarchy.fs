@@ -50,7 +50,7 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
     let prepare (context: RequestContext) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
         | None -> return None |> LspResult.success
@@ -95,18 +95,17 @@ module CallHierarchy =
                     { From = CallHierarchyItem.fromSymbolAndLocation info.CallingSymbol loc
                       FromRanges = fromRanges })
 
-            let! wf = p.Item.Uri |> context.GetWorkspaceFolder
+            let! wf, solution = p.Item.Uri |> context.GetWorkspaceFolderReadySolution
 
-            match wf with
-            | None -> return None |> LspResult.success
-            | Some wf ->
+            match wf, solution with
+            | Some wf, Some solution ->
                 let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument p.Item.Uri p.Item.Range.Start
 
                 match symInfo with
                 | None -> return LspResult.success None
                 | Some(symbol, _, _) ->
                     let! callers =
-                        SymbolFinder.FindCallersAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                        SymbolFinder.FindCallersAsync(symbol, solution, cancellationToken = ct)
                         |> Async.AwaitTask
 
                     let wfPathToUri = workspaceFolderPathToUri wf
@@ -121,6 +120,8 @@ module CallHierarchy =
                         |> Seq.toArray
                         |> Some
                         |> LspResult.success
+
+            | _, _ -> return None |> LspResult.success
         }
 
     let outgoingCalls

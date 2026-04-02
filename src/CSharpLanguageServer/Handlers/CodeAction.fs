@@ -186,7 +186,10 @@ module CodeAction =
         (originatingDoc: Document)
         : Async<TextDocumentEdit list> =
         async {
-            let originalSolution = wf.Solution.Value
+            let originalSolution =
+                match wf.Solution with
+                | Ready(_, solution) -> solution
+                | _ -> failwith "lspDocChangesFromSolutionDiff: workspace folder is not in Ready state"
 
             // make a list of changes
             let solutionProjectChanges =
@@ -346,15 +349,12 @@ module CodeAction =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: CodeActionParams) : AsyncLspResult<TextDocumentCodeActionResult option> = async {
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docForUri =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
-        match wfMaybe, docForUri with
+        match wf, docForUri with
         | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -418,15 +418,13 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let! wfMaybe = resolutionData.Value.TextDocumentUri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(resolutionData.Value.TextDocumentUri)
 
         let docForUri =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf AnyDocument resolutionData.Value.TextDocumentUri
-                |> Option.map fst)
+            wf
+            |> Option.bind (workspaceFolderDocument AnyDocument resolutionData.Value.TextDocumentUri)
 
-        match wfMaybe, docForUri with
+        match wf, docForUri with
         | Some wf, Some doc ->
             let! ct = Async.CancellationToken
             let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask

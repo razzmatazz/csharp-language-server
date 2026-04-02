@@ -28,7 +28,7 @@ type ServerEvent =
     | DocumentOpened of string * int * DateTime
     | DocumentTouched of string * DateTime
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
-    | GetWorkspaceFolder of DocumentUri * AsyncReplyChannel<LspWorkspaceFolder option>
+    | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderList of AsyncReplyChannel<LspWorkspaceFolder list>
     | LeaveRequestContext of int64 * ServerEvent list
     | PeriodicTimerTick
@@ -68,8 +68,8 @@ type ServerState =
           ShutdownReceived = false }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
-    let getWorkspaceFolder uri =
-        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolder(uri, rc))
+    let getWorkspaceFolder uri withSolutionReady =
+        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolder(uri, withSolutionReady, rc))
 
     let getWorkspaceFolderList () =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderList rc)
@@ -106,8 +106,19 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 RequestQueue = newRequestQueue }
 
-    | GetWorkspaceFolder(uri, replyChannel) ->
+    | GetWorkspaceFolder(uri, withSolutionReady, replyChannel) ->
         let wf = uri |> workspaceFolder state.Workspace
+
+        let wf =
+            match withSolutionReady, wf with
+            | false, _ -> wf
+            | true, Some(wf) ->
+                // TODO: this needs to wait for solution to be Ready if 'withSolutionReady' is true !
+                match wf.Solution with
+                | Ready _ -> Some wf
+                | _ -> None
+            | true, _ -> None
+
         replyChannel.Reply(wf)
         return state
 

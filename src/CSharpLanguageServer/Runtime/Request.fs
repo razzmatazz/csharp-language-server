@@ -88,7 +88,7 @@ type RequestContext
         requestMode: RequestMode,
         lspClient: ILspClient,
         config: CSharpConfiguration,
-        getWorkspaceFolder: DocumentUri -> Async<LspWorkspaceFolder option>,
+        getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
         getWorkspaceFolderList: unit -> Async<LspWorkspaceFolder list>,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
@@ -101,7 +101,17 @@ type RequestContext
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
 
-    member _.GetWorkspaceFolder(uri) = getWorkspaceFolder uri
+    member _.GetWorkspaceFolderReadySolution(uri) = async {
+        let! wf = getWorkspaceFolder uri true
+
+        match wf with
+        | None -> return None, None
+        | Some wf ->
+            match wf.Solution with
+            | Ready(_, solution) -> return Some wf, Some solution
+            | _ -> return Some wf, None
+    }
+
     member _.GetWorkspaceFolderList = getWorkspaceFolderList
 
     member _.UpdateEffects(update: RequestEffects -> RequestEffects) =

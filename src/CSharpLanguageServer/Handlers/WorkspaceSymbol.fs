@@ -58,8 +58,7 @@ module WorkspaceSymbol =
 
                 let! symbols =
                     match wf.Solution with
-                    | None -> async.Return Seq.empty
-                    | Some solution ->
+                    | Ready(_, solution) ->
                         match pattern with
                         | Some pat ->
                             SymbolFinder.FindSourceDeclarationsWithPatternAsync(
@@ -79,6 +78,7 @@ module WorkspaceSymbol =
                                 cancellationToken = ct
                             )
                             |> Async.AwaitTask
+                    | _ -> async.Return Seq.empty
 
                 let symbolInfosForWf =
                     symbols

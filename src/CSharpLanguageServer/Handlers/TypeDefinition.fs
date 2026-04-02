@@ -45,7 +45,7 @@ module TypeDefinition =
         : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
 
         async {
-            let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success

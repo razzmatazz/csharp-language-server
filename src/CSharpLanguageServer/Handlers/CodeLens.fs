@@ -118,13 +118,10 @@ module CodeLens =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docForUri =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
         match docForUri with
         | None -> return None |> LspResult.success
@@ -163,18 +160,17 @@ module CodeLens =
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
-        let! wf = lensData.DocumentUri |> context.GetWorkspaceFolder
+        let! wf, solution = lensData.DocumentUri |> context.GetWorkspaceFolderReadySolution
 
-        match wf with
-        | None -> return p |> LspResult.success
-        | Some wf ->
+        match wf, solution with
+        | Some wf, Some solution ->
             let! symInfo = workspaceFolderDocumentSymbol wf AnyDocument lensData.DocumentUri lensData.Position
 
             match symInfo with
             | None -> return p |> LspResult.success
             | Some(symbol, _, _) ->
                 let! refs =
-                    SymbolFinder.FindReferencesAsync(symbol, wf.Solution.Value, cancellationToken = ct)
+                    SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
                     |> Async.AwaitTask
 
                 // FIXME: refNum is wrong. There are lots of false positive even if we distinct locations by
@@ -201,4 +197,6 @@ module CodeLens =
                       Arguments = Some [| arg |> serialize |] }
 
                 return { p with Command = Some command } |> LspResult.success
+
+        | _, _ -> return p |> LspResult.success
     }

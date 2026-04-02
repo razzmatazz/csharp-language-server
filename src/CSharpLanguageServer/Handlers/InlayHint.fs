@@ -267,13 +267,10 @@ module InlayHint =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let handle (context: RequestContext) (p: InlayHintParams) : AsyncLspResult<InlayHint[] option> = async {
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docForUri =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
         match docForUri with
         | None -> return None |> LspResult.success

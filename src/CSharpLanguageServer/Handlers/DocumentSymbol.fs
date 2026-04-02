@@ -324,13 +324,10 @@ module DocumentSymbol =
                 |> Option.bind _.HierarchicalDocumentSymbolSupport
                 |> Option.defaultValue false
 
-            let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             let docForUri =
-                wfMaybe
-                |> Option.bind (fun wf ->
-                    workspaceFolderDocumentDetails wf AnyDocument p.TextDocument.Uri
-                    |> Option.map fst)
+                wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
             match docForUri with
             | None -> return None |> LspResult.success

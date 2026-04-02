@@ -13,17 +13,18 @@ module CSharpMetadata =
     let handle (context: RequestContext) (p: CSharpMetadataParams) : AsyncLspResult<CSharpMetadataResponse option> = async {
         let! ct = Async.CancellationToken
 
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, sln = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
 
-        match wf with
-        | Some wf ->
+        match wf, sln with
+        | Some wf, Some solution ->
             let projectAndSymbolFromUri =
                 p.TextDocument.Uri
                 |> string
                 |> workspaceFolderParseMetadataSymbolSourceViewUri wf
 
-            match wf.Solution, projectAndSymbolFromUri with
-            | Some solution, Some(projectPath, symbolMetadataName) ->
+            match projectAndSymbolFromUri with
+            | None -> return None |> LspResult.success
+            | Some(projectPath, symbolMetadataName) ->
                 let project = solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectPath)
 
                 match project with
@@ -41,6 +42,6 @@ module CSharpMetadata =
 
                     | None -> return None |> LspResult.success
                 | None -> return None |> LspResult.success
-            | _, _ -> return None |> LspResult.success
-        | None -> return None |> LspResult.success
+
+        | _, _ -> return None |> LspResult.success
     }

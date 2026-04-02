@@ -113,14 +113,10 @@ module Rename =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     let prepare (context: RequestContext) (p: PrepareRenameParams) : AsyncLspResult<PrepareRenameResult option> = async {
-
-        let! wfMaybe = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docForUri =
-            wfMaybe
-            |> Option.bind (fun wf ->
-                workspaceFolderDocumentDetails wf UserDocument p.TextDocument.Uri
-                |> Option.map fst)
+            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
         match docForUri with
         | None -> return None |> LspResult.success
@@ -178,7 +174,7 @@ module Rename =
     }
 
     let handle (context: RequestContext) (p: RenameParams) : AsyncLspResult<WorkspaceEdit option> = async {
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
         | None -> return None |> LspResult.success

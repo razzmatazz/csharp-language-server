@@ -52,7 +52,7 @@ module Hover =
         hover |> Some
 
     let handle (context: RequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
-        let! wf = p.TextDocument.Uri |> context.GetWorkspaceFolder
+        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
         | None -> return LspResult.success None
