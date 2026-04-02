@@ -162,13 +162,6 @@ module LifeCycle =
                     ex |> string
                 )
 
-            //
-            // start loading workspace
-            //
-            context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromMilliseconds(int64 100)))
-
-            logger.LogDebug("handleInitialized: Ok")
-
             return Ok()
         }
 

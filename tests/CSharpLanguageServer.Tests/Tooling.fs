@@ -854,8 +854,6 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         log "OK, 'initialized' notification sent"
 
-        this.WaitForProgressEnd(fun m -> m.Contains "Finished loading workspace")
-
     member __.WaitForProgressEnd(messagePred: (string -> bool)) =
         let timeoutMS = 20 * 1000
         let start = DateTime.Now

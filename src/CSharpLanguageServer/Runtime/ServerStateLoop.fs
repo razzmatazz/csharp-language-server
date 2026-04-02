@@ -29,7 +29,7 @@ type ServerEvent =
     | DocumentTouched of string * DateTime
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
-    | GetWorkspaceFolderList of AsyncReplyChannel<LspWorkspaceFolder list>
+    | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
     | LeaveRequestContext of int64 * ServerEvent list
     | PeriodicTimerTick
     | ProcessRequestQueue
@@ -40,8 +40,10 @@ type ServerEvent =
     | SettingsChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
     | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceFolderSolutionChange of string * LspWorkspaceFolderSolution
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
+    | ProcessSolutionAwaiters
 
 type ServerState =
     { Config: CSharpConfiguration
@@ -53,7 +55,8 @@ type ServerState =
       WorkspaceReloadPending: DateTime option
       PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
-      ShutdownReceived: bool }
+      ShutdownReceived: bool
+      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>> }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -65,14 +68,15 @@ type ServerState =
           WorkspaceReloadPending = None
           PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
-          ShutdownReceived = false }
+          ShutdownReceived = false
+          SolutionReadyAwaiters = [] }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let getWorkspaceFolder uri withSolutionReady =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolder(uri, withSolutionReady, rc))
 
     let getWorkspaceFolderList () =
-        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderList rc)
+        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderUriList rc)
 
     RequestContext(
         requestMode,
@@ -107,25 +111,29 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = newRequestQueue }
 
     | GetWorkspaceFolder(uri, withSolutionReady, replyChannel) ->
-        // TODO handle on-demand wf solution loading
-        let wf = uri |> workspaceFolder state.Workspace
+        match state.Workspace |> workspaceFolder uri with
+        | None ->
+            replyChannel.Reply None
+            return state
 
-        let wf =
-            match withSolutionReady, wf with
-            | false, _ -> wf
-            | true, Some(wf) ->
-                // TODO: this needs to wait for solution to be Ready if 'withSolutionReady' is true !
-                match wf.Solution with
-                | Ready _ -> Some wf
-                | _ -> None
-            | true, _ -> None
+        | Some wf ->
+            match withSolutionReady with
+            | false ->
+                replyChannel.Reply(Some wf)
+                return state
 
-        replyChannel.Reply(wf)
-        return state
+            | true ->
+                postServerEvent ProcessSolutionAwaiters
 
-    | GetWorkspaceFolderList replyChannel ->
-        // TODO handle on-demand wf solution loading
-        replyChannel.Reply(state.Workspace.Folders)
+                let awaiter = (string uri, replyChannel)
+                let newAwaiters = awaiter :: state.SolutionReadyAwaiters
+
+                return
+                    { state with
+                        SolutionReadyAwaiters = newAwaiters }
+
+    | GetWorkspaceFolderUriList replyChannel ->
+        replyChannel.Reply(state.Workspace.Folders |> List.map _.Uri)
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, bufferedServerEvents) ->
@@ -176,7 +184,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     RequestQueue = state.RequestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
-        do workspaceTeardown state.Workspace
+        // TODO: we may want to kill existing solution ready awaiters!
+
+        let _ = workspaceTeardown state.Workspace
 
         let newWorkspace =
             workspaceFrom workspaceFolders |> workspaceWithSolutionPathOverride state.Config
@@ -210,7 +220,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Some timer -> timer.Dispose()
         | None -> ()
 
-        do workspaceTeardown state.Workspace
+        let _ = workspaceTeardown state.Workspace
 
         return
             { state with
@@ -238,38 +248,34 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ClientCapabilities = cc
                 Config = newConfig }
 
-    | WorkspaceFolderChange updatedWf ->
-        do
-            state.Workspace.Folders
-            |> List.iter (fun wf ->
-                if wf.Uri = updatedWf.Uri then
-                    workspaceFolderTeardown wf)
-
-        let updatedWorkspaceFolderList =
-            state.Workspace.Folders
-            |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
-
-        // request queue may have been blocked due to workspace folder(s)
-        // not having solution loaded yet
-        postServerEvent ProcessRequestQueue
+    | WorkspaceFolderSolutionChange(uri, newSolution) ->
+        let wf = state.Workspace |> workspaceFolder uri
 
         let newWorkspace =
-            { state.Workspace with
-                Folders = updatedWorkspaceFolderList }
+            match wf with
+            | None -> state.Workspace
+            | Some wf ->
+                let updatedWf = { wf with Solution = newSolution }
+                state.Workspace |> workspaceWithFolderUpdated updatedWf
 
-        let newState = { state with Workspace = newWorkspace }
+        do postServerEvent ProcessSolutionAwaiters
 
-        return newState
+        return { state with Workspace = newWorkspace }
+
+    | WorkspaceFolderChange updatedWf ->
+        let newWorkspace = state.Workspace |> workspaceWithFolderUpdated updatedWf
+
+        return { state with Workspace = newWorkspace }
 
     | DocumentOpened(uri, ver, timestamp) ->
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let newWorkspace =
-            match workspaceFolder state.Workspace uri with
+            match workspaceFolder uri state.Workspace with
             | None -> state.Workspace
             | Some wf ->
-                workspaceFolderWithDocOpened uri ver timestamp wf
-                |> workspaceWithFolder state.Workspace
+                let updatedWf = workspaceFolderWithDocOpened uri ver timestamp wf
+                state.Workspace |> workspaceWithFolderUpdated updatedWf
 
         return { state with Workspace = newWorkspace }
 
@@ -277,9 +283,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let newWorkspace =
-            match workspaceFolder state.Workspace uri with
+            match workspaceFolder uri state.Workspace with
             | None -> state.Workspace
-            | Some wf -> workspaceFolderWithDocClosed uri wf |> workspaceWithFolder state.Workspace
+            | Some wf ->
+                let updatedWf = workspaceFolderWithDocClosed uri wf
+                workspaceWithFolderUpdated updatedWf state.Workspace
 
         return { state with Workspace = newWorkspace }
 
@@ -287,9 +295,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         postServerEvent PushDiagnosticsDocumentBacklogUpdate
 
         let newWorkspace =
-            workspaceFolder state.Workspace uri
-            |> Option.bind (fun wf -> workspaceFolderWithDocTouched uri timestamp wf)
-            |> Option.map (workspaceWithFolder state.Workspace)
+            workspaceFolder uri state.Workspace
+            |> Option.bind (workspaceFolderWithDocTouched uri timestamp)
+            |> Option.map (fun wf -> workspaceWithFolderUpdated wf state.Workspace)
 
         match newWorkspace with
         | None -> return state
@@ -339,22 +347,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        let solutionLoadDelay = state.Config.debug |> Option.bind _.solutionLoadDelay
-
-        match solutionLoadDelay with
-        | Some ms when ms > 0 ->
-            logger.LogInformation("SolutionLoadDelay is set to {ms}ms, waiting before loading solution..", ms)
-            do! Async.Sleep ms
-        | _ -> ()
-
-        let! updatedWorkspace =
-            workspaceWithSolutionsLoaded state.LspClient.Value state.ClientCapabilities state.Workspace
+        let tornDownWorkspace = workspaceTeardown state.Workspace
 
         postServerEvent ProcessRequestQueue
 
         return
             { state with
-                Workspace = updatedWorkspace
+                Workspace = tornDownWorkspace
                 WorkspaceReloadPending = None
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
@@ -386,6 +385,60 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         | false -> return state
 
+    | ProcessSolutionAwaiters ->
+        let mutable newState = state
+
+        //
+        // initiate solution load for wfs where wf.Solution is Pending
+        //
+        let wfsWithUninitializedSolution =
+            state.SolutionReadyAwaiters
+            |> Seq.map fst
+            |> Seq.distinct
+            |> Seq.map (fun uri -> workspaceFolder uri state.Workspace)
+            |> Seq.collect (fun wf -> if wf.IsSome then [ wf.Value ] else [])
+            |> Seq.filter _.Solution.IsUninitialized
+            |> List.ofSeq
+
+        for wf in wfsWithUninitializedSolution do
+            let onSolutionInitCompletion newSolution =
+                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, newSolution))
+
+            let updatedWf =
+                wf
+                |> workspaceFolderWithSolutionInitialized state.LspClient.Value onSolutionInitCompletion
+
+            let newWorkspace = state.Workspace |> workspaceWithFolderUpdated updatedWf
+
+            newState <-
+                { newState with
+                    Workspace = newWorkspace }
+
+        //
+        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Ready or Defunct
+        //
+        let mutable awaitersToKeep = []
+
+        for awaiter in newState.SolutionReadyAwaiters do
+            let (awaiterWfUri, awaiterRC) = awaiter
+
+            let wf = newState.Workspace |> workspaceFolder awaiterWfUri
+
+            match wf with
+            | None -> awaiterRC.Reply(None)
+
+            | Some wf ->
+                match wf.Solution with
+                | Ready _ -> awaiterRC.Reply(Some wf)
+                | Defunct _ -> awaiterRC.Reply(None)
+                | Uninitialized
+                | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
+
+        newState <-
+            { newState with
+                SolutionReadyAwaiters = awaitersToKeep }
+
+        return newState
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =

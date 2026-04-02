@@ -30,10 +30,10 @@ type LspWorkspaceDecompiledMetadataDocument =
 type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
 type LspWorkspaceFolderSolution =
-    | Pending
+    | Uninitialized
     | Loading of Async<LspWorkspaceFolderSolution> * CancellationTokenSource
     | Ready of Workspace * Solution
-    | Defunct
+    | Defunct of string
 
 type LspWorkspaceFolder =
     {
@@ -50,18 +50,15 @@ type LspWorkspaceFolder =
         DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
 
         OpenDocs: Map<string, LspWorkspaceOpenDocInfo>
-
-        SolutionReadyAwaiters: list<AsyncReplyChannel<LspWorkspaceFolder option>>
     }
 
     static member Empty =
         { Uri = Directory.GetCurrentDirectory() |> Uri |> string
           Name = "(no name)"
           SolutionPathOverride = None
-          Solution = Pending
+          Solution = Uninitialized
           DecompiledSymbolMetadata = Map.empty
-          OpenDocs = Map.empty
-          SolutionReadyAwaiters = [] }
+          OpenDocs = Map.empty }
 
 type LspWorkspaceFolderDocumentType =
     | UserDocument // user Document from solution, on disk
@@ -76,9 +73,9 @@ let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
         { wf with
             Solution = Ready(workspace, updatedSolution) }
 
-    | Pending -> failwith "wf.Solution in Pending state!"
+    | Uninitialized -> failwith "wf.Solution in Uninitialized state!"
     | Loading _ -> failwith "wf.Solution in Loading state!"
-    | Defunct -> failwith "wf.Solution in Defunct state!"
+    | Defunct _ -> failwith "wf.Solution in Defunct state!"
 
 let workspaceFolderWithReadySolutionReplaced (sln: Solution) wf =
     workspaceFolderWithReadySolutionUpdated (fun _ -> sln) wf
@@ -298,9 +295,9 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
     let uri = Uri(u.Replace("%3A", ":", true, null))
 
     match wf.Solution with
-    | Pending -> None
+    | Uninitialized -> None
     | Loading _ -> None
-    | Defunct -> None
+    | Defunct _ -> None
     | Ready(_, solution) ->
         let matchingUserDocuments =
             solution.Projects
@@ -455,9 +452,9 @@ let workspaceFolderWithAdditionalTextDocumentAdded
 
 let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
-    | Pending
+    | Uninitialized
     | Loading _
-    | Defunct -> wf
+    | Defunct _ -> wf
     | Ready(workspace, solution) ->
         let filename = workspaceFolderUriToPath uri wf
 
@@ -569,83 +566,39 @@ let workspaceFolderWithDocTouched
             { wf with
                 OpenDocs = wf.OpenDocs |> Map.add uri updated }
 
-let workspaceFolderWithSolutionReadyAwaiterAdded
-    (awaiter: AsyncReplyChannel<LspWorkspaceFolder option>)
-    (wf: LspWorkspaceFolder)
-    : LspWorkspaceFolder =
-    { wf with
-        SolutionReadyAwaiters = awaiter :: wf.SolutionReadyAwaiters }
-
-/// Release all disposable resources held by a workspace folder.
-/// Call this whenever a folder is replaced or removed from the workspace.
-/// Returns the folder with Solution reset to Pending and SolutionReadyAwaiters cleared.
 let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
-    for awaiter in wf.SolutionReadyAwaiters do
-        awaiter.Reply None
-
     match wf.Solution with
-    | Defunct -> ()
-    | Pending -> ()
+    | Defunct _ -> ()
+    | Uninitialized -> ()
     | Loading(_, cts) ->
         cts.Cancel()
         cts.Dispose()
     | Ready(workspace, _) -> workspace.Dispose()
 
-    { wf with
-        Solution = Pending
-        SolutionReadyAwaiters = [] }
-
-/// Load the solution for a single workspace folder, returning the updated folder.
-let workspaceFolderWithSolutionLoaded
-    (lspClient: ILspClient)
-    (progressReporter: ProgressReporter)
-    (totalFolders: int)
-    (folderNum: int)
-    (wf: LspWorkspaceFolder)
-    =
-    async {
-        let wfRootDir = workspaceFolderUriToPath wf.Uri wf
-
-        let beginMessage =
-            sprintf "%s (%d/%d)..." (wfRootDir |> Option.defaultValue "???") folderNum totalFolders
-
-        do! progressReporter.Report(message = beginMessage)
-
-        let! newSolution =
-            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir.Value
-
-        let updatedWf =
-            match newSolution with
-            | Some(workspace, solution) ->
-                { wf with
-                    Solution = Ready(workspace, solution) }
-            | None -> { wf with Solution = Defunct }
-
-        do! progressReporter.Report(false, sprintf "Finished loading workspace folder %s" wf.Uri)
-
-        return updatedWf
-    }
+    { wf with Solution = Uninitialized }
 
 /// Ensures the workspace folder has its solution either already settled (Ready/Defunct)
-/// or actively on its way — initiating an async load from Pending if needed.
+/// or actively on its way — initiating an async load from Uninitialized if needed.
 /// The folder is immediately returned with its Solution set to Loading.
-/// When loading completes, `onDone` is called with the resulting LspWorkspaceFolderSolution
+/// When loading completes, `completionCB` is called with the resulting LspWorkspaceFolderSolution
 /// (either Ready or Defunct), intended to be threaded back through ServerStateLoop.
 /// Does nothing (returns wf unchanged) when the solution is already Loading, Ready, or Defunct.
-let workspaceFolderWithSolutionInitiated
+let workspaceFolderWithSolutionInitialized
     (lspClient: ILspClient)
-    (onDone: LspWorkspaceFolderSolution -> unit)
+    (completionCB: LspWorkspaceFolderSolution -> unit)
     (wf: LspWorkspaceFolder)
     : LspWorkspaceFolder =
+    Console.Error.WriteLine("workspaceFolderWithSolutionInitialized: entry")
+
     match wf.Solution with
     | Loading _ -> wf
-    | Ready _ ->
-        onDone wf.Solution
+    | Ready _
+    | Defunct _ ->
+        completionCB wf.Solution
         wf
-    | Defunct ->
-        onDone Defunct
-        wf
-    | Pending ->
+    | Uninitialized ->
+        Console.Error.WriteLine("workspaceFolderWithSolutionInitialized: Unitialized case")
+
         let loadingAsync = async {
             let wfRootDir = workspaceFolderUriToPath wf.Uri wf
 
@@ -670,7 +623,7 @@ let workspaceFolderWithSolutionInitiated
             return
                 match newSolution with
                 | Some(workspace, solution) -> Ready(workspace, solution)
-                | None -> Defunct
+                | None -> Defunct "Solution could not be loaded"
         }
 
         let cts = new CancellationTokenSource()
@@ -678,10 +631,21 @@ let workspaceFolderWithSolutionInitiated
         let task = Async.StartAsTask(loadingAsync, cancellationToken = cts.Token)
 
         task.ContinueWith(fun (t: System.Threading.Tasks.Task<LspWorkspaceFolderSolution>) ->
-            if t.IsFaulted || t.IsCanceled then
-                onDone Defunct
+            if t.IsCanceled then
+                completionCB (
+                    Defunct(sprintf "Solution initialization was cancelled, task.Status=%s" (string t.Status))
+                )
+            else if t.IsFaulted then
+                completionCB (
+                    Defunct(
+                        t.Exception
+                        |> Option.ofObj
+                        |> Option.map string
+                        |> Option.defaultValue "Solution initialization has faulted"
+                    )
+                )
             else
-                onDone t.Result)
+                completionCB t.Result)
         |> ignore
 
         { wf with

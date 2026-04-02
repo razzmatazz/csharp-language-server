@@ -51,7 +51,7 @@ module WorkspaceSymbol =
 
             let mutable symbolInfos = []
 
-            let! workspaceFolders = context.GetWorkspaceFolderList()
+            let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
 
             for wf in workspaceFolders do
                 let wfPathToUri path = workspaceFolderPathToUri path wf

@@ -72,7 +72,7 @@ let handleProcessPending
                     { state with
                         DocumentBacklog = newBacklog }
 
-                let wf = docUri |> workspaceFolder workspace
+                let wf = workspace |> workspaceFolder docUri
 
                 let docForUri = wf |> Option.bind (workspaceFolderDocument AnyDocument docUri)
 
