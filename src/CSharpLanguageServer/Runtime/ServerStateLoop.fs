@@ -349,6 +349,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
     | RequestQueueDrained ->
         let tornDownWorkspace = workspaceTeardown state.Workspace
 
+        // TODO: reset awaiters
+
         postServerEvent ProcessRequestQueue
 
         return
@@ -406,7 +408,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
             let updatedWf =
                 wf
-                |> workspaceFolderWithSolutionInitialized state.LspClient.Value onSolutionInitCompletion
+                |> workspaceFolderWithSolutionInitialized
+                    state.LspClient.Value
+                    state.ClientCapabilities
+                    onSolutionInitCompletion
 
             let newWorkspace = state.Workspace |> workspaceWithFolderUpdated updatedWf
 

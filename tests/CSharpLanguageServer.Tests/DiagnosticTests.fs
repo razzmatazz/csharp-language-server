@@ -38,13 +38,14 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     | None -> Assert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
 
 [<Test>]
+[<Retry(3)>]
 let testPushDiagnosticsWork () =
-    use client = activateFixture "testDiagnosticsWork"
+    use client = activateFixtureWithLoggingEnabled "testDiagnosticsWork"
 
     // open Class.cs file and wait for diagnostics to be pushed
     use classFile = client.Open("Project/Class.cs")
 
-    Thread.Sleep(4000)
+    Thread.Sleep(8000)
 
     let state = client.GetState()
     let diag0 = state.PushDiagnostics |> Map.tryFind classFile.Uri

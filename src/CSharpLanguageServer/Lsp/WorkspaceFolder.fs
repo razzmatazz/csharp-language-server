@@ -585,45 +585,47 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
 /// Does nothing (returns wf unchanged) when the solution is already Loading, Ready, or Defunct.
 let workspaceFolderWithSolutionInitialized
     (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
     (completionCB: LspWorkspaceFolderSolution -> unit)
     (wf: LspWorkspaceFolder)
     : LspWorkspaceFolder =
-    Console.Error.WriteLine("workspaceFolderWithSolutionInitialized: entry")
-
     match wf.Solution with
     | Loading _ -> wf
+
     | Ready _
     | Defunct _ ->
         completionCB wf.Solution
         wf
+
     | Uninitialized ->
-        Console.Error.WriteLine("workspaceFolderWithSolutionInitialized: Unitialized case")
-
         let loadingAsync = async {
-            let wfRootDir = workspaceFolderUriToPath wf.Uri wf
+            let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
-            let noopProgressReporter =
-                ProgressReporter(
-                    lspClient,
-                    { Workspace = None
-                      TextDocument = None
-                      NotebookDocument = None
-                      Window = None
-                      General = None
-                      Experimental = None }
-                )
+            let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
+
+            let beginMessageSolutionPath =
+                wf.SolutionPathOverride
+                |> Option.map Path.GetFileName
+                |> Option.map (sprintf ", solution \"%s\"")
+                |> Option.defaultValue ""
+
+            let beginMessage =
+                sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
+
+            do! progressReporter.Begin(beginMessage)
 
             let! newSolution =
-                solutionLoadSolutionWithPathOrOnDir
-                    lspClient
-                    noopProgressReporter
-                    wf.SolutionPathOverride
-                    wfRootDir.Value
+                solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
+
+            let endMessage =
+                sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
+
+            do! progressReporter.End(endMessage)
 
             return
                 match newSolution with
                 | Some(workspace, solution) -> Ready(workspace, solution)
-                | None -> Defunct "Solution could not be loaded"
+                | None -> Defunct(sprintf "Solution could not be loaded on path \"%s\"" wfRootDir)
         }
 
         let cts = new CancellationTokenSource()
