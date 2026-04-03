@@ -10,10 +10,10 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Tooling.fs" />
+    <Compile Include="DiagnosticTests.fs" />
     <Compile Include="InitializationTests.fs" />
     <Compile Include="RenameTests.fs" />
     <Compile Include="CodeActionTests.fs" />
-    <Compile Include="DiagnosticTests.fs" />
     <Compile Include="DocumentationTests.fs" />
     <Compile Include="DocumentHighlightTests.fs" />
     <Compile Include="DocumentSymbolTests.fs" />

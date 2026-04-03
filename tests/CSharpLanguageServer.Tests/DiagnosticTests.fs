@@ -17,7 +17,6 @@ open CSharpLanguageServer.Tests.Tooling
 let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     let profile =
         { defaultClientProfile with
-            LoggingEnabled = true
             SolutionLoadDelay = Some 3000 }
 
     use client = activateFixtureExt "testDiagnosticsWork" profile emptyFixturePatch id
@@ -39,22 +38,20 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     | None -> Assert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
 
 [<Test>]
-[<Retry(3)>]
 let testPushDiagnosticsWork () =
     use client = activateFixture "testDiagnosticsWork"
 
-    //
     // open Class.cs file and wait for diagnostics to be pushed
-    //
     use classFile = client.Open("Project/Class.cs")
 
     Thread.Sleep(4000)
 
     let state = client.GetState()
-    let version0, diagnosticList0 = state.PushDiagnostics |> Map.find classFile.Uri
+    let diag0 = state.PushDiagnostics |> Map.tryFind classFile.Uri
+    Assert.IsTrue(diag0.IsSome)
 
+    let version0, diagnosticList0 = diag0.Value
     Assert.AreEqual(None, version0)
-
     Assert.AreEqual(3, diagnosticList0.Length)
 
     let diagnostic0 = diagnosticList0.[0]
@@ -86,7 +83,6 @@ let testPushDiagnosticsWork () =
     Assert.AreEqual(None, version1)
 
     Assert.AreEqual(0, diagnosticList1.Length)
-    ()
 
 [<Test>]
 let testPullDiagnosticsWork () =
@@ -147,7 +143,6 @@ let testPullDiagnosticsWork () =
     | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
-[<Retry(3)>]
 let testPullDiagnosticsWorkForRazorFiles () =
     use client = activateFixture "aspnetProject"
     use cshtmlFile = client.Open("Project/Views/Test/ViewFileWithErrors.cshtml")
