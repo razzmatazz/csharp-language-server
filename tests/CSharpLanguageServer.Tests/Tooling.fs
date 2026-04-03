@@ -1045,14 +1045,6 @@ let activateFixtureWithLoggingEnabled fixtureName =
         emptyFixturePatch
         id
 
-let activateFixtureWithSolutionLoadDelay fixtureName (delayMs: int) =
-    activateFixtureExt
-        fixtureName
-        { defaultClientProfile with
-            SolutionLoadDelay = Some delayMs }
-        emptyFixturePatch
-        id
-
 module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with

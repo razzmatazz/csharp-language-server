@@ -25,12 +25,12 @@ type PushDiagnosticsState =
           CurrentDocTask = None }
 
 /// Rebuilds the backlog from all open documents, sorted by most-recently-touched first.
-let handleBacklogUpdate (workspace: LspWorkspace) (state: PushDiagnosticsState) : PushDiagnosticsState =
+let pushDiagnosticsBacklogUpdate (workspace: LspWorkspace) (state: PushDiagnosticsState) : PushDiagnosticsState =
     let newBacklog =
         workspace.Folders
-        |> Seq.collect (fun wf -> wf.OpenDocs |> Seq.map id)
-        |> Seq.sortByDescending (fun kv -> kv.Value.Touched)
-        |> Seq.map (fun kv -> kv.Key)
+        |> Seq.collect _.OpenDocs
+        |> Seq.sortByDescending _.Value.Touched
+        |> Seq.map _.Key
         |> List.ofSeq
 
     { state with
@@ -39,8 +39,7 @@ let handleBacklogUpdate (workspace: LspWorkspace) (state: PushDiagnosticsState) 
 /// Pops the next document from the backlog and starts a background resolution task (if not already busy).
 /// - `diagnosticPullSupported`: whether the client supports pull diagnostics (disables push when true)
 /// - `postResolution`: callback to post the resolved diagnostics result back into the event loop
-/// - `postProcessPending`: callback to chain the next ProcessPendingDocuments event
-let handleProcessPending
+let processPendingPushDiagnostics
     (workspace: LspWorkspace)
     (clientCapabilities: ClientCapabilities)
     (postResolution: Result<(string * int option * Diagnostic array), Exception> -> unit)
@@ -149,18 +148,13 @@ let handleProcessPending
                 return state
     }
 
-/// Clears the in-flight task, publishes diagnostics to the client, and chains the next process-pending cycle.
-/// - `postProcessPending`: callback to chain the next ProcessPendingDocuments event
-let handleResolution
+/// Clears the in-flight task, publishes diagnostics to the client.
+let handleDocumentDiagnosticsResolution
     (lspClient: ILspClient option)
-    (postProcessPending: unit -> unit)
     (result: Result<(string * int option * Diagnostic array), Exception>)
     (state: PushDiagnosticsState)
     : Async<PushDiagnosticsState> =
     async {
-        // always chain: try to process the next doc in the backlog
-        postProcessPending ()
-
         let newState = { state with CurrentDocTask = None }
 
         match result with

@@ -34,7 +34,6 @@ type ServerEvent =
     | PeriodicTimerTick
     | ProcessRequestQueue
     | RequestQueueDrained
-    | PushDiagnosticsDocumentBacklogUpdate
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | SettingsChange of CSharpConfiguration
@@ -184,7 +183,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     RequestQueue = state.RequestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
-        // TODO: we may want to kill existing solution ready awaiters!
+        // TODO: we may want to kill existing SolutionReadyAwaiters!
 
         let _ = workspaceTeardown state.Workspace
 
@@ -268,8 +267,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with Workspace = newWorkspace }
 
     | DocumentOpened(uri, ver, timestamp) ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
-
         let newWorkspace =
             match workspaceFolder uri state.Workspace with
             | None -> state.Workspace
@@ -277,11 +274,14 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 let updatedWf = workspaceFolderWithDocOpened uri ver timestamp wf
                 state.Workspace |> workspaceWithFolderUpdated updatedWf
 
-        return { state with Workspace = newWorkspace }
+        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
+
+        return
+            { state with
+                Workspace = newWorkspace
+                PushDiagnostics = newPD }
 
     | DocumentClosed uri ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
-
         let newWorkspace =
             match workspaceFolder uri state.Workspace with
             | None -> state.Workspace
@@ -289,19 +289,26 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 let updatedWf = workspaceFolderWithDocClosed uri wf
                 workspaceWithFolderUpdated updatedWf state.Workspace
 
-        return { state with Workspace = newWorkspace }
+        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
+
+        return
+            { state with
+                Workspace = newWorkspace
+                PushDiagnostics = newPD }
 
     | DocumentTouched(uri, timestamp) ->
-        postServerEvent PushDiagnosticsDocumentBacklogUpdate
-
         let newWorkspace =
             workspaceFolder uri state.Workspace
             |> Option.bind (workspaceFolderWithDocTouched uri timestamp)
             |> Option.map (fun wf -> workspaceWithFolderUpdated wf state.Workspace)
+            |> Option.defaultValue state.Workspace
 
-        match newWorkspace with
-        | None -> return state
-        | Some ws -> return { state with Workspace = ws }
+        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
+
+        return
+            { state with
+                Workspace = newWorkspace
+                PushDiagnostics = newPD }
 
     | WorkspaceReloadRequested reloadNoLaterThanIn ->
         // we need to wait a bit before starting this so we
@@ -321,29 +328,22 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 WorkspaceReloadPending = newSolutionReloadDeadline |> Some }
 
-    | PushDiagnosticsDocumentBacklogUpdate ->
-        let newPD =
-            PushDiagnostics.handleBacklogUpdate state.Workspace state.PushDiagnostics
-
-        return { state with PushDiagnostics = newPD }
-
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
 
         let! newPD =
-            PushDiagnostics.handleProcessPending
-                state.Workspace
-                state.ClientCapabilities
-                postResolution
-                state.PushDiagnostics
+            state.PushDiagnostics
+            |> processPendingPushDiagnostics state.Workspace state.ClientCapabilities postResolution
 
         return { state with PushDiagnostics = newPD }
 
     | PushDiagnosticsDocumentDiagnosticsResolution result ->
-        let postProcessPending () =
-            postServerEvent PushDiagnosticsProcessPendingDocuments
+        postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let! newPD = PushDiagnostics.handleResolution state.LspClient postProcessPending result state.PushDiagnostics
+        let! newPD =
+            state.PushDiagnostics
+            |> handleDocumentDiagnosticsResolution state.LspClient result
+
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
