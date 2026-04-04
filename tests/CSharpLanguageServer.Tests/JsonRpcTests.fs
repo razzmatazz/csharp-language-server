@@ -580,6 +580,283 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
+/// Helper: write a framed JSON-RPC message into a writable pipe stream.
+let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: JObject) =
+    let bytes = encodeMessage (string msg)
+    pipe.Write(bytes, 0, bytes.Length)
+    pipe.Flush()
+
+// ---- Shutdown drain tests ----
+
+[<Test>]
+let testShutdownWaitsForRunningHandlerToFinish () =
+    // A slow inbound handler is running when Shutdown arrives.
+    // shutdownJsonRpcTransport must not return until the handler has finished.
+    use handlerStarted = new ManualResetEventSlim(false)
+    use handlerMayFinish = new ManualResetEventSlim(false)
+    let handlerFinished = ref false
+
+    let handler _ctx = async {
+        handlerStarted.Set()
+        handlerMayFinish.Wait() |> ignore
+        handlerFinished.Value <- true
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/slow", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/slow"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    // Kick off shutdown asynchronously — it must block until the handler completes
+    let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
+
+    // Shutdown should not complete while the handler is still blocked
+    Assert.IsFalse(
+        shutdownTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        "Shutdown should not complete while handler is still running"
+    )
+
+    Assert.IsFalse(handlerFinished.Value, "Handler should not have finished yet")
+
+    // Let the handler proceed
+    handlerMayFinish.Set()
+
+    let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Shutdown should complete after handler finishes")
+    Assert.IsTrue(handlerFinished.Value, "Handler should have finished before shutdown returned")
+
+[<Test>]
+let testShutdownCancelsRunningHandlerAndThenReturns () =
+    // A handler that sleeps indefinitely (respecting cancellation) should be
+    // cancelled by Shutdown, and shutdownJsonRpcTransport should then return.
+    use handlerStarted = new ManualResetEventSlim(false)
+
+    let handler _ctx = async {
+        handlerStarted.Set()
+        do! Async.Sleep 60_000 // would block forever without cancellation
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/inf", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/inf"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    // Shutdown should cancel the handler and return within a few seconds
+    let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
+    let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Shutdown should return after cancelling the in-flight handler")
+
+    // The response on the wire should be the -32800 cancellation error
+    let msgs = waitForMessages stdout 1 1000
+    Assert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
+    Assert.AreEqual(-32800, int (msgs.[0].SelectToken("error.code")))
+
+[<Test>]
+let testShutdownWithNoRunningHandlersReturnsImmediately () =
+    // When there are no in-flight handlers, Shutdown should return without waiting.
+    let stdin = makeInputStream []
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
+    let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Shutdown with no running handlers should return immediately")
+
+[<Test>]
+let testShutdownDrainsAllConcurrentHandlers () =
+    // Three handlers running concurrently when Shutdown arrives.
+    // All three must finish (or be cancelled) before shutdownJsonRpcTransport returns.
+    let count = 3
+    use allStarted = new CountdownEvent(count)
+    // Use a TCS so we can release handlers from outside without blocking a thread
+    let mayFinishTcs = System.Threading.Tasks.TaskCompletionSource<unit>()
+    let finishedCount = ref 0
+
+    let handler _ctx = async {
+        allStarted.Signal() |> ignore
+        do! mayFinishTcs.Task |> Async.AwaitTask
+        System.Threading.Interlocked.Increment(finishedCount) |> ignore
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/h", handler ], Map.empty)
+
+    for i in 1..count do
+        writeMessageToPipe
+            clientToServer
+            (JObject(
+                JProperty("jsonrpc", "2.0"),
+                JProperty("id", i),
+                JProperty("method", "test/h"),
+                JProperty("params", JObject())
+            ))
+
+    Assert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
+
+    let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
+
+    Assert.IsFalse(
+        shutdownTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        "Shutdown should not complete while handlers are running"
+    )
+
+    mayFinishTcs.SetResult(())
+
+    let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Shutdown should complete after all handlers finish")
+    Assert.AreEqual(count, finishedCount.Value, "All handlers should have finished")
+
+// ---- Late sendJsonRpc* guard tests ----
+
+[<Test>]
+let testSendNotificationAfterShutdownIsDropped () =
+    // After shutdown, sendJsonRpcNotification should return immediately without
+    // writing anything to the wire.
+    let stdin = makeInputStream []
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let bytesBeforeSend = stdout.Length
+
+    // This must return and must not block or raise
+    sendJsonRpcNotification server "window/logMessage" (JObject(JProperty("message", "late")))
+    |> Async.RunSynchronously
+
+    Assert.AreEqual(bytesBeforeSend, stdout.Length, "No bytes should be written for a post-shutdown notification")
+
+[<Test>]
+let testSendCallAfterShutdownReturnsError () =
+    // After shutdown, sendJsonRpcCall should return Error -32099 immediately.
+    let stdin = makeInputStream []
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let result =
+        sendJsonRpcCall server "workspace/configuration" (JObject())
+        |> Async.RunSynchronously
+
+    match result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for post-shutdown sendJsonRpcCall, got Ok")
+
+[<Test>]
+let testSendCallDuringShutdownDrainReturnsError () =
+    // A sendJsonRpcCall that arrives while the transport is in ShuttingDown (draining
+    // a slow handler) should be rejected immediately rather than being parked forever
+    // in PendingOutboundCalls.
+    use handlerStarted = new ManualResetEventSlim(false)
+    // Use a TCS so the handler can be released without blocking a thread pool thread;
+    // this also means the CancellationToken is observable (not masked by a blocking Wait).
+    let mayFinishTcs = System.Threading.Tasks.TaskCompletionSource<unit>()
+
+    let handler (_ctx: JsonRpcRequestContext) = async {
+        handlerStarted.Set()
+        // Await the TCS — this yields the thread so F# async cancellation can fire.
+        do! mayFinishTcs.Task |> Async.AwaitTask
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/slow", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/slow"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    // Begin shutdown — the actor will immediately fire cancellations on all handlers
+    let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
+
+    // The handler awaits a Task (not a blocking Wait), so the actor's thread is free
+    // to process the Shutdown event. Give it a short beat to do so.
+    Thread.Sleep 200
+
+    // This call arrives while the drain is in progress; it must return Error immediately
+    let lateCallTask =
+        sendJsonRpcCall server "workspace/configuration" (JObject()) |> Async.StartAsTask
+
+    let lateCompleted = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(lateCompleted, "Late sendJsonRpcCall should return immediately during drain")
+
+    match lateCallTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for call made during shutdown drain")
+
+    // Unblock the handler so the drain completes and shutdown returns
+    mayFinishTcs.SetResult(())
+
+    Assert.IsTrue(shutdownTask.Wait(TimeSpan.FromSeconds 5.0), "Shutdown should complete after handler finishes")
+
 // ---- Pending outbound call shutdown tests ----
 
 [<Test>]
@@ -981,12 +1258,6 @@ let testMixedInboundRequestsAndOutboundNotifications () =
     Assert.AreEqual("info", string (notifications.[0].SelectToken("params.kind")))
 
 // ---- $/cancelRequest tests ----
-
-/// Helper: write a framed JSON-RPC message into a writable pipe stream.
-let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: JObject) =
-    let bytes = encodeMessage (string msg)
-    pipe.Write(bytes, 0, bytes.Length)
-    pipe.Flush()
 
 [<Test>]
 let testCancelRequestCancelsRunningHandler () =

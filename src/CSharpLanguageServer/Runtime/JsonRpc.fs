@@ -39,6 +39,11 @@ type OutboundMessage =
     { Payload: JObject
       CompletionRC: option<AsyncReplyChannel<unit>> }
 
+type TransportPhase =
+    | Active
+    | ShuttingDown // Shutdown received, handler cancellations fired, waiting for RunningInboundRequests to drain
+    | Stopped // all handlers drained, ShutdownWaiters fired
+
 type JsonRpcTransportState =
     {
         StdIn: Stream option
@@ -58,6 +63,7 @@ type JsonRpcTransportState =
         ShutdownWaiters: AsyncReplyChannel<unit> list
         /// Optional callback invoked with each raw RPC log entry.
         RpcLogEntryCallback: (JsonRpcLogEntry -> unit) option
+        Phase: TransportPhase
     }
 
 let emptyTransportState =
@@ -73,7 +79,8 @@ let emptyTransportState =
       PendingOutboundCalls = Map.empty
       RunningInboundRequests = Map.empty
       ShutdownWaiters = []
-      RpcLogEntryCallback = None }
+      RpcLogEntryCallback = None
+      Phase = Active }
 
 type JsonRpcTransportEvent =
     | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
@@ -394,6 +401,18 @@ let handleInboundMessage state postEvent (msg: JObject) =
             postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: message has no 'method' or 'id' field"))
             state
 
+/// If we are draining after a Shutdown and the last handler just finished, fire all
+/// ShutdownWaiters (including the original Shutdown reply channel) and move to Stopped.
+let tryFireShutdownWaiters (state: JsonRpcTransportState) =
+    match state.Phase with
+    | ShuttingDown when state.RunningInboundRequests.IsEmpty ->
+        state.ShutdownWaiters |> List.iter _.Reply()
+
+        { state with
+            ShutdownWaiters = []
+            Phase = Stopped }
+    | _ -> state
+
 let processEvent state postEvent ev =
     match ev with
     | Start(stdin, stdout, callHandlers, notificationHandlers) ->
@@ -445,45 +464,82 @@ let processEvent state postEvent ev =
             { state with PendingRead = pendingRead }
 
     | Shutdown rc ->
+        // Stop accepting inbound messages and fail any pending outbound calls.
         failPendingOutboundCalls postEvent state
-        state.ShutdownWaiters |> List.iter (fun rc -> rc.Reply())
 
-        rc.Reply()
+        // Cancel every in-flight inbound handler. Each one will eventually post
+        // HandlerCancelled/HandlerCompleted/HandlerFailed back, and tryFireShutdownWaiters
+        // will fire rc (and any AwaitShutdown waiters) once the map is empty.
+        for KeyValue(_, ctx) in state.RunningInboundRequests do
+            ctx.CancellationTokenSource
+            |> Option.iter (fun cts ->
+                try
+                    cts.Cancel()
+                with ex ->
+                    postEvent (
+                        WriteRpcLogEntry(
+                            RpcWarn(
+                                sprintf "Shutdown: error cancelling handler %s: %s" (string ctx.WireId) (string ex)
+                            )
+                        )
+                    ))
 
-        { state with
-            StdIn = None
-            PendingWrite = None
-            PendingRead = None
-            PendingOutboundCalls = Map.empty
-            ShutdownWaiters = [] }
+        // Park rc alongside any existing AwaitShutdown waiters — all fired together on drain.
+        let state =
+            { state with
+                StdIn = None
+                PendingRead = None
+                PendingOutboundCalls = Map.empty
+                Phase = ShuttingDown
+                ShutdownWaiters = rc :: state.ShutdownWaiters }
+
+        // If there are no running handlers at all, we are already drained.
+        tryFireShutdownWaiters state
 
     | SendNotification(method, methodParams, rc) ->
-        let msg =
-            JObject(JProperty("jsonrpc", "2.0"), JProperty("method", method), JProperty("params", methodParams))
-
-        enqueueOutboundMessage
-            postEvent
-            state
-            { Payload = msg
-              CompletionRC = Some rc }
-
-    | SendCall(method, methodParams, replyChannel) ->
-        let id = state.NextOutboundRequestId
-
-        let msg =
-            JObject(
-                JProperty("jsonrpc", "2.0"),
-                JProperty("id", id),
-                JProperty("method", method),
-                JProperty("params", methodParams)
+        match state.Phase with
+        | ShuttingDown
+        | Stopped ->
+            postEvent (
+                WriteRpcLogEntry(RpcWarn(sprintf "SendNotification: dropping '%s', transport is shutting down" method))
             )
 
-        let newState =
-            { state with
-                NextOutboundRequestId = id + 1
-                PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id replyChannel }
+            rc.Reply()
+            state
+        | Active ->
+            let msg =
+                JObject(JProperty("jsonrpc", "2.0"), JProperty("method", method), JProperty("params", methodParams))
 
-        enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
+            enqueueOutboundMessage
+                postEvent
+                state
+                { Payload = msg
+                  CompletionRC = Some rc }
+
+    | SendCall(method, methodParams, replyChannel) ->
+        match state.Phase with
+        | ShuttingDown
+        | Stopped ->
+            postEvent (WriteRpcLogEntry(RpcWarn(sprintf "SendCall: dropping '%s', transport is shutting down" method)))
+            replyChannel.Reply(Error(makeError -32099 "Transport shut down" :> JToken))
+            state
+        | Active ->
+            let id = state.NextOutboundRequestId
+
+            let msg =
+                JObject(
+                    JProperty("jsonrpc", "2.0"),
+                    JProperty("id", id),
+                    JProperty("method", method),
+                    JProperty("params", methodParams)
+                )
+
+            let newState =
+                { state with
+                    NextOutboundRequestId = id + 1
+                    PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id replyChannel }
+
+            enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
 
     | HandlerCompleted(wireIdKey, result) ->
         let ctx = state.RunningInboundRequests |> Map.find wireIdKey
@@ -493,28 +549,31 @@ let processEvent state postEvent ev =
             { state with
                 RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
 
-        match result with
-        | Ok returnValue ->
-            let response =
-                JObject(
-                    JProperty("jsonrpc", "2.0"),
-                    JProperty("id", ctx.WireId.Value),
-                    JProperty("result", returnValue)
-                )
+        let newState =
+            match result with
+            | Ok returnValue ->
+                let response =
+                    JObject(
+                        JProperty("jsonrpc", "2.0"),
+                        JProperty("id", ctx.WireId.Value),
+                        JProperty("result", returnValue)
+                    )
 
-            enqueueOutboundMessage
-                postEvent
-                newState
-                { Payload = response
-                  CompletionRC = None }
-        | Error error ->
-            let errorResponse = makeErrorResponse ctx.WireId.Value error
+                enqueueOutboundMessage
+                    postEvent
+                    newState
+                    { Payload = response
+                      CompletionRC = None }
+            | Error error ->
+                let errorResponse = makeErrorResponse ctx.WireId.Value error
 
-            enqueueOutboundMessage
-                postEvent
-                newState
-                { Payload = errorResponse
-                  CompletionRC = None }
+                enqueueOutboundMessage
+                    postEvent
+                    newState
+                    { Payload = errorResponse
+                      CompletionRC = None }
+
+        tryFireShutdownWaiters newState
 
     | HandlerFailed(wireIdKey, ex) ->
         postEvent (
@@ -530,17 +589,22 @@ let processEvent state postEvent ev =
             { state with
                 RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
 
-        match ctx with
-        | Some ctx ->
-            let errorResponse =
-                makeErrorResponse ctx.WireId.Value (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
+        let newState =
+            match ctx with
+            | Some ctx ->
+                let errorResponse =
+                    makeErrorResponse
+                        ctx.WireId.Value
+                        (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
 
-            enqueueOutboundMessage
-                postEvent
-                newState
-                { Payload = errorResponse
-                  CompletionRC = None }
-        | None -> newState
+                enqueueOutboundMessage
+                    postEvent
+                    newState
+                    { Payload = errorResponse
+                      CompletionRC = None }
+            | None -> newState
+
+        tryFireShutdownWaiters newState
 
     | HandlerCancelled wireIdKey ->
         let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
@@ -551,17 +615,20 @@ let processEvent state postEvent ev =
             { state with
                 RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
 
-        match ctx with
-        | Some ctx ->
-            let errorResponse =
-                makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
+        let newState =
+            match ctx with
+            | Some ctx ->
+                let errorResponse =
+                    makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
 
-            enqueueOutboundMessage
-                postEvent
-                newState
-                { Payload = errorResponse
-                  CompletionRC = None }
-        | None -> newState
+                enqueueOutboundMessage
+                    postEvent
+                    newState
+                    { Payload = errorResponse
+                      CompletionRC = None }
+            | None -> newState
+
+        tryFireShutdownWaiters newState
 
     | NotificationHandlerFailed(method, ex) ->
         postEvent (
