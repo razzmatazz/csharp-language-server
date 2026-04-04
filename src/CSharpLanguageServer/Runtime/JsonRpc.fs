@@ -77,7 +77,7 @@ let emptyTransportState =
 
 type JsonRpcTransportEvent =
     | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
-    | Shutdown
+    | Shutdown of AsyncReplyChannel<unit>
     | InboundMessage of Result<JObject option, Exception>
     | MessageWriteComplete of success: bool * message: OutboundMessage
     | SendNotification of method: string * methodParams: JToken * AsyncReplyChannel<unit>
@@ -429,8 +429,10 @@ let processEvent state postEvent ev =
             let pendingRead = state.StdIn |> Option.map (startRead postEvent)
             { state with PendingRead = pendingRead }
 
-    | Shutdown ->
+    | Shutdown rc ->
         state.ShutdownWaiters |> List.iter (fun rc -> rc.Reply())
+
+        rc.Reply()
 
         { state with
             StdIn = None
@@ -616,6 +618,9 @@ let sendJsonRpcNotification (server: MailboxProcessor<JsonRpcTransportEvent>) (m
 
 let sendJsonRpcCall (transport: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
     transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))
+
+let shutdownJsonRpcTransport (transport: MailboxProcessor<JsonRpcTransportEvent>) =
+    transport.PostAndAsyncReply(Shutdown)
 
 let awaitJsonRpcTransportShutdown (transport: MailboxProcessor<JsonRpcTransportEvent>) =
     transport.PostAndAsyncReply(AwaitShutdown)

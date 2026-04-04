@@ -578,7 +578,7 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
         Assert.AreEqual("config2", string reply.[1])
     | Error err -> Assert.Fail(sprintf "Expected Ok response but got Error: %s" (string err))
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testSendRequestAssignsIncrementingIds () =
@@ -664,7 +664,7 @@ let testSendCallReturnsErrorOnMethodNotFound () =
         Assert.IsTrue((string (err.SelectToken("message"))).Contains("Method not found"))
     | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testSendCallReturnsErrorWithData () =
@@ -715,7 +715,7 @@ let testSendCallReturnsErrorWithData () =
         Assert.AreEqual(false, System.Convert.ToBoolean(err.SelectToken("data.retry")))
     | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testSendCallSuccessAndErrorForDifferentRequests () =
@@ -777,7 +777,7 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
         Assert.AreEqual("Invalid request", string (err.SelectToken("message")))
     | Ok _ -> Assert.Fail("Expected Error for second call")
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testMixedInboundRequestsAndOutboundNotifications () =
@@ -894,7 +894,7 @@ let testCancelRequestCancelsRunningHandler () =
         (string (response.SelectToken("error.message"))).Contains("cancel", StringComparison.OrdinalIgnoreCase)
     )
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testCancelRequestForUnknownIdIsIgnored () =
@@ -922,7 +922,7 @@ let testCancelRequestForUnknownIdIsIgnored () =
     Async.Sleep 500 |> Async.RunSynchronously
     Assert.AreEqual(0L, stdout.Length, "Expected no output for cancel of unknown request id")
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
@@ -982,7 +982,7 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
         "Expected exactly 1 message (the original response, not a cancellation error)"
     )
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testHandlerObservesCancellationToken () =
@@ -1047,7 +1047,7 @@ let testHandlerObservesCancellationToken () =
     // Verify the handler's CancellationToken was actually cancelled
     Assert.IsTrue(tokenWasCancelled.Wait(2000), "Handler's CancellationToken should have been cancelled")
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testOtherRequestsStillWorkAfterCancellation () =
@@ -1130,4 +1130,4 @@ let testOtherRequestsStillWorkAfterCancellation () =
     Assert.IsTrue(fastResponse.IsSome, "Expected a response for the fast request (id=2)")
     Assert.AreEqual("ok", string fastResponse.Value.["result"])
 
-    server.Post(Shutdown)
+    shutdownJsonRpcTransport server |> Async.RunSynchronously

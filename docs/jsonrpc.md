@@ -1,6 +1,6 @@
 # JsonRpc.fs
 
-An F# implementation of a [JSON-RPC 2.0](https://www.jsonrpc.org/specification) transport layer over stdio, designed for use in language servers and similar tools that communicate via the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
+An F# implementation of a [JSON-RPC 2.0](https://www.jsonrpc.org/specification) transport layer over stdio for use with the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/). It is symmetric by design and can be used on **either end** of an LSP connection — as the language server receiving requests from an editor, or as the client (e.g. in tests or a driver process) sending requests to a server.
 
 ## How it works
 
@@ -93,6 +93,14 @@ match result with
 ```
 
 Returns `Async<Result<JToken, JToken>>` that completes when the peer's response arrives.
+
+## Shutting down the transport
+
+```fsharp
+do! shutdownJsonRpcTransport transport
+```
+
+Sends a `Shutdown` event to the transport and waits for it to acknowledge. The transport immediately stops reading from stdin and writing to stdout, and unblocks any callers that are waiting in `awaitJsonRpcTransportShutdown`. Use this when your server logic decides to terminate proactively (e.g. after handling the LSP `shutdown` + `exit` sequence).
 
 ## Waiting for shutdown
 

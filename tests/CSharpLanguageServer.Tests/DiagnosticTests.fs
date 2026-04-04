@@ -40,7 +40,7 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
 [<Test>]
 [<Retry(3)>]
 let testPushDiagnosticsWork () =
-    use client = activateFixtureWithLoggingEnabled "testDiagnosticsWork"
+    use client = activateFixture "testDiagnosticsWork"
 
     // open Class.cs file and wait for diagnostics to be pushed
     use classFile = client.Open("Project/Class.cs")
