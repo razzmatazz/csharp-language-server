@@ -16,6 +16,8 @@ open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+open CSharpLanguageServer.Runtime.JsonRpc
+
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
 
@@ -144,11 +146,6 @@ let makeServerProcessInfo projectTempDir =
 
     processStartInfo
 
-type LspClientServerRpcRequestInfo =
-    { Method: string
-      RpcRequestMsg: JObject
-      ResultReplyChannel: option<AsyncReplyChannel<Result<JToken, JToken>>> }
-
 type RpcEndpoint =
     | Server
     | Client
@@ -162,12 +159,8 @@ type LspClientState =
     { ClientProfile: LspClientProfile
       LoggingEnabled: bool
       ProjectDir: string option
-      ProcessStartInfo: ProcessStartInfo option
       ServerProcess: Process option
       ServerStderrLineReadTask: Task
-      ServerStdoutJsonRpcMessageRead: Task
-      NextRpcRequestId: int
-      OutstandingServerRpcReqs: Map<int, LspClientServerRpcRequestInfo>
       SetupTimestamp: DateTime
       RpcLog: RpcMessageLogEntry list
       ServerInfo: InitializeResultServerInfo option
@@ -181,12 +174,8 @@ let initialClientState =
           SolutionLoadDelay = None }
       LoggingEnabled = false
       ProjectDir = None
-      ProcessStartInfo = None
       ServerProcess = None
       ServerStderrLineReadTask = Task.CompletedTask
-      ServerStdoutJsonRpcMessageRead = Task.CompletedTask
-      NextRpcRequestId = 1
-      OutstandingServerRpcReqs = Map.empty
       SetupTimestamp = DateTime.MinValue
       RpcLog = []
       ServerInfo = None
@@ -199,22 +188,201 @@ type LspClientEvent =
     | ServerStopRequest of AsyncReplyChannel<unit>
     | GetState of AsyncReplyChannel<LspClientState>
     | ServerStderrLineRead of string option
-    | RpcMessageReceived of Result<JObject option, Exception>
-    | SendServerRpcRequest of string * JToken * option<AsyncReplyChannel<Result<JToken, JToken>>>
-    | ServerRpcCallResultOrError of JObject
-    | SendServerRpcNotification of string * JToken
-    | ClientRpcCall of JValue * string * JObject
-    | SendClientRpcCallResult of JToken * option<JToken>
-    | SendRpcMessage of JObject
     | EmitLogMessage of DateTime * string * string
     | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
+
+let buildConfigurationResponse (paramsToken: JToken option) (clientProfile: LspClientProfile) : JToken =
+    let getSectionConfiguration (section: string) : Option<JToken> =
+        match section with
+        | "csharp" ->
+            let debugObj =
+                match clientProfile.SolutionLoadDelay with
+                | Some ms -> Some {| solutionLoadDelay = ms |}
+                | None -> None
+
+            {| metadataUris = true
+               debug = debugObj |}
+            |> serialize
+            |> Some
+        | _ -> None
+
+    paramsToken
+    |> Option.map (fun p ->
+        p
+        |> deserialize<ConfigurationParams>
+        |> _.Items
+        |> Seq.choose _.Section
+        |> Seq.map getSectionConfiguration
+        |> List.ofSeq
+        |> serialize)
+    |> Option.defaultValue (serialize ([]: JToken list))
+
+let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
+    match entry with
+    | RpcRead jobj ->
+        post (
+            UpdateState(fun s ->
+                { s with
+                    RpcLog =
+                        s.RpcLog
+                        @ [ { Source = Server
+                              TimestampMS = 0
+                              Message = jobj } ] })
+        )
+    | RpcWrite jobj ->
+        post (
+            UpdateState(fun s ->
+                { s with
+                    RpcLog =
+                        s.RpcLog
+                        @ [ { Source = Client
+                              TimestampMS = 0
+                              Message = jobj } ] })
+        )
+    | RpcError msg -> post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "ERROR: %s" msg))
+    | RpcWarn msg -> post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "WARN: %s" msg))
+    | RpcDebug msg -> post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "DEBUG: %s" msg))
+
+let configureRpcTransport
+    (clientProfile: LspClientProfile)
+    (post: LspClientEvent -> unit)
+    (_transport: MailboxProcessor<JsonRpcTransportEvent>)
+    : JsonRpcCallHandlerMap * JsonRpcNotificationHandlerMap =
+    let callHandlers =
+        Map.ofList
+            [ "client/registerCapability",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  post (
+                      EmitLogMessage(
+                          DateTime.Now,
+                          "ClientRpcCall",
+                          sprintf "client/registerCapability: params=%A" ctx.Params
+                      )
+                  )
+
+                  return Ok(JValue.CreateNull() :> JToken)
+              })
+              "workspace/configuration",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  post (
+                      EmitLogMessage(
+                          DateTime.Now,
+                          "ClientRpcCall",
+                          sprintf "workspace/configuration: params=%A" ctx.Params
+                      )
+                  )
+
+                  let result = buildConfigurationResponse ctx.Params clientProfile
+
+                  post (
+                      EmitLogMessage(
+                          DateTime.Now,
+                          "ClientRpcCall",
+                          sprintf "workspace/configuration: res=%s" (string result)
+                      )
+                  )
+
+                  return Ok result
+              })
+              "window/workDoneProgress/create",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  post (
+                      EmitLogMessage(
+                          DateTime.Now,
+                          "ClientRpcCall",
+                          sprintf "window/workDoneProgress/create: params=%A" ctx.Params
+                      )
+                  )
+
+                  return Ok(JValue.CreateNull() :> JToken)
+              }) ]
+
+    let notificationHandlers =
+        Map.ofList
+            [ "window/showMessage",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  match ctx.Params with
+                  | Some p ->
+                      let mp = p |> deserialize<ShowMessageParams>
+
+                      post (
+                          EmitLogMessage(
+                              DateTime.Now,
+                              "window/showMessage",
+                              String.Format("[{0}] \"{1}\"", mp.Type, mp.Message)
+                          )
+                      )
+                  | None -> ()
+              })
+              "window/logMessage",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  match ctx.Params with
+                  | Some p ->
+                      let mp = p |> deserialize<LogMessageParams>
+
+                      post (
+                          EmitLogMessage(
+                              DateTime.Now,
+                              "window/logMessage",
+                              String.Format("[{0}] \"{1}\"", mp.Type, mp.Message)
+                          )
+                      )
+                  | None -> ()
+              })
+              "$/progress",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  match ctx.Params with
+                  | Some p ->
+                      let value = p["value"] |> Option.ofObj
+
+                      post (
+                          EmitLogMessage(
+                              DateTime.Now,
+                              "$/progress",
+                              String.Format("{0} {1}", value |> indexJToken "kind", value |> indexJToken "message")
+                          )
+                      )
+                  | None -> ()
+              })
+              "$/logTrace",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  match ctx.Params with
+                  | Some p ->
+                      let mp = p |> deserialize<LogTraceParams>
+                      let prefix = mp.Verbose |> Option.map (sprintf "%s: ") |> Option.defaultValue ""
+                      post (EmitLogMessage(DateTime.Now, "$/logTrace", sprintf "%s%s" prefix mp.Message))
+                  | None -> ()
+              })
+              "textDocument/publishDiagnostics",
+              (fun (ctx: JsonRpcRequestContext) -> async {
+                  match ctx.Params with
+                  | Some p ->
+                      post (
+                          EmitLogMessage(
+                              DateTime.Now,
+                              "ClientRpcCall",
+                              sprintf "textDocument/publishDiagnostics: %s" (string p)
+                          )
+                      )
+
+                      let pd = p |> deserialize<PublishDiagnosticsParams>
+
+                      post (
+                          UpdateState(fun s ->
+                              { s with
+                                  PushDiagnostics = s.PushDiagnostics |> Map.add pd.Uri (pd.Version, pd.Diagnostics) })
+                      )
+                  | None -> ()
+              }) ]
+
+    callHandlers, notificationHandlers
 
 let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) msg : Async<LspClientState> = async {
     let logMessage logger msg =
         post (EmitLogMessage(DateTime.Now, logger, msg))
 
     match msg with
-    | UpdateState stateUpdateFn -> return stateUpdateFn (state)
+    | UpdateState stateUpdateFn -> return stateUpdateFn state
 
     | ServerStartRequest(clientProfile, projectDir, rc) ->
         let state =
@@ -232,13 +400,11 @@ let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) ms
         let startResult = p.Start()
         logMessage "ServerStartRequest" (String.Format("StartServer: p.Start(): {0}, {1}", startResult, p.Id))
 
-        post (RpcMessageReceived(Ok None))
         post (ServerStderrLineRead None)
 
         let state =
             { state with
                 ProjectDir = Some projectDir
-                ProcessStartInfo = Some processStartInfo
                 ServerProcess = Some p }
 
         rc.Reply(state)
@@ -280,293 +446,6 @@ let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) ms
         return
             { state with
                 ServerStderrLineReadTask = nextStdErrLineReadTask }
-
-    | RpcMessageReceived result ->
-        let tryReadJsonRpcHeader (stdout: Stream) =
-            let headerBytes = List<byte>()
-
-            let terminatorReached () =
-                headerBytes.Count >= 4
-                && headerBytes[headerBytes.Count - 4] = byte '\r'
-                && headerBytes[headerBytes.Count - 3] = byte '\n'
-                && headerBytes[headerBytes.Count - 2] = byte '\r'
-                && headerBytes[headerBytes.Count - 1] = byte '\n'
-
-            let mutable eof = false
-
-            while (not eof && not (terminatorReached ())) do
-                let b: int = stdout.ReadByte()
-                if b < 0 then eof <- true else headerBytes.Add(byte b)
-                ()
-
-            match eof with
-            | true -> None
-
-            | false ->
-                let headers =
-                    Encoding.UTF8.GetString(headerBytes.ToArray())
-                    |> _.Split("\r\n")
-                    |> Seq.filter (fun s -> s.Length > 0)
-                    |> Seq.map _.Split(":")
-
-                let contentLength =
-                    headers
-                    |> Seq.filter (fun a -> a[0].ToLower().Trim() = "content-length")
-                    |> Seq.map (fun a -> a[1] |> Int32.Parse)
-                    |> Seq.head
-
-                Some
-                    {| ContentLength = contentLength
-                       ContentType = None |}
-
-        let readNextJsonRpcMessage () =
-            match state.ServerProcess with
-            | None ->
-                logMessage "RpcMessageReceived" "no state.ServerProcess, will not read next rpc message"
-                ()
-
-            | Some serverProcess ->
-                try
-                    let stdout = serverProcess.StandardOutput.BaseStream
-
-                    if not stdout.CanRead then
-                        failwith "stdout.CanRead = false"
-
-                    let headerMaybe = tryReadJsonRpcHeader stdout
-
-                    match headerMaybe with
-                    | None ->
-                        logMessage "RpcMessageReceived" "readNextJsonRpcMessage: EOF received when reading header"
-                        ()
-
-                    | Some header ->
-                        let bytesRead: List<byte> = List<byte>()
-
-                        while bytesRead.Count < header.ContentLength do
-                            let numBytesToReadInThisChunk =
-                                Math.Min(header.ContentLength - bytesRead.Count, 4096)
-
-                            let chunk: byte[] = Array.zeroCreate numBytesToReadInThisChunk
-                            let chunkBytesRead: int = stdout.Read(chunk)
-
-                            for i in 0 .. (chunkBytesRead - 1) do
-                                bytesRead.Add(chunk[i])
-
-                        if bytesRead.Count <> header.ContentLength then
-                            failwith (
-                                sprintf
-                                    "readNextJsonRpcMessage: could not read the full content of response (bytesRead=%d; header.ContentLength=%d)"
-                                    bytesRead.Count
-                                    header.ContentLength
-                            )
-
-                        let msg = bytesRead |> _.ToArray() |> Encoding.UTF8.GetString |> JObject.Parse
-
-                        post (RpcMessageReceived(Ok(Some msg)))
-                with ex ->
-                    post (RpcMessageReceived(Error ex))
-
-        match result with
-        | Error e ->
-            logMessage "RpcMessageReceived" (sprintf "e=%s" (string e))
-            return state
-
-        | Ok rpcMsgMaybe ->
-            match rpcMsgMaybe with
-            | Some rpcMsg ->
-                if rpcMsg.ContainsKey("result") || rpcMsg.ContainsKey("error") then
-                    post (ServerRpcCallResultOrError rpcMsg)
-                else if rpcMsg.ContainsKey("method") then
-                    let rpcMsgId: JValue = rpcMsg["id"] :?> JValue | null
-                    let rpcMsgMethod: string = string rpcMsg["method"]
-                    let rpcMsgParams: JObject = rpcMsg["params"] :?> JObject | null
-                    post (ClientRpcCall(rpcMsgId, rpcMsgMethod, rpcMsgParams))
-                else
-                    failwith (sprintf "RpcMessageReceived: unknown json rpc msg type: %s" (string rpcMsg))
-            | None -> ()
-
-            let nextJsonRpcMessageReadTask = Task.Run(readNextJsonRpcMessage)
-
-            let newRpcLog =
-                match rpcMsgMaybe with
-                | Some rpcMsg ->
-                    state.RpcLog
-                    @ [ { Source = Server
-                          TimestampMS = 0
-                          Message = rpcMsg } ]
-                | None -> state.RpcLog
-
-            return
-                { state with
-                    ServerStdoutJsonRpcMessageRead = nextJsonRpcMessageReadTask
-                    RpcLog = newRpcLog }
-
-    | ClientRpcCall(id, m, p) ->
-        let newState =
-            match m with
-            | "window/showMessage" ->
-                let p = p |> deserialize<ShowMessageParams>
-                logMessage "windows/showMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
-                state
-            | "window/logMessage" ->
-                let p = p |> deserialize<LogMessageParams>
-                logMessage "windows/logMessage" (String.Format("[{0}] \"{1}\"", p.Type, p.Message))
-                state
-            | "$/progress" ->
-                let value = p["value"] |> Option.ofObj
-
-                logMessage
-                    "$/progress"
-                    (String.Format("{0} {1}", value |> indexJToken "kind", value |> indexJToken "message"))
-
-                state
-            | "$/logTrace" ->
-                let p = p |> deserialize<LogTraceParams>
-                let prefix = p.Verbose |> Option.map (sprintf "%s: ") |> Option.defaultValue ""
-                logMessage "$/logTrace" (sprintf "%s%s" prefix p.Message)
-                state
-            | "client/registerCapability" ->
-                logMessage
-                    "ClientRpcCall"
-                    (String.Format("client/registerCapability: registrations={0}", p["registrations"]))
-
-                post (SendClientRpcCallResult(id, None))
-                state
-            | "workspace/configuration" ->
-                logMessage "ClientRpcCall" (String.Format("workspace/configuration: params={0}", p))
-
-                let getSectionConfiguration (section: string) : Option<JToken> =
-                    match section with
-                    | "csharp" ->
-                        let debugObj =
-                            match state.ClientProfile.SolutionLoadDelay with
-                            | Some ms -> Some {| solutionLoadDelay = ms |}
-                            | None -> None
-
-                        {| metadataUris = true
-                           debug = debugObj |}
-                        |> serialize
-                        |> Some
-                    | _ -> None
-
-                let configurationPerSection =
-                    p
-                    |> deserialize<ConfigurationParams>
-                    |> _.Items
-                    |> Seq.choose _.Section
-                    |> Seq.map getSectionConfiguration
-                    |> List.ofSeq
-                    |> serialize
-                    |> Some
-
-                logMessage "ClientRpcCall" (String.Format("workspace/configuration: res={0}", configurationPerSection))
-
-                post (SendClientRpcCallResult(id, configurationPerSection))
-                state
-            | "window/workDoneProgress/create" ->
-                logMessage "ClientRpcCall" (String.Format("window/workDoneProgress/create: params={0}", p))
-                post (SendClientRpcCallResult(id, None))
-                state
-            | "textDocument/publishDiagnostics" ->
-                logMessage "ClientRpcCall" (sprintf "textDocument/publishDiagnostics: %s" (string p))
-                let p = p |> deserialize<PublishDiagnosticsParams>
-
-                let newPushDiagnostics =
-                    state.PushDiagnostics |> Map.add p.Uri (p.Version, p.Diagnostics)
-
-                { state with
-                    PushDiagnostics = newPushDiagnostics }
-            | _ ->
-                logMessage "ClientRpcCall" (String.Format("ClientRpcCall: unhandled method call: \"{0}\"", m))
-                state
-
-        return newState
-
-    | SendServerRpcRequest(m, p, rc) ->
-        let rpcRequestId = state.NextRpcRequestId
-        let msg = JObject()
-        msg["jsonrpc"] <- JValue "2.0"
-        msg["id"] <- JValue rpcRequestId
-        msg["method"] <- JValue m
-        msg["params"] <- p
-
-        post (SendRpcMessage msg)
-
-        let newOutstandingServerRpcReqs =
-            state.OutstandingServerRpcReqs
-            |> Map.add
-                rpcRequestId
-                { Method = m
-                  RpcRequestMsg = msg
-                  ResultReplyChannel = rc }
-
-        return
-            { state with
-                OutstandingServerRpcReqs = newOutstandingServerRpcReqs
-                NextRpcRequestId = state.NextRpcRequestId + 1 }
-
-    | ServerRpcCallResultOrError rpcMsg ->
-        let rpcCallId = int rpcMsg["id"]
-        let rpcRequest = state.OutstandingServerRpcReqs |> Map.find rpcCallId
-
-        let newOutstandingServerRpcReqs =
-            state.OutstandingServerRpcReqs |> Map.remove rpcCallId
-
-        let resultOrError: Result<JToken, JToken> =
-            if rpcMsg.ContainsKey "result" then Ok(rpcMsg["result"])
-            elif rpcMsg.ContainsKey "error" then Error(rpcMsg["error"])
-            else failwithf "unknown result rpcMsg: %s" (string rpcMsg)
-
-        match rpcRequest.ResultReplyChannel with
-        | Some rc -> rc.Reply(resultOrError)
-        | None -> ()
-
-        return
-            { state with
-                OutstandingServerRpcReqs = newOutstandingServerRpcReqs }
-
-    | SendServerRpcNotification(m, p) ->
-        let msg = JObject()
-        msg["jsonrpc"] <- JValue "2.0"
-        msg["method"] <- JValue m
-        msg["params"] <- p
-
-        post (SendRpcMessage msg)
-        return state
-
-    | SendClientRpcCallResult(id, result) ->
-        let msg = JObject()
-        msg["jsonrpc"] <- JValue "2.0"
-        msg["id"] <- id
-        msg["result"] <- result |> Option.defaultValue null
-        post (SendRpcMessage msg)
-
-        return state
-
-    | SendRpcMessage rpcMsg ->
-        let rpcMsgJson = (string rpcMsg)
-
-        match state.ServerProcess with
-        | None ->
-            logMessage "SendRpcMessage" (sprintf "dropping rpcMsg as there is no state.ServerProcess: %s " rpcMsgJson)
-            return state
-
-        | Some serverProcess ->
-            let serverStdin = serverProcess.StandardInput
-
-            let formattedMessage =
-                String.Format("Content-Length: {0}\r\n\r\n{1}", rpcMsgJson.Length, rpcMsgJson)
-
-            serverStdin.Write(formattedMessage)
-            serverStdin.Flush()
-
-            let newRpcLog =
-                state.RpcLog
-                @ [ { Source = Client
-                      TimestampMS = 0
-                      Message = rpcMsg } ]
-
-            return { state with RpcLog = newRpcLog }
 
     | EmitLogMessage(timestamp, logger, msg) ->
         let offsetMs = int (timestamp - state.SetupTimestamp).TotalMilliseconds
@@ -665,10 +544,13 @@ let fileUriForProjectDir projectDir filename =
     | PlatformID.Win32NT -> ("file:///" + projectDir + "/" + filename).Replace("\\", "/")
     | _ -> "file://" + projectDir + "/" + filename
 
-type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: string, filename: string) =
+type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, projectDir: string, filename: string) =
 
     let mutable fileContents: option<string> = None
     let mutable fileVersion: int = 1
+
+    let notify method (p: JToken) =
+        sendJsonRpcNotification rpcTransport method p |> Async.RunSynchronously
 
     member __.FileName = filename
 
@@ -679,8 +561,7 @@ type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: str
             let didCloseParams: DidCloseTextDocumentParams =
                 { TextDocument = { Uri = this.Uri } }
 
-            client.Post(SendServerRpcNotification("textDocument/didClose", serialize didCloseParams))
-            ()
+            notify "textDocument/didClose" (serialize didCloseParams)
 
     member this.OpenWithText(text: string) =
         fileContents <- Some text
@@ -699,7 +580,7 @@ type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: str
 
         let didOpenParams: DidOpenTextDocumentParams = { TextDocument = textDocument }
 
-        client.Post(SendServerRpcNotification("textDocument/didOpen", serialize didOpenParams))
+        notify "textDocument/didOpen" (serialize didOpenParams)
 
     member this.OpenWithTextFromDisk() =
         let fileText =
@@ -719,7 +600,7 @@ type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: str
                   Version = fileVersion }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
 
-        client.Post(SendServerRpcNotification("textDocument/didChange", serialize didChangeParams))
+        notify "textDocument/didChange" (serialize didChangeParams)
 
     member this.Save() =
         let fullPath = Path.Combine(projectDir, filename)
@@ -729,7 +610,7 @@ type LspDocumentHandle(client: MailboxProcessor<LspClientEvent>, projectDir: str
             { TextDocument = { Uri = this.Uri }
               Text = fileContents }
 
-        client.Post(SendServerRpcNotification("textDocument/didSave", serialize didSaveParams))
+        notify "textDocument/didSave" (serialize didSaveParams)
 
     member __.GetFileContents() = fileContents.Value
 
@@ -754,6 +635,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     let mutable solutionDir: string option = None
     let mutable solutionLoaded: bool = false
+    let mutable rpcTransportOpt: MailboxProcessor<JsonRpcTransportEvent> option = None
+
+    let rpcTransport () =
+        rpcTransportOpt
+        |> Option.defaultWith (fun () -> failwith "rpcTransport not yet initialised")
 
     let logMessage m msg =
         client.Post(EmitLogMessage(DateTime.Now, sprintf "ClientActorController.%s" m, msg))
@@ -811,11 +697,22 @@ type LspTestClient(clientProfile: LspClientProfile) =
         patchSolutionDir tempSolutionDir
         solutionDir <- Some tempSolutionDir
 
-        // start the server
+        // start the server process
         log "sending ServerStartRequest"
 
         let state =
             client.PostAndReply(fun rc -> ServerStartRequest(clientProfile, solutionDir.Value, rc))
+
+        // wire up the JSON-RPC transport on top of the process stdio
+        // server→client direction: we read from server's stdout, write to server's stdin
+        let transport =
+            startJsonRpcTransport
+                state.ServerProcess.Value.StandardOutput.BaseStream
+                state.ServerProcess.Value.StandardInput.BaseStream
+                (Some(makeRpcLogCallback client.Post))
+                (configureRpcTransport clientProfile client.Post)
+
+        rpcTransportOpt <- Some transport
 
         let initializeParams: InitializeParams =
             let rootUri = solutionDir.Value |> Uri |> string |> DocumentUri
@@ -834,8 +731,8 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         let initializeResult =
             let initResponse =
-                client.PostAndReply<Result<JToken, JToken>>(fun rc ->
-                    SendServerRpcRequest("initialize", serialize initializeParams, Some rc))
+                sendJsonRpcCall transport "initialize" (serialize initializeParams)
+                |> Async.RunSynchronously
 
             match initResponse with
             | Ok result -> deserialize<InitializeResult> result
@@ -850,7 +747,8 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         log "OK, 'initialize' request complete"
 
-        client.Post(SendServerRpcNotification("initialized", JObject()))
+        sendJsonRpcNotification transport "initialized" (JObject())
+        |> Async.RunSynchronously
 
         log "OK, 'initialized' notification sent"
 
@@ -886,12 +784,16 @@ type LspTestClient(clientProfile: LspClientProfile) =
             Thread.Sleep(25)
 
     member __.Shutdown() =
-        let _ =
-            client.PostAndReply<Result<JToken, JToken>>(fun rc -> SendServerRpcRequest("shutdown", JObject(), Some rc))
-
-        client.Post(SendServerRpcRequest("exit", JObject(), None))
+        let transport = rpcTransport ()
+        let _ = sendJsonRpcCall transport "shutdown" (JObject()) |> Async.RunSynchronously
+        sendJsonRpcNotification transport "exit" (JObject()) |> Async.RunSynchronously
+        shutdownJsonRpcTransport transport |> Async.RunSynchronously
 
     member __.Stop() =
+        match rpcTransportOpt with
+        | Some transport -> shutdownJsonRpcTransport transport |> Async.RunSynchronously
+        | None -> ()
+
         client.PostAndReply(fun rc -> ServerStopRequest rc)
 
     member __.GetState() =
@@ -976,23 +878,21 @@ type LspTestClient(clientProfile: LspClientProfile) =
         rpcLog |> Seq.exists containsPred
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
-        let requestJObject = request |> serialize
+        let result =
+            sendJsonRpcCall (rpcTransport ()) method (serialize request)
+            |> Async.RunSynchronously
 
-        let responseJToken =
-            client.PostAndReply<Result<JToken, JToken>>(fun rc -> SendServerRpcRequest(method, requestJObject, Some rc))
-
-        match responseJToken with
-        | Ok resultJToken -> resultJToken |> deserialize<'Response>
-        | Error errorJToken ->
-            failwithf "request to method \"%s\" has failed with error: %s" method (string errorJToken)
+        match result with
+        | Ok token -> token |> deserialize<'Response>
+        | Error err -> failwithf "request to method \"%s\" has failed with error: %s" method (string err)
 
     member __.Open(filename: string) : LspDocumentHandle =
-        let file = new LspDocumentHandle(client, solutionDir.Value, filename)
+        let file = new LspDocumentHandle(rpcTransport (), solutionDir.Value, filename)
         file.OpenWithTextFromDisk()
         file
 
     member __.OpenWithText(filename: string, text: string) : LspDocumentHandle =
-        let file = new LspDocumentHandle(client, solutionDir.Value, filename)
+        let file = new LspDocumentHandle(rpcTransport (), solutionDir.Value, filename)
         file.OpenWithText(text)
         file
 

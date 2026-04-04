@@ -256,7 +256,7 @@ to the client during `handleInitialized` via `client/registerCapability`.
 
 - **NUnit** with `[<Parallelizable(ParallelScope.All)>]` — all tests run in parallel
 - **net10.0** target, references main server project directly
-- `Tooling.fs` (~1060 lines) is the test harness, compiled before all test files
+- `Tooling.fs` is the test harness, compiled before all test files
 
 ### 7.2 Integration Test Architecture: Out-of-Process via stdio
 
@@ -266,9 +266,11 @@ Tests do **not** use in-process hosting. Instead:
    `CSharpLanguageServer` executable relative to the test assembly, creates a
    `ProcessStartInfo` with `RedirectStandardInput/Output/Error = true`
 
-2. **Communicates via stdin/stdout using raw JSON-RPC** — A `MailboxProcessor<ClientEvent>`
-   (the "client event loop") writes JSON-RPC to `serverProcess.StandardInput` and reads
-   from `serverProcess.StandardOutput.BaseStream`, parsing `Content-Length` headers
+2. **Communicates via stdin/stdout using `JsonRpc.fs`** — `LoadSolution` calls
+   `startJsonRpcTransport` on the server's stdio streams, registering handlers for all
+   server→client calls and notifications. A thin `MailboxProcessor<LspClientEvent>` (the
+   "state actor") holds observable state (`RpcLog`, `PushDiagnostics`, etc.); the transport
+   feeds it via `rpcLogCallback` and `UpdateState` posts from notification handlers.
 
 3. **Concurrency control** — `activeClientsSemaphore` (`SemaphoreSlim` initialized to
    `Environment.ProcessorCount`) throttles simultaneous server processes
