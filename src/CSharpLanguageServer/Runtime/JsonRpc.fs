@@ -238,6 +238,19 @@ let enqueueOutboundMessage postEvent (state: JsonRpcTransportState) (msg: Outbou
 let makeError (code: int) (message: string) =
     JObject(JProperty("code", code), JProperty("message", message))
 
+/// Drain all pending outbound calls by replying with a synthetic transport-shutdown error.
+/// Call this from any shutdown path before clearing PendingOutboundCalls.
+let failPendingOutboundCalls postEvent (state: JsonRpcTransportState) =
+    let shutdownErr = makeError -32099 "Transport shut down" :> JToken
+
+    for KeyValue(id, replyChannel) in state.PendingOutboundCalls do
+        let rpcLogEntry =
+            RpcWarn(sprintf "failPendingOutboundCalls: failing pending outbound call id=%d on shutdown" id)
+
+        postEvent (WriteRpcLogEntry rpcLogEntry)
+
+        replyChannel.Reply(Error shutdownErr)
+
 let makeErrorResponse (id: JToken) (error: JToken) =
     JObject(JProperty("jsonrpc", "2.0"), JProperty("id", id), JProperty("error", error))
 
@@ -419,17 +432,20 @@ let processEvent state postEvent ev =
                     PendingRead = pendingRead }
 
             | None ->
+                failPendingOutboundCalls postEvent state
                 state.ShutdownWaiters |> List.iter (fun rc -> rc.Reply())
 
                 { state with
                     StdIn = None
                     PendingRead = None
+                    PendingOutboundCalls = Map.empty
                     ShutdownWaiters = [] }
         | Error ex ->
             let pendingRead = state.StdIn |> Option.map (startRead postEvent)
             { state with PendingRead = pendingRead }
 
     | Shutdown rc ->
+        failPendingOutboundCalls postEvent state
         state.ShutdownWaiters |> List.iter (fun rc -> rc.Reply())
 
         rc.Reply()
@@ -438,6 +454,7 @@ let processEvent state postEvent ev =
             StdIn = None
             PendingWrite = None
             PendingRead = None
+            PendingOutboundCalls = Map.empty
             ShutdownWaiters = [] }
 
     | SendNotification(method, methodParams, rc) ->
