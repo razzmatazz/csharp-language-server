@@ -10,6 +10,8 @@ Messages are framed using HTTP-style `Content-Length` headers, as required by LS
 
 Outbound messages are serialised through an internal write queue: if a write is already in progress when a new message is enqueued, the message waits rather than racing. This means delivery order matches enqueue order.
 
+If a transient error occurs while reading from stdin (e.g. a stream exception), the transport logs a `RpcError` entry and immediately retries the next read. A read error does not shut down the transport.
+
 ### Transport lifecycle
 
 The transport moves through three phases, tracked by the `TransportPhase` discriminated union:
@@ -62,6 +64,8 @@ let combined =
 
 Register an async function of type `JsonRpcCallHandler` per method name. The function receives a `JsonRpcRequestContext` and must return `Async<Result<JToken, JToken>>` — `Ok` for a successful response, `Error` for a JSON-RPC error object.
 
+The context includes a `RequestOrdinal` — a monotonically increasing `int64` assigned to each inbound message (both requests and notifications) in the order it was received. This can be used for logging or to reason about ordering.
+
 ```fsharp
 let handler : JsonRpcCallHandler = fun ctx -> async {
     let paramValue =
@@ -76,6 +80,8 @@ let handler : JsonRpcCallHandler = fun ctx -> async {
 
 Handlers support **cancellation** — if the client sends a `$/cancelRequest` notification, the handler's `CancellationTokenSource` is cancelled. The transport automatically sends a `-32800` error response if cancellation is observed.
 
+If a handler throws an **unhandled exception**, the transport catches it and automatically sends a `-32603` (Internal error) response to the client. The exception type name is included in the error message. A `RpcError` log entry is emitted.
+
 ## Receiving notifications
 
 Register an async function of type `JsonRpcNotificationHandler` per method name. No response is sent.
@@ -86,13 +92,17 @@ let handler : JsonRpcNotificationHandler = fun ctx -> async {
 }
 ```
 
+If an inbound notification arrives for a method with no registered handler, it is silently dropped and a `RpcError` log entry is emitted. No response is sent (per the JSON-RPC spec, notifications never receive responses).
+
+If a notification handler throws an unhandled exception, a `RpcError` log entry is emitted. No response is sent.
+
 ## Sending notifications
 
 ```fsharp
 do! sendJsonRpcNotification transport "window/showMessage" (serialize payload)
 ```
 
-Returns `Async<unit>` that completes once the message is queued for writing.
+Returns `Async<unit>` that completes once the message has been written and flushed to the output stream (not just enqueued).
 
 ## Sending requests (outbound calls)
 
@@ -129,13 +139,23 @@ If there are no running handlers at the moment `Shutdown` arrives, steps 5–6 h
 
 **Late `sendJsonRpc*` calls are rejected.** Once the phase is `ShuttingDown` or `Stopped`, any new `sendJsonRpcNotification` or `sendJsonRpcCall` is dropped: the notification caller is unblocked immediately, and the call caller receives the same `-32099` error. A `RpcWarn` log entry is emitted in both cases. This prevents reply channels from leaking into `PendingOutboundCalls` after the peer has gone away.
 
+## EOF on stdin
+
+When the transport reads EOF on stdin (e.g. the peer process exits or the pipe is closed), it performs a partial teardown:
+
+1. All pending outbound calls are failed immediately with error `-32099`.
+2. All `AwaitShutdown` waiters are fired.
+3. `StdIn` is cleared so no further reads are attempted.
+
+Unlike an explicit `Shutdown`, EOF does **not** cancel running inbound handlers — they continue to run and their responses are still enqueued for writing. This means a handler that is mid-flight when the peer disconnects will complete normally; its response will be written to stdout (which may itself fail if the output stream is also closed).
+
 ## Waiting for shutdown
 
 ```fsharp
 do! awaitJsonRpcTransportShutdown transport
 ```
 
-Blocks until the transport detects EOF on stdin or receives a `Shutdown` event. Use this as the main wait at the end of your server's entry point.
+Parks a waiter that is notified when the transport reaches the `Stopped` phase or processes an EOF on stdin. This can be triggered by either an explicit `shutdownJsonRpcTransport` call or the peer closing the connection. Use this as the main wait at the end of your server's entry point.
 
 ## Testing
 
