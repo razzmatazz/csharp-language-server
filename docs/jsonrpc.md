@@ -10,6 +10,18 @@ Messages are framed using HTTP-style `Content-Length` headers, as required by LS
 
 Outbound messages are serialised through an internal write queue: if a write is already in progress when a new message is enqueued, the message waits rather than racing. This means delivery order matches enqueue order.
 
+### Transport lifecycle
+
+The transport moves through three phases, tracked by the `TransportPhase` discriminated union:
+
+| Phase | Meaning |
+|---|---|
+| `Active` | Normal operation — reading, writing, dispatching handlers. |
+| `ShuttingDown` | `Shutdown` received; stdin closed, handler cancellations fired, waiting for all in-flight handlers to finish. |
+| `Stopped` | All handlers have drained; every `ShutdownWaiters` channel has been notified. |
+
+In `ShuttingDown` and `Stopped`, any new `sendJsonRpcNotification` or `sendJsonRpcCall` is rejected immediately — the caller is unblocked with a failure response and a `RpcWarn` log entry is emitted. This prevents callers from blocking indefinitely or leaking reply channels into `PendingOutboundCalls` after the peer has gone away.
+
 ## Starting the transport
 
 ```fsharp
@@ -100,9 +112,22 @@ Returns `Async<Result<JToken, JToken>>` that completes when the peer's response 
 do! shutdownJsonRpcTransport transport
 ```
 
-Sends a `Shutdown` event to the transport and waits for it to acknowledge. The transport immediately stops reading from stdin and writing to stdout, and unblocks any callers that are waiting in `awaitJsonRpcTransportShutdown`. Use this when your server logic decides to terminate proactively (e.g. after handling the LSP `shutdown` + `exit` sequence).
+Sends a `Shutdown` event to the transport. The call **does not return until all in-flight inbound handlers have finished** — it drains before replying.
+
+On receiving `Shutdown` the transport:
+
+1. Stops reading from stdin (`StdIn` cleared, no new `InboundMessage` events queued).
+2. Fails all pending outbound calls immediately with error `-32099` (see below).
+3. Calls `.Cancel()` on the `CancellationTokenSource` of every entry in `RunningInboundRequests`.
+4. Moves to `ShuttingDown` phase and parks the reply channel alongside any existing `AwaitShutdown` waiters.
+5. As each handler posts `HandlerCancelled`, `HandlerCompleted`, or `HandlerFailed` back to the actor, it is removed from `RunningInboundRequests`.
+6. Once the map is empty, all parked channels are notified and the phase moves to `Stopped`.
+
+If there are no running handlers at the moment `Shutdown` arrives, steps 5–6 happen immediately inside step 4.
 
 **Pending outbound calls are failed immediately on shutdown.** Any `sendJsonRpcCall` that is still awaiting a response at the moment of shutdown (or EOF on stdin) will be unblocked with an `Error` result carrying code `-32099` and the message `"Transport shut down"`. This prevents callers from hanging indefinitely when the peer disappears or the transport is torn down before a response arrives.
+
+**Late `sendJsonRpc*` calls are rejected.** Once the phase is `ShuttingDown` or `Stopped`, any new `sendJsonRpcNotification` or `sendJsonRpcCall` is dropped: the notification caller is unblocked immediately, and the call caller receives the same `-32099` error. A `RpcWarn` log entry is emitted in both cases. This prevents reply channels from leaking into `PendingOutboundCalls` after the peer has gone away.
 
 ## Waiting for shutdown
 
@@ -131,9 +156,9 @@ Write well-formed `Content-Length`-framed JSON into the input stream and read re
 
 ## Error codes
 
-| Code    | Meaning            | When sent                                                       |
-|---------|--------------------|-----------------------------------------------------------------|
-| -32099  | Transport shut down | Returned to any pending `sendJsonRpcCall` on transport shutdown or stdin EOF |
-| -32601  | Method not found   | Inbound request for an unregistered method                      |
-| -32603  | Internal error     | Inbound handler threw an unhandled exception                    |
-| -32800  | Request cancelled  | Inbound handler was cancelled                                   |
+| Code    | Meaning             | When sent                                                                                         |
+|---------|---------------------|---------------------------------------------------------------------------------------------------|
+| -32099  | Transport shut down | Pending `sendJsonRpcCall` on shutdown or stdin EOF; late `sendJsonRpcCall` in `ShuttingDown`/`Stopped` |
+| -32601  | Method not found    | Inbound request for an unregistered method                                                        |
+| -32603  | Internal error      | Inbound handler threw an unhandled exception                                                      |
+| -32800  | Request cancelled   | Inbound handler was cancelled via `$/cancelRequest` or transport shutdown                         |
