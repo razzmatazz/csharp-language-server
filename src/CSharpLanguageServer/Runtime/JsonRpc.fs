@@ -5,10 +5,6 @@ open System.IO
 open System.Text
 open System.Threading
 
-open Ionide.LanguageServerProtocol
-open Ionide.LanguageServerProtocol.Types
-open Ionide.LanguageServerProtocol.Server
-open Ionide.LanguageServerProtocol.Mappings
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
