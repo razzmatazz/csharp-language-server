@@ -21,6 +21,17 @@ let private encodeMessage (json: string) =
 
     Array.append header body
 
+/// Helper: create an anonymous pipe whose write end stays open for the lifetime of the test.
+/// Use this when the transport must not see EOF during the test (e.g. when sending multiple
+/// outbound messages).  Dispose the returned write-end stream when the test is done.
+let private makeOpenStdin () =
+    let writeEnd = new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    let readEnd =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, writeEnd.ClientSafePipeHandle)
+
+    writeEnd, readEnd :> Stream
+
 /// Helper: write a JSON-RPC request into a stream and return a MemoryStream positioned at 0 for reading.
 let private makeInputStream (messages: string list) =
     let ms = new MemoryStream()
@@ -495,7 +506,9 @@ let testSendNotificationWritesProperJsonRpcNotification () =
 
 [<Test>]
 let testSendMultipleNotificationsAllWritten () =
-    let stdin = makeInputStream []
+    // Use an open pipe so stdin never hits EOF while we are sending notifications.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
@@ -514,6 +527,8 @@ let testSendMultipleNotificationsAllWritten () =
         messages.Length,
         sprintf "Expected %d notifications but got %d" notifCount messages.Length
     )
+
+    writeEnd.Dispose()
 
 // ---- SendRequest tests ----
 
@@ -961,6 +976,162 @@ let testEofFailsPendingOutboundCall () =
     | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
+let testEofCancelsRunningHandler () =
+    // A handler that is running when EOF is detected should be cancelled.
+    // The transport should send a -32800 cancellation error response.
+    use handlerStarted = new ManualResetEventSlim(false)
+
+    let handler _ctx = async {
+        handlerStarted.Set()
+        do! Async.Sleep 60_000 // would block forever without cancellation
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/slow", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/slow"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    // Close the write end of the pipe — triggers EOF on stdin
+    clientToServer.Dispose()
+
+    // The handler should be cancelled and the -32800 response written
+    let msgs = waitForMessages stdout 1 5000
+    Assert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
+    Assert.AreEqual(1, int msgs.[0].["id"])
+    Assert.AreEqual(-32800, int (msgs.[0].SelectToken("error.code")))
+
+[<Test>]
+let testEofLateCallReturnsError () =
+    // After EOF, the transport is in ShuttingDown/Stopped — sendJsonRpcCall should
+    // return Error -32099 immediately rather than hanging.
+    use handlerStarted = new ManualResetEventSlim(false)
+    let mayFinishTcs = System.Threading.Tasks.TaskCompletionSource<unit>()
+
+    let handler _ctx = async {
+        handlerStarted.Set()
+        do! mayFinishTcs.Task |> Async.AwaitTask
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/slow", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/slow"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    // Trigger EOF; give the actor a moment to process it and move to ShuttingDown
+    clientToServer.Dispose()
+    Thread.Sleep 200
+
+    // A call made now must be rejected immediately
+    let lateCallTask =
+        sendJsonRpcCall server "workspace/configuration" (JObject())
+        |> Async.StartAsTask
+
+    let completed = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Late sendJsonRpcCall after EOF should return immediately")
+
+    match lateCallTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for call made after EOF")
+
+    // Unblock the handler so the drain completes cleanly
+    mayFinishTcs.SetResult(())
+
+[<Test>]
+let testEofDrainsAllConcurrentHandlers () =
+    // Multiple handlers running concurrently when EOF arrives — all should be
+    // cancelled and the transport should drain before AwaitShutdown returns.
+    let count = 3
+    use allStarted = new CountdownEvent(count)
+    let mayFinishTcs = System.Threading.Tasks.TaskCompletionSource<unit>()
+    let finishedCount = ref 0
+
+    let handler _ctx = async {
+        allStarted.Signal() |> ignore
+        do! mayFinishTcs.Task |> Async.AwaitTask
+        System.Threading.Interlocked.Increment(finishedCount) |> ignore
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/h", handler ], Map.empty)
+
+    for i in 1..count do
+        writeMessageToPipe
+            clientToServer
+            (JObject(
+                JProperty("jsonrpc", "2.0"),
+                JProperty("id", i),
+                JProperty("method", "test/h"),
+                JProperty("params", JObject())
+            ))
+
+    Assert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
+
+    // Register a shutdown waiter before triggering EOF
+    let awaitTask = awaitJsonRpcTransportShutdown server |> Async.StartAsTask
+
+    // Trigger EOF — all handlers should be cancelled
+    clientToServer.Dispose()
+
+    // awaitShutdown should not return while handlers are still blocked
+    Assert.IsFalse(
+        awaitTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        "awaitJsonRpcTransportShutdown should not return while handlers are running"
+    )
+
+    // Unblock all handlers
+    mayFinishTcs.SetResult(())
+
+    let completed = awaitTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "awaitJsonRpcTransportShutdown should complete after all handlers finish")
+
+[<Test>]
 let testAlreadyResolvedCallIsUnaffectedByShutdown () =
     // A call that already received its Ok response before shutdown should retain that
     // result — shutdown must not double-resolve or corrupt it.
@@ -1011,7 +1182,9 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
 
 [<Test>]
 let testSendRequestAssignsIncrementingIds () =
-    let stdin = makeInputStream []
+    // Use an open pipe so stdin never hits EOF while we are checking outbound IDs.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
@@ -1022,6 +1195,8 @@ let testSendRequestAssignsIncrementingIds () =
     let _reply2 = sendJsonRpcCall server "test/req2" (JObject()) |> Async.StartAsTask
 
     let requests = waitForMessages stdout 2 5000
+
+    writeEnd.Dispose()
 
     Assert.AreEqual(2, requests.Length, "Expected 2 outbound requests")
 
