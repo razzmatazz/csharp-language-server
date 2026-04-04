@@ -21,12 +21,6 @@ let private encodeMessage (json: string) =
 
     Array.append header body
 
-/// Helper: read a full Content-Length-framed response from a stream (positioned at the start).
-let private readResponse (stream: Stream) = async {
-    let! msgOpt = readMessage stream
-    return msgOpt
-}
-
 /// Helper: write a JSON-RPC request into a stream and return a MemoryStream positioned at 0 for reading.
 let private makeInputStream (messages: string list) =
     let ms = new MemoryStream()
@@ -82,7 +76,7 @@ let private waitForResponse (stdout: MemoryStream) (timeoutMs: int) = async {
     // Give a bit more time for the full response to be written
     do! Async.Sleep 100
     stdout.Position <- 0L
-    return! readResponse stdout
+    return! readMessage stdout
 }
 
 [<Test>]
@@ -841,7 +835,8 @@ let testSendCallDuringShutdownDrainReturnsError () =
 
     // This call arrives while the drain is in progress; it must return Error immediately
     let lateCallTask =
-        sendJsonRpcCall server "workspace/configuration" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "workspace/configuration" (JObject())
+        |> Async.StartAsTask
 
     let lateCompleted = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
     Assert.IsTrue(lateCompleted, "Late sendJsonRpcCall should return immediately during drain")

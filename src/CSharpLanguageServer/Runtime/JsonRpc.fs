@@ -413,6 +413,27 @@ let tryFireShutdownWaiters (state: JsonRpcTransportState) =
             Phase = Stopped }
     | _ -> state
 
+/// Shared epilogue for HandlerCompleted / HandlerFailed / HandlerCancelled.
+let completeInboundRequest postEvent (state: JsonRpcTransportState) wireIdKey (responsePayload: JObject option) =
+    let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
+    ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
+
+    let newState =
+        { state with
+            RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
+
+    let newState =
+        match responsePayload with
+        | Some payload ->
+            enqueueOutboundMessage
+                postEvent
+                newState
+                { Payload = payload
+                  CompletionRC = None }
+        | None -> newState
+
+    tryFireShutdownWaiters newState
+
 let processEvent state postEvent ev =
     match ev with
     | Start(stdin, stdout, callHandlers, notificationHandlers) ->
@@ -542,38 +563,21 @@ let processEvent state postEvent ev =
             enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
 
     | HandlerCompleted(wireIdKey, result) ->
-        let ctx = state.RunningInboundRequests |> Map.find wireIdKey
-        do ctx.CancellationTokenSource |> Option.iter _.Dispose()
+        let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
 
-        let newState =
-            { state with
-                RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
-
-        let newState =
-            match result with
-            | Ok returnValue ->
-                let response =
+        let responsePayload =
+            ctx
+            |> Option.map (fun ctx ->
+                match result with
+                | Ok returnValue ->
                     JObject(
                         JProperty("jsonrpc", "2.0"),
                         JProperty("id", ctx.WireId.Value),
                         JProperty("result", returnValue)
                     )
+                | Error error -> makeErrorResponse ctx.WireId.Value error)
 
-                enqueueOutboundMessage
-                    postEvent
-                    newState
-                    { Payload = response
-                      CompletionRC = None }
-            | Error error ->
-                let errorResponse = makeErrorResponse ctx.WireId.Value error
-
-                enqueueOutboundMessage
-                    postEvent
-                    newState
-                    { Payload = errorResponse
-                      CompletionRC = None }
-
-        tryFireShutdownWaiters newState
+        completeInboundRequest postEvent state wireIdKey responsePayload
 
     | HandlerFailed(wireIdKey, ex) ->
         postEvent (
@@ -582,53 +586,23 @@ let processEvent state postEvent ev =
 
         let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
 
-        let cts = ctx |> Option.bind _.CancellationTokenSource
-        do cts |> Option.iter _.Dispose()
+        let responsePayload =
+            ctx
+            |> Option.map (fun ctx ->
+                makeErrorResponse
+                    ctx.WireId.Value
+                    (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name))))
 
-        let newState =
-            { state with
-                RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
-
-        let newState =
-            match ctx with
-            | Some ctx ->
-                let errorResponse =
-                    makeErrorResponse
-                        ctx.WireId.Value
-                        (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name)))
-
-                enqueueOutboundMessage
-                    postEvent
-                    newState
-                    { Payload = errorResponse
-                      CompletionRC = None }
-            | None -> newState
-
-        tryFireShutdownWaiters newState
+        completeInboundRequest postEvent state wireIdKey responsePayload
 
     | HandlerCancelled wireIdKey ->
         let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
 
-        ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
+        let responsePayload =
+            ctx
+            |> Option.map (fun ctx -> makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled"))
 
-        let newState =
-            { state with
-                RunningInboundRequests = state.RunningInboundRequests |> Map.remove wireIdKey }
-
-        let newState =
-            match ctx with
-            | Some ctx ->
-                let errorResponse =
-                    makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled")
-
-                enqueueOutboundMessage
-                    postEvent
-                    newState
-                    { Payload = errorResponse
-                      CompletionRC = None }
-            | None -> newState
-
-        tryFireShutdownWaiters newState
+        completeInboundRequest postEvent state wireIdKey responsePayload
 
     | NotificationHandlerFailed(method, ex) ->
         postEvent (
