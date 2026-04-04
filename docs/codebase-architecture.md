@@ -102,6 +102,8 @@ Program.fs  →  Server.start (Lsp/Server.fs)
 
 ### 3.2 JSON-RPC Transport (`Runtime/JsonRpc.fs`)
 
+See [jsonrpc.md](jsonrpc.md) for full API documentation.
+
 A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<JsonRpcTransportEvent>`**:
 
 - **Inbound:** Reads `Content-Length`-framed messages from stdin, deserializes JSON, dispatches by looking up `method` in the `callHandlers` or `notificationHandlers` maps.
@@ -336,7 +338,7 @@ let testSomething () =
 
 | Category | File | How it works |
 |----------|------|-------------|
-| JSON-RPC transport unit tests | `JsonRpcTests.fs` | Calls `startJsonRpcTransport` with in-memory streams (no process) |
+| JSON-RPC transport unit tests | `JsonRpcTests.fs` | Calls `startJsonRpcTransport` with in-memory streams (no process) — see [jsonrpc.md](jsonrpc.md) |
 | Progress reporter unit tests | `ProgressReporterTests.fs` | Uses a `TrackingLspClientStub` mock |
 | CLI diagnose command tests | `DiagnoseCommandTests.fs` | Spawns process with `--diagnose` flag |
 | Request scheduling unit tests | `RequestSchedulingTests.fs` | Tests `RequestQueue` directly with no server process |
