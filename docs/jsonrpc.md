@@ -102,6 +102,8 @@ do! shutdownJsonRpcTransport transport
 
 Sends a `Shutdown` event to the transport and waits for it to acknowledge. The transport immediately stops reading from stdin and writing to stdout, and unblocks any callers that are waiting in `awaitJsonRpcTransportShutdown`. Use this when your server logic decides to terminate proactively (e.g. after handling the LSP `shutdown` + `exit` sequence).
 
+**Pending outbound calls are failed immediately on shutdown.** Any `sendJsonRpcCall` that is still awaiting a response at the moment of shutdown (or EOF on stdin) will be unblocked with an `Error` result carrying code `-32099` and the message `"Transport shut down"`. This prevents callers from hanging indefinitely when the peer disappears or the transport is torn down before a response arrives.
+
 ## Waiting for shutdown
 
 ```fsharp
@@ -129,8 +131,9 @@ Write well-formed `Content-Length`-framed JSON into the input stream and read re
 
 ## Error codes
 
-| Code    | Meaning           | When sent                                    |
-|---------|-------------------|----------------------------------------------|
-| -32601  | Method not found  | Inbound request for an unregistered method   |
-| -32603  | Internal error    | Inbound handler threw an unhandled exception |
-| -32800  | Request cancelled | Inbound handler was cancelled                |
+| Code    | Meaning            | When sent                                                       |
+|---------|--------------------|-----------------------------------------------------------------|
+| -32099  | Transport shut down | Returned to any pending `sendJsonRpcCall` on transport shutdown or stdin EOF |
+| -32601  | Method not found   | Inbound request for an unregistered method                      |
+| -32603  | Internal error     | Inbound handler threw an unhandled exception                    |
+| -32800  | Request cancelled  | Inbound handler was cancelled                                   |

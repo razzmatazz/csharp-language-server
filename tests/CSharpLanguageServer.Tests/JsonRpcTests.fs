@@ -580,6 +580,163 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
+// ---- Pending outbound call shutdown tests ----
+
+[<Test>]
+let testShutdownFailsPendingOutboundCall () =
+    // Start a single sendJsonRpcCall that will never receive a response, then shut down
+    // the transport. The call should unblock immediately with Error -32099.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    // Fire an outbound call and leave it hanging (no response sent)
+    let replyTask =
+        sendJsonRpcCall server "test/hanging" (JObject()) |> Async.StartAsTask
+
+    // Wait for the request to appear on stdout so we know it was sent
+    waitForMessages stdout 1 5000 |> ignore
+
+    // Shut down — this should immediately fail the pending call
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
+    Assert.IsTrue(completed, "Pending sendJsonRpcCall should have unblocked after shutdown")
+
+    match replyTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
+
+[<Test>]
+let testShutdownFailsMultiplePendingOutboundCalls () =
+    // Two concurrent sendJsonRpcCalls, neither receiving a response — both should
+    // be failed with Error -32099 on shutdown.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let reply1Task =
+        sendJsonRpcCall server "test/hang1" (JObject()) |> Async.StartAsTask
+
+    let reply2Task =
+        sendJsonRpcCall server "test/hang2" (JObject()) |> Async.StartAsTask
+
+    // Wait for both requests to be written before shutting down
+    waitForMessages stdout 2 5000 |> ignore
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let completed1 = reply1Task.Wait(TimeSpan.FromSeconds(5.0))
+    let completed2 = reply2Task.Wait(TimeSpan.FromSeconds(5.0))
+
+    Assert.IsTrue(completed1, "First pending call should have unblocked after shutdown")
+    Assert.IsTrue(completed2, "Second pending call should have unblocked after shutdown")
+
+    for replyTask in [ reply1Task; reply2Task ] do
+        match replyTask.Result with
+        | Error err ->
+            Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+            Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
+
+[<Test>]
+let testEofFailsPendingOutboundCall () =
+    // A pending sendJsonRpcCall should also be failed when the transport detects EOF
+    // on stdin (i.e. the client disconnects) rather than an explicit Shutdown event.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCall server "test/hanging" (JObject()) |> Async.StartAsTask
+
+    // Wait for the request to be written
+    waitForMessages stdout 1 5000 |> ignore
+
+    // Close the write end of the pipe — this causes the server to read EOF on stdin
+    clientToServer.Dispose()
+
+    let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
+    Assert.IsTrue(completed, "Pending sendJsonRpcCall should have unblocked after EOF")
+
+    match replyTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
+
+[<Test>]
+let testAlreadyResolvedCallIsUnaffectedByShutdown () =
+    // A call that already received its Ok response before shutdown should retain that
+    // result — shutdown must not double-resolve or corrupt it.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCall server "test/will-respond" (JObject()) |> Async.StartAsTask
+
+    // Wait for the outbound request, capture its id
+    let outboundMessages = waitForMessages stdout 1 5000
+    let outboundId = int outboundMessages.[0].["id"]
+
+    // Send a successful response back — call is now resolved
+    let successResponse =
+        JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", outboundId),
+            JProperty("result", JObject(JProperty("value", 42)))
+        )
+
+    let responseBytes = encodeMessage (string successResponse)
+    clientToServer.Write(responseBytes, 0, responseBytes.Length)
+    clientToServer.Flush()
+
+    let resolvedBeforeShutdown = replyTask.Wait(TimeSpan.FromSeconds(5.0))
+    Assert.IsTrue(resolvedBeforeShutdown, "Call should have resolved before shutdown")
+
+    match replyTask.Result with
+    | Ok reply -> Assert.AreEqual(42, int (reply.SelectToken("value")))
+    | Error _ -> Assert.Fail("Expected Ok response, not an error")
+
+    // Now shut down — the already-resolved call must not be touched
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    // Result must still be Ok with the original value
+    match replyTask.Result with
+    | Ok reply -> Assert.AreEqual(42, int (reply.SelectToken("value")), "Result should be unchanged after shutdown")
+    | Error _ -> Assert.Fail("Shutdown should not have overwritten an already-resolved Ok result")
+
 [<Test>]
 let testSendRequestAssignsIncrementingIds () =
     let stdin = makeInputStream []
