@@ -472,14 +472,23 @@ let processEvent state postEvent ev =
                     PendingRead = pendingRead }
 
             | None ->
+                // EOF on stdin — full shutdown: fail pending outbound calls, cancel all
+                // running inbound handlers, move to ShuttingDown, then drain.
+                // Unlike explicit Shutdown there is no reply channel to push, but any
+                // existing AwaitShutdown waiters will be fired once the map empties.
                 failPendingOutboundCalls postEvent state
-                state.ShutdownWaiters |> List.iter (fun rc -> rc.Reply())
 
-                { state with
-                    StdIn = None
-                    PendingRead = None
-                    PendingOutboundCalls = Map.empty
-                    ShutdownWaiters = [] }
+                for KeyValue(wireIdKey, _) in state.RunningInboundRequests do
+                    postEvent (CancelRequest wireIdKey)
+
+                let state =
+                    { state with
+                        StdIn = None
+                        PendingRead = None
+                        PendingOutboundCalls = Map.empty
+                        Phase = ShuttingDown }
+
+                tryFireShutdownWaiters state
         | Error ex ->
             let pendingRead = state.StdIn |> Option.map (startRead postEvent)
             { state with PendingRead = pendingRead }
@@ -491,19 +500,8 @@ let processEvent state postEvent ev =
         // Cancel every in-flight inbound handler. Each one will eventually post
         // HandlerCancelled/HandlerCompleted/HandlerFailed back, and tryFireShutdownWaiters
         // will fire rc (and any AwaitShutdown waiters) once the map is empty.
-        for KeyValue(_, ctx) in state.RunningInboundRequests do
-            ctx.CancellationTokenSource
-            |> Option.iter (fun cts ->
-                try
-                    cts.Cancel()
-                with ex ->
-                    postEvent (
-                        WriteRpcLogEntry(
-                            RpcWarn(
-                                sprintf "Shutdown: error cancelling handler %s: %s" (string ctx.WireId) (string ex)
-                            )
-                        )
-                    ))
+        for KeyValue(wireIdKey, _) in state.RunningInboundRequests do
+            postEvent (CancelRequest wireIdKey)
 
         // Park rc alongside any existing AwaitShutdown waiters — all fired together on drain.
         let state =
