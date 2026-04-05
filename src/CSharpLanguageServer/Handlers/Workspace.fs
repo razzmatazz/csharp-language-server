@@ -10,7 +10,7 @@ open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Util
-open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
