@@ -184,7 +184,5 @@ module Workspace =
 
             context.UpdateEffects(_.WithWorkspaceConfigurationChanged(updatedWorkspaceFolders))
 
-            context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
-
             return Ok()
         }
