@@ -99,43 +99,6 @@ let getServerCapabilities (config: CSharpConfiguration) (lspClient: InitializePa
         WorkspaceSymbolProvider = WorkspaceSymbol.provider lspClient.Capabilities
         Workspace = Workspace.provider lspClient.Capabilities }
 
-let requestEffectsToServerEvents (effects: RequestEffects) : ServerEvent list =
-    let events = ResizeArray<ServerEvent>()
-
-    if effects.ClientInitializeEmitted then
-        events.Add(ClientInitialize)
-
-    if effects.ClientShutdownEmitted then
-        events.Add(ClientShutdown)
-
-    effects.ClientCapabilityChange
-    |> Option.iter (fun caps -> events.Add(ClientCapabilityChange caps))
-
-    effects.DocumentClosed |> List.iter (fun uri -> events.Add(DocumentClosed uri))
-
-    effects.DocumentOpened
-    |> List.iter (fun (uri, version, timestamp) -> events.Add(DocumentOpened(uri, version, timestamp)))
-
-    effects.DocumentTouched
-    |> List.iter (fun (uri, timestamp) -> events.Add(DocumentTouched(uri, timestamp)))
-
-    effects.SettingsChange
-    |> Option.iter (fun cfg -> events.Add(SettingsChange cfg))
-
-    effects.TraceLevelChange
-    |> Option.iter (fun level -> events.Add(TraceLevelChange level))
-
-    effects.WorkspaceConfigurationChanged
-    |> Option.iter (fun folders -> events.Add(WorkspaceConfigurationChanged folders))
-
-    effects.WorkspaceFolderChange
-    |> List.iter (fun folder -> events.Add(WorkspaceFolderChange folder))
-
-    effects.WorkspaceReloadRequested
-    |> List.iter (fun delay -> events.Add(WorkspaceReloadRequested delay))
-
-    events |> List.ofSeq
-
 let configureRpcTransport
     (stateActor: MailboxProcessor<ServerEvent>)
     (rpcTransport: MailboxProcessor<JsonRpcTransportEvent>)
@@ -162,13 +125,10 @@ let configureRpcTransport
 
             return unwrapResult result
         finally
-            let bufferedEvents =
-                requestCtx
-                |> Option.map _.Effects
-                |> Option.map requestEffectsToServerEvents
-                |> Option.defaultValue []
+            let requestEffects =
+                requestCtx |> Option.map _.Effects |> Option.defaultValue RequestEffects.Empty
 
-            stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, bufferedEvents))
+            stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, requestEffects))
     }
 
     let callHandler requestMode fn : JsonRpcCallHandler =

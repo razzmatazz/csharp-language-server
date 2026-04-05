@@ -153,7 +153,7 @@ type RequestInfo =
       Registered: DateTime
       ActivationRC: AsyncReplyChannel<RequestContext>
       RunningSince: option<DateTime>
-      BufferedServerEvents: obj list } // obj=ServerEvent
+      Effects: RequestEffects option }
 
 type RequestMetrics =
     { Count: int
@@ -357,7 +357,7 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
           RunningSince = None
-          BufferedServerEvents = [] }
+          Effects = None }
 
     let newRequests = requestQueue.Requests |> Map.add requestRpcOrdinal newRequest
 
@@ -373,13 +373,13 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
         WatermarkRpcOrdinal = advanceWatermark requestQueue.WatermarkRpcOrdinal }
 
 /// Transitions a running request to Finished and stores its buffered events.
-let finishRequest requestRpcOrdinal (bufferedServerEvents: obj list) (requestQueue: RequestQueue) =
+let finishRequest requestRpcOrdinal requestEffects (requestQueue: RequestQueue) =
     let request = requestQueue.Requests |> Map.find requestRpcOrdinal
 
     let finishedRequest =
         { request with
             Phase = Finished
-            BufferedServerEvents = bufferedServerEvents }
+            Effects = Some requestEffects }
 
     { requestQueue with
         Requests = requestQueue.Requests |> Map.add requestRpcOrdinal finishedRequest }
@@ -465,7 +465,7 @@ let activateRequest
         { request with
             Phase = Running
             RunningSince = Some DateTime.Now
-            BufferedServerEvents = [] }
+            Effects = None }
 
     activatedRequest,
     { requestQueue with
