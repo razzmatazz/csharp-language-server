@@ -223,14 +223,18 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     RequestQueue = state.RequestQueue }
 
     | WorkspaceConfigurationChanged workspaceFolders ->
-        // TODO: we may want to kill existing SolutionReadyAwaiters!
+        for (_, rc) in state.SolutionReadyAwaiters do
+            rc.Reply(None)
 
         let _ = workspaceTeardown state.Workspace
 
         let newWorkspace =
             workspaceFrom workspaceFolders |> workspaceWithSolutionPathOverride state.Config
 
-        return { state with Workspace = newWorkspace }
+        return
+            { state with
+                Workspace = newWorkspace
+                SolutionReadyAwaiters = [] }
 
     | ServerStarted lspClient ->
         Logging.setLspTraceClient (Some lspClient)
@@ -379,9 +383,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        let tornDownWorkspace = workspaceTeardown state.Workspace
+        for (_, rc) in state.SolutionReadyAwaiters do
+            rc.Reply(None)
 
-        // TODO: reset awaiters
+        let tornDownWorkspace = workspaceTeardown state.Workspace
 
         postServerEvent ProcessRequestQueue
 
@@ -389,6 +394,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 Workspace = tornDownWorkspace
                 WorkspaceReloadPending = None
+                SolutionReadyAwaiters = []
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
