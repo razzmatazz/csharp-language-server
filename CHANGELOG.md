@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Enable solution load on-demand, fixing several concurrency issues in the process
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/337
 * Add support for textDocument/foldingRange
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/334
 * Fixes a crash in symbolGetMetadataName for some symbols in Roslyn documents
