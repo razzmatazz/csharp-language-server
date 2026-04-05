@@ -30,7 +30,7 @@ type ServerEvent =
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
-    | LeaveRequestContext of int64 * ServerEvent list
+    | LeaveRequestContext of int64 * RequestEffects
     | PeriodicTimerTick
     | ProcessRequestQueue
     | RequestQueueDrained
@@ -87,6 +87,43 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
         state.ShutdownReceived
     )
 
+let retiredRequestEffectsToServerEvents effects : ServerEvent list =
+    let events = ResizeArray<ServerEvent>()
+
+    if effects.ClientInitializeEmitted then
+        events.Add(ClientInitialize)
+
+    if effects.ClientShutdownEmitted then
+        events.Add(ClientShutdown)
+
+    effects.ClientCapabilityChange
+    |> Option.iter (fun caps -> events.Add(ClientCapabilityChange caps))
+
+    effects.DocumentClosed |> List.iter (fun uri -> events.Add(DocumentClosed uri))
+
+    effects.DocumentOpened
+    |> List.iter (fun (uri, version, timestamp) -> events.Add(DocumentOpened(uri, version, timestamp)))
+
+    effects.DocumentTouched
+    |> List.iter (fun (uri, timestamp) -> events.Add(DocumentTouched(uri, timestamp)))
+
+    effects.SettingsChange
+    |> Option.iter (fun cfg -> events.Add(SettingsChange cfg))
+
+    effects.TraceLevelChange
+    |> Option.iter (fun level -> events.Add(TraceLevelChange level))
+
+    effects.WorkspaceConfigurationChanged
+    |> Option.iter (fun folders -> events.Add(WorkspaceConfigurationChanged folders))
+
+    effects.WorkspaceFolderChange
+    |> List.iter (fun folder -> events.Add(WorkspaceFolderChange folder))
+
+    effects.WorkspaceReloadRequested
+    |> List.iter (fun delay -> events.Add(WorkspaceReloadRequested delay))
+
+    events |> List.ofSeq
+
 let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
     | SettingsChange newConfig -> return { state with Config = newConfig }
@@ -135,13 +172,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         replyChannel.Reply(state.Workspace.Folders |> List.map _.Uri)
         return state
 
-    | LeaveRequestContext(requestRpcOrdinal, bufferedServerEvents) ->
-        postServerEvent ProcessRequestQueue
-
-        let bufferedServerEvents = bufferedServerEvents |> List.map (fun e -> e :> obj)
-
+    | LeaveRequestContext(requestRpcOrdinal, requestEffects) ->
         let newRequestQueue =
-            state.RequestQueue |> finishRequest requestRpcOrdinal bufferedServerEvents
+            state.RequestQueue |> finishRequest requestRpcOrdinal requestEffects
+
+        postServerEvent ProcessRequestQueue
 
         return
             { state with
@@ -152,12 +187,17 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         match result with
         | Retired(retiredRequest, updatedRequestQueue) ->
-            // Replay the retired request's buffered events, then continue
+            // Replay the retired request's effects as state events, then continue
             // in the next round so they are processed before further work.
-            retiredRequest.BufferedServerEvents
-            |> List.iter (fun ev -> postServerEvent (ev :?> ServerEvent))
+            let serverStateEvents =
+                retiredRequest
+                |> _.Effects
+                |> Option.map retiredRequestEffectsToServerEvents
+                |> Option.defaultValue []
 
-            postServerEvent ProcessRequestQueue
+            do serverStateEvents |> List.iter postServerEvent
+
+            do postServerEvent ProcessRequestQueue
 
             return
                 { state with
