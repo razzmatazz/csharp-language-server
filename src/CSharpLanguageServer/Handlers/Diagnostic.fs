@@ -9,7 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Roslyn.Conversions
-open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp.Workspace

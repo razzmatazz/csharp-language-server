@@ -37,7 +37,6 @@
     <Compile Include="Lsp/WorkspaceFolder.fs" />
     <Compile Include="Lsp/Workspace.fs" />
     <Compile Include="Runtime/JsonRpc.fs" />
-    <Compile Include="Runtime/Request.fs" />
     <Compile Include="Runtime/RequestScheduling.fs" />
     <Compile Include="Runtime/PushDiagnostics.fs" />
     <Compile Include="Runtime/ServerStateLoop.fs" />

@@ -7,7 +7,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 
-open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Roslyn.Document
 open CSharpLanguageServer.Lsp.Workspace

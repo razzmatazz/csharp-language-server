@@ -10,7 +10,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
-open CSharpLanguageServer.Runtime
+open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
