@@ -350,23 +350,15 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Workspace = newWorkspace
                 PushDiagnostics = newPD }
 
-    | WorkspaceReloadRequested reloadNoLaterThanIn ->
-        // we need to wait a bit before starting this so we
-        // can buffer many incoming requests at once
-        let newSolutionReloadDeadline =
-            let suggestedDeadline = DateTime.Now + reloadNoLaterThanIn
-
-            match state.WorkspaceReloadPending with
-            | Some currentDeadline ->
-                if suggestedDeadline < currentDeadline then
-                    suggestedDeadline
-                else
-                    currentDeadline
-            | None -> suggestedDeadline
+    | WorkspaceReloadRequested quietPeriod ->
+        // Sliding-window debounce: each new event resets the deadline to now+delay,
+        // so a burst of changes (e.g. `dotnet add package` touching multiple files
+        // over several seconds) fully settles before the reload begins.
+        let newDeadline = DateTime.UtcNow + quietPeriod
 
         return
             { state with
-                WorkspaceReloadPending = newSolutionReloadDeadline |> Some }
+                WorkspaceReloadPending = newDeadline |> Some }
 
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
@@ -412,9 +404,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = updatedRequestQueue }
 
         let solutionReloadDeadline =
-            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.Now.AddDays 1)
+            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.UtcNow.AddDays 1)
 
-        match solutionReloadDeadline < DateTime.Now with
+        match solutionReloadDeadline < DateTime.UtcNow with
         | true ->
             match enterDrainingMode state.RequestQueue with
             | Some updatedRequestQueue ->
