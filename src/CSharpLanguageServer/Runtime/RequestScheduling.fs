@@ -2,6 +2,7 @@ module CSharpLanguageServer.Runtime.RequestScheduling
 
 open System
 
+open Microsoft.CodeAnalysis
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
@@ -14,6 +15,14 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 
 let logger = Logging.getLoggerByName "Runtime.RequestScheduling"
+
+/// Per-project diagnostic cache entry, keyed by project file path.
+type ProjectDiagnosticsCache =
+    {
+        Version: VersionStamp
+        /// uri → (resultId, lsp diagnostics)
+        ByUri: Map<string, string * Ionide.LanguageServerProtocol.Types.Diagnostic array>
+    }
 
 type RequestMode =
     | ReadOnly
@@ -103,7 +112,9 @@ type RequestContext
         getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
         getWorkspaceFolderUriList: unit -> Async<string list>,
         clientCapabilities: ClientCapabilities,
-        shutdownReceived: bool
+        shutdownReceived: bool,
+        workspaceDiagnosticsCache: Map<string, ProjectDiagnosticsCache>,
+        postCacheUpdate: (Map<string, ProjectDiagnosticsCache> -> Map<string, ProjectDiagnosticsCache>) -> unit
     ) =
     let mutable effects = RequestEffects.Empty
 
@@ -112,6 +123,8 @@ type RequestContext
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
+    member _.WorkspaceDiagnosticsCache = workspaceDiagnosticsCache
+    member _.PostCacheUpdate(update) = postCacheUpdate update
 
     member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 

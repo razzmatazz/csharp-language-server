@@ -276,12 +276,12 @@ let testWorkspaceDiagnosticsReturnResultId () =
             | U2.C1 fullReport ->
                 Assert.IsTrue(
                     fullReport.ResultId.IsSome,
-                    sprintf "expected resultId to be populated for uri %s" fullReport.Uri)
+                    sprintf "expected resultId to be populated for uri %s" fullReport.Uri
+                )
             | U2.C2 _ ->
                 // Unchanged is not valid on the first poll (no previousResultIds were sent)
                 Assert.Fail("expected full report on first poll, got Unchanged")
-    | None ->
-        Assert.Fail("expected Some WorkspaceDiagnosticReport")
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
 
 [<Test>]
 let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
@@ -305,9 +305,7 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
             report.Items
             |> Array.choose (fun item ->
                 match item with
-                | U2.C1 full ->
-                    full.ResultId
-                    |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
                 | U2.C2 _ -> None)
         | None ->
             Assert.Fail("expected first workspace/diagnostic to succeed")
@@ -328,9 +326,7 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
     | Some report ->
         for item in report.Items do
             match item with
-            | U2.C2 unchangedReport ->
-                Assert.AreEqual("unchanged", unchangedReport.Kind)
+            | U2.C2 unchangedReport -> Assert.AreEqual("unchanged", unchangedReport.Kind)
             | U2.C1 fullReport ->
                 Assert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
-    | None ->
-        Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
