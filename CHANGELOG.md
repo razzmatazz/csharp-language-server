@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Fix runaway `workspace/diagnostic` traffic and CPU usage when used with VS Code
+  - Suppress CS8019 on `.cshtml` URIs in workspace/diagnostic (consistent with per-document handler)
+  - Emit `resultId` per document so clients can send `previousResultIds` and receive `Unchanged` responses, breaking the tight polling loop
+  - Cache per-project diagnostic results keyed by Roslyn `VersionStamp`; stable-codebase polls now skip `GetCompilationAsync`/`GetDiagnostics` entirely
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/341
 * Fix several server-state race conditions and refactor request scheduling internals
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/340
 * Enable solution load on-demand, fixing several concurrency issues in the process
