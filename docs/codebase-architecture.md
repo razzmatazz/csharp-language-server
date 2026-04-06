@@ -36,8 +36,7 @@ csharp-language-server/
 │   │
 │   ├── Runtime/                     # ── JSON-RPC transport & scheduling ──
 │   │   ├── JsonRpc.fs               # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
-│   │   ├── Request.fs               # RequestContext, RequestMode, RequestEffects
-│   │   ├── RequestScheduling.fs     # Concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
+│   │   ├── RequestScheduling.fs     # RequestContext, RequestMode, RequestEffects + concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
 │   │   ├── PushDiagnostics.fs       # Push-diagnostics state machine (PushDiagnosticsState + handlers)
 │   │   └── ServerStateLoop.fs       # Main state machine + ServerEvent DU (MailboxProcessor<ServerEvent>)
 │   │
@@ -128,6 +127,8 @@ The `wrapHandler` function in `Lsp/Server.fs` bridges raw JSON-RPC ↔ typed han
 4. On completion, posts `LeaveRequestContext` with the accumulated `RequestEffects`
 
 ### 3.5 Request Scheduling (`Runtime/RequestScheduling.fs`)
+
+Also defines `RequestContext`, `RequestMode`, and `RequestEffects`.
 
 Sophisticated concurrent request queue:
 
