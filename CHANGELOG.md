@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Fix several server-state race conditions and refactor request scheduling internals
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/340
 * Enable solution load on-demand, fixing several concurrency issues in the process
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/337
 * Add support for textDocument/foldingRange
