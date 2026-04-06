@@ -1,6 +1,8 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.Security.Cryptography
+open System.Text
 open System.Threading.Channels
 
 open FSharp.Control
@@ -55,6 +57,16 @@ module Diagnostic =
 
             Some registration
 
+    let private diagnosticResultId (items: Ionide.LanguageServerProtocol.Types.Diagnostic array) : string =
+        items
+        |> Array.map (fun d -> sprintf "%A|%s" d.Range d.Message)
+        |> Array.sort
+        |> String.concat "\n"
+        |> Encoding.UTF8.GetBytes
+        |> SHA256.HashData
+        |> Array.map (fun b -> b.ToString("x2"))
+        |> String.concat ""
+
     let private diagnosticIsToBeListed (uri: string) (d: Microsoft.CodeAnalysis.Diagnostic) =
         if uri.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) then
             // CS8019 (Unnecessary using directive) has no correct line-mapping on .cshtml
@@ -100,6 +112,7 @@ module Diagnostic =
         | ReportingDoneForProject
 
     let private getWorkspaceDiagnosticReports
+        (knownResultIds: Map<string, string>)
         (workspaceFolders: LspWorkspaceFolder list)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
@@ -126,21 +139,32 @@ module Diagnostic =
 
                     for uri, items in diagnosticsByDocument do
                         let items = items |> Seq.map fst |> Array.ofSeq
+                        let resultId = diagnosticResultId items
 
-                        if items.Length > 0 then
-                            let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
-                                { Kind = "full"
-                                  ResultId = None
-                                  Uri = uri
-                                  Items = items
-                                  Version = None }
+                        let documentReportOpt: WorkspaceDocumentDiagnosticReport option =
+                            match Map.tryFind uri knownResultIds with
+                            | Some knownId when knownId = resultId ->
+                                Some (U2.C2 { Kind = "unchanged"
+                                              ResultId = resultId
+                                              Uri = uri
+                                              Version = None })
+                            | _ when items.Length > 0 ->
+                                Some (U2.C1 { Kind = "full"
+                                              ResultId = Some resultId
+                                              Uri = uri
+                                              Items = items
+                                              Version = None })
+                            | _ ->
+                                // empty items and no prior result id — nothing to report
+                                None
 
-                            let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
-
+                        match documentReportOpt with
+                        | Some documentReport ->
                             do!
                                 channel.Writer.WriteAsync(DiagnosticsReport documentReport)
                                 |> _.AsTask()
                                 |> Async.AwaitTask
+                        | None -> ()
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
@@ -192,15 +216,20 @@ module Diagnostic =
         (p: WorkspaceDiagnosticParams)
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {
+            let knownResultIds =
+                p.PreviousResultIds
+                |> Seq.map (fun r -> r.Uri, r.Value)
+                |> Map.ofSeq
+
             match p.PartialResultToken with
             | None ->
                 let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
-                let! diagnosticReports = getWorkspaceDiagnosticReports workspaceFolders |> AsyncSeq.toArrayAsync
+                let! diagnosticReports =
+                    getWorkspaceDiagnosticReports knownResultIds workspaceFolders
+                    |> AsyncSeq.toArrayAsync
 
-                let workspaceDiagnosticReport: WorkspaceDiagnosticReport =
-                    { Items = diagnosticReports }
-
-                return workspaceDiagnosticReport |> LspResult.success
+                let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
+                return fullReport |> LspResult.success
 
             | Some partialResultToken ->
                 let sendWorkspaceDiagnosticReport (documentReport, index) = async {
@@ -224,11 +253,9 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports workspaceFolders)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports knownResultIds workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
-                let emptyWorkspaceDiagnosticReport: WorkspaceDiagnosticReport =
-                    { Items = Array.empty }
-
-                return emptyWorkspaceDiagnosticReport |> LspResult.success
+                let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }
+                return emptyReport |> LspResult.success
         }

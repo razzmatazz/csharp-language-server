@@ -196,7 +196,7 @@ let testWorkspaceDiagnosticsWork () =
         match report0.Items[0] with
         | U2.C1 fullReport ->
             Assert.AreEqual("full", fullReport.Kind)
-            Assert.AreEqual(None, fullReport.ResultId)
+            Assert.IsTrue(fullReport.ResultId.IsSome)
             Assert.AreEqual(3, fullReport.Items.Length)
 
             let diagnostic0 = fullReport.Items[0]
@@ -238,7 +238,7 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
     match report0.Items[0] with
     | U2.C1 fullReport ->
         Assert.AreEqual("full", fullReport.Kind)
-        Assert.AreEqual(None, fullReport.ResultId)
+        Assert.IsTrue(fullReport.ResultId.IsSome)
         Assert.AreEqual(3, fullReport.Items.Length)
 
         let diagnostic0 = fullReport.Items[0]
@@ -251,3 +251,86 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
         progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
 
     Assert.AreEqual(1, report1.Items.Length)
+
+[<Test>]
+let testWorkspaceDiagnosticsReturnResultId () =
+    // Fix 1: the server must populate resultId on full reports so that VS Code
+    // can send previousResultIds on subsequent polls and receive Unchanged responses.
+    use client = activateFixture "testDiagnosticsWork"
+
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let report: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    match report with
+    | Some report ->
+        Assert.IsTrue(report.Items.Length > 0, "expected at least one document in workspace diagnostic report")
+
+        for item in report.Items do
+            match item with
+            | U2.C1 fullReport ->
+                Assert.IsTrue(
+                    fullReport.ResultId.IsSome,
+                    sprintf "expected resultId to be populated for uri %s" fullReport.Uri)
+            | U2.C2 _ ->
+                // Unchanged is not valid on the first poll (no previousResultIds were sent)
+                Assert.Fail("expected full report on first poll, got Unchanged")
+    | None ->
+        Assert.Fail("expected Some WorkspaceDiagnosticReport")
+
+[<Test>]
+let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
+    // Fix 1: a second poll that sends back the resultIds from the first poll should
+    // receive WorkspaceUnchangedDocumentDiagnosticReport (U2.C2) for every document
+    // that has not changed.
+    use client = activateFixture "testDiagnosticsWork"
+
+    let firstParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let firstReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", firstParams)
+
+    let previousResultIds =
+        match firstReport with
+        | Some report ->
+            report.Items
+            |> Array.choose (fun item ->
+                match item with
+                | U2.C1 full ->
+                    full.ResultId
+                    |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                | U2.C2 _ -> None)
+        | None ->
+            Assert.Fail("expected first workspace/diagnostic to succeed")
+            Array.empty
+
+    Assert.IsTrue(previousResultIds.Length > 0, "expected resultIds from first poll")
+
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = previousResultIds }
+
+    let secondReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    match secondReport with
+    | Some report ->
+        for item in report.Items do
+            match item with
+            | U2.C2 unchangedReport ->
+                Assert.AreEqual("unchanged", unchangedReport.Kind)
+            | U2.C1 fullReport ->
+                Assert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
+    | None ->
+        Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
