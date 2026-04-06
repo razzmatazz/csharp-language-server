@@ -127,8 +127,7 @@ let private makeTestServerRequestContext (mode: RequestMode) =
         (fun () -> async.Return []),
         emptyClientCapabilities,
         false,
-        Map.empty,
-        (fun _ -> ())
+        (fun _a _b _c -> ())
     )
 
 // ---------------------------------------------------------------------------

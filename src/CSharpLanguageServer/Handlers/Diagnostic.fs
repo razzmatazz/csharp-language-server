@@ -112,7 +112,7 @@ module Diagnostic =
                 let! ct = Async.CancellationToken
 
                 let projectKey = project.FilePath
-                let cachedEntry = context.WorkspaceDiagnosticsCache |> Map.tryFind projectKey
+                let cachedEntry = wf.DiagnosticsCacheByProject |> Map.tryFind projectKey
 
                 match cachedEntry with
                 | Some cached when cached.Version = project.Version ->
@@ -191,7 +191,7 @@ module Diagnostic =
                             { Version = project.Version
                               ByUri = newByUri }
 
-                        context.PostCacheUpdate(fun m -> m |> Map.add projectKey newEntry)
+                        context.PostFolderCacheUpdate(wf.Uri, wf.Generation, fun m -> m |> Map.add projectKey newEntry)
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {

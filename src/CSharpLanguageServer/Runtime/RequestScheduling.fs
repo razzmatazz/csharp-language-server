@@ -16,14 +16,6 @@ open CSharpLanguageServer.Logging
 
 let logger = Logging.getLoggerByName "Runtime.RequestScheduling"
 
-/// Per-project diagnostic cache entry, keyed by project file path.
-type ProjectDiagnosticsCache =
-    {
-        Version: VersionStamp
-        /// uri → (resultId, lsp diagnostics)
-        ByUri: Map<string, string * Ionide.LanguageServerProtocol.Types.Diagnostic array>
-    }
-
 type RequestMode =
     | ReadOnly
     | ReadWrite
@@ -113,8 +105,7 @@ type RequestContext
         getWorkspaceFolderUriList: unit -> Async<string list>,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool,
-        workspaceDiagnosticsCache: Map<string, ProjectDiagnosticsCache>,
-        postCacheUpdate: (Map<string, ProjectDiagnosticsCache> -> Map<string, ProjectDiagnosticsCache>) -> unit
+        postFolderCacheUpdate: string -> Guid -> LspWorkspaceFolderDiagnosticsCacheUpdateFn -> unit
     ) =
     let mutable effects = RequestEffects.Empty
 
@@ -123,8 +114,9 @@ type RequestContext
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
-    member _.WorkspaceDiagnosticsCache = workspaceDiagnosticsCache
-    member _.PostCacheUpdate(update) = postCacheUpdate update
+
+    member _.PostFolderCacheUpdate(uri, generation, update) =
+        postFolderCacheUpdate uri generation update
 
     member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 

@@ -35,6 +35,17 @@ type LspWorkspaceFolderSolution =
     | Ready of Workspace * Solution
     | Defunct of string
 
+/// Per-project diagnostic cache entry, keyed by project file path.
+type LspWorkspaceFolderDiagnosticsCache =
+    {
+        Version: VersionStamp
+        /// uri → (resultId, lsp diagnostics)
+        ByUri: Map<string, string * Ionide.LanguageServerProtocol.Types.Diagnostic array>
+    }
+
+type LspWorkspaceFolderDiagnosticsCacheUpdateFn =
+    Map<string, LspWorkspaceFolderDiagnosticsCache> -> Map<string, LspWorkspaceFolderDiagnosticsCache>
+
 type LspWorkspaceFolder =
     {
         Uri: string
@@ -54,6 +65,9 @@ type LspWorkspaceFolder =
         DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
 
         OpenDocs: Map<string, LspWorkspaceOpenDocInfo>
+
+        // map of Project.FilePath -> LspWorkspaceFolderDiagnosticsCache
+        DiagnosticsCacheByProject: Map<string, LspWorkspaceFolderDiagnosticsCache>
     }
 
     static member Empty =
@@ -63,7 +77,8 @@ type LspWorkspaceFolder =
           Generation = Guid.NewGuid()
           Solution = Uninitialized
           DecompiledSymbolMetadata = Map.empty
-          OpenDocs = Map.empty }
+          OpenDocs = Map.empty
+          DiagnosticsCacheByProject = Map.empty }
 
 type LspWorkspaceFolderDocumentType =
     | UserDocument // user Document from solution, on disk
@@ -582,7 +597,10 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
 
     { wf with
         Generation = Guid.NewGuid()
-        Solution = Uninitialized }
+        Solution = Uninitialized
+        DecompiledSymbolMetadata = Map.empty
+        OpenDocs = Map.empty
+        DiagnosticsCacheByProject = Map.empty }
 
 /// Ensures the workspace folder has its solution either already settled (Ready/Defunct)
 /// or actively on its way — initiating an async load from Uninitialized if needed.
