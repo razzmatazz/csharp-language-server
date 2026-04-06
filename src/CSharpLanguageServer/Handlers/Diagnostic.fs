@@ -1,8 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open System.Security.Cryptography
-open System.Text
 open System.Threading.Channels
 
 open FSharp.Control
@@ -56,16 +54,6 @@ module Diagnostic =
                   RegisterOptions = registrationOptions documentSelector |> serialize |> Some }
 
             Some registration
-
-    let private diagnosticResultId (items: Ionide.LanguageServerProtocol.Types.Diagnostic array) : string =
-        items
-        |> Array.map (fun d -> sprintf "%A|%s" d.Range d.Message)
-        |> Array.sort
-        |> String.concat "\n"
-        |> Encoding.UTF8.GetBytes
-        |> SHA256.HashData
-        |> Array.map (fun b -> b.ToString("x2"))
-        |> String.concat ""
 
     let private diagnosticIsToBeListed (uri: string) (d: Microsoft.CodeAnalysis.Diagnostic) =
         if uri.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) then
@@ -161,9 +149,10 @@ module Diagnostic =
 
                         let mutable newByUri = Map.empty
 
+                        let resultId = string project.Version
+
                         for uri, uriItems in diagnosticsByDocument do
                             let items = uriItems |> Seq.map fst |> Array.ofSeq
-                            let resultId = diagnosticResultId items
 
                             // always store in cache (even empty — so we know we checked)
                             newByUri <- newByUri |> Map.add uri (resultId, items)
