@@ -42,7 +42,10 @@ type ServerEvent =
     | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
-    | WorkspaceDiagnosticsCacheUpdate of (Map<string, ProjectDiagnosticsCache> -> Map<string, ProjectDiagnosticsCache>)
+    | WorkspaceFolderDiagnosticsCacheUpdate of
+        uri: string *
+        generation: Guid *
+        LspWorkspaceFolderDiagnosticsCacheUpdateFn
     | ProcessSolutionAwaiters
 
 type ServerState =
@@ -56,8 +59,7 @@ type ServerState =
       PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
-      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>>
-      WorkspaceDiagnosticsCache: Map<string, ProjectDiagnosticsCache> }
+      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>> }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -70,8 +72,7 @@ type ServerState =
           PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
           ShutdownReceived = false
-          SolutionReadyAwaiters = []
-          WorkspaceDiagnosticsCache = Map.empty }
+          SolutionReadyAwaiters = [] }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let getWorkspaceFolder uri withSolutionReady =
@@ -80,8 +81,8 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
     let getWorkspaceFolderList () =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderUriList rc)
 
-    let postCacheUpdate update =
-        inbox.Post(WorkspaceDiagnosticsCacheUpdate update)
+    let postFolderCacheUpdate uri generation update =
+        inbox.Post(WorkspaceFolderDiagnosticsCacheUpdate(uri, generation, update))
 
     RequestContext(
         requestMode,
@@ -91,8 +92,7 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
         getWorkspaceFolderList,
         state.ClientCapabilities,
         state.ShutdownReceived,
-        state.WorkspaceDiagnosticsCache,
-        postCacheUpdate
+        postFolderCacheUpdate
     )
 
 let retiredRequestEffectsToServerEvents effects : ServerEvent list =
@@ -374,10 +374,21 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 WorkspaceReloadPending = newDeadline |> Some }
 
-    | WorkspaceDiagnosticsCacheUpdate update ->
-        return
-            { state with
-                WorkspaceDiagnosticsCache = update state.WorkspaceDiagnosticsCache }
+    | WorkspaceFolderDiagnosticsCacheUpdate(uri, generation, update) ->
+        let newWorkspace =
+            match state.Workspace |> workspaceFolder uri with
+            | None -> state.Workspace
+            | Some wf ->
+                if wf.Generation <> generation then
+                    state.Workspace
+                else
+                    let updatedWf =
+                        { wf with
+                            DiagnosticsCacheByProject = update wf.DiagnosticsCacheByProject }
+
+                    state.Workspace |> workspaceWithFolderUpdated updatedWf
+
+        return { state with Workspace = newWorkspace }
 
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
@@ -410,7 +421,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Workspace = tornDownWorkspace
                 WorkspaceReloadPending = None
                 SolutionReadyAwaiters = []
-                WorkspaceDiagnosticsCache = Map.empty
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
