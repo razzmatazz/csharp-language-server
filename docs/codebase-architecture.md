@@ -128,7 +128,7 @@ The `wrapHandler` function in `Lsp/Server.fs` bridges raw JSON-RPC ↔ typed han
 
 ### 3.5 Request Scheduling (`Runtime/RequestScheduling.fs`)
 
-Also defines `RequestContext`, `RequestMode`, and `RequestEffects`.
+Also defines `RequestContext`, `RequestMode`, `RequestEffects`, and `ProjectDiagnosticsCache`.
 
 Sophisticated concurrent request queue:
 
@@ -141,19 +141,34 @@ Sophisticated concurrent request queue:
 `processRequestQueue` is the single entry point for advancing the queue each tick. Retirement is checked first on every
 call: a finished request is always replayed before any new request is activated.
 
+**`ReadOnlyBackground` and direct event posting:** `ReadOnlyBackground` requests cannot use
+`UpdateEffects` (it throws). For state mutations that don't require ordering guarantees —
+specifically the workspace diagnostics cache — `RequestContext` exposes a `PostCacheUpdate`
+callback that posts a `WorkspaceDiagnosticsCacheUpdate` event directly to the state loop
+actor, bypassing the effects queue.
+
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
 
 Also defines the `ServerEvent` discriminated union.
 
 A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (settings, workspace, client
-capabilities, trace level, request queue, push-diagnostics state). Processes events like:
+capabilities, trace level, request queue, push-diagnostics state, workspace diagnostics
+cache). Processes events like:
 
 - `ClientInitialize`
 - `TraceLevelChange`
 - `WorkspaceReloadRequested`
 - `DocumentOpened` / `DocumentChanged` / `DocumentClosed`
 - `PushDiagnosticsProcessPendingDocuments`
+- `WorkspaceDiagnosticsCacheUpdate` — applies a cache update function to
+  `ServerState.WorkspaceDiagnosticsCache`; posted directly by `workspace/diagnostic`
+  handlers via `RequestContext.PostCacheUpdate` (see §3.5)
 - etc.
+
+**`ServerState.WorkspaceDiagnosticsCache`** — a `Map<string, ProjectDiagnosticsCache>`
+(keyed by project file path) holding the last computed diagnostic results per project,
+including the Roslyn `VersionStamp` at the time of computation. Cleared to `Map.empty`
+when `RequestQueueDrained` fires (i.e. on every workspace reload).
 
 ### 3.7 Push Diagnostics (`Runtime/PushDiagnostics.fs`)
 
@@ -187,9 +202,10 @@ let resolve (context: RequestContext) (p: ResolveParams) : AsyncLspResult<Resolv
 ```
 
 **Key types:**
-- `RequestContext` — provides access to workspace, client capabilities, client proxy, settings, and a `RequestEffects` buffer for accumulating side effects
+- `RequestContext` — provides access to workspace, client capabilities, client proxy, settings, a `RequestEffects` buffer for accumulating side effects, `WorkspaceDiagnosticsCache` (read-only snapshot), and `PostCacheUpdate` for direct cache mutations from `ReadOnlyBackground` handlers
 - `RequestMode` — `ReadOnly` | `ReadWrite` | `ReadOnlyBackground`; controls concurrent scheduling
 - `RequestEffects` — immutable record accumulating all state mutations a handler wishes to make (e.g. `DocumentOpened`, `TraceLevelChange`, `WorkspaceReloadRequested`); applied to `ServerState` after the request retires
+- `ProjectDiagnosticsCache` — per-project diagnostic cache entry: `{ Version: VersionStamp; ByUri: Map<string, string * Diagnostic[]> }`
 - `AsyncLspResult<'T>` — `Async<LspResult<'T>>` where `LspResult` carries either `Ok` or a JSON-RPC error
 
 ---
