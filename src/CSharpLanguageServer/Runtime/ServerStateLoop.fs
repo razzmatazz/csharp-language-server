@@ -39,7 +39,7 @@ type ServerEvent =
     | SettingsChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
     | WorkspaceConfigurationChanged of WorkspaceFolder list
-    | WorkspaceFolderSolutionChange of string * LspWorkspaceFolderSolution
+    | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
     | ProcessSolutionAwaiters
@@ -291,18 +291,20 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ClientCapabilities = cc
                 Config = newConfig }
 
-    | WorkspaceFolderSolutionChange(uri, newSolution) ->
+    | WorkspaceFolderSolutionChange(uri, generation, newSolution) ->
         let wf = state.Workspace |> workspaceFolder uri
 
         let newWorkspace =
             match wf with
             | None -> state.Workspace
             | Some wf ->
-                let updatedWf = { wf with Solution = newSolution }
-                state.Workspace |> workspaceWithFolderUpdated updatedWf
+                if wf.Generation <> generation then
+                    // Stale event from a cancelled/superseded load — discard silently.
+                    state.Workspace
+                else
+                    state.Workspace |> workspaceWithFolderUpdated { wf with Solution = newSolution }
 
         do postServerEvent ProcessSolutionAwaiters
-
         return { state with Workspace = newWorkspace }
 
     | WorkspaceFolderChange updatedWf ->
@@ -442,7 +444,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         for wf in wfsWithUninitializedSolution do
             let onSolutionInitCompletion newSolution =
-                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, newSolution))
+                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, wf.Generation, newSolution))
 
             let updatedWf =
                 wf

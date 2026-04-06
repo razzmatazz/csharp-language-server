@@ -44,6 +44,10 @@ type LspWorkspaceFolder =
         /// auto-discovering a solution under Uri. Set from the --solution CLI flag.
         SolutionPathOverride: string option
 
+        /// Opaque identity token, used to detect and discard stale async
+        /// completion events (e.g. from a cancelled solution load.)
+        Generation: Guid
+
         Solution: LspWorkspaceFolderSolution
 
         /// key is (project.Path * symbol metadata name)
@@ -56,6 +60,7 @@ type LspWorkspaceFolder =
         { Uri = Directory.GetCurrentDirectory() |> Uri |> string
           Name = "(no name)"
           SolutionPathOverride = None
+          Generation = Guid.NewGuid()
           Solution = Uninitialized
           DecompiledSymbolMetadata = Map.empty
           OpenDocs = Map.empty }
@@ -575,7 +580,9 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
         cts.Dispose()
     | Ready(workspace, _) -> workspace.Dispose()
 
-    { wf with Solution = Uninitialized }
+    { wf with
+        Generation = Guid.NewGuid()
+        Solution = Uninitialized }
 
 /// Ensures the workspace folder has its solution either already settled (Ready/Defunct)
 /// or actively on its way — initiating an async load from Uninitialized if needed.
