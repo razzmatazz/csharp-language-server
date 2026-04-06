@@ -112,6 +112,7 @@ module Diagnostic =
         | ReportingDoneForProject
 
     let private getWorkspaceDiagnosticReports
+        (context: RequestContext)
         (knownResultIds: Map<string, string>)
         (workspaceFolders: LspWorkspaceFolder list)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
@@ -122,49 +123,86 @@ module Diagnostic =
             let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
                 let! ct = Async.CancellationToken
 
-                let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+                let projectKey = project.FilePath
+                let cachedEntry = context.WorkspaceDiagnosticsCache |> Map.tryFind projectKey
 
-                match compilation |> Option.ofObj with
-                | None -> ()
-                | Some compilation ->
-                    let pathToUri path = workspaceFolderPathToUri path wf
+                match cachedEntry with
+                | Some cached when cached.Version = project.Version ->
+                    // Cache hit — skip all Roslyn work and emit directly from cache
+                    for KeyValue(uri, (resultId, _items)) in cached.ByUri do
+                        let documentReport: WorkspaceDocumentDiagnosticReport =
+                            U2.C2
+                                { Kind = "unchanged"
+                                  ResultId = resultId
+                                  Uri = uri
+                                  Version = None }
 
-                    let diagnosticsByDocument =
-                        compilation.GetDiagnostics(ct)
-                        |> Seq.filter (fun d ->
-                            let uri = d.Location.GetMappedLineSpan().Path |> pathToUri
-                            diagnosticIsToBeListed uri d)
-                        |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
-                        |> Seq.groupBy snd
+                        do!
+                            channel.Writer.WriteAsync(DiagnosticsReport documentReport)
+                            |> _.AsTask()
+                            |> Async.AwaitTask
 
-                    for uri, items in diagnosticsByDocument do
-                        let items = items |> Seq.map fst |> Array.ofSeq
-                        let resultId = diagnosticResultId items
+                | _ ->
+                    // Cache miss or stale — recompute from Roslyn
+                    let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-                        let documentReportOpt: WorkspaceDocumentDiagnosticReport option =
-                            match Map.tryFind uri knownResultIds with
-                            | Some knownId when knownId = resultId ->
-                                Some (U2.C2 { Kind = "unchanged"
+                    match compilation |> Option.ofObj with
+                    | None -> ()
+                    | Some compilation ->
+                        let pathToUri path = workspaceFolderPathToUri path wf
+
+                        let diagnosticsByDocument =
+                            compilation.GetDiagnostics(ct)
+                            |> Seq.filter (fun d ->
+                                let uri = d.Location.GetMappedLineSpan().Path |> pathToUri
+                                diagnosticIsToBeListed uri d)
+                            |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
+                            |> Seq.groupBy snd
+
+                        let mutable newByUri = Map.empty
+
+                        for uri, uriItems in diagnosticsByDocument do
+                            let items = uriItems |> Seq.map fst |> Array.ofSeq
+                            let resultId = diagnosticResultId items
+
+                            // always store in cache (even empty — so we know we checked)
+                            newByUri <- newByUri |> Map.add uri (resultId, items)
+
+                            let documentReportOpt: WorkspaceDocumentDiagnosticReport option =
+                                match Map.tryFind uri knownResultIds with
+                                | Some knownId when knownId = resultId ->
+                                    Some(
+                                        U2.C2
+                                            { Kind = "unchanged"
                                               ResultId = resultId
                                               Uri = uri
-                                              Version = None })
-                            | _ when items.Length > 0 ->
-                                Some (U2.C1 { Kind = "full"
+                                              Version = None }
+                                    )
+                                | _ when items.Length > 0 ->
+                                    Some(
+                                        U2.C1
+                                            { Kind = "full"
                                               ResultId = Some resultId
                                               Uri = uri
                                               Items = items
-                                              Version = None })
-                            | _ ->
-                                // empty items and no prior result id — nothing to report
-                                None
+                                              Version = None }
+                                    )
+                                | _ -> None
 
-                        match documentReportOpt with
-                        | Some documentReport ->
-                            do!
-                                channel.Writer.WriteAsync(DiagnosticsReport documentReport)
-                                |> _.AsTask()
-                                |> Async.AwaitTask
-                        | None -> ()
+                            match documentReportOpt with
+                            | Some documentReport ->
+                                do!
+                                    channel.Writer.WriteAsync(DiagnosticsReport documentReport)
+                                    |> _.AsTask()
+                                    |> Async.AwaitTask
+                            | None -> ()
+
+                        // persist new cache entry for this project
+                        let newEntry =
+                            { Version = project.Version
+                              ByUri = newByUri }
+
+                        context.PostCacheUpdate(fun m -> m |> Map.add projectKey newEntry)
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
@@ -217,15 +255,14 @@ module Diagnostic =
         : AsyncLspResult<WorkspaceDiagnosticReport> =
         async {
             let knownResultIds =
-                p.PreviousResultIds
-                |> Seq.map (fun r -> r.Uri, r.Value)
-                |> Map.ofSeq
+                p.PreviousResultIds |> Seq.map (fun r -> r.Uri, r.Value) |> Map.ofSeq
 
             match p.PartialResultToken with
             | None ->
                 let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
+
                 let! diagnosticReports =
-                    getWorkspaceDiagnosticReports knownResultIds workspaceFolders
+                    getWorkspaceDiagnosticReports context knownResultIds workspaceFolders
                     |> AsyncSeq.toArrayAsync
 
                 let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
@@ -253,7 +290,7 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports knownResultIds workspaceFolders)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports context knownResultIds workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }
