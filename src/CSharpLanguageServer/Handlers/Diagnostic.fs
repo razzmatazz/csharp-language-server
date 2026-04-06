@@ -55,6 +55,14 @@ module Diagnostic =
 
             Some registration
 
+    let private diagnosticIsToBeListed (uri: string) (d: Microsoft.CodeAnalysis.Diagnostic) =
+        if uri.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) then
+            // CS8019 (Unnecessary using directive) has no correct line-mapping on .cshtml
+            // files and appears out of place there; suppress it
+            d.Id <> "CS8019"
+        else
+            true
+
     let handle (context: RequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
         let emptyReport: RelatedFullDocumentDiagnosticReport =
             { Kind = "full"
@@ -75,20 +83,9 @@ module Diagnostic =
 
                 let wfPathToUri path = workspaceFolderPathToUri path wf
 
-                let diagnosticIsToBeListed (d: Microsoft.CodeAnalysis.Diagnostic) =
-                    let documentIsCshtml = p.TextDocument.Uri.EndsWith(".cshtml")
-
-                    match documentIsCshtml with
-                    | true ->
-                        // this particular diagnostic (CS8019: Unnecessary using directive.) does not
-                        // have proper line mapping information and appears out of place on cshtml files
-                        d.Id <> "CS8019"
-
-                    | false -> true
-
                 let diagnostics =
                     semanticModel.GetDiagnostics()
-                    |> Seq.filter diagnosticIsToBeListed
+                    |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
                     |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                     |> Seq.map fst
                     |> Array.ofSeq
@@ -121,25 +118,29 @@ module Diagnostic =
 
                     let diagnosticsByDocument =
                         compilation.GetDiagnostics(ct)
+                        |> Seq.filter (fun d ->
+                            let uri = d.Location.GetMappedLineSpan().Path |> pathToUri
+                            diagnosticIsToBeListed uri d)
                         |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
                         |> Seq.groupBy snd
 
                     for uri, items in diagnosticsByDocument do
                         let items = items |> Seq.map fst |> Array.ofSeq
 
-                        let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
-                            { Kind = "full"
-                              ResultId = None
-                              Uri = uri
-                              Items = items
-                              Version = None }
+                        if items.Length > 0 then
+                            let fullDocumentReport: WorkspaceFullDocumentDiagnosticReport =
+                                { Kind = "full"
+                                  ResultId = None
+                                  Uri = uri
+                                  Items = items
+                                  Version = None }
 
-                        let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
+                            let documentReport: WorkspaceDocumentDiagnosticReport = U2.C1 fullDocumentReport
 
-                        do!
-                            channel.Writer.WriteAsync(DiagnosticsReport documentReport)
-                            |> _.AsTask()
-                            |> Async.AwaitTask
+                            do!
+                                channel.Writer.WriteAsync(DiagnosticsReport documentReport)
+                                |> _.AsTask()
+                                |> Async.AwaitTask
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
