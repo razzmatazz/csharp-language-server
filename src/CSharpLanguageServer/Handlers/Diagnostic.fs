@@ -100,24 +100,29 @@ module Diagnostic =
         | ReportingDoneForProject
 
     let private getWorkspaceDiagnosticReports
-        (context: RequestContext)
         (knownResultIds: Map<string, string>)
         (workspaceFolders: LspWorkspaceFolder list)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
-
             let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
 
+            let writeToChannel item =
+                channel.Writer.WriteAsync(item) |> _.AsTask() |> Async.AwaitTask
+
             let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
-                let! ct = Async.CancellationToken
+                let resultId = string project.Version
 
-                let projectKey = project.FilePath
-                let cachedEntry = wf.DiagnosticsCacheByProject |> Map.tryFind projectKey
+                // Collect URIs the client already holds for this exact project version.
+                // If any exist, the client received the full set on a previous poll —
+                // emit Unchanged for each and skip Roslyn entirely.
+                let clientKnownUris =
+                    knownResultIds
+                    |> Map.toSeq
+                    |> Seq.choose (fun (uri, knownId) -> if knownId = resultId then Some uri else None)
+                    |> Array.ofSeq
 
-                match cachedEntry with
-                | Some cached when cached.Version = project.Version ->
-                    // Cache hit — skip all Roslyn work and emit directly from cache
-                    for KeyValue(uri, (resultId, _items)) in cached.ByUri do
+                if clientKnownUris.Length > 0 then
+                    for uri in clientKnownUris do
                         let documentReport: WorkspaceDocumentDiagnosticReport =
                             U2.C2
                                 { Kind = "unchanged"
@@ -125,13 +130,9 @@ module Diagnostic =
                                   Uri = uri
                                   Version = None }
 
-                        do!
-                            channel.Writer.WriteAsync(DiagnosticsReport documentReport)
-                            |> _.AsTask()
-                            |> Async.AwaitTask
-
-                | _ ->
-                    // Cache miss or stale — recompute from Roslyn
+                        do! writeToChannel (DiagnosticsReport documentReport)
+                else
+                    let! ct = Async.CancellationToken
                     let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
                     match compilation |> Option.ofObj with
@@ -147,51 +148,19 @@ module Diagnostic =
                             |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
                             |> Seq.groupBy snd
 
-                        let mutable newByUri = Map.empty
-
-                        let resultId = string project.Version
-
                         for uri, uriItems in diagnosticsByDocument do
                             let items = uriItems |> Seq.map fst |> Array.ofSeq
 
-                            // always store in cache (even empty — so we know we checked)
-                            newByUri <- newByUri |> Map.add uri (resultId, items)
+                            if items.Length > 0 then
+                                let documentReport: WorkspaceDocumentDiagnosticReport =
+                                    U2.C1
+                                        { Kind = "full"
+                                          ResultId = Some resultId
+                                          Uri = uri
+                                          Items = items
+                                          Version = None }
 
-                            let documentReportOpt: WorkspaceDocumentDiagnosticReport option =
-                                match Map.tryFind uri knownResultIds with
-                                | Some knownId when knownId = resultId ->
-                                    Some(
-                                        U2.C2
-                                            { Kind = "unchanged"
-                                              ResultId = resultId
-                                              Uri = uri
-                                              Version = None }
-                                    )
-                                | _ when items.Length > 0 ->
-                                    Some(
-                                        U2.C1
-                                            { Kind = "full"
-                                              ResultId = Some resultId
-                                              Uri = uri
-                                              Items = items
-                                              Version = None }
-                                    )
-                                | _ -> None
-
-                            match documentReportOpt with
-                            | Some documentReport ->
-                                do!
-                                    channel.Writer.WriteAsync(DiagnosticsReport documentReport)
-                                    |> _.AsTask()
-                                    |> Async.AwaitTask
-                            | None -> ()
-
-                        // persist new cache entry for this project
-                        let newEntry =
-                            { Version = project.Version
-                              ByUri = newByUri }
-
-                        context.PostFolderCacheUpdate(wf.Uri, wf.Generation, fun m -> m |> Map.add projectKey newEntry)
+                                do! writeToChannel (DiagnosticsReport documentReport)
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
@@ -200,10 +169,7 @@ module Diagnostic =
                 with _ ->
                     ()
 
-                do!
-                    channel.Writer.WriteAsync(ReportingDoneForProject)
-                    |> _.AsTask()
-                    |> Async.AwaitTask
+                do! writeToChannel ReportingDoneForProject
             }
 
             // generate project diagnostics in parallel
@@ -251,7 +217,7 @@ module Diagnostic =
                 let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
 
                 let! diagnosticReports =
-                    getWorkspaceDiagnosticReports context knownResultIds workspaceFolders
+                    getWorkspaceDiagnosticReports knownResultIds workspaceFolders
                     |> AsyncSeq.toArrayAsync
 
                 let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
@@ -279,7 +245,7 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports context knownResultIds workspaceFolders)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports knownResultIds workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }

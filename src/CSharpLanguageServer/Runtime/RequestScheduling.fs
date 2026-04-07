@@ -104,8 +104,7 @@ type RequestContext
         getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
         getWorkspaceFolderUriList: unit -> Async<string list>,
         clientCapabilities: ClientCapabilities,
-        shutdownReceived: bool,
-        postFolderCacheUpdate: string -> Guid -> LspWorkspaceFolderDiagnosticsCacheUpdateFn -> unit
+        shutdownReceived: bool
     ) =
     let mutable effects = RequestEffects.Empty
 
@@ -114,9 +113,6 @@ type RequestContext
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
     member _.Effects = effects
-
-    member _.PostFolderCacheUpdate(uri, generation, update) =
-        postFolderCacheUpdate uri generation update
 
     member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 

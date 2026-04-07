@@ -42,10 +42,6 @@ type ServerEvent =
     | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
     | WorkspaceFolderChange of LspWorkspaceFolder
     | WorkspaceReloadRequested of TimeSpan
-    | WorkspaceFolderDiagnosticsCacheUpdate of
-        uri: string *
-        generation: Guid *
-        LspWorkspaceFolderDiagnosticsCacheUpdateFn
     | ProcessSolutionAwaiters
 
 type ServerState =
@@ -81,9 +77,6 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
     let getWorkspaceFolderList () =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderUriList rc)
 
-    let postFolderCacheUpdate uri generation update =
-        inbox.Post(WorkspaceFolderDiagnosticsCacheUpdate(uri, generation, update))
-
     RequestContext(
         requestMode,
         state.LspClient.Value,
@@ -91,8 +84,7 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
         getWorkspaceFolder,
         getWorkspaceFolderList,
         state.ClientCapabilities,
-        state.ShutdownReceived,
-        postFolderCacheUpdate
+        state.ShutdownReceived
     )
 
 let retiredRequestEffectsToServerEvents effects : ServerEvent list =
@@ -373,22 +365,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return
             { state with
                 WorkspaceReloadPending = newDeadline |> Some }
-
-    | WorkspaceFolderDiagnosticsCacheUpdate(uri, generation, update) ->
-        let newWorkspace =
-            match state.Workspace |> workspaceFolder uri with
-            | None -> state.Workspace
-            | Some wf ->
-                if wf.Generation <> generation then
-                    state.Workspace
-                else
-                    let updatedWf =
-                        { wf with
-                            DiagnosticsCacheByProject = update wf.DiagnosticsCacheByProject }
-
-                    state.Workspace |> workspaceWithFolderUpdated updatedWf
-
-        return { state with Workspace = newWorkspace }
 
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent

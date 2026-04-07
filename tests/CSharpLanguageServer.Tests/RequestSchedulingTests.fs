@@ -126,8 +126,7 @@ let private makeTestServerRequestContext (mode: RequestMode) =
         (fun _uri _withSolutionReady -> async.Return None),
         (fun () -> async.Return []),
         emptyClientCapabilities,
-        false,
-        (fun _a _b _c -> ())
+        false
     )
 
 // ---------------------------------------------------------------------------
