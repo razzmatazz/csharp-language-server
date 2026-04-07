@@ -52,7 +52,6 @@ type ServerState =
       TraceLevel: TraceValues
       Workspace: LspWorkspace
       RequestQueue: RequestQueue
-      WorkspaceReloadPending: DateTime option
       PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
@@ -65,7 +64,6 @@ type ServerState =
           TraceLevel = TraceValues.Off
           Workspace = LspWorkspace.Empty
           RequestQueue = RequestQueue.Empty
-          WorkspaceReloadPending = None
           PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
           ShutdownReceived = false
@@ -349,9 +347,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         // over several seconds) fully settles before the reload begins.
         let newDeadline = DateTime.UtcNow + quietPeriod
 
-        return
-            { state with
-                WorkspaceReloadPending = newDeadline |> Some }
+        let newWorkspace =
+            { state.Workspace with
+                ReloadPending = newDeadline |> Some }
+
+        return { state with Workspace = newWorkspace }
 
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
@@ -382,7 +382,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return
             { state with
                 Workspace = tornDownWorkspace
-                WorkspaceReloadPending = None
                 SolutionReadyAwaiters = []
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
@@ -399,7 +398,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = updatedRequestQueue }
 
         let solutionReloadDeadline =
-            state.WorkspaceReloadPending |> Option.defaultValue (DateTime.UtcNow.AddDays 1)
+            state.Workspace.ReloadPending |> Option.defaultValue (DateTime.UtcNow.AddDays 1)
 
         match solutionReloadDeadline < DateTime.UtcNow with
         | true ->
