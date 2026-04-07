@@ -73,7 +73,7 @@ module DocumentOnTypeFormatting =
     let handle
         (context: RequestContext)
         (p: DocumentOnTypeFormattingParams)
-        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        : Async<LspResult<TextEdit[] option> * LspWorkspaceUpdate> =
         async {
             let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
@@ -83,7 +83,7 @@ module DocumentOnTypeFormatting =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
             match docForUri with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some doc ->
                 let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
                 let! ct = Async.CancellationToken
@@ -98,7 +98,7 @@ module DocumentOnTypeFormatting =
                     let tokenAtPos = root.FindToken pos
 
                     match getSyntaxNode tokenAtPos with
-                    | None -> return None |> LspResult.success, RequestEffects.Empty
+                    | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
                     | Some node ->
                         let! newDoc =
                             Formatter.FormatAsync(
@@ -110,6 +110,6 @@ module DocumentOnTypeFormatting =
                             |> Async.AwaitTask
 
                         let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
-                        return textEdits |> Some |> LspResult.success, RequestEffects.Empty
-                | _ -> return None |> LspResult.success, RequestEffects.Empty
+                        return textEdits |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
+                | _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }

@@ -107,7 +107,7 @@ let configureRpcTransport
         new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
     let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
-        let mutable requestEffects = RequestEffects.Empty
+        let mutable requestEffects = LspWorkspaceUpdate.Empty
 
         try
             let! ctx =

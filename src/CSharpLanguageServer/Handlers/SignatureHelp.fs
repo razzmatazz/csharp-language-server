@@ -91,7 +91,7 @@ module SignatureHelp =
     let handle
         (context: RequestContext)
         (p: SignatureHelpParams)
-        : Async<LspResult<SignatureHelp option> * RequestEffects> =
+        : Async<LspResult<SignatureHelp option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
@@ -99,7 +99,7 @@ module SignatureHelp =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
             match docMaybe with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some doc ->
                 let! ct = Async.CancellationToken
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -168,7 +168,7 @@ module SignatureHelp =
                         |> Option.bind findInvocationContext
 
                 match root.FindToken(position).Parent |> findInvocationContext with
-                | None -> return None |> LspResult.success, RequestEffects.Empty
+                | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
                 | Some invocation ->
                     let methodGroup =
                         semanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>()
@@ -192,5 +192,5 @@ module SignatureHelp =
                             |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
                           ActiveParameter = activeParameterMaybe }
 
-                    return Some signatureHelpResult |> LspResult.success, RequestEffects.Empty
+                    return Some signatureHelpResult |> LspResult.success, LspWorkspaceUpdate.Empty
         }

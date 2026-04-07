@@ -26,76 +26,6 @@ type RequestPhase =
     | Running
     | Finished
 
-type RequestEffects =
-    { ClientInitializeEmitted: bool
-      ClientShutdownEmitted: bool
-      ClientCapabilityChange: ClientCapabilities option
-      DocumentClosed: string list
-      DocumentOpened: (string * int * DateTime) list
-      DocumentTouched: (string * DateTime) list
-      SettingsChange: CSharpConfiguration option
-      TraceLevelChange: TraceValues option
-      WorkspaceConfigurationChanged: WorkspaceFolder list option
-      WorkspaceFolderChange: LspWorkspaceFolder list
-      WorkspaceReloadRequested: TimeSpan list }
-
-    static member Empty =
-        { ClientInitializeEmitted = false
-          ClientShutdownEmitted = false
-          ClientCapabilityChange = None
-          DocumentClosed = []
-          DocumentOpened = []
-          DocumentTouched = []
-          SettingsChange = None
-          TraceLevelChange = None
-          WorkspaceConfigurationChanged = None
-          WorkspaceFolderChange = []
-          WorkspaceReloadRequested = [] }
-
-    member this.WithClientInitialize() =
-        { this with
-            ClientInitializeEmitted = true }
-
-    member this.WithClientShutdown() =
-        { this with
-            ClientShutdownEmitted = true }
-
-    member this.WithClientCapabilityChange(capabilities) =
-        { this with
-            ClientCapabilityChange = Some capabilities }
-
-    member this.WithDocumentClosed(uri) =
-        { this with
-            DocumentClosed = this.DocumentClosed @ [ uri ] }
-
-    member this.WithDocumentOpened(uri, version, timestamp) =
-        { this with
-            DocumentOpened = this.DocumentOpened @ [ (uri, version, timestamp) ] }
-
-    member this.WithDocumentTouched(uri, timestamp) =
-        { this with
-            DocumentTouched = this.DocumentTouched @ [ (uri, timestamp) ] }
-
-    member this.WithSettingsChange(config) =
-        { this with
-            SettingsChange = Some config }
-
-    member this.WithTraceLevelChange(traceLevel) =
-        { this with
-            TraceLevelChange = Some traceLevel }
-
-    member this.WithWorkspaceConfigurationChanged(folders) =
-        { this with
-            WorkspaceConfigurationChanged = Some folders }
-
-    member this.WithWorkspaceFolderChange(folder) =
-        { this with
-            WorkspaceFolderChange = this.WorkspaceFolderChange @ [ folder ] }
-
-    member this.WithWorkspaceReloadRequested(delay) =
-        { this with
-            WorkspaceReloadRequested = this.WorkspaceReloadRequested @ [ delay ] }
-
 type RequestContext
     (
         requestMode: RequestMode,
@@ -146,7 +76,7 @@ type RequestInfo =
       Registered: DateTime
       ActivationRC: AsyncReplyChannel<RequestContext>
       RunningSince: option<DateTime>
-      Effects: RequestEffects option }
+      WorkspaceUpdate: LspWorkspaceUpdate }
 
 type RequestMetrics =
     { Count: int
@@ -176,7 +106,7 @@ type RequestQueueMode =
 ///   state loop so they are applied to the current server state.
 ///
 /// Event buffering:
-/// - Handlers return a `RequestEffects` value alongside their LSP result to
+/// - Handlers return a `LspWorkspaceUpdate` value alongside their LSP result to
 ///   record state-changing events. These are posted to the state actor when the
 ///   handler completes and replayed when the request is retired, preserving the
 ///   serial mutation invariant.
@@ -348,7 +278,7 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
           RunningSince = None
-          Effects = None }
+          WorkspaceUpdate = LspWorkspaceUpdate.Empty }
 
     let newRequests = requestQueue.Requests |> Map.add requestRpcOrdinal newRequest
 
@@ -363,14 +293,14 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
         Requests = newRequests
         WatermarkRpcOrdinal = advanceWatermark requestQueue.WatermarkRpcOrdinal }
 
-/// Transitions a running request to Finished and stores its buffered events.
-let finishRequest requestRpcOrdinal requestEffects (requestQueue: RequestQueue) =
+/// Transitions a running request to Finished
+let finishRequest requestRpcOrdinal wsUpdate (requestQueue: RequestQueue) =
     let request = requestQueue.Requests |> Map.find requestRpcOrdinal
 
     let finishedRequest =
         { request with
             Phase = Finished
-            Effects = Some requestEffects }
+            WorkspaceUpdate = wsUpdate }
 
     { requestQueue with
         Requests = requestQueue.Requests |> Map.add requestRpcOrdinal finishedRequest }
@@ -456,7 +386,7 @@ let activateRequest
         { request with
             Phase = Running
             RunningSince = Some DateTime.Now
-            Effects = None }
+            WorkspaceUpdate = LspWorkspaceUpdate.Empty }
 
     activatedRequest,
     { requestQueue with

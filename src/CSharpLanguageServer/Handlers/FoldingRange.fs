@@ -190,7 +190,7 @@ module FoldingRange =
     let handle
         (context: RequestContext)
         (p: FoldingRangeParams)
-        : Async<LspResult<FoldingRange array option> * RequestEffects> =
+        : Async<LspResult<FoldingRange array option> * LspWorkspaceUpdate> =
         async {
             let lineFoldingOnly =
                 context.ClientCapabilities.TextDocument
@@ -204,7 +204,7 @@ module FoldingRange =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
             match docMaybe with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some doc ->
                 let! ct = Async.CancellationToken
                 let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
@@ -241,5 +241,5 @@ module FoldingRange =
                     |> Array.distinctBy (fun r -> r.StartLine, r.EndLine)
                     |> Array.sortBy (fun r -> r.StartLine)
 
-                return allRanges |> Some |> LspResult.success, RequestEffects.Empty
+                return allRanges |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
         }

@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,11 +16,11 @@ module Color =
     let handle
         (context: RequestContext)
         (p: DocumentColorParams)
-        : Async<LspResult<ColorInformation[]> * RequestEffects> =
-        async { return LspResult.notImplemented<ColorInformation[]>, RequestEffects.Empty }
+        : Async<LspResult<ColorInformation[]> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<ColorInformation[]>, LspWorkspaceUpdate.Empty }
 
     let present
         (context: RequestContext)
         (p: ColorPresentationParams)
-        : Async<LspResult<ColorPresentation[]> * RequestEffects> =
-        async { return LspResult.notImplemented<ColorPresentation[]>, RequestEffects.Empty }
+        : Async<LspResult<ColorPresentation[]> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<ColorPresentation[]>, LspWorkspaceUpdate.Empty }

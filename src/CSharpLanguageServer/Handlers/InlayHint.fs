@@ -266,28 +266,32 @@ module InlayHint =
                   Method = "textDocument/inlayHint"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: InlayHintParams) : Async<LspResult<InlayHint[] option> * RequestEffects> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let handle
+        (context: RequestContext)
+        (p: InlayHintParams)
+        : Async<LspResult<InlayHint[] option> * LspWorkspaceUpdate> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docForUri =
-            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
+            let docForUri =
+                wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
-        match docForUri with
-        | None -> return None |> LspResult.success, RequestEffects.Empty
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let textSpan = Range.toTextSpan sourceText.Lines p.Range
+            match docForUri with
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let textSpan = Range.toTextSpan sourceText.Lines p.Range
 
-            let inlayHints =
-                root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))
-                |> Seq.choose (toInlayHint semanticModel sourceText.Lines)
+                let inlayHints =
+                    root.DescendantNodes(textSpan, fun node -> node.Span.IntersectsWith(textSpan))
+                    |> Seq.choose (toInlayHint semanticModel sourceText.Lines)
 
-            return inlayHints |> Seq.toArray |> Some |> LspResult.success, RequestEffects.Empty
-    }
+                return inlayHints |> Seq.toArray |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
+        }
 
-    let resolve (_context: RequestContext) (_p: InlayHint) : Async<LspResult<InlayHint> * RequestEffects> = async {
-        return LspResult.notImplemented<InlayHint>, RequestEffects.Empty
+    let resolve (_context: RequestContext) (_p: InlayHint) : Async<LspResult<InlayHint> * LspWorkspaceUpdate> = async {
+        return LspResult.notImplemented<InlayHint>, LspWorkspaceUpdate.Empty
     }

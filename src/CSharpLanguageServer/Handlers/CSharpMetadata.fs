@@ -13,7 +13,7 @@ module CSharpMetadata =
     let handle
         (context: RequestContext)
         (p: CSharpMetadataParams)
-        : Async<LspResult<CSharpMetadataResponse option> * RequestEffects> =
+        : Async<LspResult<CSharpMetadataResponse option> * LspWorkspaceUpdate> =
         async {
             let! ct = Async.CancellationToken
 
@@ -27,7 +27,7 @@ module CSharpMetadata =
                     |> fun uri -> workspaceFolderParseMetadataSymbolSourceViewUri uri wf
 
                 match projectAndSymbolFromUri with
-                | None -> return None |> LspResult.success, RequestEffects.Empty
+                | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
                 | Some(projectPath, symbolMetadataName) ->
                     let project = solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectPath)
 
@@ -42,10 +42,10 @@ module CSharpMetadata =
 
                             return
                                 symbolMetadata.Metadata |> Some |> LspResult.success,
-                                RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                                LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                        | None -> return None |> LspResult.success, RequestEffects.Empty
-                    | None -> return None |> LspResult.success, RequestEffects.Empty
+                        | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+                    | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
 
-            | _, _ -> return None |> LspResult.success, RequestEffects.Empty
+            | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }

@@ -42,18 +42,18 @@ module TypeDefinition =
     let handle
         (context: RequestContext)
         (p: TypeDefinitionParams)
-        : Async<LspResult<U2<Definition, DefinitionLink array> option> * RequestEffects> =
+        : Async<LspResult<U2<Definition, DefinitionLink array> option> * LspWorkspaceUpdate> =
 
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
                 match symInfo with
-                | None -> return LspResult.success None, RequestEffects.Empty
+                | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
                 | Some(symbol, project, _) ->
                     let typeSymbol =
                         match symbol with
@@ -65,12 +65,12 @@ module TypeDefinition =
 
                     let! locations, effects =
                         match typeSymbol with
-                        | None -> async.Return([], RequestEffects.Empty)
+                        | None -> async.Return([], LspWorkspaceUpdate.Empty)
                         | Some symbol -> async {
                             let! aggregatedLspLocations, updatedWf =
                                 workspaceFolderSymbolLocations wf context.Config symbol project
 
-                            return aggregatedLspLocations, RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                            return aggregatedLspLocations, LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
                           }
 
                     return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success, effects

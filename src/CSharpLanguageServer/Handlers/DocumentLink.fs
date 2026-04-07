@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,9 +16,9 @@ module DocumentLink =
     let handle
         (context: RequestContext)
         (p: DocumentLinkParams)
-        : Async<LspResult<DocumentLink[] option> * RequestEffects> =
-        async { return LspResult.notImplemented<DocumentLink[] option>, RequestEffects.Empty }
+        : Async<LspResult<DocumentLink[] option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<DocumentLink[] option>, LspWorkspaceUpdate.Empty }
 
-    let resolve (context: RequestContext) (p: DocumentLink) : Async<LspResult<DocumentLink> * RequestEffects> = async {
-        return LspResult.notImplemented<DocumentLink>, RequestEffects.Empty
+    let resolve (context: RequestContext) (p: DocumentLink) : Async<LspResult<DocumentLink> * LspWorkspaceUpdate> = async {
+        return LspResult.notImplemented<DocumentLink>, LspWorkspaceUpdate.Empty
     }

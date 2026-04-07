@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,7 @@ module Declaration =
     let handle
         (_context: RequestContext)
         (_p: DeclarationParams)
-        : Async<LspResult<U2<Declaration, DeclarationLink array> option> * RequestEffects> =
-        async { return LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>, RequestEffects.Empty }
+        : Async<LspResult<U2<Declaration, DeclarationLink array> option> * LspWorkspaceUpdate> =
+        async {
+            return LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>, LspWorkspaceUpdate.Empty
+        }

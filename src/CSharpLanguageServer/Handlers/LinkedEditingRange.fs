@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,5 @@ module LinkedEditingRange =
     let handle
         (context: RequestContext)
         (def: LinkedEditingRangeParams)
-        : Async<LspResult<LinkedEditingRanges option> * RequestEffects> =
-        async { return LspResult.notImplemented<LinkedEditingRanges option>, RequestEffects.Empty }
+        : Async<LspResult<LinkedEditingRanges option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<LinkedEditingRanges option>, LspWorkspaceUpdate.Empty }

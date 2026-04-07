@@ -203,23 +203,25 @@ module SemanticTokens =
     let handleFull
         (context: RequestContext)
         (p: SemanticTokensParams)
-        : Async<LspResult<SemanticTokens option> * RequestEffects> =
+        : Async<LspResult<SemanticTokens option> * LspWorkspaceUpdate> =
         async {
             let! result = getSemanticTokensRange context p.TextDocument.Uri None
-            return result, RequestEffects.Empty
+            return result, LspWorkspaceUpdate.Empty
         }
 
     let handleFullDelta
         (_context: RequestContext)
         (_p: SemanticTokensDeltaParams)
-        : Async<LspResult<U2<SemanticTokens, SemanticTokensDelta> option> * RequestEffects> =
-        async { return LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>, RequestEffects.Empty }
+        : Async<LspResult<U2<SemanticTokens, SemanticTokensDelta> option> * LspWorkspaceUpdate> =
+        async {
+            return LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>, LspWorkspaceUpdate.Empty
+        }
 
     let handleRange
         (context: RequestContext)
         (p: SemanticTokensRangeParams)
-        : Async<LspResult<SemanticTokens option> * RequestEffects> =
+        : Async<LspResult<SemanticTokens option> * LspWorkspaceUpdate> =
         async {
             let! result = getSemanticTokensRange context p.TextDocument.Uri (Some p.Range)
-            return result, RequestEffects.Empty
+            return result, LspWorkspaceUpdate.Empty
         }

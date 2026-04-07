@@ -52,12 +52,12 @@ module CallHierarchy =
     let prepare
         (context: RequestContext)
         (p: CallHierarchyPrepareParams)
-        : Async<LspResult<CallHierarchyItem[] option> * RequestEffects> =
+        : Async<LspResult<CallHierarchyItem[] option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
@@ -71,15 +71,15 @@ module CallHierarchy =
                         |> Seq.toArray
                         |> Some
                         |> LspResult.success,
-                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                | _ -> return None |> LspResult.success, RequestEffects.Empty
+                | _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
     let incomingCalls
         (context: RequestContext)
         (p: CallHierarchyIncomingCallsParams)
-        : Async<LspResult<CallHierarchyIncomingCall[] option> * RequestEffects> =
+        : Async<LspResult<CallHierarchyIncomingCall[] option> * LspWorkspaceUpdate> =
         async {
             let! ct = Async.CancellationToken
 
@@ -105,7 +105,7 @@ module CallHierarchy =
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
                 match symInfo with
-                | None -> return LspResult.success None, RequestEffects.Empty
+                | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
                 | Some(symbol, _, _) ->
                     let! callers =
                         SymbolFinder.FindCallersAsync(symbol, solution, cancellationToken = ct)
@@ -123,17 +123,17 @@ module CallHierarchy =
                         |> Seq.toArray
                         |> Some
                         |> LspResult.success,
-                        RequestEffects.Empty
+                        LspWorkspaceUpdate.Empty
 
-            | _, _ -> return None |> LspResult.success, RequestEffects.Empty
+            | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
     let outgoingCalls
         (_context: RequestContext)
         (_: CallHierarchyOutgoingCallsParams)
-        : Async<LspResult<CallHierarchyOutgoingCall[] option> * RequestEffects> =
+        : Async<LspResult<CallHierarchyOutgoingCall[] option> * LspWorkspaceUpdate> =
         async {
             // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
             // Then how can we implement it? Parsing AST manually?
-            return None |> LspResult.success, RequestEffects.Empty
+            return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }
