@@ -41,7 +41,7 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: ReferenceParams) : AsyncLspResult<Location[] option> = async {
+    let handle (context: RequestContext) (p: ReferenceParams) : Async<LspResult<Location[] option> * RequestEffects> = async {
         let! ct = Async.CancellationToken
         let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
 
@@ -50,7 +50,7 @@ module References =
             let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
-            | None -> return LspResult.success None
+            | None -> return LspResult.success None, RequestEffects.Empty
             | Some(symbol, _, _) ->
                 let wfPathToUri path = workspaceFolderPathToUri path wf
 
@@ -72,7 +72,8 @@ module References =
                     |> Seq.distinct
                     |> Seq.toArray
                     |> Some
-                    |> LspResult.success
+                    |> LspResult.success,
+                    RequestEffects.Empty
 
-        | _, _ -> return None |> LspResult.success
+        | _, _ -> return None |> LspResult.success, RequestEffects.Empty
     }

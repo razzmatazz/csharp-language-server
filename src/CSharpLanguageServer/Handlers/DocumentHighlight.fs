@@ -77,30 +77,34 @@ module DocumentHighlight =
                   Kind = Some DocumentHighlightKind.Read })
     }
 
-    let handle (context: RequestContext) (p: DocumentHighlightParams) : AsyncLspResult<DocumentHighlight[] option> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let handle
+        (context: RequestContext)
+        (p: DocumentHighlightParams)
+        : Async<LspResult<DocumentHighlight[] option> * RequestEffects> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        match wf with
-        | None -> return None |> LspResult.success
-        | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
+            match wf with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
-            match symInfo with
-            | None -> return None |> LspResult.success
+                match symInfo with
+                | None -> return None |> LspResult.success, RequestEffects.Empty
 
-            | Some(symbol, project, docMaybe) ->
-                if shouldHighlight symbol then
-                    let wfPathToUri path = workspaceFolderPathToUri path wf
+                | Some(symbol, project, docMaybe) ->
+                    if shouldHighlight symbol then
+                        let wfPathToUri path = workspaceFolderPathToUri path wf
 
-                    let! highlights =
-                        getHighlights
-                            symbol
-                            project
-                            docMaybe
-                            wfPathToUri
-                            (workspaceFolderUriToPath p.TextDocument.Uri wf |> _.Value)
+                        let! highlights =
+                            getHighlights
+                                symbol
+                                project
+                                docMaybe
+                                wfPathToUri
+                                (workspaceFolderUriToPath p.TextDocument.Uri wf |> _.Value)
 
-                    return highlights |> Seq.toArray |> Some |> LspResult.success
-                else
-                    return None |> LspResult.success
-    }
+                        return highlights |> Seq.toArray |> Some |> LspResult.success, RequestEffects.Empty
+                    else
+                        return None |> LspResult.success, RequestEffects.Empty
+        }

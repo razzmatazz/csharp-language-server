@@ -51,15 +51,15 @@ module Hover =
 
         hover |> Some
 
-    let handle (context: RequestContext) (p: HoverParams) : AsyncLspResult<Hover option> = async {
+    let handle (context: RequestContext) (p: HoverParams) : Async<LspResult<Hover option> * RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
-        | None -> return LspResult.success None
+        | None -> return LspResult.success None, RequestEffects.Empty
         | Some wf ->
             let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
-            | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success
-            | None -> return None |> LspResult.success
+            | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, RequestEffects.Empty
     }

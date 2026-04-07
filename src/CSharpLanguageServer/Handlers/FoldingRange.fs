@@ -187,55 +187,59 @@ module FoldingRange =
 
             base.VisitTrivia(trivia)
 
-    let handle (context: RequestContext) (p: FoldingRangeParams) : AsyncLspResult<FoldingRange array option> = async {
-        let lineFoldingOnly =
-            context.ClientCapabilities.TextDocument
-            |> Option.bind _.FoldingRange
-            |> Option.bind _.LineFoldingOnly
-            |> Option.defaultValue false
+    let handle
+        (context: RequestContext)
+        (p: FoldingRangeParams)
+        : Async<LspResult<FoldingRange array option> * RequestEffects> =
+        async {
+            let lineFoldingOnly =
+                context.ClientCapabilities.TextDocument
+                |> Option.bind _.FoldingRange
+                |> Option.bind _.LineFoldingOnly
+                |> Option.defaultValue false
 
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docMaybe =
-            wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
+            let docMaybe =
+                wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
-        match docMaybe with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+            match docMaybe with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+                let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
-            let collector = FoldingRangeCollector(sourceText.Lines, lineFoldingOnly)
-            collector.Visit(root)
+                let collector = FoldingRangeCollector(sourceText.Lines, lineFoldingOnly)
+                collector.Visit(root)
 
-            // Also collect #region ranges that span across tokens (they appear in the root's
-            // descendant trivia when not found via sibling-trivia scan above)
-            let regionRanges =
-                let regionStarts = ResizeArray<SyntaxTrivia>()
-                let mutable result = ResizeArray<FoldingRange>()
+                // Also collect #region ranges that span across tokens (they appear in the root's
+                // descendant trivia when not found via sibling-trivia scan above)
+                let regionRanges =
+                    let regionStarts = ResizeArray<SyntaxTrivia>()
+                    let mutable result = ResizeArray<FoldingRange>()
 
-                for trivia in root.DescendantTrivia() do
-                    match trivia.Kind() with
-                    | SyntaxKind.RegionDirectiveTrivia -> regionStarts.Add(trivia)
-                    | SyntaxKind.EndRegionDirectiveTrivia ->
-                        if regionStarts.Count > 0 then
-                            let start = regionStarts.[regionStarts.Count - 1]
-                            regionStarts.RemoveAt(regionStarts.Count - 1)
-                            let span = TextSpan.FromBounds(start.Span.Start, trivia.Span.End)
+                    for trivia in root.DescendantTrivia() do
+                        match trivia.Kind() with
+                        | SyntaxKind.RegionDirectiveTrivia -> regionStarts.Add(trivia)
+                        | SyntaxKind.EndRegionDirectiveTrivia ->
+                            if regionStarts.Count > 0 then
+                                let start = regionStarts.[regionStarts.Count - 1]
+                                regionStarts.RemoveAt(regionStarts.Count - 1)
+                                let span = TextSpan.FromBounds(start.Span.Start, trivia.Span.End)
 
-                            makeFoldingRange sourceText.Lines span (Some FoldingRangeKind.Region) lineFoldingOnly
-                            |> Option.iter result.Add
-                    | _ -> ()
+                                makeFoldingRange sourceText.Lines span (Some FoldingRangeKind.Region) lineFoldingOnly
+                                |> Option.iter result.Add
+                        | _ -> ()
 
-                result
+                    result
 
-            let allRanges =
-                collector.Ranges
-                |> Array.append (regionRanges |> Seq.toArray)
-                |> Array.distinctBy (fun r -> r.StartLine, r.EndLine)
-                |> Array.sortBy (fun r -> r.StartLine)
+                let allRanges =
+                    collector.Ranges
+                    |> Array.append (regionRanges |> Seq.toArray)
+                    |> Array.distinctBy (fun r -> r.StartLine, r.EndLine)
+                    |> Array.sortBy (fun r -> r.StartLine)
 
-            return allRanges |> Some |> LspResult.success
-    }
+                return allRanges |> Some |> LspResult.success, RequestEffects.Empty
+        }

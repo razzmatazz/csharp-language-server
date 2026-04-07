@@ -49,34 +49,37 @@ module CallHierarchy =
               Microsoft.CodeAnalysis.SymbolKind.Event
               Microsoft.CodeAnalysis.SymbolKind.Property ]
 
-    let prepare (context: RequestContext) (p: CallHierarchyPrepareParams) : AsyncLspResult<CallHierarchyItem[] option> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let prepare
+        (context: RequestContext)
+        (p: CallHierarchyPrepareParams)
+        : Async<LspResult<CallHierarchyItem[] option> * RequestEffects> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        match wf with
-        | None -> return None |> LspResult.success
-        | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
+            match wf with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
-            match symInfo with
-            | Some(symbol, project, _) when isCallableSymbol symbol ->
-                let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+                match symInfo with
+                | Some(symbol, project, _) when isCallableSymbol symbol ->
+                    let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                    return
+                        locations
+                        |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
+                        |> Seq.toArray
+                        |> Some
+                        |> LspResult.success,
+                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                return
-                    locations
-                    |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success
-
-            | _ -> return None |> LspResult.success
-    }
+                | _ -> return None |> LspResult.success, RequestEffects.Empty
+        }
 
     let incomingCalls
         (context: RequestContext)
         (p: CallHierarchyIncomingCallsParams)
-        : AsyncLspResult<CallHierarchyIncomingCall[] option> =
+        : Async<LspResult<CallHierarchyIncomingCall[] option> * RequestEffects> =
         async {
             let! ct = Async.CancellationToken
 
@@ -102,7 +105,7 @@ module CallHierarchy =
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
                 match symInfo with
-                | None -> return LspResult.success None
+                | None -> return LspResult.success None, RequestEffects.Empty
                 | Some(symbol, _, _) ->
                     let! callers =
                         SymbolFinder.FindCallersAsync(symbol, solution, cancellationToken = ct)
@@ -119,17 +122,18 @@ module CallHierarchy =
                         |> Seq.distinct
                         |> Seq.toArray
                         |> Some
-                        |> LspResult.success
+                        |> LspResult.success,
+                        RequestEffects.Empty
 
-            | _, _ -> return None |> LspResult.success
+            | _, _ -> return None |> LspResult.success, RequestEffects.Empty
         }
 
     let outgoingCalls
         (_context: RequestContext)
         (_: CallHierarchyOutgoingCallsParams)
-        : AsyncLspResult<CallHierarchyOutgoingCall[] option> =
+        : Async<LspResult<CallHierarchyOutgoingCall[] option> * RequestEffects> =
         async {
             // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
             // Then how can we implement it? Parsing AST manually?
-            return None |> LspResult.success
+            return None |> LspResult.success, RequestEffects.Empty
         }

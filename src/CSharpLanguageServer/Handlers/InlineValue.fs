@@ -12,5 +12,8 @@ module InlineValue =
 
     let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: RequestContext) (p: InlineValueParams) : AsyncLspResult<InlineValue[] option> =
-        LspResult.notImplemented<InlineValue[] option> |> async.Return
+    let handle
+        (context: RequestContext)
+        (p: InlineValueParams)
+        : Async<LspResult<InlineValue[] option> * RequestEffects> =
+        async { return LspResult.notImplemented<InlineValue[] option>, RequestEffects.Empty }

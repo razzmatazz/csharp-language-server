@@ -12,5 +12,8 @@ module SelectionRange =
 
     let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (_ctx: RequestContext) (_p: SelectionRangeParams) : AsyncLspResult<SelectionRange array option> =
-        LspResult.notImplemented<SelectionRange array option> |> async.Return
+    let handle
+        (_ctx: RequestContext)
+        (_p: SelectionRangeParams)
+        : Async<LspResult<SelectionRange array option> * RequestEffects> =
+        async { return LspResult.notImplemented<SelectionRange array option>, RequestEffects.Empty }

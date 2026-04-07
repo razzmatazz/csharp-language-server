@@ -70,42 +70,46 @@ module DocumentOnTypeFormatting =
                     None
             | _ -> None
 
-    let handle (context: RequestContext) (p: DocumentOnTypeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
+    let handle
+        (context: RequestContext)
+        (p: DocumentOnTypeFormattingParams)
+        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        async {
+            let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docForUri =
-            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
+            let docForUri =
+                wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
-        match docForUri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let pos = Position.toRoslynPosition sourceText.Lines p.Position
+            match docForUri with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some doc ->
+                let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let pos = Position.toRoslynPosition sourceText.Lines p.Position
 
-            match p.Ch with
-            | ";"
-            | "}"
-            | ")" ->
-                let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
-                let tokenAtPos = root.FindToken pos
+                match p.Ch with
+                | ";"
+                | "}"
+                | ")" ->
+                    let! root = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
+                    let tokenAtPos = root.FindToken pos
 
-                match getSyntaxNode tokenAtPos with
-                | None -> return None |> LspResult.success
-                | Some node ->
-                    let! newDoc =
-                        Formatter.FormatAsync(
-                            doc,
-                            TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End),
-                            options,
-                            cancellationToken = ct
-                        )
-                        |> Async.AwaitTask
+                    match getSyntaxNode tokenAtPos with
+                    | None -> return None |> LspResult.success, RequestEffects.Empty
+                    | Some node ->
+                        let! newDoc =
+                            Formatter.FormatAsync(
+                                doc,
+                                TextSpan.FromBounds(node.FullSpan.Start, node.FullSpan.End),
+                                options,
+                                cancellationToken = ct
+                            )
+                            |> Async.AwaitTask
 
-                    let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
-                    return textEdits |> Some |> LspResult.success
-            | _ -> return None |> LspResult.success
-    }
+                        let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
+                        return textEdits |> Some |> LspResult.success, RequestEffects.Empty
+                | _ -> return None |> LspResult.success, RequestEffects.Empty
+        }

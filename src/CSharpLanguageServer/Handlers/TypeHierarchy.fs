@@ -47,39 +47,42 @@ module TypeHierarchy =
                   Method = "textDocument/prepareTypeHierarchy"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let prepare (context: RequestContext) (p: TypeHierarchyPrepareParams) : AsyncLspResult<TypeHierarchyItem[] option> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let prepare
+        (context: RequestContext)
+        (p: TypeHierarchyPrepareParams)
+        : Async<LspResult<TypeHierarchyItem[] option> * RequestEffects> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        match wf with
-        | None -> return None |> LspResult.success
-        | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
+            match wf with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
-            match symInfo with
-            | Some(symbol, project, _) when isTypeSymbol symbol ->
-                let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+                match symInfo with
+                | Some(symbol, project, _) when isTypeSymbol symbol ->
+                    let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                    return
+                        symLocations
+                        |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
+                        |> Seq.toArray
+                        |> Some
+                        |> LspResult.success,
+                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                return
-                    symLocations
-                    |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success
-
-            | _ -> return LspResult.success None
-    }
+                | _ -> return LspResult.success None, RequestEffects.Empty
+        }
 
     let supertypes
         (context: RequestContext)
         (p: TypeHierarchySupertypesParams)
-        : AsyncLspResult<TypeHierarchyItem[] option> =
+        : Async<LspResult<TypeHierarchyItem[] option> * RequestEffects> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.Item.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success
+            | None -> return None |> LspResult.success, RequestEffects.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
 
@@ -109,17 +112,17 @@ module TypeHierarchy =
 
                         updatedWf <- wf
 
-                    context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                    return
+                        items |> Seq.toArray |> Some |> LspResult.success,
+                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                    return items |> Seq.toArray |> Some |> LspResult.success
-
-                | _ -> return LspResult.success None
+                | _ -> return LspResult.success None, RequestEffects.Empty
         }
 
     let subtypes
         (context: RequestContext)
         (p: TypeHierarchySubtypesParams)
-        : AsyncLspResult<TypeHierarchyItem[] option> =
+        : Async<LspResult<TypeHierarchyItem[] option> * RequestEffects> =
         async {
             let! ct = Async.CancellationToken
             let! wf, solution = p.Item.Uri |> context.GetWorkspaceFolderReadySolution
@@ -174,11 +177,11 @@ module TypeHierarchy =
 
                         updatedWf <- wf
 
-                    context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                    return
+                        items |> Seq.toArray |> Some |> LspResult.success,
+                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
 
-                    return items |> Seq.toArray |> Some |> LspResult.success
+                | _ -> return None |> LspResult.success, RequestEffects.Empty
 
-                | _ -> return None |> LspResult.success
-
-            | _, _ -> return None |> LspResult.success
+            | _, _ -> return None |> LspResult.success, RequestEffects.Empty
         }

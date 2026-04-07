@@ -15,6 +15,5 @@ module Declaration =
     let handle
         (_context: RequestContext)
         (_p: DeclarationParams)
-        : AsyncLspResult<U2<Declaration, DeclarationLink array> option> =
-        LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>
-        |> async.Return
+        : Async<LspResult<U2<Declaration, DeclarationLink array> option> * RequestEffects> =
+        async { return LspResult.notImplemented<U2<Declaration, DeclarationLink array> option>, RequestEffects.Empty }

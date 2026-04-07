@@ -54,7 +54,7 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let private tryReloadDocumentOnUri logger (context: RequestContext) uri = async {
+    let private tryReloadDocumentOnUri logger (context: RequestContext) uri : Async<RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
 
         let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
@@ -71,8 +71,8 @@ module Workspace =
                 let updatedWf =
                     workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution wf
 
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-            | None -> ()
+                return RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+            | None -> return RequestEffects.Empty
 
         | Some wf, None ->
             let docFilePathMaybe = workspaceFolderUriToPath uri wf
@@ -85,15 +85,14 @@ module Workspace =
                 let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded docFilePath fileText wf
 
                 match newDocMaybe with
-                | Some newDoc -> context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
+                | Some _ -> return RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                | None -> return RequestEffects.Empty
+            | None -> return RequestEffects.Empty
 
-                | None -> ()
-            | None -> ()
-
-        | _, _ -> ()
+        | _, _ -> return RequestEffects.Empty
     }
 
-    let private removeDocument (context: RequestContext) uri = async {
+    let private removeDocument (context: RequestContext) uri : Async<RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
 
         let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
@@ -104,13 +103,15 @@ module Workspace =
 
             let updatedWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution wf
 
-            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-            context.UpdateEffects(_.WithDocumentClosed(uri))
+            return RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf).WithDocumentClosed(uri)
 
-        | _, _ -> ()
+        | _, _ -> return RequestEffects.Empty
     }
 
-    let didChangeWatchedFiles (context: RequestContext) (p: DidChangeWatchedFilesParams) : Async<LspResult<unit>> =
+    let didChangeWatchedFiles
+        (context: RequestContext)
+        (p: DidChangeWatchedFilesParams)
+        : Async<LspResult<unit> * RequestEffects> =
 
         let windowShowMessage (m: string) =
             context.LspClient.WindowShowMessage(
@@ -119,22 +120,40 @@ module Workspace =
             )
 
         async {
+            let mutable effects = RequestEffects.Empty
+
             for change in p.Changes do
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
-                    context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    effects <- effects.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | ".sln"
                 | ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
-                    context.UpdateEffects(_.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64)))
+                    effects <- effects.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | ".cs" ->
                     match change.Type with
-                    | FileChangeType.Created -> do! tryReloadDocumentOnUri logger context change.Uri
-                    | FileChangeType.Changed -> do! tryReloadDocumentOnUri logger context change.Uri
-                    | FileChangeType.Deleted -> do! removeDocument context change.Uri
+                    | FileChangeType.Created ->
+                        let! e = tryReloadDocumentOnUri logger context change.Uri
+
+                        effects <-
+                            { effects with
+                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                    | FileChangeType.Changed ->
+                        let! e = tryReloadDocumentOnUri logger context change.Uri
+
+                        effects <-
+                            { effects with
+                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                    | FileChangeType.Deleted ->
+                        let! e = removeDocument context change.Uri
+
+                        effects <-
+                            { effects with
+                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange
+                                DocumentClosed = effects.DocumentClosed @ e.DocumentClosed }
                     | _ -> ()
 
                 | ".cshtml" ->
@@ -143,32 +162,33 @@ module Workspace =
 
                 | _ -> ()
 
-            return Ok()
+            return Ok(), effects
         }
 
     let didChangeConfiguration
         (context: RequestContext)
         (configParams: DidChangeConfigurationParams)
-        : Async<LspResult<unit>> =
+        : Async<LspResult<unit> * RequestEffects> =
         async {
             let csharpSettingsMaybe =
                 configParams.Settings
                 |> deserialize<DidChangeConfigurationSettingsDto>
                 |> _.csharp
 
-            match csharpSettingsMaybe with
-            | None -> ()
-            | Some csharpSettings ->
-                let newConfig = mergeCSharpConfiguration context.Config csharpSettings
-                context.UpdateEffects(_.WithSettingsChange(newConfig))
+            let effects =
+                match csharpSettingsMaybe with
+                | None -> RequestEffects.Empty
+                | Some csharpSettings ->
+                    let newConfig = mergeCSharpConfiguration context.Config csharpSettings
+                    RequestEffects.Empty.WithSettingsChange(newConfig)
 
-            return Ok()
+            return Ok(), effects
         }
 
     let didChangeWorkspaceFolders
         (context: RequestContext)
         (p: DidChangeWorkspaceFoldersParams)
-        : Async<LspResult<unit>> =
+        : Async<LspResult<unit> * RequestEffects> =
         async {
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
@@ -182,7 +202,5 @@ module Workspace =
                 |> Seq.append p.Event.Added
                 |> List.ofSeq
 
-            context.UpdateEffects(_.WithWorkspaceConfigurationChanged(updatedWorkspaceFolders))
-
-            return Ok()
+            return Ok(), RequestEffects.Empty.WithWorkspaceConfigurationChanged(updatedWorkspaceFolders)
         }

@@ -117,14 +117,14 @@ module CodeLens =
                   Method = "textDocument/codeLens"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: CodeLensParams) : AsyncLspResult<CodeLens[] option> = async {
+    let handle (context: RequestContext) (p: CodeLensParams) : Async<LspResult<CodeLens[] option> * RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         let docForUri =
             wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
         match docForUri with
-        | None -> return None |> LspResult.success
+        | None -> return None |> LspResult.success, RequestEffects.Empty
         | Some doc ->
             let! ct = Async.CancellationToken
             let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -148,10 +148,10 @@ module CodeLens =
 
             let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
 
-            return codeLens |> Array.ofSeq |> Some |> LspResult.success
+            return codeLens |> Array.ofSeq |> Some |> LspResult.success, RequestEffects.Empty
     }
 
-    let resolve (context: RequestContext) (p: CodeLens) : AsyncLspResult<CodeLens> = async {
+    let resolve (context: RequestContext) (p: CodeLens) : Async<LspResult<CodeLens> * RequestEffects> = async {
         let! ct = Async.CancellationToken
 
         let lensData: CodeLensData =
@@ -167,7 +167,7 @@ module CodeLens =
             let! symInfo = workspaceFolderDocumentSymbol AnyDocument lensData.DocumentUri lensData.Position wf
 
             match symInfo with
-            | None -> return p |> LspResult.success
+            | None -> return p |> LspResult.success, RequestEffects.Empty
             | Some(symbol, _, _) ->
                 let! refs =
                     SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
@@ -196,7 +196,7 @@ module CodeLens =
                       Command = "textDocument/references"
                       Arguments = Some [| arg |> serialize |] }
 
-                return { p with Command = Some command } |> LspResult.success
+                return { p with Command = Some command } |> LspResult.success, RequestEffects.Empty
 
-        | _, _ -> return p |> LspResult.success
+        | _, _ -> return p |> LspResult.success, RequestEffects.Empty
     }

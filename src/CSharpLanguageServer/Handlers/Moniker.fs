@@ -12,5 +12,8 @@ module Moniker =
 
     let registration (_config: CSharpConfiguration) (_cc: ClientCapabilities) : Registration option = None
 
-    let handle (_context: RequestContext) (_p: MonikerParams) : AsyncLspResult<Moniker array option> =
-        LspResult.notImplemented<Moniker array option> |> async.Return
+    let handle
+        (_context: RequestContext)
+        (_p: MonikerParams)
+        : Async<LspResult<Moniker array option> * RequestEffects> =
+        async { return LspResult.notImplemented<Moniker array option>, RequestEffects.Empty }

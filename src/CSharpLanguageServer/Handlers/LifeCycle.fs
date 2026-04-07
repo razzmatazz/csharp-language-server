@@ -24,16 +24,13 @@ module LifeCycle =
         (getServerCapabilities: CSharpConfiguration -> InitializeParams -> ServerCapabilities)
         (context: RequestContext)
         (p: InitializeParams)
-        : Async<LspResult<InitializeResult>> =
+        : Async<LspResult<InitializeResult> * RequestEffects> =
         async {
-            context.UpdateEffects(_.WithClientInitialize())
-
             // Set trace level immediately so logging during initialization is forwarded
             // via $/logTrace (and console stderr is suppressed). The Emit also updates
             // ServerState when the buffered event replays after this handler returns.
             let initialTraceLevel = p.Trace |> Option.defaultValue TraceValues.Off
             Logging.setLspTraceLevel initialTraceLevel
-            context.UpdateEffects(_.WithTraceLevelChange(initialTraceLevel))
 
             let windowShowMessage m =
                 context.LspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
@@ -62,7 +59,6 @@ module LifeCycle =
             logger.LogDebug("handleInitialize: p.ClientInfo: {clientInfo}", p.ClientInfo |> Option.map serialize)
 
             logger.LogDebug("handleInitialize: p.Capabilities: {caps}", serialize p.Capabilities)
-            context.UpdateEffects(_.WithClientCapabilityChange(p.Capabilities))
 
             logger.LogDebug(
                 "handleInitialize: p.RootPath={rootPath}, p.RootUri={rootUri}, p.WorkspaceFolders={wf}",
@@ -85,8 +81,6 @@ module LifeCycle =
 
             logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 
-            context.UpdateEffects(_.WithWorkspaceConfigurationChanged(workspaceFolders))
-
             let initializeResult =
                 let serverCapabilities = getServerCapabilities context.Config p
 
@@ -102,7 +96,14 @@ module LifeCycle =
                             { Name = "csharp-ls"
                               Version = assemblyVersion } }
 
-            return initializeResult |> LspResult.success
+            let effects =
+                RequestEffects.Empty
+                    .WithClientInitialize()
+                    .WithTraceLevelChange(initialTraceLevel)
+                    .WithClientCapabilityChange(p.Capabilities)
+                    .WithWorkspaceConfigurationChanged(workspaceFolders)
+
+            return initializeResult |> LspResult.success, effects
         }
 
     let handleInitialized
@@ -110,7 +111,7 @@ module LifeCycle =
         (getDynamicRegistrations: CSharpConfiguration -> ClientCapabilities -> Registration list)
         (context: RequestContext)
         (_p: unit)
-        : Async<LspResult<unit>> =
+        : Async<LspResult<unit> * RequestEffects> =
         async {
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
@@ -136,6 +137,8 @@ module LifeCycle =
             //
             // retrieve csharp settings
             //
+            let mutable effects = RequestEffects.Empty
+
             try
                 let! workspaceCSharpConfig =
                     lspClient.WorkspaceConfiguration(
@@ -154,7 +157,7 @@ module LifeCycle =
                 | None -> ()
                 | Some csharpConfig ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                    context.UpdateEffects(_.WithSettingsChange(newConfig))
+                    effects <- effects.WithSettingsChange(newConfig)
 
             with ex ->
                 logger.LogWarning(
@@ -162,16 +165,17 @@ module LifeCycle =
                     ex |> string
                 )
 
-            return Ok()
+            return Ok(), effects
         }
 
-    let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit>> = async {
-        context.UpdateEffects(_.WithClientCapabilityChange(emptyClientCapabilities))
-        context.UpdateEffects(_.WithClientShutdown())
-        return Ok()
+    let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * RequestEffects> = async {
+        let effects =
+            RequestEffects.Empty.WithClientCapabilityChange(emptyClientCapabilities).WithClientShutdown()
+
+        return Ok(), effects
     }
 
-    let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit>> = async {
+    let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit> * RequestEffects> = async {
         // Per LSP spec: exit with code 0 if shutdown was received first, 1 otherwise.
         let exitCode = if context.ShutdownReceived then 0 else 1
 
@@ -182,5 +186,5 @@ module LifeCycle =
         )
 
         Environment.Exit(exitCode)
-        return Ok()
+        return Ok(), RequestEffects.Empty
     }

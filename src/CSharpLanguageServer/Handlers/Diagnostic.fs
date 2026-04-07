@@ -63,37 +63,41 @@ module Diagnostic =
         else
             true
 
-    let handle (context: RequestContext) (p: DocumentDiagnosticParams) : AsyncLspResult<DocumentDiagnosticReport> = async {
-        let emptyReport: RelatedFullDocumentDiagnosticReport =
-            { Kind = "full"
-              ResultId = None
-              Items = [||]
-              RelatedDocuments = None }
+    let handle
+        (context: RequestContext)
+        (p: DocumentDiagnosticParams)
+        : Async<LspResult<DocumentDiagnosticReport> * RequestEffects> =
+        async {
+            let emptyReport: RelatedFullDocumentDiagnosticReport =
+                { Kind = "full"
+                  ResultId = None
+                  Items = [||]
+                  RelatedDocuments = None }
 
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        match wf with
-        | None -> return emptyReport |> U2.C1 |> LspResult.success
-        | Some wf ->
-            let! semModel = workspaceFolderDocumentSemanticModel p.TextDocument.Uri wf
+            match wf with
+            | None -> return emptyReport |> U2.C1 |> LspResult.success, RequestEffects.Empty
+            | Some wf ->
+                let! semModel = workspaceFolderDocumentSemanticModel p.TextDocument.Uri wf
 
-            match semModel with
-            | Some semanticModel ->
-                let! ct = Async.CancellationToken
+                match semModel with
+                | Some semanticModel ->
+                    let! ct = Async.CancellationToken
 
-                let wfPathToUri path = workspaceFolderPathToUri path wf
+                    let wfPathToUri path = workspaceFolderPathToUri path wf
 
-                let diagnostics =
-                    semanticModel.GetDiagnostics()
-                    |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
-                    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
-                    |> Seq.map fst
-                    |> Array.ofSeq
+                    let diagnostics =
+                        semanticModel.GetDiagnostics()
+                        |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
+                        |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+                        |> Seq.map fst
+                        |> Array.ofSeq
 
-                return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success
+                    return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success, RequestEffects.Empty
 
-            | None -> return emptyReport |> U2.C1 |> LspResult.success
-    }
+                | None -> return emptyReport |> U2.C1 |> LspResult.success, RequestEffects.Empty
+        }
 
     type WorkspaceDiagnosticsReportsChannelItem =
         | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
@@ -207,7 +211,7 @@ module Diagnostic =
     let handleWorkspaceDiagnostic
         (context: RequestContext)
         (p: WorkspaceDiagnosticParams)
-        : AsyncLspResult<WorkspaceDiagnosticReport> =
+        : Async<LspResult<WorkspaceDiagnosticReport> * RequestEffects> =
         async {
             let knownResultIds =
                 p.PreviousResultIds |> Seq.map (fun r -> r.Uri, r.Value) |> Map.ofSeq
@@ -221,7 +225,7 @@ module Diagnostic =
                     |> AsyncSeq.toArrayAsync
 
                 let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
-                return fullReport |> LspResult.success
+                return fullReport |> LspResult.success, RequestEffects.Empty
 
             | Some partialResultToken ->
                 let sendWorkspaceDiagnosticReport (documentReport, index) = async {
@@ -249,5 +253,5 @@ module Diagnostic =
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }
-                return emptyReport |> LspResult.success
+                return emptyReport |> LspResult.success, RequestEffects.Empty
         }
