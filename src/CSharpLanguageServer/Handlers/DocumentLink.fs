@@ -12,8 +12,12 @@ module DocumentLink =
 
     let registration (_config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option = None
 
-    let handle (context: RequestContext) (p: DocumentLinkParams) : AsyncLspResult<DocumentLink[] option> =
-        LspResult.notImplemented<DocumentLink[] option> |> async.Return
+    let handle
+        (context: RequestContext)
+        (p: DocumentLinkParams)
+        : Async<LspResult<DocumentLink[] option> * RequestEffects> =
+        async { return LspResult.notImplemented<DocumentLink[] option>, RequestEffects.Empty }
 
-    let resolve (context: RequestContext) (p: DocumentLink) : AsyncLspResult<DocumentLink> =
-        LspResult.notImplemented<DocumentLink> |> async.Return
+    let resolve (context: RequestContext) (p: DocumentLink) : Async<LspResult<DocumentLink> * RequestEffects> = async {
+        return LspResult.notImplemented<DocumentLink>, RequestEffects.Empty
+    }

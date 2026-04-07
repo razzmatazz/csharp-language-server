@@ -11,8 +11,7 @@ open CSharpLanguageServer.Logging
 module Trace =
     let private logger = Logging.getLoggerByName "Trace"
 
-    let handleSetTrace (context: RequestContext) (p: SetTraceParams) : Async<LspResult<unit>> = async {
+    let handleSetTrace (context: RequestContext) (p: SetTraceParams) : Async<LspResult<unit> * RequestEffects> = async {
         logger.LogDebug("handleSetTrace: trace level changed to {traceLevel}", p.Value)
-        context.UpdateEffects(_.WithTraceLevelChange(p.Value))
-        return Ok()
+        return Ok(), RequestEffects.Empty.WithTraceLevelChange(p.Value)
     }

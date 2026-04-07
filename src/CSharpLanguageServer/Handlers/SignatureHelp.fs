@@ -88,105 +88,109 @@ module SignatureHelp =
                   Method = "textDocument/signatureHelp"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: SignatureHelpParams) : AsyncLspResult<SignatureHelp option> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let handle
+        (context: RequestContext)
+        (p: SignatureHelpParams)
+        : Async<LspResult<SignatureHelp option> * RequestEffects> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docMaybe =
-            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
+            let docMaybe =
+                wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
-        match docMaybe with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+            match docMaybe with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
-            let position = p.Position |> Position.toRoslynPosition sourceText.Lines
+                let position = p.Position |> Position.toRoslynPosition sourceText.Lines
 
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+                let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+                let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
 
-            let rec findInvocationContext (node: SyntaxNode) : InvocationContext option =
-                match node with
-                | :? InvocationExpressionSyntax as invocation when invocation.ArgumentList.Span.Contains(position) ->
-                    Some
-                        { Receiver = invocation.Expression
-                          ArgumentTypes =
-                            invocation.ArgumentList.Arguments
-                            |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                            |> List.ofSeq
-                          Separators = invocation.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
+                let rec findInvocationContext (node: SyntaxNode) : InvocationContext option =
+                    match node with
+                    | :? InvocationExpressionSyntax as invocation when invocation.ArgumentList.Span.Contains(position) ->
+                        Some
+                            { Receiver = invocation.Expression
+                              ArgumentTypes =
+                                invocation.ArgumentList.Arguments
+                                |> Seq.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                                |> List.ofSeq
+                              Separators = invocation.ArgumentList.Arguments.GetSeparators() |> List.ofSeq }
 
-                | :? BaseObjectCreationExpressionSyntax as objectCreation when
-                    objectCreation.ArgumentList
-                    |> Option.ofObj
-                    |> Option.map (fun argList -> argList.Span.Contains(position))
-                    |> Option.defaultValue false
-                    ->
-                    let argumentList = objectCreation.ArgumentList |> Option.ofObj
+                    | :? BaseObjectCreationExpressionSyntax as objectCreation when
+                        objectCreation.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun argList -> argList.Span.Contains(position))
+                        |> Option.defaultValue false
+                        ->
+                        let argumentList = objectCreation.ArgumentList |> Option.ofObj
 
-                    Some
-                        { Receiver = objectCreation
-                          ArgumentTypes =
-                            argumentList
-                            |> Option.map (fun al -> al.Arguments |> List.ofSeq)
-                            |> Option.defaultValue []
-                            |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                          Separators =
-                            argumentList
-                            |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
-                            |> Option.defaultValue [] }
+                        Some
+                            { Receiver = objectCreation
+                              ArgumentTypes =
+                                argumentList
+                                |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                                |> Option.defaultValue []
+                                |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                              Separators =
+                                argumentList
+                                |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                                |> Option.defaultValue [] }
 
-                | :? AttributeSyntax as attributeSyntax when
-                    attributeSyntax.ArgumentList
-                    |> Option.ofObj
-                    |> Option.map (fun argList -> argList.Span.Contains(position))
-                    |> Option.defaultValue false
-                    ->
-                    let argumentList = attributeSyntax.ArgumentList |> Option.ofObj
+                    | :? AttributeSyntax as attributeSyntax when
+                        attributeSyntax.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun argList -> argList.Span.Contains(position))
+                        |> Option.defaultValue false
+                        ->
+                        let argumentList = attributeSyntax.ArgumentList |> Option.ofObj
 
-                    Some
-                        { Receiver = attributeSyntax
-                          ArgumentTypes =
-                            argumentList
-                            |> Option.map (fun al -> al.Arguments |> List.ofSeq)
-                            |> Option.defaultValue []
-                            |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
-                          Separators =
-                            argumentList
-                            |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
-                            |> Option.defaultValue [] }
+                        Some
+                            { Receiver = attributeSyntax
+                              ArgumentTypes =
+                                argumentList
+                                |> Option.map (fun al -> al.Arguments |> List.ofSeq)
+                                |> Option.defaultValue []
+                                |> List.map (fun a -> semanticModel.GetTypeInfo(a.Expression))
+                              Separators =
+                                argumentList
+                                |> Option.map (fun al -> al.Arguments.GetSeparators() |> List.ofSeq)
+                                |> Option.defaultValue [] }
 
-                | _ ->
-                    node
-                    |> Option.ofObj
-                    |> Option.bind (fun n -> n.Parent |> Option.ofObj)
-                    |> Option.bind findInvocationContext
+                    | _ ->
+                        node
+                        |> Option.ofObj
+                        |> Option.bind (fun n -> n.Parent |> Option.ofObj)
+                        |> Option.bind findInvocationContext
 
-            match root.FindToken(position).Parent |> findInvocationContext with
-            | None -> return None |> LspResult.success
-            | Some invocation ->
-                let methodGroup =
-                    semanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>()
-                    |> List.ofSeq
+                match root.FindToken(position).Parent |> findInvocationContext with
+                | None -> return None |> LspResult.success, RequestEffects.Empty
+                | Some invocation ->
+                    let methodGroup =
+                        semanticModel.GetMemberGroup(invocation.Receiver).OfType<IMethodSymbol>()
+                        |> List.ofSeq
 
-                let matchingMethodMaybe =
-                    methodGroup
-                    |> Seq.map (fun m -> m, methodScore (invocation.ArgumentTypes) m)
-                    |> Seq.tryMaxBy snd
-                    |> Option.map fst
+                    let matchingMethodMaybe =
+                        methodGroup
+                        |> Seq.map (fun m -> m, methodScore (invocation.ArgumentTypes) m)
+                        |> Seq.tryMaxBy snd
+                        |> Option.map fst
 
-                let activeParameterMaybe =
-                    invocation.Separators
-                    |> List.tryFindIndex (fun comma -> comma.Span.Start >= position)
-                    |> Option.map uint
+                    let activeParameterMaybe =
+                        invocation.Separators
+                        |> List.tryFindIndex (fun comma -> comma.Span.Start >= position)
+                        |> Option.map uint
 
-                let signatureHelpResult =
-                    { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq
-                      ActiveSignature =
-                        matchingMethodMaybe
-                        |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
-                      ActiveParameter = activeParameterMaybe }
+                    let signatureHelpResult =
+                        { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq
+                          ActiveSignature =
+                            matchingMethodMaybe
+                            |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)
+                          ActiveParameter = activeParameterMaybe }
 
-                return Some signatureHelpResult |> LspResult.success
-    }
+                    return Some signatureHelpResult |> LspResult.success, RequestEffects.Empty
+        }

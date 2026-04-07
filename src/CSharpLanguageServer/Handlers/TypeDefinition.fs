@@ -42,18 +42,18 @@ module TypeDefinition =
     let handle
         (context: RequestContext)
         (p: TypeDefinitionParams)
-        : Async<LspResult<U2<Definition, DefinitionLink array> option>> =
+        : Async<LspResult<U2<Definition, DefinitionLink array> option> * RequestEffects> =
 
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success
+            | None -> return None |> LspResult.success, RequestEffects.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
                 match symInfo with
-                | None -> return LspResult.success None
+                | None -> return LspResult.success None, RequestEffects.Empty
                 | Some(symbol, project, _) ->
                     let typeSymbol =
                         match symbol with
@@ -63,16 +63,15 @@ module TypeDefinition =
                         | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
                         | _ -> None
 
-                    let! locations, wf =
+                    let! locations, effects =
                         match typeSymbol with
-                        | None -> async.Return([], wf)
+                        | None -> async.Return([], RequestEffects.Empty)
                         | Some symbol -> async {
                             let! aggregatedLspLocations, updatedWf =
                                 workspaceFolderSymbolLocations wf context.Config symbol project
 
-                            context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-                            return aggregatedLspLocations, updatedWf
+                            return aggregatedLspLocations, RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
                           }
 
-                    return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+                    return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success, effects
         }

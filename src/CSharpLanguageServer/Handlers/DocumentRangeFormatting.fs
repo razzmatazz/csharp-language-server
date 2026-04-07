@@ -41,30 +41,34 @@ module DocumentRangeFormatting =
                   Method = "textDocument/rangeFormatting"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: DocumentRangeFormattingParams) : AsyncLspResult<TextEdit[] option> = async {
-        let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
+    let handle
+        (context: RequestContext)
+        (p: DocumentRangeFormattingParams)
+        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        async {
+            let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docForUri =
-            wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
+            let docForUri =
+                wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
-        match docForUri with
-        | None -> return None |> LspResult.success
-        | Some doc ->
-            let! ct = Async.CancellationToken
+            match docForUri with
+            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | Some doc ->
+                let! ct = Async.CancellationToken
 
-            let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
-            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
-            let startPos = Position.toRoslynPosition sourceText.Lines p.Range.Start
-            let endPos = Position.toRoslynPosition sourceText.Lines p.Range.End
-            let! syntaxTree = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
-            let tokenStart = syntaxTree.FindToken(startPos).FullSpan.Start
+                let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
+                let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+                let startPos = Position.toRoslynPosition sourceText.Lines p.Range.Start
+                let endPos = Position.toRoslynPosition sourceText.Lines p.Range.End
+                let! syntaxTree = doc.GetSyntaxRootAsync(ct) |> Async.AwaitTask
+                let tokenStart = syntaxTree.FindToken(startPos).FullSpan.Start
 
-            let! newDoc =
-                Formatter.FormatAsync(doc, TextSpan.FromBounds(tokenStart, endPos), options, cancellationToken = ct)
-                |> Async.AwaitTask
+                let! newDoc =
+                    Formatter.FormatAsync(doc, TextSpan.FromBounds(tokenStart, endPos), options, cancellationToken = ct)
+                    |> Async.AwaitTask
 
-            let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
-            return textEdits |> Some |> LspResult.success
-    }
+                let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
+                return textEdits |> Some |> LspResult.success, RequestEffects.Empty
+        }

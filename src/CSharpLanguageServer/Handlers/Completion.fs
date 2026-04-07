@@ -378,7 +378,7 @@ module Completion =
     let handle
         (context: RequestContext)
         (p: CompletionParams)
-        : Async<LspResult<U2<CompletionItem array, CompletionList> option>> =
+        : Async<LspResult<U2<CompletionItem array, CompletionList> option> * RequestEffects> =
         async {
             let getCompletions =
                 if p.TextDocument.Uri.EndsWith ".cshtml" then
@@ -387,7 +387,7 @@ module Completion =
                     getCompletionsForCSharpDocument
 
             match! getCompletions p context with
-            | None -> return None |> LspResult.success
+            | None -> return None |> LspResult.success, RequestEffects.Empty
             | Some(roslynCompletions, doc) ->
                 let toLspCompletionItemsWithCacheInfo (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
                     completions.ItemsList
@@ -420,10 +420,11 @@ module Completion =
                       ItemDefaults = None }
                     |> U2.C2
                     |> Some
-                    |> LspResult.success
+                    |> LspResult.success,
+                    RequestEffects.Empty
         }
 
-    let resolve (_context: RequestContext) (item: CompletionItem) : AsyncLspResult<CompletionItem> = async {
+    let resolve (_context: RequestContext) (item: CompletionItem) : Async<LspResult<CompletionItem> * RequestEffects> = async {
         let roslynDocAndItemMaybe =
             item.Data
             |> Option.bind deserialize<string option>
@@ -459,7 +460,8 @@ module Completion =
                 { item with
                     Detail = synopsis
                     Documentation = updatedItemDocumentation }
-                |> LspResult.success
+                |> LspResult.success,
+                RequestEffects.Empty
 
-        | None -> return item |> LspResult.success
+        | None -> return item |> LspResult.success, RequestEffects.Empty
     }

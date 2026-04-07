@@ -167,11 +167,11 @@ module TextDocumentSync =
                     return newDocMaybe |> Option.map (fun _ -> updatedWf)
         }
 
-    let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit> * RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
-        | None -> return Ok()
+        | None -> return Ok(), RequestEffects.Empty
         | Some wf ->
             let! updatedWf =
                 if p.TextDocument.Uri.EndsWith ".cshtml" then
@@ -179,13 +179,15 @@ module TextDocumentSync =
                 else
                     didOpenCsharpFile wf context p
 
-            match updatedWf with
-            | None -> ()
-            | Some updatedWf ->
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-                context.UpdateEffects(_.WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+            let effects =
+                match updatedWf with
+                | None -> RequestEffects.Empty
+                | Some updatedWf ->
+                    RequestEffects.Empty
+                        .WithWorkspaceFolderChange(updatedWf)
+                        .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
 
-            return Ok()
+            return Ok(), effects
     }
 
     let didChangeCshtmlFile wf (p: DidChangeTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
@@ -231,11 +233,11 @@ module TextDocumentSync =
                 return Some updatedWf
         }
 
-    let didChange (context: RequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didChange (context: RequestContext) (p: DidChangeTextDocumentParams) : Async<LspResult<unit> * RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
-        | None -> return Ok()
+        | None -> return Ok(), RequestEffects.Empty
         | Some wf ->
             let! updatedWf =
                 if p.TextDocument.Uri.EndsWith ".cshtml" then
@@ -243,27 +245,29 @@ module TextDocumentSync =
                 else
                     didChangeCsharpFile wf context p
 
-            match updatedWf with
-            | None -> ()
-            | Some updatedWf ->
-                context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-                context.UpdateEffects(_.WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now))
+            let effects =
+                match updatedWf with
+                | None -> RequestEffects.Empty
+                | Some updatedWf ->
+                    RequestEffects.Empty
+                        .WithWorkspaceFolderChange(updatedWf)
+                        .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
 
-            return Ok()
+            return Ok(), effects
     }
 
-    let willSave (_context: RequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit>> = async {
-        return Ok()
+    let willSave (_context: RequestContext) (_p: WillSaveTextDocumentParams) : Async<LspResult<unit> * RequestEffects> = async {
+        return Ok(), RequestEffects.Empty
     }
 
     let willSaveWaitUntil
         (_context: RequestContext)
         (_p: WillSaveTextDocumentParams)
-        : AsyncLspResult<TextEdit[] option> =
-        async { return LspResult.notImplemented<TextEdit[] option> }
+        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        async { return LspResult.notImplemented<TextEdit[] option>, RequestEffects.Empty }
 
-    let didSave (context: RequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit>> = async {
-        return Ok()
+    let didSave (context: RequestContext) (p: DidSaveTextDocumentParams) : Async<LspResult<unit> * RequestEffects> = async {
+        return Ok(), RequestEffects.Empty
     }
 
     let didCloseCshtmlFile wf (p: DidCloseTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
@@ -327,11 +331,11 @@ module TextDocumentSync =
             | _, _ -> return None
         }
 
-    let didClose (context: RequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit>> = async {
+    let didClose (context: RequestContext) (p: DidCloseTextDocumentParams) : Async<LspResult<unit> * RequestEffects> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
         match wf with
-        | None -> return Ok()
+        | None -> return Ok(), RequestEffects.Empty
         | Some wf ->
             let! updatedWf =
                 if p.TextDocument.Uri.EndsWith ".cshtml" then
@@ -339,11 +343,11 @@ module TextDocumentSync =
                 else
                     didCloseCsharpFile wf context p
 
-            match updatedWf with
-            | Some updatedWf -> context.UpdateEffects(_.WithWorkspaceFolderChange(updatedWf))
-            | None -> ()
+            let effects =
+                (match updatedWf with
+                 | Some updatedWf -> RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                 | None -> RequestEffects.Empty)
+                    .WithDocumentClosed(p.TextDocument.Uri)
 
-            context.UpdateEffects(_.WithDocumentClosed(p.TextDocument.Uri))
-
-            return Ok()
+            return Ok(), effects
     }

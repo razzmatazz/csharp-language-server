@@ -316,7 +316,7 @@ module DocumentSymbol =
     let handle
         (context: RequestContext)
         (p: DocumentSymbolParams)
-        : AsyncLspResult<U2<SymbolInformation[], DocumentSymbol[]> option> =
+        : Async<LspResult<U2<SymbolInformation[], DocumentSymbol[]> option> * RequestEffects> =
         async {
             let canEmitDocSymbolHierarchy =
                 context.ClientCapabilities.TextDocument
@@ -330,7 +330,7 @@ module DocumentSymbol =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
             match docForUri with
-            | None -> return None |> LspResult.success
+            | None -> return None |> LspResult.success, RequestEffects.Empty
             | Some doc ->
                 let! ct = Async.CancellationToken
                 let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
@@ -347,5 +347,6 @@ module DocumentSymbol =
                     collector.GetDocumentSymbols(canEmitDocSymbolHierarchy)
                     |> U2.C2
                     |> Some
-                    |> LspResult.success
+                    |> LspResult.success,
+                    RequestEffects.Empty
         }

@@ -106,13 +106,10 @@ type RequestContext
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
     ) =
-    let mutable effects = RequestEffects.Empty
-
     member _.LspClient = lspClient
     member _.Config = config
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
-    member _.Effects = effects
 
     member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 
@@ -140,11 +137,6 @@ type RequestContext
 
         return wfs
     }
-
-    member _.UpdateEffects(update: RequestEffects -> RequestEffects) =
-        match requestMode.IsReadOnlyBackground with
-        | false -> effects <- update effects
-        | true -> invalidOp "Effects are not allowed for this request"
 
 type RequestInfo =
     { Phase: RequestPhase
@@ -184,10 +176,10 @@ type RequestQueueMode =
 ///   state loop so they are applied to the current server state.
 ///
 /// Event buffering:
-/// - Handlers call `RequestContext.UpdateEffects` to record state-changing events.
-///   These are buffered in-memory on the context (not sent to the state actor
-///   immediately) and only replayed when the request is retired, preserving
-///   the serial mutation invariant.
+/// - Handlers return a `RequestEffects` value alongside their LSP result to
+///   record state-changing events. These are posted to the state actor when the
+///   handler completes and replayed when the request is retired, preserving the
+///   serial mutation invariant.
 ///
 /// Background read-only requests:
 /// - Long-running read-only requests (e.g. `workspace/diagnostics`) that never
@@ -195,8 +187,6 @@ type RequestQueueMode =
 /// - `ReadOnlyBackground` requests do not block retirement of later requests
 ///   and may be retired out of order (they are simply skipped over during the
 ///   ordinal walk).
-/// - Calling `RequestContext.UpdateEffects` on a `ReadOnlyBackground` request
-///   throws `InvalidOperationException`.
 ///
 /// Concurrency rules:
 /// - Write requests start and retire serially; a write request may only start

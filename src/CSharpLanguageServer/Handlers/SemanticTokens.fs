@@ -200,15 +200,26 @@ module SemanticTokens =
                   RegisterOptions = registerOptions |> serialize |> Some }
 
     // TODO: Everytime the server will re-compute semantic tokens, is it possible to cache the result?
-    let handleFull (context: RequestContext) (p: SemanticTokensParams) : AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange context p.TextDocument.Uri None
+    let handleFull
+        (context: RequestContext)
+        (p: SemanticTokensParams)
+        : Async<LspResult<SemanticTokens option> * RequestEffects> =
+        async {
+            let! result = getSemanticTokensRange context p.TextDocument.Uri None
+            return result, RequestEffects.Empty
+        }
 
     let handleFullDelta
         (_context: RequestContext)
         (_p: SemanticTokensDeltaParams)
-        : AsyncLspResult<U2<SemanticTokens, SemanticTokensDelta> option> =
-        LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>
-        |> async.Return
+        : Async<LspResult<U2<SemanticTokens, SemanticTokensDelta> option> * RequestEffects> =
+        async { return LspResult.notImplemented<U2<SemanticTokens, SemanticTokensDelta> option>, RequestEffects.Empty }
 
-    let handleRange (context: RequestContext) (p: SemanticTokensRangeParams) : AsyncLspResult<SemanticTokens option> =
-        getSemanticTokensRange context p.TextDocument.Uri (Some p.Range)
+    let handleRange
+        (context: RequestContext)
+        (p: SemanticTokensRangeParams)
+        : Async<LspResult<SemanticTokens option> * RequestEffects> =
+        async {
+            let! result = getSemanticTokensRange context p.TextDocument.Uri (Some p.Range)
+            return result, RequestEffects.Empty
+        }
