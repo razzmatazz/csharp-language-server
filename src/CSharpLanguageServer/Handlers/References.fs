@@ -41,39 +41,43 @@ module References =
                   Method = "textDocument/references"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: ReferenceParams) : Async<LspResult<Location[] option> * RequestEffects> = async {
-        let! ct = Async.CancellationToken
-        let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
+    let handle
+        (context: RequestContext)
+        (p: ReferenceParams)
+        : Async<LspResult<Location[] option> * LspWorkspaceUpdate> =
+        async {
+            let! ct = Async.CancellationToken
+            let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
 
-        match wf, solution with
-        | Some wf, Some solution ->
-            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
+            match wf, solution with
+            | Some wf, Some solution ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
-            match symInfo with
-            | None -> return LspResult.success None, RequestEffects.Empty
-            | Some(symbol, _, _) ->
-                let wfPathToUri path = workspaceFolderPathToUri path wf
+                match symInfo with
+                | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
+                | Some(symbol, _, _) ->
+                    let wfPathToUri path = workspaceFolderPathToUri path wf
 
-                let! refs =
-                    SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
-                    |> Async.AwaitTask
+                    let! refs =
+                        SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
+                        |> Async.AwaitTask
 
-                let locationsFromReferencedSym (r: ReferencedSymbol) =
-                    let locations = r.Locations |> Seq.map _.Location
+                    let locationsFromReferencedSym (r: ReferencedSymbol) =
+                        let locations = r.Locations |> Seq.map _.Location
 
-                    match p.Context.IncludeDeclaration with
-                    | true -> locations |> Seq.append r.Definition.Locations
-                    | false -> locations
+                        match p.Context.IncludeDeclaration with
+                        | true -> locations |> Seq.append r.Definition.Locations
+                        | false -> locations
 
-                return
-                    refs
-                    |> Seq.collect locationsFromReferencedSym
-                    |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
-                    |> Seq.distinct
-                    |> Seq.toArray
-                    |> Some
-                    |> LspResult.success,
-                    RequestEffects.Empty
+                    return
+                        refs
+                        |> Seq.collect locationsFromReferencedSym
+                        |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
+                        |> Seq.distinct
+                        |> Seq.toArray
+                        |> Some
+                        |> LspResult.success,
+                        LspWorkspaceUpdate.Empty
 
-        | _, _ -> return None |> LspResult.success, RequestEffects.Empty
-    }
+            | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+        }

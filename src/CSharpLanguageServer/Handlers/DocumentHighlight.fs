@@ -80,17 +80,17 @@ module DocumentHighlight =
     let handle
         (context: RequestContext)
         (p: DocumentHighlightParams)
-        : Async<LspResult<DocumentHighlight[] option> * RequestEffects> =
+        : Async<LspResult<DocumentHighlight[] option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
                 match symInfo with
-                | None -> return None |> LspResult.success, RequestEffects.Empty
+                | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
 
                 | Some(symbol, project, docMaybe) ->
                     if shouldHighlight symbol then
@@ -104,7 +104,7 @@ module DocumentHighlight =
                                 wfPathToUri
                                 (workspaceFolderUriToPath p.TextDocument.Uri wf |> _.Value)
 
-                        return highlights |> Seq.toArray |> Some |> LspResult.success, RequestEffects.Empty
+                        return highlights |> Seq.toArray |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
                     else
-                        return None |> LspResult.success, RequestEffects.Empty
+                        return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }

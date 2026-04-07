@@ -351,7 +351,7 @@ module CodeAction =
     let handle
         (context: RequestContext)
         (p: CodeActionParams)
-        : Async<LspResult<TextDocumentCodeActionResult option> * RequestEffects> =
+        : Async<LspResult<TextDocumentCodeActionResult option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
@@ -412,12 +412,12 @@ module CodeAction =
                     |> Array.ofSeq
                     |> Some
                     |> LspResult.success,
-                    RequestEffects.Empty
+                    LspWorkspaceUpdate.Empty
 
-            | _, _ -> return None |> LspResult.success, RequestEffects.Empty
+            | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
-    let resolve (context: RequestContext) (p: CodeAction) : Async<LspResult<CodeAction> * RequestEffects> = async {
+    let resolve (context: RequestContext) (p: CodeAction) : Async<LspResult<CodeAction> * LspWorkspaceUpdate> = async {
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
@@ -457,7 +457,7 @@ module CodeAction =
                   }
                 | None -> raise (Exception("no CodeAction resolved"))
 
-            return lspCodeAction |> LspResult.success, RequestEffects.Empty
+            return lspCodeAction |> LspResult.success, LspWorkspaceUpdate.Empty
 
         | _, _ -> return raise (Exception(sprintf "no document for uri %s" resolutionData.Value.TextDocumentUri))
     }

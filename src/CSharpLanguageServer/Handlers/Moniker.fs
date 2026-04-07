@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,5 @@ module Moniker =
     let handle
         (_context: RequestContext)
         (_p: MonikerParams)
-        : Async<LspResult<Moniker array option> * RequestEffects> =
-        async { return LspResult.notImplemented<Moniker array option>, RequestEffects.Empty }
+        : Async<LspResult<Moniker array option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<Moniker array option>, LspWorkspaceUpdate.Empty }

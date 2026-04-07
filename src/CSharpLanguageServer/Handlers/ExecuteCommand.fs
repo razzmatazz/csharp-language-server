@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,5 @@ module ExecuteCommand =
     let handle
         (_context: RequestContext)
         (_p: ExecuteCommandParams)
-        : Async<LspResult<LSPAny option> * RequestEffects> =
-        async { return LspResult.notImplemented<LSPAny option>, RequestEffects.Empty }
+        : Async<LspResult<LSPAny option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<LSPAny option>, LspWorkspaceUpdate.Empty }

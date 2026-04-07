@@ -115,7 +115,7 @@ module Rename =
     let prepare
         (context: RequestContext)
         (p: PrepareRenameParams)
-        : Async<LspResult<PrepareRenameResult option> * RequestEffects> =
+        : Async<LspResult<PrepareRenameResult option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
@@ -123,7 +123,7 @@ module Rename =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
             match docForUri with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some doc ->
                 let! ct = Async.CancellationToken
                 let! docSyntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
@@ -174,41 +174,45 @@ module Rename =
                         { Range = range; Placeholder = text } |> U3.C2 |> Some
                     | _, _ -> None
 
-                return rangeWithPlaceholderMaybe |> LspResult.success, RequestEffects.Empty
+                return rangeWithPlaceholderMaybe |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
-    let handle (context: RequestContext) (p: RenameParams) : Async<LspResult<WorkspaceEdit option> * RequestEffects> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let handle
+        (context: RequestContext)
+        (p: RenameParams)
+        : Async<LspResult<WorkspaceEdit option> * LspWorkspaceUpdate> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        match wf with
-        | None -> return None |> LspResult.success, RequestEffects.Empty
-        | Some wf ->
-            let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
+            match wf with
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+            | Some wf ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
-            match symInfo with
-            | None -> return LspResult.success None, RequestEffects.Empty
-            | Some(symbol, project, _) ->
-                let! ct = Async.CancellationToken
-                let originalSolution = project.Solution
+                match symInfo with
+                | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
+                | Some(symbol, project, _) ->
+                    let! ct = Async.CancellationToken
+                    let originalSolution = project.Solution
 
-                let! updatedSolution =
-                    Renamer.RenameSymbolAsync(
-                        project.Solution,
-                        symbol,
-                        SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
-                        p.NewName,
-                        ct
-                    )
-                    |> Async.AwaitTask
+                    let! updatedSolution =
+                        Renamer.RenameSymbolAsync(
+                            project.Solution,
+                            symbol,
+                            SymbolRenameOptions(RenameOverloads = true, RenameFile = true),
+                            p.NewName,
+                            ct
+                        )
+                        |> Async.AwaitTask
 
 
-                let! docTextEdit =
-                    lspDocChangesFromSolutionDiff ct wf originalSolution updatedSolution (fun uri ->
-                        workspaceFolderDocumentVersion uri wf)
+                    let! docTextEdit =
+                        lspDocChangesFromSolutionDiff ct wf originalSolution updatedSolution (fun uri ->
+                            workspaceFolderDocumentVersion uri wf)
 
-                return
-                    WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)
-                    |> Some
-                    |> LspResult.success,
-                    RequestEffects.Empty
-    }
+                    return
+                        WorkspaceEdit.Create(docTextEdit, context.ClientCapabilities)
+                        |> Some
+                        |> LspResult.success,
+                        LspWorkspaceUpdate.Empty
+        }

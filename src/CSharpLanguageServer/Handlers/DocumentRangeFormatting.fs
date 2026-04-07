@@ -44,7 +44,7 @@ module DocumentRangeFormatting =
     let handle
         (context: RequestContext)
         (p: DocumentRangeFormattingParams)
-        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        : Async<LspResult<TextEdit[] option> * LspWorkspaceUpdate> =
         async {
             let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
@@ -54,7 +54,7 @@ module DocumentRangeFormatting =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)
 
             match docForUri with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some doc ->
                 let! ct = Async.CancellationToken
 
@@ -70,5 +70,5 @@ module DocumentRangeFormatting =
                     |> Async.AwaitTask
 
                 let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
-                return textEdits |> Some |> LspResult.success, RequestEffects.Empty
+                return textEdits |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
         }

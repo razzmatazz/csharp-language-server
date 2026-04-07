@@ -51,7 +51,7 @@ module DocumentFormatting =
     let handle
         (context: RequestContext)
         (p: DocumentFormattingParams)
-        : Async<LspResult<TextEdit[] option> * RequestEffects> =
+        : Async<LspResult<TextEdit[] option> * LspWorkspaceUpdate> =
         async {
             let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
@@ -66,5 +66,5 @@ module DocumentFormatting =
                 |> Async.bindOption (formatDocument lspFormattingOptions)
                 |> Async.map LspResult.success
 
-            return result, RequestEffects.Empty
+            return result, LspWorkspaceUpdate.Empty
         }

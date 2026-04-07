@@ -117,41 +117,45 @@ module CodeLens =
                   Method = "textDocument/codeLens"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let handle (context: RequestContext) (p: CodeLensParams) : Async<LspResult<CodeLens[] option> * RequestEffects> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+    let handle
+        (context: RequestContext)
+        (p: CodeLensParams)
+        : Async<LspResult<CodeLens[] option> * LspWorkspaceUpdate> =
+        async {
+            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
-        let docForUri =
-            wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
+            let docForUri =
+                wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
 
-        match docForUri with
-        | None -> return None |> LspResult.success, RequestEffects.Empty
-        | Some doc ->
-            let! ct = Async.CancellationToken
-            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-            let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
-            let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
+            match docForUri with
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+            | Some doc ->
+                let! ct = Async.CancellationToken
+                let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                let! syntaxTree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
+                let! docText = doc.GetTextAsync(ct) |> Async.AwaitTask
 
-            let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
-            let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
-            collector.Visit(root)
+                let collector = DocumentSymbolCollectorForCodeLens(semanticModel)
+                let! root = syntaxTree.GetRootAsync(ct) |> Async.AwaitTask
+                collector.Visit(root)
 
-            let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan) : CodeLens =
-                let start = nameSpan.Start |> docText.Lines.GetLinePosition
+                let makeCodeLens (_symbol: ISymbol, nameSpan: TextSpan) : CodeLens =
+                    let start = nameSpan.Start |> docText.Lines.GetLinePosition
 
-                let lensData: CodeLensData =
-                    { DocumentUri = p.TextDocument.Uri
-                      Position = start |> Position.fromLinePosition }
+                    let lensData: CodeLensData =
+                        { DocumentUri = p.TextDocument.Uri
+                          Position = start |> Position.fromLinePosition }
 
-                { Range = nameSpan |> Range.fromTextSpan docText.Lines
-                  Command = None
-                  Data = lensData |> serialize |> Some }
+                    { Range = nameSpan |> Range.fromTextSpan docText.Lines
+                      Command = None
+                      Data = lensData |> serialize |> Some }
 
-            let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
+                let codeLens = collector.GetSymbols() |> Seq.map makeCodeLens
 
-            return codeLens |> Array.ofSeq |> Some |> LspResult.success, RequestEffects.Empty
-    }
+                return codeLens |> Array.ofSeq |> Some |> LspResult.success, LspWorkspaceUpdate.Empty
+        }
 
-    let resolve (context: RequestContext) (p: CodeLens) : Async<LspResult<CodeLens> * RequestEffects> = async {
+    let resolve (context: RequestContext) (p: CodeLens) : Async<LspResult<CodeLens> * LspWorkspaceUpdate> = async {
         let! ct = Async.CancellationToken
 
         let lensData: CodeLensData =
@@ -167,7 +171,7 @@ module CodeLens =
             let! symInfo = workspaceFolderDocumentSymbol AnyDocument lensData.DocumentUri lensData.Position wf
 
             match symInfo with
-            | None -> return p |> LspResult.success, RequestEffects.Empty
+            | None -> return p |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some(symbol, _, _) ->
                 let! refs =
                     SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
@@ -196,7 +200,7 @@ module CodeLens =
                       Command = "textDocument/references"
                       Arguments = Some [| arg |> serialize |] }
 
-                return { p with Command = Some command } |> LspResult.success, RequestEffects.Empty
+                return { p with Command = Some command } |> LspResult.success, LspWorkspaceUpdate.Empty
 
-        | _, _ -> return p |> LspResult.success, RequestEffects.Empty
+        | _, _ -> return p |> LspResult.success, LspWorkspaceUpdate.Empty
     }

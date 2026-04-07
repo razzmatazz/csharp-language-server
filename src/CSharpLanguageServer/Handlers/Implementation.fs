@@ -68,21 +68,21 @@ module Implementation =
     let handle
         (context: RequestContext)
         (p: ImplementationParams)
-        : Async<LspResult<U2<Definition, DefinitionLink array> option> * RequestEffects> =
+        : Async<LspResult<U2<Definition, DefinitionLink array> option> * LspWorkspaceUpdate> =
         async {
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some wf ->
                 let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
                 match symInfo with
-                | None -> return LspResult.success None, RequestEffects.Empty
+                | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
                 | Some(sym, project, _) ->
                     let! impls, updatedWf = findImplLocationsOfSymbol wf context.Config project sym
 
                     return
                         impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success,
-                        RequestEffects.Empty.WithWorkspaceFolderChange(updatedWf)
+                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
         }

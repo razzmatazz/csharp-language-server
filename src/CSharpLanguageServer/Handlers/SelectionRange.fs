@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,5 @@ module SelectionRange =
     let handle
         (_ctx: RequestContext)
         (_p: SelectionRangeParams)
-        : Async<LspResult<SelectionRange array option> * RequestEffects> =
-        async { return LspResult.notImplemented<SelectionRange array option>, RequestEffects.Empty }
+        : Async<LspResult<SelectionRange array option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<SelectionRange array option>, LspWorkspaceUpdate.Empty }

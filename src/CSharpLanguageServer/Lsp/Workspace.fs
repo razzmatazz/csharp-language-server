@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Lsp.Workspace
 
+open System
+
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Lsp.WorkspaceFolder
@@ -9,6 +11,76 @@ type LspWorkspace =
     { Folders: LspWorkspaceFolder list }
 
     static member Empty = { Folders = [] }
+
+type LspWorkspaceUpdate =
+    { ClientInitializeEmitted: bool
+      ClientShutdownEmitted: bool
+      ClientCapabilityChange: ClientCapabilities option
+      DocumentClosed: string list
+      DocumentOpened: (string * int * DateTime) list
+      DocumentTouched: (string * DateTime) list
+      SettingsChange: CSharpConfiguration option
+      TraceLevelChange: TraceValues option
+      WorkspaceConfigurationChanged: WorkspaceFolder list option
+      WorkspaceFolderChange: LspWorkspaceFolder list
+      WorkspaceReloadRequested: TimeSpan list }
+
+    static member Empty =
+        { ClientInitializeEmitted = false
+          ClientShutdownEmitted = false
+          ClientCapabilityChange = None
+          DocumentClosed = []
+          DocumentOpened = []
+          DocumentTouched = []
+          SettingsChange = None
+          TraceLevelChange = None
+          WorkspaceConfigurationChanged = None
+          WorkspaceFolderChange = []
+          WorkspaceReloadRequested = [] }
+
+    member this.WithClientInitialize() =
+        { this with
+            ClientInitializeEmitted = true }
+
+    member this.WithClientShutdown() =
+        { this with
+            ClientShutdownEmitted = true }
+
+    member this.WithClientCapabilityChange(capabilities) =
+        { this with
+            ClientCapabilityChange = Some capabilities }
+
+    member this.WithDocumentClosed(uri) =
+        { this with
+            DocumentClosed = this.DocumentClosed @ [ uri ] }
+
+    member this.WithDocumentOpened(uri, version, timestamp) =
+        { this with
+            DocumentOpened = this.DocumentOpened @ [ (uri, version, timestamp) ] }
+
+    member this.WithDocumentTouched(uri, timestamp) =
+        { this with
+            DocumentTouched = this.DocumentTouched @ [ (uri, timestamp) ] }
+
+    member this.WithSettingsChange(config) =
+        { this with
+            SettingsChange = Some config }
+
+    member this.WithTraceLevelChange(traceLevel) =
+        { this with
+            TraceLevelChange = Some traceLevel }
+
+    member this.WithWorkspaceConfigurationChanged(folders) =
+        { this with
+            WorkspaceConfigurationChanged = Some folders }
+
+    member this.WithWorkspaceFolderChange(folder) =
+        { this with
+            WorkspaceFolderChange = this.WorkspaceFolderChange @ [ folder ] }
+
+    member this.WithWorkspaceReloadRequested(delay) =
+        { this with
+            WorkspaceReloadRequested = this.WorkspaceReloadRequested @ [ delay ] }
 
 let workspaceWithSolutionPathOverride (config: CSharpConfiguration) (workspace: LspWorkspace) =
     let folders =

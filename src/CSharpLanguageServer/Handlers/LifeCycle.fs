@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
@@ -24,7 +25,7 @@ module LifeCycle =
         (getServerCapabilities: CSharpConfiguration -> InitializeParams -> ServerCapabilities)
         (context: RequestContext)
         (p: InitializeParams)
-        : Async<LspResult<InitializeResult> * RequestEffects> =
+        : Async<LspResult<InitializeResult> * LspWorkspaceUpdate> =
         async {
             // Set trace level immediately so logging during initialization is forwarded
             // via $/logTrace (and console stderr is suppressed). The Emit also updates
@@ -97,7 +98,7 @@ module LifeCycle =
                               Version = assemblyVersion } }
 
             let effects =
-                RequestEffects.Empty
+                LspWorkspaceUpdate.Empty
                     .WithClientInitialize()
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
@@ -111,7 +112,7 @@ module LifeCycle =
         (getDynamicRegistrations: CSharpConfiguration -> ClientCapabilities -> Registration list)
         (context: RequestContext)
         (_p: unit)
-        : Async<LspResult<unit> * RequestEffects> =
+        : Async<LspResult<unit> * LspWorkspaceUpdate> =
         async {
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
@@ -137,7 +138,7 @@ module LifeCycle =
             //
             // retrieve csharp settings
             //
-            let mutable effects = RequestEffects.Empty
+            let mutable effects = LspWorkspaceUpdate.Empty
 
             try
                 let! workspaceCSharpConfig =
@@ -168,14 +169,14 @@ module LifeCycle =
             return Ok(), effects
         }
 
-    let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * RequestEffects> = async {
+    let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
         let effects =
-            RequestEffects.Empty.WithClientCapabilityChange(emptyClientCapabilities).WithClientShutdown()
+            LspWorkspaceUpdate.Empty.WithClientCapabilityChange(emptyClientCapabilities).WithClientShutdown()
 
         return Ok(), effects
     }
 
-    let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit> * RequestEffects> = async {
+    let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
         // Per LSP spec: exit with code 0 if shutdown was received first, 1 otherwise.
         let exitCode = if context.ShutdownReceived then 0 else 1
 
@@ -186,5 +187,5 @@ module LifeCycle =
         )
 
         Environment.Exit(exitCode)
-        return Ok(), RequestEffects.Empty
+        return Ok(), LspWorkspaceUpdate.Empty
     }

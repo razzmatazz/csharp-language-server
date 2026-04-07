@@ -4,6 +4,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
@@ -15,5 +16,5 @@ module InlineValue =
     let handle
         (context: RequestContext)
         (p: InlineValueParams)
-        : Async<LspResult<InlineValue[] option> * RequestEffects> =
-        async { return LspResult.notImplemented<InlineValue[] option>, RequestEffects.Empty }
+        : Async<LspResult<InlineValue[] option> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<InlineValue[] option>, LspWorkspaceUpdate.Empty }

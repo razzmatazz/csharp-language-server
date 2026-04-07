@@ -43,7 +43,7 @@ module WorkspaceSymbol =
     let handle
         (context: RequestContext)
         (p: WorkspaceSymbolParams)
-        : Async<LspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> * RequestEffects> =
+        : Async<LspResult<U2<SymbolInformation[], WorkspaceSymbol[]> option> * LspWorkspaceUpdate> =
         async {
             let pattern = if String.IsNullOrEmpty(p.Query) then None else Some p.Query
 
@@ -96,9 +96,11 @@ module WorkspaceSymbol =
                 |> U2.C1
                 |> Some
                 |> LspResult.success,
-                RequestEffects.Empty
+                LspWorkspaceUpdate.Empty
         }
 
-    let resolve (_context: RequestContext) (_p: WorkspaceSymbol) : Async<LspResult<WorkspaceSymbol> * RequestEffects> = async {
-        return LspResult.notImplemented<WorkspaceSymbol>, RequestEffects.Empty
-    }
+    let resolve
+        (_context: RequestContext)
+        (_p: WorkspaceSymbol)
+        : Async<LspResult<WorkspaceSymbol> * LspWorkspaceUpdate> =
+        async { return LspResult.notImplemented<WorkspaceSymbol>, LspWorkspaceUpdate.Empty }

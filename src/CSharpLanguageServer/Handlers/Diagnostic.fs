@@ -66,7 +66,7 @@ module Diagnostic =
     let handle
         (context: RequestContext)
         (p: DocumentDiagnosticParams)
-        : Async<LspResult<DocumentDiagnosticReport> * RequestEffects> =
+        : Async<LspResult<DocumentDiagnosticReport> * LspWorkspaceUpdate> =
         async {
             let emptyReport: RelatedFullDocumentDiagnosticReport =
                 { Kind = "full"
@@ -77,7 +77,7 @@ module Diagnostic =
             let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
 
             match wf with
-            | None -> return emptyReport |> U2.C1 |> LspResult.success, RequestEffects.Empty
+            | None -> return emptyReport |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some wf ->
                 let! semModel = workspaceFolderDocumentSemanticModel p.TextDocument.Uri wf
 
@@ -94,9 +94,10 @@ module Diagnostic =
                         |> Seq.map fst
                         |> Array.ofSeq
 
-                    return { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success, RequestEffects.Empty
+                    return
+                        { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
 
-                | None -> return emptyReport |> U2.C1 |> LspResult.success, RequestEffects.Empty
+                | None -> return emptyReport |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
     type WorkspaceDiagnosticsReportsChannelItem =
@@ -211,7 +212,7 @@ module Diagnostic =
     let handleWorkspaceDiagnostic
         (context: RequestContext)
         (p: WorkspaceDiagnosticParams)
-        : Async<LspResult<WorkspaceDiagnosticReport> * RequestEffects> =
+        : Async<LspResult<WorkspaceDiagnosticReport> * LspWorkspaceUpdate> =
         async {
             let knownResultIds =
                 p.PreviousResultIds |> Seq.map (fun r -> r.Uri, r.Value) |> Map.ofSeq
@@ -225,7 +226,7 @@ module Diagnostic =
                     |> AsyncSeq.toArrayAsync
 
                 let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
-                return fullReport |> LspResult.success, RequestEffects.Empty
+                return fullReport |> LspResult.success, LspWorkspaceUpdate.Empty
 
             | Some partialResultToken ->
                 let sendWorkspaceDiagnosticReport (documentReport, index) = async {
@@ -253,5 +254,5 @@ module Diagnostic =
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }
-                return emptyReport |> LspResult.success, RequestEffects.Empty
+                return emptyReport |> LspResult.success, LspWorkspaceUpdate.Empty
         }

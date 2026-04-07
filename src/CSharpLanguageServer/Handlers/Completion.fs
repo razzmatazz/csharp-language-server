@@ -378,7 +378,7 @@ module Completion =
     let handle
         (context: RequestContext)
         (p: CompletionParams)
-        : Async<LspResult<U2<CompletionItem array, CompletionList> option> * RequestEffects> =
+        : Async<LspResult<U2<CompletionItem array, CompletionList> option> * LspWorkspaceUpdate> =
         async {
             let getCompletions =
                 if p.TextDocument.Uri.EndsWith ".cshtml" then
@@ -387,7 +387,7 @@ module Completion =
                     getCompletionsForCSharpDocument
 
             match! getCompletions p context with
-            | None -> return None |> LspResult.success, RequestEffects.Empty
+            | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
             | Some(roslynCompletions, doc) ->
                 let toLspCompletionItemsWithCacheInfo (completions: Microsoft.CodeAnalysis.Completion.CompletionList) =
                     completions.ItemsList
@@ -421,47 +421,51 @@ module Completion =
                     |> U2.C2
                     |> Some
                     |> LspResult.success,
-                    RequestEffects.Empty
+                    LspWorkspaceUpdate.Empty
         }
 
-    let resolve (_context: RequestContext) (item: CompletionItem) : Async<LspResult<CompletionItem> * RequestEffects> = async {
-        let roslynDocAndItemMaybe =
-            item.Data
-            |> Option.bind deserialize<string option>
-            |> Option.bind completionItemMemoryCacheGet
+    let resolve
+        (_context: RequestContext)
+        (item: CompletionItem)
+        : Async<LspResult<CompletionItem> * LspWorkspaceUpdate> =
+        async {
+            let roslynDocAndItemMaybe =
+                item.Data
+                |> Option.bind deserialize<string option>
+                |> Option.bind completionItemMemoryCacheGet
 
-        match roslynDocAndItemMaybe with
-        | Some(doc, roslynCompletionItem) ->
-            let completionService =
-                doc
-                |> Microsoft.CodeAnalysis.Completion.CompletionService.GetService
-                |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)"
+            match roslynDocAndItemMaybe with
+            | Some(doc, roslynCompletionItem) ->
+                let completionService =
+                    doc
+                    |> Microsoft.CodeAnalysis.Completion.CompletionService.GetService
+                    |> nonNull "Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)"
 
-            let! ct = Async.CancellationToken
+                let! ct = Async.CancellationToken
 
-            let! description =
-                completionService.GetDescriptionAsync(doc, roslynCompletionItem, ct)
-                |> Async.AwaitTask
-                |> Async.map Option.ofObj
+                let! description =
+                    completionService.GetDescriptionAsync(doc, roslynCompletionItem, ct)
+                    |> Async.AwaitTask
+                    |> Async.map Option.ofObj
 
-            let synopsis, documentation =
-                description
-                |> Option.map parseAndFormatDocumentation
-                |> Option.defaultValue (None, None)
+                let synopsis, documentation =
+                    description
+                    |> Option.map parseAndFormatDocumentation
+                    |> Option.defaultValue (None, None)
 
-            let updatedItemDocumentation =
-                documentation
-                |> Option.map (fun d ->
-                    { Kind = MarkupKind.PlainText
-                      Value = d }
-                    |> U2.C2)
+                let updatedItemDocumentation =
+                    documentation
+                    |> Option.map (fun d ->
+                        { Kind = MarkupKind.PlainText
+                          Value = d }
+                        |> U2.C2)
 
-            return
-                { item with
-                    Detail = synopsis
-                    Documentation = updatedItemDocumentation }
-                |> LspResult.success,
-                RequestEffects.Empty
+                return
+                    { item with
+                        Detail = synopsis
+                        Documentation = updatedItemDocumentation }
+                    |> LspResult.success,
+                    LspWorkspaceUpdate.Empty
 
-        | None -> return item |> LspResult.success, RequestEffects.Empty
-    }
+            | None -> return item |> LspResult.success, LspWorkspaceUpdate.Empty
+        }
