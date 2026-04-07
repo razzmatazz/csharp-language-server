@@ -284,6 +284,60 @@ let testWorkspaceDiagnosticsReturnResultId () =
     | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
 
 [<Test>]
+let testWorkspaceDiagnosticsReturnFullWhenCacheWarmButClientHasNoResultIds () =
+    // Regression: when the diagnostics cache is warm (from a previous poll) but the
+    // client sends empty previousResultIds (e.g. fresh client, or client discarded its
+    // state), the server must return full reports — not unchanged.  The cache-hit path
+    // must consult knownResultIds before deciding to emit unchanged.
+    use client = activateFixture "testDiagnosticsWork"
+
+    // First poll — warms the server-side diagnostics cache
+    let warmupParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let warmupReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", warmupParams)
+
+    // Sanity: first poll should succeed with full reports
+    match warmupReport with
+    | Some report -> Assert.IsTrue(report.Items.Length > 0, "expected items from first poll to warm the cache")
+    | None -> Assert.Fail("expected first workspace/diagnostic to succeed")
+
+    // Second poll — deliberately empty previousResultIds, simulating a client that
+    // does not hold any result IDs (even though the server cache is now warm)
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let secondReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    match secondReport with
+    | Some report ->
+        Assert.IsTrue(report.Items.Length > 0, "expected items from second poll")
+
+        for item in report.Items do
+            match item with
+            | U2.C1 fullReport ->
+                Assert.AreEqual("full", fullReport.Kind)
+                Assert.IsTrue(fullReport.ResultId.IsSome, sprintf "expected resultId for %s" fullReport.Uri)
+                // The client asked for everything (no previousResultIds), so the full
+                // report must contain actual diagnostic items, not be empty
+                Assert.IsTrue(fullReport.Items.Length > 0, sprintf "expected diagnostics for %s" fullReport.Uri)
+            | U2.C2 unchangedReport ->
+                Assert.Fail(
+                    sprintf
+                        "expected full report for %s but got Unchanged — server should not return Unchanged when client sent empty previousResultIds"
+                        unchangedReport.Uri
+                )
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+
+[<Test>]
 let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
     // Fix 1: a second poll that sends back the resultIds from the first poll should
     // receive WorkspaceUnchangedDocumentDiagnosticReport (U2.C2) for every document
