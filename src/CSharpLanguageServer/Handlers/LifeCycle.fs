@@ -97,14 +97,14 @@ module LifeCycle =
                             { Name = "csharp-ls"
                               Version = assemblyVersion } }
 
-            let effects =
+            let wsUpdate =
                 LspWorkspaceUpdate.Empty
                     .WithClientInitialize()
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
                     .WithWorkspaceConfigurationChanged(workspaceFolders)
 
-            return initializeResult |> LspResult.success, effects
+            return initializeResult |> LspResult.success, wsUpdate
         }
 
     let handleInitialized
@@ -138,7 +138,7 @@ module LifeCycle =
             //
             // retrieve csharp settings
             //
-            let mutable effects = LspWorkspaceUpdate.Empty
+            let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
             try
                 let! workspaceCSharpConfig =
@@ -158,7 +158,7 @@ module LifeCycle =
                 | None -> ()
                 | Some csharpConfig ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                    effects <- effects.WithSettingsChange(newConfig)
+                    wsUpdate <- wsUpdate.WithSettingsChange(newConfig)
 
             with ex ->
                 logger.LogWarning(
@@ -166,14 +166,14 @@ module LifeCycle =
                     ex |> string
                 )
 
-            return Ok(), effects
+            return Ok(), wsUpdate
         }
 
     let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
-        let effects =
+        let wsUpdate =
             LspWorkspaceUpdate.Empty.WithClientCapabilityChange(emptyClientCapabilities).WithClientShutdown()
 
-        return Ok(), effects
+        return Ok(), wsUpdate
     }
 
     let handleExit (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {

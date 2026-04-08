@@ -63,7 +63,7 @@ module TypeDefinition =
                         | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
                         | _ -> None
 
-                    let! locations, effects =
+                    let! locations, wsUpdate =
                         match typeSymbol with
                         | None -> async.Return([], LspWorkspaceUpdate.Empty)
                         | Some symbol -> async {
@@ -73,5 +73,8 @@ module TypeDefinition =
                             return aggregatedLspLocations, LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
                           }
 
-                    return locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success, effects
+                    let lspResult =
+                        locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+
+                    return lspResult, wsUpdate
         }

@@ -179,7 +179,7 @@ module TextDocumentSync =
                 else
                     didOpenCsharpFile wf context p
 
-            let effects =
+            let wsUpdate =
                 match updatedWf with
                 | None -> LspWorkspaceUpdate.Empty
                 | Some updatedWf ->
@@ -187,7 +187,7 @@ module TextDocumentSync =
                         .WithWorkspaceFolderChange(updatedWf)
                         .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
 
-            return Ok(), effects
+            return Ok(), wsUpdate
     }
 
     let didChangeCshtmlFile wf (p: DidChangeTextDocumentParams) : Async<option<LspWorkspaceFolder>> = async {
@@ -249,7 +249,7 @@ module TextDocumentSync =
                     else
                         didChangeCsharpFile wf context p
 
-                let effects =
+                let wsUpdate =
                     match updatedWf with
                     | None -> LspWorkspaceUpdate.Empty
                     | Some updatedWf ->
@@ -257,7 +257,7 @@ module TextDocumentSync =
                             .WithWorkspaceFolderChange(updatedWf)
                             .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
 
-                return Ok(), effects
+                return Ok(), wsUpdate
         }
 
     let willSave
@@ -353,11 +353,11 @@ module TextDocumentSync =
                     else
                         didCloseCsharpFile wf context p
 
-                let effects =
+                let wsUpdate =
                     (match updatedWf with
                      | Some updatedWf -> LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
                      | None -> LspWorkspaceUpdate.Empty)
                         .WithDocumentClosed(p.TextDocument.Uri)
 
-                return Ok(), effects
+                return Ok(), wsUpdate
         }
