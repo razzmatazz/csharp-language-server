@@ -134,9 +134,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         replyChannel.Reply(state.Workspace.Folders |> List.map _.Uri)
         return state
 
-    | LeaveRequestContext(requestRpcOrdinal, requestEffects) ->
-        let newRequestQueue =
-            state.RequestQueue |> finishRequest requestRpcOrdinal requestEffects
+    | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->
+        let newRequestQueue = state.RequestQueue |> finishRequest requestRpcOrdinal wsUpdate
 
         postServerEvent ProcessRequestQueue
 

@@ -107,7 +107,7 @@ let configureRpcTransport
         new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
     let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
-        let mutable requestEffects = LspWorkspaceUpdate.Empty
+        let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
         try
             let! ctx =
@@ -119,12 +119,12 @@ let configureRpcTransport
                 |> Option.defaultWith (fun _ -> Newtonsoft.Json.Linq.JValue.CreateNull())
                 |> deserialize
 
-            let! result, effects = fn ctx fnParams
-            requestEffects <- effects
+            let! result, wsUpdate' = fn ctx fnParams
+            wsUpdate <- wsUpdate'
 
             return unwrapResult result
         finally
-            stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, requestEffects))
+            stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, wsUpdate))
     }
 
     let callHandler requestMode fn : JsonRpcCallHandler =

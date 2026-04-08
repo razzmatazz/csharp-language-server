@@ -120,40 +120,40 @@ module Workspace =
             )
 
         async {
-            let mutable effects = LspWorkspaceUpdate.Empty
+            let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
             for change in p.Changes do
                 match Path.GetExtension(change.Uri) with
                 | ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
-                    effects <- effects.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
+                    wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | ".sln"
                 | ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
-                    effects <- effects.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
+                    wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | ".cs" ->
                     match change.Type with
                     | FileChangeType.Created ->
                         let! e = tryReloadDocumentOnUri logger context change.Uri
 
-                        effects <-
-                            { effects with
-                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                        wsUpdate <-
+                            { wsUpdate with
+                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange }
                     | FileChangeType.Changed ->
                         let! e = tryReloadDocumentOnUri logger context change.Uri
 
-                        effects <-
-                            { effects with
-                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                        wsUpdate <-
+                            { wsUpdate with
+                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange }
                     | FileChangeType.Deleted ->
                         let! e = removeDocument context change.Uri
 
-                        effects <-
-                            { effects with
-                                WorkspaceFolderChange = effects.WorkspaceFolderChange @ e.WorkspaceFolderChange
-                                DocumentClosed = effects.DocumentClosed @ e.DocumentClosed }
+                        wsUpdate <-
+                            { wsUpdate with
+                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange
+                                DocumentClosed = wsUpdate.DocumentClosed @ e.DocumentClosed }
                     | _ -> ()
 
                 | ".cshtml" ->
@@ -162,7 +162,7 @@ module Workspace =
 
                 | _ -> ()
 
-            return Ok(), effects
+            return Ok(), wsUpdate
         }
 
     let didChangeConfiguration
@@ -175,14 +175,14 @@ module Workspace =
                 |> deserialize<DidChangeConfigurationSettingsDto>
                 |> _.csharp
 
-            let effects =
+            let wsUpdate =
                 match csharpSettingsMaybe with
                 | None -> LspWorkspaceUpdate.Empty
                 | Some csharpSettings ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpSettings
                     LspWorkspaceUpdate.Empty.WithSettingsChange(newConfig)
 
-            return Ok(), effects
+            return Ok(), wsUpdate
         }
 
     let didChangeWorkspaceFolders
