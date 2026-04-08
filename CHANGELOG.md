@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
+## Unreleased
+* More workspace/state management race fixes
+ - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
+
 ## [0.23.0] - 2026-04-08 / Skuodas
 * Fix runaway `workspace/diagnostic` traffic and CPU usage when used with VS Code
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/341
