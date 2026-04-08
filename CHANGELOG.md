@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
-## Unreleased
+## [0.23.0] - 2026-04-08 / Skuodas
 * Fix runaway `workspace/diagnostic` traffic and CPU usage when used with VS Code
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/341
 * Fix several server-state race conditions and refactor request scheduling internals
@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix Razor support with .NET SDK 10.201
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/325
 
-**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.22.0...main
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.22.0...0.23.0
 
 ## [0.22.0] - 2026-02-05 / Mažeikiai
 * Improve performance of workspace diagnostics
