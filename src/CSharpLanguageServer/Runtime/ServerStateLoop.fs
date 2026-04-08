@@ -182,7 +182,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | ProcessRequestQueue ->
-        let! result = processRequestQueue state.Config (makeRequestContext state inbox) state.RequestQueue
+        let result =
+            state.RequestQueue
+            |> processRequestQueue state.Config (makeRequestContext state inbox)
 
         match result with
         | Retired(retiredRequest, newRequestQueue) ->

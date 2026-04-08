@@ -194,9 +194,7 @@ let ``processRequestQueue returns Retired for lowest-ordinal finished request`` 
                     [ (1L, makeTestRequest 1L "a" ReadOnly Finished)
                       (2L, makeTestRequest 2L "b" ReadOnly Pending) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Retired(retiredRequest, updatedQueue) ->
@@ -215,9 +213,7 @@ let ``processRequestQueue returns Waiting when head is still Running`` () =
                     [ (1L, makeTestRequest 1L "a" ReadOnly Running)
                       (2L, makeTestRequest 2L "b" ReadOnly Finished) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Waiting -> ()
@@ -233,9 +229,7 @@ let ``processRequestQueue returns Retired skipping running ReadOnlyBackground`` 
                     [ (1L, makeTestRequest 1L "bg" ReadOnlyBackground Running)
                       (2L, makeTestRequest 2L "normal" ReadOnly Finished) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Retired(retiredRequest, _) -> Assert.AreEqual("normal", retiredRequest.Name)
@@ -288,7 +282,6 @@ let ``enterDispatchingMode resets to Dispatching`` () =
 let ``processRequestQueue returns Waiting on empty queue`` () =
     let result =
         processRequestQueue defaultSettings makeTestServerRequestContext RequestQueue.Empty
-        |> Async.RunSynchronously
 
     match result with
     | Waiting -> ()
@@ -305,9 +298,7 @@ let ``processRequestQueue returns Waiting when no request can be activated`` () 
                     [ (1L, makeTestRequest 1L "rw" ReadWrite Running)
                       (2L, makeTestRequest 2L "ro" ReadOnly Pending) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Waiting -> ()
@@ -320,9 +311,7 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
     let queue =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
@@ -339,9 +328,7 @@ let ``processRequestQueue activates a pending ReadWrite request when queue is id
     let queue =
         RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite rc
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
@@ -386,9 +373,7 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
                         Phase = Running
                         RunningSince = Some DateTime.UtcNow } }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Waiting -> ()
@@ -404,9 +389,7 @@ let ``processRequestQueue does not activate ReadWrite request when there is a ga
     let queue =
         RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite rc
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Waiting -> ()
@@ -428,9 +411,7 @@ let ``processRequestQueue does not activate ReadOnly past a gap even when earlie
                       (2L, makeTestRequest 2L "textDocument/completion" ReadOnly Running)
                       (5L, makeTestRequest 5L "textDocument/references" ReadOnly Pending) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Waiting -> ()
@@ -477,9 +458,7 @@ let ``processRequestQueue returns Drained when all requests up to drain ordinal 
             Mode = DrainingUpTo 0L
             Requests = Map.ofList [ (5L, makeTestRequest 5L "later" ReadOnly Pending) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Drained -> ()
@@ -496,9 +475,7 @@ let ``processRequestQueue activates ReadWrite request when only ReadOnlyBackgrou
                     [ (1L, makeTestRequest 1L "background" ReadOnlyBackground Running)
                       (2L, makeTestRequest 2L "textDocument/rename" ReadWrite Pending) ] }
 
-    let result =
-        processRequestQueue defaultSettings makeTestServerRequestContext queue
-        |> Async.RunSynchronously
+    let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->

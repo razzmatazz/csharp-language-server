@@ -470,30 +470,29 @@ let processRequestQueue
     (config: CSharpConfiguration)
     (makeRequestContext: RequestMode -> RequestContext)
     (requestQueue: RequestQueue)
-    : Async<ProcessRequestQueueResult> =
-    async {
-        // Retirement takes priority: replay finished requests in ordinal order
-        // before activating anything new.
-        let (retiredRequest, queueAfterRetirement) =
-            retireNextFinishedRequest config requestQueue
+    : ProcessRequestQueueResult =
 
-        match retiredRequest with
-        | Some retiredRequest -> return Retired(retiredRequest, queueAfterRetirement)
-        | None ->
-            if isDrained requestQueue then
-                return Drained
-            else
-                let pendingRequests = eligiblePendingRequests requestQueue
+    // Retirement takes priority: replay finished requests in ordinal order
+    // before activating anything new.
+    let retiredRequest, queueAfterRetirement =
+        retireNextFinishedRequest config requestQueue
 
-                let pendingRequestToActivate =
-                    pendingRequests
-                    |> List.tryFind (canActivateRequest requestQueue pendingRequests)
+    match retiredRequest with
+    | Some retiredRequest -> Retired(retiredRequest, queueAfterRetirement)
+    | None ->
+        if isDrained requestQueue then
+            Drained
+        else
+            let pendingRequests = eligiblePendingRequests requestQueue
 
-                match pendingRequestToActivate with
-                | None -> return Waiting
-                | Some(ordinal, request) ->
-                    let activatedRequest, updatedQueue =
-                        activateRequest makeRequestContext ordinal request requestQueue
+            let pendingRequestToActivate =
+                pendingRequests
+                |> List.tryFind (canActivateRequest requestQueue pendingRequests)
 
-                    return Activated(activatedRequest, updatedQueue)
-    }
+            match pendingRequestToActivate with
+            | None -> Waiting
+            | Some(ordinal, request) ->
+                let activatedRequest, updatedQueue =
+                    activateRequest makeRequestContext ordinal request requestQueue
+
+                Activated(activatedRequest, updatedQueue)
