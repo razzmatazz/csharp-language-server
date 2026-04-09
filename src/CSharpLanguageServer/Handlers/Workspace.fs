@@ -92,8 +92,9 @@ module Workspace =
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
             let updateWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution
+            let updateWf2 = workspaceFolderWithDocClosed uri
 
-            [ updateWf ]
+            [ updateWf; updateWf2 ]
 
     let didChangeWatchedFiles
         (context: RequestContext)
@@ -137,7 +138,7 @@ module Workspace =
                     | FileChangeType.Deleted ->
                         let wfUpdates = removeDocument wf change.Uri
 
-                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates).WithDocumentClosed(change.Uri)
+                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
 
                     | _ -> ()
 

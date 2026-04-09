@@ -54,6 +54,8 @@ type LspWorkspaceFolder =
         DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
 
         OpenDocs: Map<string, LspWorkspaceOpenDocInfo>
+
+        PushDiagnosticsBacklogUpdatePending: bool
     }
 
     static member Empty =
@@ -63,7 +65,8 @@ type LspWorkspaceFolder =
           Generation = Guid.NewGuid()
           Solution = Uninitialized
           DecompiledSymbolMetadata = Map.empty
-          OpenDocs = Map.empty }
+          OpenDocs = Map.empty
+          PushDiagnosticsBacklogUpdatePending = false }
 
 type LspWorkspaceFolderUpdateFn = LspWorkspaceFolder -> LspWorkspaceFolder
 
@@ -563,11 +566,13 @@ let workspaceFolderWithDocOpened
     let openDocInfo = { Version = ver; Touched = timestamp }
 
     { wf with
-        OpenDocs = wf.OpenDocs |> Map.add uri openDocInfo }
+        OpenDocs = wf.OpenDocs |> Map.add uri openDocInfo
+        PushDiagnosticsBacklogUpdatePending = true }
 
 let workspaceFolderWithDocClosed (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     { wf with
-        OpenDocs = wf.OpenDocs |> Map.remove uri }
+        OpenDocs = wf.OpenDocs |> Map.remove uri
+        PushDiagnosticsBacklogUpdatePending = true }
 
 let workspaceFolderWithDocTouched
     (uri: string)
@@ -581,7 +586,8 @@ let workspaceFolderWithDocTouched
 
         Some
             { wf with
-                OpenDocs = wf.OpenDocs |> Map.add uri updated }
+                OpenDocs = wf.OpenDocs |> Map.add uri updated
+                PushDiagnosticsBacklogUpdatePending = true }
 
 let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
