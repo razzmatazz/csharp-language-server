@@ -877,6 +877,10 @@ type LspTestClient(clientProfile: LspClientProfile) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists containsPred
 
+    member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
+        sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
+        |> Async.RunSynchronously
+
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         let result =
             sendJsonRpcCall (rpcTransport ()) method (serialize request)
