@@ -3,7 +3,9 @@ module CSharpLanguageServer.Tests.CompletionTests
 open System.Threading
 
 open NUnit.Framework
+open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
 
@@ -222,3 +224,50 @@ let ``completion works in cshtml files`` () =
         CompletionItemKind.Method
         "bool int.TryFormat(Span<byte> utf8Destination, out int bytesWritten, [ReadOnlySpan<char> format = default], [IFormatProvider? provider = null])"
         _.IsSome
+
+[<Test>]
+let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
+    // Some editors (e.g. Neovim's built-in LSP client) echo back a completionItem
+    // with "line": -1, "character": -1 as sentinel values when no real range is
+    // known. Position is typed as uint32 in the LSP library, so these values
+    // overflow during deserialization and the server crashes with -32603.
+    // This test constructs the offending payload as a raw JObject (bypassing the
+    // F# type system, just as the editor does) and asserts the server responds
+    // successfully rather than erroring.
+    use client = activateFixture "genericProject"
+    use classFile = client.Open("Project/ClassForCompletionTests.cs")
+
+    // First get a real completion item so we have a valid Data/cache key.
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 13u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let completion: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams)
+
+    let item =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.find (fun i -> i.Label = "MethodA")
+        | _ -> failwith "expected a CompletionList"
+
+    // Serialize the item to JObject, then inject a textEdit with -1 sentinel
+    // positions — exactly what a misbehaving editor would send back.
+    let itemJson = serialize item :?> JObject
+
+    let sentinelPosition = JObject(JProperty("line", -1), JProperty("character", -1))
+
+    let sentinelRange =
+        JObject(JProperty("start", sentinelPosition.DeepClone()), JProperty("end", sentinelPosition.DeepClone()))
+
+    let sentinelTextEdit =
+        JObject(JProperty("newText", ""), JProperty("range", sentinelRange))
+
+    itemJson["textEdit"] <- sentinelTextEdit
+
+    // This must not throw (i.e. the server must not return a -32603 error).
+    let resolved: CompletionItem = client.Request("completionItem/resolve", itemJson)
+
+    Assert.AreEqual(Some "void ClassForCompletion.MethodA(string arg)", resolved.Detail)
