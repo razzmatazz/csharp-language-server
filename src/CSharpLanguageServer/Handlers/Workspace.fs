@@ -110,6 +110,8 @@ module Workspace =
         async {
             let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
+            let mutable currentWfByUri: Map<string, LspWorkspaceFolder> = Map.empty
+
             for change in p.Changes do
                 let! wf, _ = context.GetWorkspaceFolderReadySolution(change.Uri)
 
@@ -124,23 +126,19 @@ module Workspace =
                     wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | Some wf, ".cs" ->
-                    match change.Type with
-                    | FileChangeType.Created ->
-                        let wfUpdates = tryReloadDocumentOnUri logger wf change.Uri
+                    let currentWf = currentWfByUri |> Map.tryFind wf.Uri |> Option.defaultValue wf
 
-                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
+                    let wfUpdates =
+                        match change.Type with
+                        | FileChangeType.Created -> tryReloadDocumentOnUri logger currentWf change.Uri
+                        | FileChangeType.Changed -> tryReloadDocumentOnUri logger currentWf change.Uri
+                        | FileChangeType.Deleted -> removeDocument currentWf change.Uri
+                        | _ -> []
 
-                    | FileChangeType.Changed ->
-                        let wfUpdates = tryReloadDocumentOnUri logger wf change.Uri
+                    let updatedWf = wfUpdates |> List.fold (|>) currentWf
+                    currentWfByUri <- currentWfByUri |> Map.add wf.Uri updatedWf
 
-                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
-
-                    | FileChangeType.Deleted ->
-                        let wfUpdates = removeDocument wf change.Uri
-
-                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
-
-                    | _ -> ()
+                    wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
 
                 | Some wf, ".cshtml" ->
                     // TODO: handle this
