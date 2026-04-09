@@ -23,7 +23,7 @@ csharp-language-server/
 │   ├── Program.fs                   # [<EntryPoint>] — CLI parsing, server bootstrap
 │   ├── Logging.fs                   # Logging setup + LspTraceLoggerProvider ($/logTrace bridge)
 │   ├── Util.fs                      # General utilities
-│   ├── Types.fs                     # ServerSettings, ICSharpLspServer, document filters
+│   ├── Types.fs                     # CSharpConfiguration, ICSharpLspServer, document filters
 │   ├── DocumentationUtil.fs         # XML-doc / symbol documentation helpers
 │   ├── Diagnostics.fs               # `--diagnose` command implementation
 │   │
@@ -36,7 +36,7 @@ csharp-language-server/
 │   │
 │   ├── Runtime/                     # ── JSON-RPC transport & scheduling ──
 │   │   ├── JsonRpc.fs               # Custom JSON-RPC 2.0 over stdin/stdout (MailboxProcessor)
-│   │   ├── RequestScheduling.fs     # RequestContext, RequestMode, RequestEffects + concurrent request queue (ReadOnly/ReadWrite/ReadOnlyBg)
+│   │   ├── RequestScheduling.fs     # RequestContext, RequestMode, RequestQueue + concurrent request scheduling (ReadOnly/ReadWrite/ReadOnlyBg)
 │   │   ├── PushDiagnostics.fs       # Push-diagnostics state machine (PushDiagnosticsState + handlers)
 │   │   └── ServerStateLoop.fs       # Main state machine + ServerEvent DU (MailboxProcessor<ServerEvent>)
 │   │
@@ -90,13 +90,12 @@ csharp-language-server/
 ### 3.1 Server Startup Flow
 
 ```
-Program.fs  →  Server.start (Lsp/Server.fs)
+Program.fs  →  Server.startCore (Lsp/Server.fs)
                 │
                 ├─ Creates ServerStateLoop (MailboxProcessor<ServerEvent>)
-                ├─ Creates CSharpLspClient (Lsp/Client.fs)
-                ├─ Calls configureRpcServer() to build handler maps
-                └─ Starts JsonRpcTransport (Runtime/JsonRpc.fs)
-                     └─ Reads/writes JSON-RPC over stdin/stdout
+                ├─ Calls startJsonRpcTransport with configureRpcTransport callback
+                │    └─ configureRpcTransport creates CSharpLspClient + builds handler maps
+                └─ JsonRpcTransport reads/writes JSON-RPC over stdin/stdout
 ```
 
 ### 3.2 JSON-RPC Transport (`Runtime/JsonRpc.fs`)
@@ -112,23 +111,25 @@ A hand-rolled JSON-RPC 2.0 transport implemented as an **F# `MailboxProcessor<Js
 
 ### 3.3 Handler Registration (`Lsp/Server.fs` — the central wiring file)
 
-The `configureRpcServer` function (lines ~102–175) builds two maps: one for **call handlers** 
-(request/response) and one for **notification handlers** (fire-and-forget). Each handler is 
-mapped to its LSP method name and assigned a `ServerRequestMode` (`ReadOnly`, `ReadWrite`, or 
-`ReadOnlyBackground`) that controls concurrent scheduling.
+The `configureRpcTransport` function takes the `stateActor` and `rpcTransport` mailbox
+processors and returns a tuple of two maps: `JsonRpcCallHandlerMap` (request/response) and
+`JsonRpcNotificationHandlerMap` (fire-and-forget). Each handler is mapped to its LSP method
+name and assigned a `RequestMode` (`ReadOnly`, `ReadWrite`, or `ReadOnlyBackground`) that
+controls concurrent scheduling.
 
 ### 3.4 Handler Wrapping
 
-The `wrapHandler` function in `Lsp/Server.fs` bridges raw JSON-RPC ↔ typed handlers:
+The `wrapHandler` function (nested inside `configureRpcTransport`) bridges raw JSON-RPC ↔ typed handlers:
 
 1. Posts `EnterRequestContext` to the state actor → receives a `RequestContext`
 2. Deserializes `JToken` params to the handler's typed parameter type
-3. Calls the handler
-4. On completion, posts `LeaveRequestContext` with the accumulated `RequestEffects`
+3. Calls the handler, which returns `(LspResult<'T>, LspWorkspaceUpdate)`
+4. In the `finally` block, posts `LeaveRequestContext` with the `LspWorkspaceUpdate`
 
 ### 3.5 Request Scheduling (`Runtime/RequestScheduling.fs`)
 
-Also defines `RequestContext`, `RequestMode`, `RequestEffects`, and `ProjectDiagnosticsCache`.
+Also defines `RequestContext` (a class), `RequestMode`, `RequestInfo`, `RequestQueue`, and
+related types.
 
 Sophisticated concurrent request queue:
 
@@ -136,39 +137,33 @@ Sophisticated concurrent request queue:
 - **`ReadWrite`** requests run serially, blocking until all prior requests retire
 - **`ReadOnlyBackground`** requests (e.g. diagnostics) never block other requests
 - **Draining mode** — used before workspace reloads; only requests up to a certain ordinal activate, then signals `Drained`
-- **Effects buffering** — handlers accumulate side-effects into a `RequestEffects` record inside `RequestContext`; effects are applied into the state loop only when the request retires in ordinal order (preserving serial mutation semantics)
+- **Workspace updates** — handlers return an `LspWorkspaceUpdate` alongside the result; this is stored in the `RequestInfo` and applied to the state loop when the request retires in ordinal order (preserving serial mutation semantics)
 
 `processRequestQueue` is the single entry point for advancing the queue each tick. Retirement is checked first on every
 call: a finished request is always replayed before any new request is activated.
-
-**`ReadOnlyBackground` and direct event posting:** `ReadOnlyBackground` requests cannot use
-`UpdateEffects` (it throws). For state mutations that don't require ordering guarantees —
-specifically the workspace diagnostics cache — `RequestContext` exposes a `PostCacheUpdate`
-callback that posts a `WorkspaceDiagnosticsCacheUpdate` event directly to the state loop
-actor, bypassing the effects queue.
 
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
 
 Also defines the `ServerEvent` discriminated union.
 
-A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (settings, workspace, client
-capabilities, trace level, request queue, push-diagnostics state, workspace diagnostics
-cache). Processes events like:
+A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (config, workspace, client
+capabilities, trace level, request queue, push-diagnostics state, shutdown flag, and
+solution-ready awaiters). Processes events including:
 
-- `ClientInitialize`
-- `TraceLevelChange`
+- `ServerStarted` / `ClientInitialize` / `ClientShutdown`
+- `ClientCapabilityChange`
+- `TraceLevelChange` / `SettingsChange`
 - `WorkspaceReloadRequested`
-- `DocumentOpened` / `DocumentChanged` / `DocumentClosed`
-- `PushDiagnosticsProcessPendingDocuments`
-- `WorkspaceDiagnosticsCacheUpdate` — applies a cache update function to
-  `ServerState.WorkspaceDiagnosticsCache`; posted directly by `workspace/diagnostic`
-  handlers via `RequestContext.PostCacheUpdate` (see §3.5)
-- etc.
+- `WorkspaceFolderSolutionChange` / `WorkspaceFolderUpdates` / `WorkspaceConfigurationChanged`
+- `EnterRequestContext` / `LeaveRequestContext` / `ProcessRequestQueue` / `RequestQueueDrained`
+- `ApplyWorkspaceUpdate`
+- `PushDiagnosticsBacklogUpdate` / `PushDiagnosticsProcessPendingDocuments` / `PushDiagnosticsDocumentDiagnosticsResolution`
+- `GetWorkspaceFolder` / `GetWorkspaceFolderUriList` / `ProcessSolutionAwaiters`
+- `PeriodicTimerTick`
 
-**`ServerState.WorkspaceDiagnosticsCache`** — a `Map<string, ProjectDiagnosticsCache>`
-(keyed by project file path) holding the last computed diagnostic results per project,
-including the Roslyn `VersionStamp` at the time of computation. Cleared to `Map.empty`
-when `RequestQueueDrained` fires (i.e. on every workspace reload).
+**`ServerState` record fields:** `Config`, `LspClient`, `ClientCapabilities`, `TraceLevel`,
+`Workspace`, `RequestQueue`, `PushDiagnostics`, `PeriodicTickTimer`, `ShutdownReceived`,
+`SolutionReadyAwaiters`.
 
 ### 3.7 Push Diagnostics (`Runtime/PushDiagnostics.fs`)
 
@@ -180,33 +175,37 @@ notifications to clients that do not support pull diagnostics.
 Every handler in `Handlers/` follows a consistent pattern with these exports:
 
 ```fsharp
+[<RequireQualifiedAccess>]
 module CSharpLanguageServer.Handlers.SomeFeature
 
 // Static capability declaration (plugged into ServerCapabilities)
-let provider (clientCapabilities: ClientCapabilities option) : SomeOption option =
-    Some { ... }
+let provider (clientCapabilities: ClientCapabilities) : U2<bool, SomeOptions> option =
+    Some (U2.C1 true)
 
 // Dynamic registration (sent via client/registerCapability after initialized)
-let registration (clientCapabilities: ClientCapabilities option) : Registration option =
+let registration (config: CSharpConfiguration) (clientCapabilities: ClientCapabilities)
+    : Registration option =
     Some { Id = "...; Method = "..."; RegisterOptions = Some ... }
 
-// The actual request handler
-let handle (context: RequestContext) (p: SomeParams) : AsyncLspResult<SomeResult option> =
+// The actual request handler — returns (result, workspace update) tuple
+let handle (context: RequestContext) (p: SomeParams)
+    : Async<LspResult<SomeResult option> * LspWorkspaceUpdate> =
     async {
-        // Use context.Workspace, context.ClientCapabilities, etc.
-        // Return LspResult.success ...
+        // Use context.ClientCapabilities, context.GetWorkspaceFolder, etc.
+        return LspResult.success (Some result), LspWorkspaceUpdate.Nothing
     }
 
 // Optional: resolve, prepare, etc. for multi-step protocols
-let resolve (context: RequestContext) (p: ResolveParams) : AsyncLspResult<ResolvedResult> = ...
+let resolve (context: RequestContext) (p: ResolveParams)
+    : Async<LspResult<ResolvedResult> * LspWorkspaceUpdate> = ...
 ```
 
 **Key types:**
-- `RequestContext` — provides access to workspace, client capabilities, client proxy, settings, a `RequestEffects` buffer for accumulating side effects, `WorkspaceDiagnosticsCache` (read-only snapshot), and `PostCacheUpdate` for direct cache mutations from `ReadOnlyBackground` handlers
+- `RequestContext` — a class providing access to `LspClient`, `Config` (`CSharpConfiguration`), `ClientCapabilities`, `ShutdownReceived`, `GetWorkspaceFolder`, `GetWorkspaceFolderReadySolution`, and `GetWorkspaceFolderList`
 - `RequestMode` — `ReadOnly` | `ReadWrite` | `ReadOnlyBackground`; controls concurrent scheduling
-- `RequestEffects` — immutable record accumulating all state mutations a handler wishes to make (e.g. `DocumentOpened`, `TraceLevelChange`, `WorkspaceReloadRequested`); applied to `ServerState` after the request retires
-- `ProjectDiagnosticsCache` — per-project diagnostic cache entry: `{ Version: VersionStamp; ByUri: Map<string, string * Diagnostic[]> }`
-- `AsyncLspResult<'T>` — `Async<LspResult<'T>>` where `LspResult` carries either `Ok` or a JSON-RPC error
+- `LspWorkspaceUpdate` — returned alongside the `LspResult` from every handler; carries workspace mutations to apply when the request retires (e.g. document changes, reload requests, settings changes)
+- `LspResult<'T>` — from Ionide; carries either `Ok` or a JSON-RPC error
+- Handler return type: `Async<LspResult<'T> * LspWorkspaceUpdate>` — a tuple of the LSP result and any workspace side-effects
 
 ---
 
@@ -214,8 +213,8 @@ let resolve (context: RequestContext) (p: ResolveParams) : AsyncLspResult<Resolv
 
 `CSharpLspClient` extends Ionide's `LspClient()` base class:
 
-- Delegates outbound **notifications** to `sendJsonRpcNotification` on the RPC server mailbox
-- Delegates outbound **requests** (server→client) to `sendJsonRpcCall` on the RPC server mailbox
+- Delegates outbound **notifications** to `sendServerNotification` (wraps the transport's `SendNotification`)
+- Delegates outbound **requests** (server→client) to `sendServerRequest` (wraps the transport's `SendCall`)
 - Used for: `textDocument/publishDiagnostics`, `window/logMessage`, `window/showMessage`, `$/progress`, `$/logTrace`, `client/registerCapability`, etc.
 
 ### 5.1 LSP Trace Logging Bridge (`Logging.fs`)
@@ -248,22 +247,25 @@ still captures them.
 
 ### Static Capabilities (`getServerCapabilities`)
 
-Builds a `ServerCapabilities` record by calling each handler module's `provider` function:
+Builds a `ServerCapabilities` record by calling each handler module's `provider` function.
+Takes `CSharpConfiguration` and `InitializeParams`:
 
 ```fsharp
-let getServerCapabilities (clientCapabilities: ClientCapabilities option) =
+let getServerCapabilities (config: CSharpConfiguration) (p: InitializeParams) =
+    let cc = p.Capabilities
     { ServerCapabilities.Default with
-        HoverProvider = Hover.provider clientCapabilities
-        DefinitionProvider = Definition.provider clientCapabilities
-        CompletionProvider = Completion.provider clientCapabilities
+        HoverProvider = Hover.provider cc
+        DefinitionProvider = Definition.provider cc
+        CompletionProvider = Completion.provider cc
         // ... all handler providers ...
     }
 ```
 
 ### Dynamic Registrations (`getDynamicRegistrations`)
 
-Collects `Registration` values from every handler's `registration` function. These are sent
-to the client during `handleInitialized` via `client/registerCapability`.
+Takes `CSharpConfiguration` and `ClientCapabilities`. Collects `Registration` values from
+every handler's `registration` function (each taking `config` and `clientCapabilities`).
+These are sent to the client during `handleInitialized` via `client/registerCapability`.
 
 ---
 
@@ -376,8 +378,8 @@ let testSomething () =
 3. **Register in `Lsp/Server.fs`**:
    - Add to `getServerCapabilities` (static capability)
    - Add to `getDynamicRegistrations` (if using dynamic registration)
-   - Add to `configureRpcServer` in the appropriate handler map (`callHandlers` or
-     `notificationHandlers`) with the correct `ServerRequestMode`
+   - Add to `configureRpcTransport` in the appropriate handler map (`callHandlers` or
+     `notificationHandlers`) with the correct `RequestMode`
 4. **Write tests** — create `tests/.../NewFeatureTests.fs`, add a fixture under
    `Fixtures/` if needed, use `LspTestClient` + `LspDocumentHandle` pattern
 5. **Add test file to test `.fsproj`**
