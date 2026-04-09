@@ -61,15 +61,18 @@ module TypeHierarchy =
 
                 match symInfo with
                 | Some(symbol, project, _) when isTypeSymbol symbol ->
-                    let! symLocations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+                    let! symLocations, wfUpdates = wf |> workspaceFolderSymbolLocations context.Config symbol project
 
-                    return
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+
+                    let lspResult =
                         symLocations
                         |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation symbol)
                         |> Seq.toArray
                         |> Some
-                        |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                        |> LspResult.success
+
+                    return lspResult, wsUpdate
 
                 | _ -> return LspResult.success None, LspWorkspaceUpdate.Empty
         }
@@ -100,21 +103,28 @@ module TypeHierarchy =
                     let supertypes = baseType @ interfaces
 
                     let items = System.Collections.Generic.List<TypeHierarchyItem>()
-                    let mutable updatedWf = wf
+
+                    let mutable aggregatedWf = wf
+                    let mutable aggregatedWfUpdates = []
 
                     for typeSym in supertypes do
-                        let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
+                        let! locations, wfUpdates =
+                            aggregatedWf |> workspaceFolderSymbolLocations context.Config typeSym project
 
                         let typeSymItems =
                             locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
 
                         items.AddRange(typeSymItems)
 
-                        updatedWf <- wf
+                        aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
+                        aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
 
-                    return
-                        items |> Seq.toArray |> Some |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                    let lspResult = items |> Seq.toArray |> Some |> LspResult.success
+
+                    let wsUpdate =
+                        LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, aggregatedWfUpdates)
+
+                    return lspResult, wsUpdate
 
                 | _ -> return LspResult.success None, LspWorkspaceUpdate.Empty
         }
@@ -165,21 +175,27 @@ module TypeHierarchy =
                         |> Async.map (Seq.collect id >> Seq.toList)
 
                     let items = System.Collections.Generic.List<TypeHierarchyItem>()
-                    let mutable updatedWf = wf
+                    let mutable aggregatedWf = wf
+                    let mutable aggregatedWfUpdates = []
 
                     for typeSym in subtypes do
-                        let! locations, wf = workspaceFolderSymbolLocations updatedWf context.Config typeSym project
+                        let! locations, wfUpdates =
+                            aggregatedWf |> workspaceFolderSymbolLocations context.Config typeSym project
 
                         let typeSymItems =
                             locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
 
                         items.AddRange(typeSymItems)
 
-                        updatedWf <- wf
+                        aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
+                        aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
 
-                    return
-                        items |> Seq.toArray |> Some |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                    let wsUpdate =
+                        LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, aggregatedWfUpdates)
+
+                    let lspResult = items |> Seq.toArray |> Some |> LspResult.success
+
+                    return lspResult, wsUpdate
 
                 | _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
 

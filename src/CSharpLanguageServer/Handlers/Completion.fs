@@ -301,8 +301,8 @@ module Completion =
                             else
                                 sourceText
 
-                        let! _, doc =
-                            workspaceFolderWithDocumentAdded (cshtmlPath + ".cs") (newSourceText.ToString()) wf
+                        let doc, _ =
+                            wf |> workspaceFolderDocumentAdd (cshtmlPath + ".cs") (newSourceText.ToString())
 
                         match doc with
                         | None -> return None

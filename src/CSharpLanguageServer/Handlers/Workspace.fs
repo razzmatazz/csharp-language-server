@@ -54,59 +54,46 @@ module Workspace =
                   Method = "workspace/didChangeWatchedFiles"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let private tryReloadDocumentOnUri logger (context: RequestContext) uri : Async<LspWorkspaceUpdate> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
+    let private tryReloadDocumentOnUri logger wf uri : LspWorkspaceFolderUpdateFn list =
+        let doc = wf |> workspaceFolderDocument UserDocument uri
+        let docFilePathMaybe = wf |> workspaceFolderUriToPath uri
 
-        let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
-
-        match wf, doc with
-        | Some wf, Some doc ->
+        match doc with
+        | Some doc ->
             let docFilePathMaybe = workspaceFolderUriToPath uri wf
 
             match docFilePathMaybe with
+            | None -> []
             | Some docFilePath ->
-                let fileText = docFilePath |> File.ReadAllText
-                let updatedDoc = fileText |> SourceText.From |> doc.WithText
+                let updateWf =
+                    let fileText = docFilePath |> File.ReadAllText
+                    let updatedDoc = fileText |> SourceText.From |> doc.WithText
+                    workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution
 
-                let updatedWf =
-                    workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution wf
+                [ updateWf ]
 
-                return LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
-            | None -> return LspWorkspaceUpdate.Empty
-
-        | Some wf, None ->
-            let docFilePathMaybe = workspaceFolderUriToPath uri wf
-
+        | None ->
             match docFilePathMaybe with
+            | None -> []
             | Some docFilePath ->
                 // ok, this document is not on solution, register a new one
                 let fileText = docFilePath |> File.ReadAllText
 
-                let! updatedWf, newDocMaybe = workspaceFolderWithDocumentAdded docFilePath fileText wf
+                let _, wfUpdates = wf |> workspaceFolderDocumentAdd docFilePath fileText
 
-                match newDocMaybe with
-                | Some _ -> return LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
-                | None -> return LspWorkspaceUpdate.Empty
-            | None -> return LspWorkspaceUpdate.Empty
+                wfUpdates
 
-        | _, _ -> return LspWorkspaceUpdate.Empty
-    }
+    let private removeDocument wf uri =
+        let doc = wf |> workspaceFolderDocument UserDocument uri
 
-    let private removeDocument (context: RequestContext) uri : Async<LspWorkspaceUpdate> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
-
-        let doc = wf |> Option.bind (workspaceFolderDocument UserDocument uri)
-
-        match wf, doc with
-        | Some wf, Some existingDoc ->
+        match doc with
+        | None -> []
+        | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            let updatedWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution wf
+            let updateWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution
 
-            return LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf).WithDocumentClosed(uri)
-
-        | _, _ -> return LspWorkspaceUpdate.Empty
-    }
+            [ updateWf ]
 
     let didChangeWatchedFiles
         (context: RequestContext)
@@ -123,44 +110,42 @@ module Workspace =
             let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
             for change in p.Changes do
-                match Path.GetExtension(change.Uri) with
-                | ".csproj" ->
+                let! wf, _ = context.GetWorkspaceFolderReadySolution(change.Uri)
+
+                match wf, Path.GetExtension(change.Uri) with
+                | Some wf, ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
                     wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
-                | ".sln"
-                | ".slnx" ->
+                | Some wf, ".sln"
+                | Some wf, ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
                     wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
 
-                | ".cs" ->
+                | Some wf, ".cs" ->
                     match change.Type with
                     | FileChangeType.Created ->
-                        let! e = tryReloadDocumentOnUri logger context change.Uri
+                        let wfUpdates = tryReloadDocumentOnUri logger wf change.Uri
 
-                        wsUpdate <-
-                            { wsUpdate with
-                                FolderChange = wsUpdate.FolderChange @ e.FolderChange }
+                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
+
                     | FileChangeType.Changed ->
-                        let! e = tryReloadDocumentOnUri logger context change.Uri
+                        let wfUpdates = tryReloadDocumentOnUri logger wf change.Uri
 
-                        wsUpdate <-
-                            { wsUpdate with
-                                FolderChange = wsUpdate.FolderChange @ e.FolderChange }
+                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
+
                     | FileChangeType.Deleted ->
-                        let! e = removeDocument context change.Uri
+                        let wfUpdates = removeDocument wf change.Uri
 
-                        wsUpdate <-
-                            { wsUpdate with
-                                FolderChange = wsUpdate.FolderChange @ e.FolderChange
-                                DocumentClosed = wsUpdate.DocumentClosed @ e.DocumentClosed }
+                        wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates).WithDocumentClosed(change.Uri)
+
                     | _ -> ()
 
-                | ".cshtml" ->
+                | Some wf, ".cshtml" ->
                     // TODO: handle this
                     ()
 
-                | _ -> ()
+                | _, _ -> ()
 
             return Ok(), wsUpdate
         }

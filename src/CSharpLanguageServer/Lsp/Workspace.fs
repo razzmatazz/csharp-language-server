@@ -24,7 +24,6 @@ type LspWorkspaceUpdate =
       TraceLevelChange: TraceValues option
       WorkspaceConfigurationChanged: WorkspaceFolder list option
       WorkspaceReloadRequested: TimeSpan list
-      FolderChange: LspWorkspaceFolder list
       FolderUpdates: Map<string, LspWorkspaceFolderUpdateFn list> }
 
     static member Empty =
@@ -37,7 +36,6 @@ type LspWorkspaceUpdate =
           SettingsChange = None
           TraceLevelChange = None
           WorkspaceConfigurationChanged = None
-          FolderChange = []
           WorkspaceReloadRequested = []
           FolderUpdates = Map.empty }
 
@@ -77,19 +75,14 @@ type LspWorkspaceUpdate =
         { this with
             WorkspaceConfigurationChanged = Some folders }
 
-    member this.WithWorkspaceFolderChange(folder) =
-        { this with
-            FolderChange = this.FolderChange @ [ folder ] }
-
     member this.WithWorkspaceReloadRequested(delay) =
         { this with
             WorkspaceReloadRequested = this.WorkspaceReloadRequested @ [ delay ] }
 
-    member this.WithFolderUpdate(wfUri: string, updateFn: LspWorkspaceFolderUpdateFn) =
+    member this.WithFolderUpdates(wfUri: string, updates: LspWorkspaceFolderUpdateFn list) =
         let wfUpdateList = this.FolderUpdates |> Map.tryFind wfUri |> Option.defaultValue []
 
-        let newFolderUpdates =
-            this.FolderUpdates |> Map.add wfUri (wfUpdateList @ [ updateFn ])
+        let newFolderUpdates = this.FolderUpdates |> Map.add wfUri (wfUpdateList @ updates)
 
         { this with
             FolderUpdates = newFolderUpdates }

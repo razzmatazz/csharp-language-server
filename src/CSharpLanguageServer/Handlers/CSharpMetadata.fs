@@ -38,11 +38,11 @@ module CSharpMetadata =
 
                         match symbol with
                         | Some symbol ->
-                            let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata project symbol wf
+                            let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
 
-                            return
-                                symbolMetadata.Metadata |> Some |> LspResult.success,
-                                LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                            let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+                            let lspResult = symbolMetadata.Metadata |> Some |> LspResult.success
+                            return lspResult, wsUpdate
 
                         | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
                     | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty

@@ -41,7 +41,7 @@ type ServerEvent =
     | TraceLevelChange of TraceValues
     | WorkspaceConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
-    | WorkspaceFolderChange of string * LspWorkspaceFolder option * LspWorkspaceFolderUpdateFn list
+    | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | WorkspaceReloadRequested of TimeSpan
     | ProcessSolutionAwaiters
 
@@ -175,23 +175,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.WorkspaceReloadRequested
         |> List.iter (fun delay -> do postServerEvent (WorkspaceReloadRequested delay))
 
-        let mutable folderChanges: Map<string, LspWorkspaceFolder option * LspWorkspaceFolderUpdateFn list> =
-            Map.empty
-
-        for wf in wsUpdate.FolderChange do
-            folderChanges <- folderChanges |> Map.change wf.Uri (fun _ -> Some(Some wf, []))
-
-        for wfUri, updateFns in wsUpdate.FolderUpdates |> Map.toSeq do
-            folderChanges <-
-                folderChanges
-                |> Map.change wfUri (fun fc ->
-                    match fc with
-                    | None -> Some(None, updateFns)
-                    | Some fc -> Some(fst fc, (snd fc) @ updateFns))
-
-        folderChanges
+        wsUpdate.FolderUpdates
         |> Map.toSeq
-        |> Seq.iter (fun (uri, v) -> do postServerEvent (WorkspaceFolderChange(uri, fst v, snd v)))
+        |> Seq.iter (fun (wfUri, wfUpdates) -> do postServerEvent (WorkspaceFolderUpdates(wfUri, wfUpdates)))
 
         return state
 
@@ -308,18 +294,14 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         do postServerEvent ProcessSolutionAwaiters
         return { state with Workspace = newWorkspace }
 
-    | WorkspaceFolderChange(wfUri, updatedWf, wfUpdates) ->
+    | WorkspaceFolderUpdates(wfUri, wfUpdates) ->
         let wf = state.Workspace |> workspaceFolder wfUri
 
         let newWorkspace =
             match wf with
             | None -> state.Workspace
             | Some wf ->
-                let mutable updatedWf = updatedWf |> Option.defaultValue wf
-
-                for updateFn in wfUpdates do
-                    updatedWf <- updateFn updatedWf
-
+                let updatedWf = wfUpdates |> List.fold (|>) wf
                 state.Workspace |> workspaceWithFolderUpdated updatedWf
 
         return { state with Workspace = newWorkspace }

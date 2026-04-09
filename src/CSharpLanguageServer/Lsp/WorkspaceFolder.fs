@@ -195,7 +195,7 @@ let documentFromMetadata
         return project.AddDocument(mdDocumentFilename, text = text), text
     }
 
-let workspaceFolderWithDocumentFromMetadata
+let workspaceFolderDocumentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     wf
@@ -204,7 +204,7 @@ let workspaceFolderWithDocumentFromMetadata
         let symbolMetadataName = symbolGetMetadataName symbol
 
         match Map.tryFind (project.FilePath, symbolMetadataName) wf.DecompiledSymbolMetadata with
-        | Some md -> return wf, md
+        | Some md -> return md, []
         | None ->
             let! documentFromMd, text = documentFromMetadata project symbol.ContainingAssembly symbolMetadataName
 
@@ -218,19 +218,30 @@ let workspaceFolderWithDocumentFromMetadata
                 { Metadata = csharpMetadata
                   Document = documentFromMd }
 
-            let updatedWf =
+            let updateFn wf =
                 { wf with
                     DecompiledSymbolMetadata =
                         wf.DecompiledSymbolMetadata
                         |> Map.add (project.FilePath, symbolMetadataName) symbolMetadata }
 
-            return updatedWf, symbolMetadata
+            return symbolMetadata, [ updateFn ]
+    }
+
+let workspaceFolderWithDocumentFromMetadata
+    (project: Microsoft.CodeAnalysis.Project)
+    (symbol: Microsoft.CodeAnalysis.ISymbol)
+    wf
+    =
+    async {
+        let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
+        let updatedWf = Seq.fold (|>) wf wfUpdates
+        return updatedWf, symbolMetadata
     }
 
 let workspaceFolderSymbolLocationsInMetadata project symbol wf = async {
     let! ct = Async.CancellationToken
 
-    let! updatedWf, symbolMetadata = workspaceFolderWithDocumentFromMetadata project symbol wf
+    let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
 
     // figure out location on the document (approx implementation)
     let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
@@ -251,8 +262,8 @@ let workspaceFolderSymbolLocationsInMetadata project symbol wf = async {
 
     return
         match collector.GetLocations() with
-        | [] -> [ fallbackLocationInMetadata ], updatedWf
-        | ls -> ls, updatedWf
+        | [] -> [ fallbackLocationInMetadata ], wfUpdates
+        | ls -> ls, wfUpdates
 }
 
 let workspaceFolderResolveSymbolLocation
@@ -266,36 +277,38 @@ let workspaceFolderResolveSymbolLocation
     | true, _ ->
         match config.useMetadataUris |> Option.defaultValue false with
         | true -> workspaceFolderSymbolLocationsInMetadata project symbol wf
-        | false -> ([], wf) |> async.Return
+        | false -> ([], []) |> async.Return
 
     | false, true ->
         let wfPathToUri path = workspaceFolderPathToUri path wf
 
         match Location.fromRoslynLocation wfPathToUri l with
-        | Some loc -> ([ loc ], wf) |> async.Return
-        | None -> ([], wf) |> async.Return
+        | Some loc -> ([ loc ], []) |> async.Return
+        | None -> ([], []) |> async.Return
 
-    | _, _ -> ([], wf) |> async.Return
+    | _, _ -> ([], []) |> async.Return
 
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
 let workspaceFolderSymbolLocations
-    folder
     (config: CSharpConfiguration)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (project: Microsoft.CodeAnalysis.Project)
+    wf
     =
     async {
-        let mutable wf = folder
+        let mutable wf = wf
+        let mutable aggregatedWfUpdates = []
         let mutable aggregatedLspLocations = []
 
         for l in symbol.Locations do
-            let! symLspLocations, updatedWf = workspaceFolderResolveSymbolLocation config project symbol l wf
+            let! symLspLocations, wfUpdates = workspaceFolderResolveSymbolLocation config project symbol l wf
 
+            wf <- wfUpdates |> List.fold (|>) wf
             aggregatedLspLocations <- aggregatedLspLocations @ symLspLocations
-            wf <- updatedWf
+            aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
 
-        return aggregatedLspLocations, wf
+        return aggregatedLspLocations, aggregatedWfUpdates
     }
 
 let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) =
@@ -357,34 +370,32 @@ let workspaceFolderAdditionalTextDocumentForPath (filePath: string) (wf: LspWork
         |> Seq.filter (fun d -> d.FilePath = filePath)
         |> Seq.tryHead
 
-let workspaceFolderWithDocumentAdded
+let workspaceFolderDocumentAdd
     (docFilePath: string)
     (text: string)
     wf
-    : Async<LspWorkspaceFolder * Document option> =
-    async {
-        let projectOnPath = workspaceFolderProjectForPath docFilePath wf
+    : Document option * LspWorkspaceFolderUpdateFn list =
+    let projectOnPath = workspaceFolderProjectForPath docFilePath wf
 
-        match projectOnPath with
-        | Some proj ->
-            let projectBaseDir = Path.GetDirectoryName proj.FilePath
-            let docName = docFilePath.Substring(projectBaseDir.Length + 1)
+    match projectOnPath with
+    | Some proj ->
+        let projectBaseDir = Path.GetDirectoryName proj.FilePath
+        let docName = docFilePath.Substring(projectBaseDir.Length + 1)
 
-            let newDoc =
-                proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
+        let newDoc =
+            proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
 
-            let updatedWf = workspaceFolderWithReadySolutionReplaced newDoc.Project.Solution wf
+        let updateWf = workspaceFolderWithReadySolutionReplaced newDoc.Project.Solution
 
-            return updatedWf, Some newDoc
+        Some newDoc, [ updateWf ]
 
-        | None ->
-            logger.LogTrace(
-                "workspaceFolderWithDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
-                docFilePath
-            )
+    | None ->
+        logger.LogTrace(
+            "workspaceFolderWithDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
+            docFilePath
+        )
 
-            return wf, None
-    }
+        None, []
 
 let workspaceFolderWithAdditionalTextDocumentTextUpdated
     (textDoc: TextDocument)
@@ -421,11 +432,11 @@ let workspaceFolderWithDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : 
 
     workspaceFolderWithReadySolutionUpdated removeDoc wf
 
-let workspaceFolderWithAdditionalTextDocumentAdded
+let workspaceFolderAdditionalTextDocumentAdd
     (docFilePath: string)
     (text: string)
     (wf: LspWorkspaceFolder)
-    : LspWorkspaceFolder * TextDocument option =
+    : TextDocument option * LspWorkspaceFolderUpdateFn list =
     let projectOnPath = workspaceFolderProjectForPath docFilePath wf
 
     match projectOnPath with
@@ -444,10 +455,9 @@ let workspaceFolderWithAdditionalTextDocumentAdded
                 filePath = docFilePath
             )
 
-        let updatedWf =
-            workspaceFolderWithReadySolutionReplaced (newDoc.Project.Solution) wf
+        let updateWf = workspaceFolderWithReadySolutionReplaced (newDoc.Project.Solution)
 
-        updatedWf, Some newDoc
+        Some newDoc, [ updateWf ]
 
     | None ->
         logger.LogTrace(
@@ -455,7 +465,7 @@ let workspaceFolderWithAdditionalTextDocumentAdded
             docFilePath
         )
 
-        wf, None
+        None, []
 
 let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
