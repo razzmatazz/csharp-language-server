@@ -50,19 +50,22 @@ module Implementation =
                 SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
                 |> Async.AwaitTask
 
-            let mutable updatedWf = wf
+            let mutable aggregatedWf = wf
+            let mutable aggregatedWfUpdates = []
 
             let locations = System.Collections.Generic.List<Location>()
 
             for i in impls do
-                let! implLocations, wf = workspaceFolderSymbolLocations updatedWf config i project
+                let! implLocations, wfUpdates = aggregatedWf |> workspaceFolderSymbolLocations config i project
+
+                aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
+                aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
 
                 locations.AddRange(implLocations)
-                updatedWf <- wf
 
-            return locations |> Seq.toArray, updatedWf
+            return locations |> Seq.toArray, aggregatedWfUpdates
 
-        | _ -> return [||], wf
+        | _ -> return [||], []
     }
 
     let handle
@@ -80,9 +83,11 @@ module Implementation =
                 match symInfo with
                 | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
                 | Some(sym, project, _) ->
-                    let! impls, updatedWf = findImplLocationsOfSymbol wf context.Config project sym
+                    let! impls, wfUpdates = findImplLocationsOfSymbol wf context.Config project sym
 
-                    return
-                        impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+                    let lspResult = impls |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success
+                    return lspResult, wsUpdate
+
+
         }

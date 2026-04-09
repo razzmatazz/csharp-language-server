@@ -63,15 +63,12 @@ module TypeDefinition =
                         | :? IParameterSymbol as parameterSymbol -> Some parameterSymbol.Type
                         | _ -> None
 
-                    let! locations, wsUpdate =
+                    let! locations, wfUpdates =
                         match typeSymbol with
-                        | None -> async.Return([], LspWorkspaceUpdate.Empty)
-                        | Some symbol -> async {
-                            let! aggregatedLspLocations, updatedWf =
-                                workspaceFolderSymbolLocations wf context.Config symbol project
+                        | None -> async.Return([], [])
+                        | Some symbol -> wf |> workspaceFolderSymbolLocations context.Config symbol project
 
-                            return aggregatedLspLocations, LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
-                          }
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
 
                     let lspResult =
                         locations |> Seq.toArray |> Declaration.C2 |> U2.C1 |> Some |> LspResult.success

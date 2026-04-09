@@ -63,15 +63,18 @@ module CallHierarchy =
 
                 match symInfo with
                 | Some(symbol, project, _) when isCallableSymbol symbol ->
-                    let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+                    let! locations, wfUpdates = wf |> workspaceFolderSymbolLocations context.Config symbol project
 
-                    return
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+
+                    let lspResult =
                         locations
                         |> Seq.map (CallHierarchyItem.fromSymbolAndLocation symbol)
                         |> Seq.toArray
                         |> Some
-                        |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                        |> LspResult.success
+
+                    return lspResult, wsUpdate
 
                 | _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }

@@ -52,9 +52,12 @@ module Definition =
                 match symInfo with
                 | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
                 | Some(symbol, project, _) ->
-                    let! locations, updatedWf = workspaceFolderSymbolLocations wf context.Config symbol project
+                    let! locations, wfUpdates = wf |> workspaceFolderSymbolLocations context.Config symbol project
 
-                    return
-                        locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success,
-                        LspWorkspaceUpdate.Empty.WithWorkspaceFolderChange(updatedWf)
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+
+                    let lspResult =
+                        locations |> Array.ofList |> Definition.C2 |> U2.C1 |> Some |> LspResult.success
+
+                    return lspResult, wsUpdate
         }
