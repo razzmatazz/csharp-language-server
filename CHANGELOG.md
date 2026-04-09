@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 * More workspace/state management race fixes
- - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
+  - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.23.0...main
 
 ## [0.23.0] - 2026-04-08 / Skuodas
 * Fix runaway `workspace/diagnostic` traffic and CPU usage when used with VS Code
