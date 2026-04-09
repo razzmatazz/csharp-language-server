@@ -65,10 +65,7 @@ type LspWorkspaceFolder =
           DecompiledSymbolMetadata = Map.empty
           OpenDocs = Map.empty }
 
-type LspWorkspaceFolderUpdate =
-    { Dummy: int }
-
-    static member Empty = { Dummy = 0 }
+type LspWorkspaceFolderUpdateFn = LspWorkspaceFolder -> LspWorkspaceFolder
 
 type LspWorkspaceFolderDocumentType =
     | UserDocument // user Document from solution, on disk

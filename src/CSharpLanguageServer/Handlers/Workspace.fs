@@ -140,19 +140,19 @@ module Workspace =
 
                         wsUpdate <-
                             { wsUpdate with
-                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                                FolderChange = wsUpdate.FolderChange @ e.FolderChange }
                     | FileChangeType.Changed ->
                         let! e = tryReloadDocumentOnUri logger context change.Uri
 
                         wsUpdate <-
                             { wsUpdate with
-                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange }
+                                FolderChange = wsUpdate.FolderChange @ e.FolderChange }
                     | FileChangeType.Deleted ->
                         let! e = removeDocument context change.Uri
 
                         wsUpdate <-
                             { wsUpdate with
-                                WorkspaceFolderChange = wsUpdate.WorkspaceFolderChange @ e.WorkspaceFolderChange
+                                FolderChange = wsUpdate.FolderChange @ e.FolderChange
                                 DocumentClosed = wsUpdate.DocumentClosed @ e.DocumentClosed }
                     | _ -> ()
 
