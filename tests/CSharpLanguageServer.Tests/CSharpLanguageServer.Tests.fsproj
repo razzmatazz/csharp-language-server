@@ -33,6 +33,7 @@
     <Compile Include="ProgressReporterTests.fs" />
     <Compile Include="RequestSchedulingTests.fs" />
     <Compile Include="DocumentSyncTests.fs" />
+    <Compile Include="WorkspaceTests.fs" />
     <Compile Include="CallHierarchyTests.fs" />
     <Compile Include="FoldingRangeTests.fs" />
     <Compile Include="JsonRpcTests.fs" />
