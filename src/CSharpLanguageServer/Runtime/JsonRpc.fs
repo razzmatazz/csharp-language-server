@@ -486,6 +486,7 @@ let processEvent state postEvent ev =
 
                 tryFireShutdownWaiters state
         | Error ex ->
+            postEvent (WriteRpcLogEntry(RpcError(sprintf "InboundMessage: read error (retrying): %s" (string ex))))
             let pendingRead = state.StdIn |> Option.map (startRead postEvent)
             { state with PendingRead = pendingRead }
 

@@ -10,7 +10,7 @@ Messages are framed using HTTP-style `Content-Length` headers, as required by LS
 
 Outbound messages are serialised through an internal write queue: if a write is already in progress when a new message is enqueued, the message waits rather than racing. This means delivery order matches enqueue order.
 
-If a transient error occurs while reading from stdin (e.g. a stream exception), the transport logs a `RpcError` entry and immediately retries the next read. A read error does not shut down the transport.
+If a transient error occurs while reading from stdin (e.g. a stream exception or malformed JSON), the transport logs a `RpcError` entry and retries the next read. A read error does not shut down the transport — EOF is the canonical signal for that.
 
 ### Transport lifecycle
 
