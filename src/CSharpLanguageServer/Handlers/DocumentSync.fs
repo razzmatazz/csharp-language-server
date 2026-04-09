@@ -124,7 +124,10 @@ module TextDocumentSync =
                 let updateWf =
                     workspaceFolderWithAdditionalTextDocumentTextUpdated doc newSourceText
 
-                [ updateWf ]
+                let updateWf2 =
+                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+                [ updateWf; updateWf2 ]
 
             | None ->
                 let updateWf wf =
@@ -133,7 +136,10 @@ module TextDocumentSync =
 
                     wfUpdates |> List.fold (|>) wf
 
-                [ updateWf ]
+                let updateWf2 =
+                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+                [ updateWf; updateWf2 ]
 
     let didOpenCsharpFile
         wf
@@ -152,7 +158,10 @@ module TextDocumentSync =
                 let updateWf =
                     workspaceFolderWithDocumentTextUpdated doc (p.TextDocument.Text |> SourceText.From)
 
-                [ updateWf ]
+                let updateWf2 =
+                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+                [ updateWf; updateWf2 ]
 
             | _ -> []
 
@@ -165,7 +174,10 @@ module TextDocumentSync =
                 // ok, this document is not in solution, register a new document
                 let _, wfUpdates = wf |> workspaceFolderDocumentAdd docFilePath p.TextDocument.Text
 
-                wfUpdates
+                let updateWfDocOpened =
+                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+                wfUpdates @ [ updateWfDocOpened ]
 
     let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
         let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
@@ -179,13 +191,7 @@ module TextDocumentSync =
                 else
                     didOpenCsharpFile wf context p
 
-            let wsUpdate =
-                match wfUpdates with
-                | [] -> LspWorkspaceUpdate.Empty
-                | wfUpdates ->
-                    LspWorkspaceUpdate.Empty
-                        .WithFolderUpdates(wf.Uri, wfUpdates)
-                        .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
+            let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
 
             return Ok(), wsUpdate
     }
@@ -209,7 +215,10 @@ module TextDocumentSync =
             let updateWf =
                 workspaceFolderWithAdditionalTextDocumentTextUpdated doc updatedSourceText
 
-            return [ updateWf ]
+            let updateWf2 =
+                workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+            return [ updateWf; updateWf2 ]
     }
 
     let didChangeCsharpFile wf (context: RequestContext) (p: DidChangeTextDocumentParams) = async {
@@ -226,7 +235,10 @@ module TextDocumentSync =
 
             let updateWf = workspaceFolderWithDocumentTextUpdated doc updatedSourceText
 
-            return [ updateWf ]
+            let updateWf2 =
+                workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+
+            return [ updateWf; updateWf2 ]
     }
 
     let didChange
@@ -245,10 +257,7 @@ module TextDocumentSync =
                     else
                         didChangeCsharpFile wf context p
 
-                let wsUpdate =
-                    LspWorkspaceUpdate.Empty
-                        .WithFolderUpdates(wf.Uri, wfUpdates)
-                        .WithDocumentOpened(p.TextDocument.Uri, p.TextDocument.Version, DateTime.Now)
+                let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
 
                 return Ok(), wsUpdate
         }
@@ -339,8 +348,9 @@ module TextDocumentSync =
                     else
                         didCloseCsharpFile wf context p
 
-                let wsUpdate =
-                    LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates).WithDocumentClosed(p.TextDocument.Uri)
+                let wfUpdates = wfUpdates @ [ workspaceFolderWithDocClosed p.TextDocument.Uri ]
+
+                let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
 
                 return Ok(), wsUpdate
         }

@@ -17,9 +17,6 @@ type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
       ClientShutdownEmitted: bool
       ClientCapabilityChange: ClientCapabilities option
-      DocumentClosed: string list
-      DocumentOpened: (string * int * DateTime) list
-      DocumentTouched: (string * DateTime) list
       SettingsChange: CSharpConfiguration option
       TraceLevelChange: TraceValues option
       WorkspaceConfigurationChanged: WorkspaceFolder list option
@@ -30,9 +27,6 @@ type LspWorkspaceUpdate =
         { ClientInitializeEmitted = false
           ClientShutdownEmitted = false
           ClientCapabilityChange = None
-          DocumentClosed = []
-          DocumentOpened = []
-          DocumentTouched = []
           SettingsChange = None
           TraceLevelChange = None
           WorkspaceConfigurationChanged = None
@@ -50,18 +44,6 @@ type LspWorkspaceUpdate =
     member this.WithClientCapabilityChange(capabilities) =
         { this with
             ClientCapabilityChange = Some capabilities }
-
-    member this.WithDocumentClosed(uri) =
-        { this with
-            DocumentClosed = this.DocumentClosed @ [ uri ] }
-
-    member this.WithDocumentOpened(uri, version, timestamp) =
-        { this with
-            DocumentOpened = this.DocumentOpened @ [ (uri, version, timestamp) ] }
-
-    member this.WithDocumentTouched(uri, timestamp) =
-        { this with
-            DocumentTouched = this.DocumentTouched @ [ (uri, timestamp) ] }
 
     member this.WithSettingsChange(config) =
         { this with
@@ -128,6 +110,24 @@ let workspaceWithFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWo
 
     { workspace with
         Folders = updatedFolders }
+
+let workspaceWithPDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace * bool =
+    let havePDBacklogUpdatePending =
+        ws.Folders |> Seq.tryFind _.PushDiagnosticsBacklogUpdatePending |> Option.isSome
+
+    let newWS =
+        match havePDBacklogUpdatePending with
+        | false -> ws
+        | true ->
+            let newWSFolders =
+                ws.Folders
+                |> List.map (fun wf ->
+                    { wf with
+                        PushDiagnosticsBacklogUpdatePending = false })
+
+            { ws with Folders = newWSFolders }
+
+    newWS, havePDBacklogUpdatePending
 
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown

@@ -24,9 +24,7 @@ type ServerEvent =
     | ClientInitialize
     | ClientShutdown
     | ClientCapabilityChange of ClientCapabilities
-    | DocumentClosed of string
-    | DocumentOpened of string * int * DateTime
-    | DocumentTouched of string * DateTime
+    | PushDiagnosticsBacklogUpdate
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
@@ -146,22 +144,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
     | ApplyWorkspaceUpdate wsUpdate ->
 
         if wsUpdate.ClientInitializeEmitted then
-            do postServerEvent (ClientInitialize)
+            do postServerEvent ClientInitialize
 
         if wsUpdate.ClientShutdownEmitted then
-            do postServerEvent (ClientShutdown)
+            do postServerEvent ClientShutdown
 
         wsUpdate.ClientCapabilityChange
         |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
-
-        wsUpdate.DocumentClosed
-        |> List.iter (fun uri -> do postServerEvent (DocumentClosed uri))
-
-        wsUpdate.DocumentOpened
-        |> List.iter (fun (uri, version, timestamp) -> do postServerEvent (DocumentOpened(uri, version, timestamp)))
-
-        wsUpdate.DocumentTouched
-        |> List.iter (fun (uri, timestamp) -> do postServerEvent (DocumentTouched(uri, timestamp)))
 
         wsUpdate.SettingsChange
         |> Option.iter (fun cfg -> do postServerEvent (SettingsChange cfg))
@@ -178,6 +167,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.FolderUpdates
         |> Map.toSeq
         |> Seq.iter (fun (wfUri, wfUpdates) -> do postServerEvent (WorkspaceFolderUpdates(wfUri, wfUpdates)))
+
+        do postServerEvent PushDiagnosticsBacklogUpdate
 
         return state
 
@@ -306,49 +297,19 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         return { state with Workspace = newWorkspace }
 
-    | DocumentOpened(uri, ver, timestamp) ->
-        let newWorkspace =
-            match workspaceFolder uri state.Workspace with
-            | None -> state.Workspace
-            | Some wf ->
-                let updatedWf = workspaceFolderWithDocOpened uri ver timestamp wf
-                state.Workspace |> workspaceWithFolderUpdated updatedWf
+    | PushDiagnosticsBacklogUpdate ->
+        let newWS, pdBacklogUpdatePending =
+            state.Workspace |> workspaceWithPDBacklogUpdatePendingReset
 
-        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
+        match pdBacklogUpdatePending with
+        | false -> return { state with Workspace = newWS }
+        | true ->
+            let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate state.Workspace
 
-        return
-            { state with
-                Workspace = newWorkspace
-                PushDiagnostics = newPD }
-
-    | DocumentClosed uri ->
-        let newWorkspace =
-            match workspaceFolder uri state.Workspace with
-            | None -> state.Workspace
-            | Some wf ->
-                let updatedWf = workspaceFolderWithDocClosed uri wf
-                workspaceWithFolderUpdated updatedWf state.Workspace
-
-        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
-
-        return
-            { state with
-                Workspace = newWorkspace
-                PushDiagnostics = newPD }
-
-    | DocumentTouched(uri, timestamp) ->
-        let newWorkspace =
-            workspaceFolder uri state.Workspace
-            |> Option.bind (workspaceFolderWithDocTouched uri timestamp)
-            |> Option.map (fun wf -> workspaceWithFolderUpdated wf state.Workspace)
-            |> Option.defaultValue state.Workspace
-
-        let newPD = state.PushDiagnostics |> pushDiagnosticsBacklogUpdate newWorkspace
-
-        return
-            { state with
-                Workspace = newWorkspace
-                PushDiagnostics = newPD }
+            return
+                { state with
+                    Workspace = newWS
+                    PushDiagnostics = newPD }
 
     | WorkspaceReloadRequested quietPeriod ->
         // Sliding-window debounce: each new event resets the deadline to now+delay,
