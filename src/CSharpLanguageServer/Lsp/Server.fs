@@ -106,42 +106,81 @@ let configureRpcTransport
     let lspClient =
         new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
-    let wrapHandler (unwrapResult: LspResult<_> -> 'r) (requestMode: RequestMode) fn jsonRpcCtx = async {
-        let mutable wsUpdate = LspWorkspaceUpdate.Empty
+    let wrapHandler
+        (unwrapResult: LspResult<_> -> 'r)
+        (requestMode: RequestMode)
+        (sanitize: JToken -> JToken)
+        fn
+        jsonRpcCtx
+        =
+        async {
+            let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
-        try
-            let! ctx =
-                stateActor.PostAndAsyncReply(fun rc ->
-                    EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
+            try
+                let! ctx =
+                    stateActor.PostAndAsyncReply(fun rc ->
+                        EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
 
-            let fnParams =
-                jsonRpcCtx.Params
-                |> Option.defaultWith (fun _ -> Newtonsoft.Json.Linq.JValue.CreateNull())
-                |> deserialize
+                let fnParams =
+                    jsonRpcCtx.Params
+                    |> Option.defaultWith (fun _ -> Newtonsoft.Json.Linq.JValue.CreateNull())
+                    |> sanitize
+                    |> deserialize
 
-            let! result, wsUpdate' = fn ctx fnParams
-            wsUpdate <- wsUpdate'
+                let! result, wsUpdate' = fn ctx fnParams
+                wsUpdate <- wsUpdate'
 
-            return unwrapResult result
-        finally
-            stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, wsUpdate))
-    }
+                return unwrapResult result
+            finally
+                stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, wsUpdate))
+        }
+
+    let serializeNullable value =
+        if isNull (box value) then
+            Newtonsoft.Json.Linq.JValue.CreateNull() :> Newtonsoft.Json.Linq.JToken
+        else
+            serialize value
+
+    let unwrapResult result =
+        match result with
+        | Ok value -> value |> serializeNullable |> Ok
+        | Error error -> error |> serialize |> Error
 
     let callHandler requestMode fn : JsonRpcCallHandler =
-        let serializeNullable value =
-            if isNull (box value) then
-                Newtonsoft.Json.Linq.JValue.CreateNull() :> Newtonsoft.Json.Linq.JToken
-            else
-                serialize value
+        wrapHandler unwrapResult requestMode id fn
 
-        let unwrapResult result =
-            match result with
-            | Ok value -> value |> serializeNullable |> Ok
-            | Error error -> error |> serialize |> Error
+    let callHandlerSanitized requestMode sanitize fn : JsonRpcCallHandler =
+        wrapHandler unwrapResult requestMode sanitize fn
 
-        wrapHandler unwrapResult requestMode fn
+    /// Clamp negative line/character values in a position JObject to 0.
+    /// The LSP spec says negative position values default to 0, but Position
+    /// is typed as uint32 so they overflow during deserialization.
+    let clampPositionFields (pos: JObject) =
+        for name in [ "line"; "character" ] do
+            match pos.TryGetValue(name) with
+            | true, (:? JValue as v) when v.Type = JTokenType.Integer && (v.Value :?> int64) < 0L -> v.Value <- 0
+            | _ -> ()
 
-    let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore requestMode fn
+    /// Pre-deserialization sanitizer for completionItem/resolve params.
+    /// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
+    let sanitizeCompletionItem (token: JToken) : JToken =
+        match token with
+        | :? JObject as obj ->
+            match obj.TryGetValue("textEdit") with
+            | true, (:? JObject as textEdit) ->
+                match textEdit.TryGetValue("range") with
+                | true, (:? JObject as range) ->
+                    for corner in [ "start"; "end" ] do
+                        match range.TryGetValue(corner) with
+                        | true, (:? JObject as pos) -> clampPositionFields pos
+                        | _ -> ()
+                | _ -> ()
+            | _ -> ()
+
+            obj :> JToken
+        | _ -> token
+
+    let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore requestMode id fn
 
     let callHandlers: JsonRpcCallHandlerMap =
         Map.empty
@@ -150,7 +189,7 @@ let configureRpcTransport
         |> Map.add "csharp/metadata" (callHandler ReadOnly CSharpMetadata.handle)
         |> Map.add "textDocument/codeAction" (callHandler ReadOnly CodeAction.handle)
         |> Map.add "textDocument/completion" (callHandler ReadOnly Completion.handle)
-        |> Map.add "completionItem/resolve" (callHandler ReadOnly Completion.resolve)
+        |> Map.add "completionItem/resolve" (callHandlerSanitized ReadOnly sanitizeCompletionItem Completion.resolve)
         |> Map.add "textDocument/definition" (callHandler ReadOnly Definition.handle)
         |> Map.add "textDocument/hover" (callHandler ReadOnly Hover.handle)
         |> Map.add "textDocument/references" (callHandler ReadOnly References.handle)
