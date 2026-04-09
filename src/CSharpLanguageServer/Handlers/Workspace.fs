@@ -43,7 +43,7 @@ module Workspace =
         | false -> None
         | true ->
             let fileSystemWatcher =
-                { GlobPattern = U2.C1 "**/*.{cs,csproj,sln,slnx}"
+                { GlobPattern = U2.C1 "**/*.{cs,cshtml,csproj,sln,slnx}"
                   Kind = Some(WatchKind.Create ||| WatchKind.Change ||| WatchKind.Delete) }
 
             let registerOptions: DidChangeWatchedFilesRegistrationOptions =
@@ -96,6 +96,30 @@ module Workspace =
 
             [ updateWf; updateWf2 ]
 
+    let private tryReloadCshtmlDocumentOnUri wf uri : LspWorkspaceFolderUpdateFn list =
+        match workspaceFolderUriToPath uri wf with
+        | None -> []
+        | Some cshtmlPath ->
+            let fileText = File.ReadAllText cshtmlPath
+            let newSourceText = SourceText.From(fileText, Text.Encoding.UTF8)
+
+            match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
+            | Some doc ->
+                // AdditionalDocument already in solution — update its text
+                [ workspaceFolderWithAdditionalTextDocumentTextUpdated doc newSourceText ]
+            | None ->
+                // Not yet registered — add it
+                let _, wfUpdates = workspaceFolderAdditionalTextDocumentAdd cshtmlPath fileText wf
+                wfUpdates
+
+    let private removeCshtmlDocument wf uri : LspWorkspaceFolderUpdateFn list =
+        match workspaceFolderUriToPath uri wf with
+        | None -> []
+        | Some cshtmlPath ->
+            match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
+            | None -> []
+            | Some _ -> [ workspaceFolderWithAdditionalDocumentRemoved uri ]
+
     let didChangeWatchedFiles
         (context: RequestContext)
         (p: DidChangeWatchedFilesParams)
@@ -141,8 +165,19 @@ module Workspace =
                     wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
 
                 | Some wf, ".cshtml" ->
-                    // TODO: handle this
-                    ()
+                    let currentWf = currentWfByUri |> Map.tryFind wf.Uri |> Option.defaultValue wf
+
+                    let wfUpdates =
+                        match change.Type with
+                        | FileChangeType.Created -> tryReloadCshtmlDocumentOnUri currentWf change.Uri
+                        | FileChangeType.Changed -> tryReloadCshtmlDocumentOnUri currentWf change.Uri
+                        | FileChangeType.Deleted -> removeCshtmlDocument currentWf change.Uri
+                        | _ -> []
+
+                    let updatedWf = wfUpdates |> List.fold (|>) currentWf
+                    currentWfByUri <- currentWfByUri |> Map.add wf.Uri updatedWf
+
+                    wsUpdate <- wsUpdate.WithFolderUpdates(wf.Uri, wfUpdates)
 
                 | _, _ -> ()
 
