@@ -72,20 +72,16 @@ Settings are read from the `csharp` workspace configuration section
 ## Command Line Arguments
 
 ```
-USAGE: csharp-ls [--help] [--version] [--loglevel <level>] [--solution <solution>]
-                 [--locale <locale>] [--debug] [--diagnose] [--features <features>] [--rpclog <path>]
+USAGE: csharp-ls [--help] [--version] [--loglevel <level>] [--solution <solution>] [--locale <locale>] [--debug] [--diagnose] [--features <features>] [--rpclog <path>]
 
 OPTIONS:
 
     --version, -v         display versioning information
     --loglevel, -l <level>
-                          set log level (<trace|debug|info|warning|error>);
-                          equivalent to csharp.logLevel; default is `info`
+                          set log level, <trace|debug|info|warning|error>; default is `info`
     --solution, -s <solution>
                           specify .sln file to load (relative to CWD)
-    --locale, -L <locale>
-                          force output locale, e.g. `en-US` or `de`;
-                          equivalent to csharp.locale; overrides DOTNET_CLI_UI_LANGUAGE
+    --locale, -L <locale> force output locale, e.g. `en-US` or `de`; overrides DOTNET_CLI_UI_LANGUAGE
     --debug               enable debug mode
     --diagnose            run diagnostics
     --features, -f <features>
