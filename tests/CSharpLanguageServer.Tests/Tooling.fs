@@ -32,7 +32,9 @@ let emptyClientCapabilities: ClientCapabilities =
 type LspClientProfile =
     { LoggingEnabled: bool
       ClientCapabilities: ClientCapabilities
-      SolutionLoadDelay: int option }
+      SolutionLoadDelay: int option
+      ExtraEnv: Map<string, string>
+      ExtraArgs: string list }
 
 let defaultClientCapabilities =
     { emptyClientCapabilities with
@@ -108,7 +110,9 @@ let defaultClientCapabilities =
 let defaultClientProfile =
     { LoggingEnabled = false
       ClientCapabilities = defaultClientCapabilities
-      SolutionLoadDelay = None }
+      SolutionLoadDelay = None
+      ExtraEnv = Map.empty
+      ExtraArgs = [] }
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)
@@ -171,7 +175,9 @@ let initialClientState =
     { ClientProfile =
         { LoggingEnabled = false
           ClientCapabilities = emptyClientCapabilities
-          SolutionLoadDelay = None }
+          SolutionLoadDelay = None
+          ExtraEnv = Map.empty
+          ExtraArgs = [] }
       LoggingEnabled = false
       ProjectDir = None
       ServerProcess = None
@@ -392,6 +398,13 @@ let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) ms
                 LoggingEnabled = clientProfile.LoggingEnabled }
 
         let processStartInfo = makeServerProcessInfo projectDir
+
+        for KeyValue(k, v) in clientProfile.ExtraEnv do
+            processStartInfo.Environment[k] <- v
+
+        if not clientProfile.ExtraArgs.IsEmpty then
+            let extraArgStr = clientProfile.ExtraArgs |> String.concat " "
+            processStartInfo.Arguments <- processStartInfo.Arguments + " " + extraArgStr
 
         let p = new Process()
         p.StartInfo <- processStartInfo
