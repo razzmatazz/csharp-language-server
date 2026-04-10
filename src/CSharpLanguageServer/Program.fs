@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Program
 
 open System
+open System.Globalization
 open System.IO
 open System.Reflection
 
@@ -20,6 +21,7 @@ type CLIArguments =
     | [<AltCommandLine("-v")>] Version
     | [<AltCommandLine("-l")>] LogLevel of level: string
     | [<AltCommandLine("-s")>] Solution of solution: string
+    | [<AltCommandLine("-L")>] Locale of locale: string
     | Debug
     | Diagnose
     | [<AltCommandLine("-f")>] Features of features: string
@@ -31,6 +33,7 @@ type CLIArguments =
             | Version -> "display versioning information"
             | Solution _ -> "specify .sln file to load (relative to CWD)"
             | LogLevel _ -> "set log level, <trace|debug|info|warning|error>; default is `info`"
+            | Locale _ -> "force output locale, e.g. `en-US` or `de`; overrides DOTNET_CLI_UI_LANGUAGE"
             | Debug -> "enable debug mode"
             | Diagnose -> "run diagnostics"
             | Features _ -> "enable optional features, comma-separated: [metadata-uris, razor-support]"
@@ -62,6 +65,24 @@ let entry args =
         let debugMode: bool = serverArgs.Contains Debug
         let logLevel = serverArgs.TryGetResult <@ LogLevel @> |> Option.defaultValue "info"
 
+        // Resolve locale: CLI arg takes priority, then DOTNET_CLI_UI_LANGUAGE env var.
+        let locale =
+            serverArgs.TryGetResult <@ Locale @>
+            |> Option.orElseWith (fun () ->
+                Environment.GetEnvironmentVariable("DOTNET_CLI_UI_LANGUAGE") |> Option.ofObj)
+
+        // Apply the culture before any Roslyn/MSBuild work begins.
+        locale
+        |> Option.iter (fun l ->
+            let culture =
+                if String.IsNullOrWhiteSpace(l) then
+                    CultureInfo.InvariantCulture
+                else
+                    CultureInfo.GetCultureInfo(l)
+
+            CultureInfo.DefaultThreadCurrentCulture <- culture
+            CultureInfo.DefaultThreadCurrentUICulture <- culture)
+
         let features: Set<string> =
             serverArgs.TryGetResult <@ Features @>
             |> Option.defaultValue ""
@@ -78,6 +99,7 @@ let entry args =
                 logLevel = Some logLevel
                 useMetadataUris = Some(features.Contains "metadata-uris")
                 razorSupport = Some(features.Contains "razor-support")
+                locale = locale
                 debug =
                     Some
                         { CSharpDebugConfiguration.Default with

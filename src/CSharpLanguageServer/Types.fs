@@ -17,6 +17,7 @@ type CSharpConfiguration =
       applyFormattingOptions: bool option
       useMetadataUris: bool option
       razorSupport: bool option
+      locale: string option
       debug: CSharpDebugConfiguration option
       solutionPathOverride: string option }
 
@@ -31,6 +32,7 @@ type CSharpConfiguration =
           applyFormattingOptions = None
           useMetadataUris = None
           razorSupport = None
+          locale = None
           debug = None
           solutionPathOverride = None }
 
@@ -41,6 +43,7 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
         |> Option.orElse oldConfig.applyFormattingOptions
       useMetadataUris = newConfig.useMetadataUris |> Option.orElse oldConfig.useMetadataUris
       razorSupport = newConfig.razorSupport |> Option.orElse oldConfig.razorSupport
+      locale = newConfig.locale |> Option.orElse oldConfig.locale
       debug =
         match newConfig.debug with
         | Some newDebug ->

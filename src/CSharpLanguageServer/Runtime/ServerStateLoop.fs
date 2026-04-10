@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Runtime.ServerStateLoop
 
 open System
+open System.Globalization
 open System.Threading
 
 open Ionide.LanguageServerProtocol.Types
@@ -86,7 +87,18 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
 
 let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
-    | SettingsChange newConfig -> return { state with Config = newConfig }
+    | SettingsChange newConfig ->
+        if newConfig.locale <> state.Config.locale then
+            let culture =
+                match newConfig.locale with
+                | Some l when not (String.IsNullOrWhiteSpace(l)) -> CultureInfo.GetCultureInfo(l)
+                | Some _ -> CultureInfo.InvariantCulture
+                | None -> CultureInfo.InvariantCulture
+
+            CultureInfo.DefaultThreadCurrentCulture <- culture
+            CultureInfo.DefaultThreadCurrentUICulture <- culture
+
+        return { state with Config = newConfig }
 
     | TraceLevelChange newTraceLevel ->
         Logging.setLspTraceLevel newTraceLevel

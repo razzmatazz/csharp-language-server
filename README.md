@@ -59,6 +59,10 @@ Settings are read from the `csharp` workspace configuration section
   specifying an alternative solution when multiple exist in the workspace;
   can also be set via the `--solution` CLI flag; defaults to `null`
 
+- `csharp.locale` - force the output language for diagnostics and messages,
+  e.g. `en-US` or `de`; useful for consistent logs across different OS locales;
+  overrides `DOTNET_CLI_UI_LANGUAGE`; defaults to the system locale
+
 - `csharp.debug.solutionLoadDelay` - delay in milliseconds before loading the
   solution after the workspace is ready
 
@@ -69,7 +73,7 @@ Settings are read from the `csharp` workspace configuration section
 
 ```
 USAGE: csharp-ls [--help] [--version] [--loglevel <level>] [--solution <solution>]
-                 [--debug] [--diagnose] [--features <features>] [--rpclog <path>]
+                 [--locale <locale>] [--debug] [--diagnose] [--features <features>] [--rpclog <path>]
 
 OPTIONS:
 
@@ -79,6 +83,9 @@ OPTIONS:
                           equivalent to csharp.logLevel; default is `info`
     --solution, -s <solution>
                           specify .sln file to load (relative to CWD)
+    --locale, -L <locale>
+                          force output locale, e.g. `en-US` or `de`;
+                          equivalent to csharp.locale; overrides DOTNET_CLI_UI_LANGUAGE
     --debug               enable debug mode
     --diagnose            run diagnostics
     --features, -f <features>
@@ -88,6 +95,12 @@ OPTIONS:
 ```
 
 See `csharp-ls --help`.
+
+## Environment Variables
+
+- `DOTNET_CLI_UI_LANGUAGE` - sets the output locale for diagnostics and messages
+  (e.g. `en-US`, `de`); follows the standard dotnet CLI convention; overridden
+  by `--locale` / `csharp.locale` if set
 
 ### LSP Tracing
 
