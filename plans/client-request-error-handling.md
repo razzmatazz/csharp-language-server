@@ -69,6 +69,61 @@ The same bug would affect `window/workDoneProgress/create` inside
 | `Handlers/LifeCycle.fs` | `handleInitialized` | Depends on `sendServerRequest` returning a proper `LspResult` |
 | `Lsp/ProgressReporter.fs` | `Begin` | Depends on `sendServerRequest` returning a proper `LspResult` |
 
+## Where Capability Checks Belong
+
+`CSharpLspClient` carries a TODO comment:
+
+```fsharp
+// TODO: Send notifications / requests to client only if client support it
+```
+
+This implies `CSharpLspClient` itself should grow into a capability-aware gating
+layer.  That would be the wrong design.
+
+### Notifications never need gating
+
+`WindowShowMessage`, `WindowLogMessage`, `TelemetryEvent`, `TextDocumentPublishDiagnostics`,
+`LogTrace`, `Progress` — these are fire-and-forget notifications.  The LSP spec does
+not require the client to advertise support before the server sends them; clients
+simply ignore what they don't handle.  Gating them anywhere would be wrong.
+
+### Requests: the check belongs at the call site, not inside `CSharpLspClient`
+
+`CSharpLspClient` is constructed in `configureRpcTransport` **before `initialize` is
+processed**, so `ClientCapabilities` is not known at construction time.  To gate
+inside `CSharpLspClient` it would need to become stateful — either taking a mutable
+capabilities field set after the handshake, or a `unit -> ClientCapabilities`
+accessor.  That conflates two concerns (transport and negotiation) in a single class.
+
+The right rule is: **the check belongs where `ClientCapabilities` is already
+naturally available at the moment the call is made.**
+
+| Request | Nature of check | Where it belongs |
+|---|---|---|
+| `workspace/configuration` | Simple boolean: `Workspace.Configuration` | Call site (`handleInitialized`) |
+| `workspace/workspaceFolders` | Simple boolean: `Workspace.WorkspaceFolders` | Call site (wherever it is called) |
+| `workspace/applyEdit` | Simple boolean: `Workspace.ApplyEdit` | Call site (wherever it is called) |
+| `workspace/semanticTokens/refresh` | Simple boolean: `Workspace.SemanticTokens.RefreshSupport` | Call site (wherever it is called) |
+| `window/showMessageRequest` | Simple boolean: `Window.ShowMessage` | Call site (wherever it is called) |
+| `window/workDoneProgress/create` | Simple boolean: `Window.WorkDoneProgress` | `ProgressReporter.Begin` ✅ already done |
+| `client/registerCapability` | Inseparable from payload construction (per-feature flags determine *which* registrations to include, not just *whether* to send) | Call site (`handleInitialized`) — cannot be moved into `CSharpLspClient` |
+
+For simple boolean cases that have no dedicated wrapper yet, the `ProgressReporter`
+pattern is the right model: a small, purpose-built object constructed *after*
+`initialize` that holds the relevant capability flag and gates the call.  The caller
+uses the wrapper rather than `CSharpLspClient` directly.
+
+### Conclusion
+
+The TODO comment in `Client.fs` should be **removed and replaced** with a clear
+statement that `CSharpLspClient` is a pure transport adapter and that capability
+gating is the responsibility of callers.  The capability checks for
+`workspace/configuration` and `client/registerCapability` that this plan adds
+(Steps 2 and 3 below) follow this principle: they live in `handleInitialized`, which
+already holds `context.ClientCapabilities`.
+
+---
+
 ## Capability Checks — What's Missing
 
 The `sendServerRequest` crash is the primary bug, but there is a related correctness
