@@ -19,13 +19,38 @@ type CSharpLspClient
         return
             match result with
             | Result.Ok jtoken -> jtoken |> deserialize |> Result.Ok
-            | Result.Error err -> failwith "TODO"
+            | Result.Error errToken ->
+                let code =
+                    errToken.SelectToken("code")
+                    |> Option.ofObj
+                    |> Option.bind (fun t ->
+                        t.ToString()
+                        |> System.Int32.TryParse
+                        |> function
+                            | true, v -> Some v
+                            | _ -> None)
+                    |> Option.defaultValue -32603 // -32603 = JSON-RPC "Internal error"
+
+                let message =
+                    errToken.SelectToken("message")
+                    |> Option.ofObj
+                    |> Option.map _.ToObject<string>()
+                    |> Option.defaultValue "Unknown error"
+
+                let data = errToken.SelectToken("data") |> Option.ofObj
+
+                Result.Error
+                    { Code = code
+                      Message = message
+                      Data = data }
     }
 
     override __.WindowShowMessage p =
         sendServerNotification "window/showMessage" (serialize p)
 
-    // TODO: Send notifications / requests to client only if client support it
+    // Note: CSharpLspClient is a pure transport adapter. It does not gate calls on
+    // ClientCapabilities — that is the responsibility of callers, who have access to
+    // capabilities via RequestContext. See ProgressReporter for the reference pattern.
 
     override __.WindowShowMessageRequest p : AsyncLspResult<Types.MessageActionItem option> =
         sendServerRequest "window/showMessageRequest" (serialize p)
