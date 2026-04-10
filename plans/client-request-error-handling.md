@@ -181,15 +181,18 @@ Add a unit or integration test that verifies `handleInitialized` completes
 successfully when the client either does not advertise support for the two optional
 requests, or returns `-32601 Method not found` despite advertising support.
 
-The existing test harness (`Tooling.fs`) already registers handlers for all three
-server→client methods.  The cleanest approach for a capability-check regression test
-is to add a `clientProfile` variant (or use the existing `initializeParamsUpdate`
-callback) that clears `Workspace.Configuration` and all `DynamicRegistration` flags
-from the `ClientCapabilities` sent in `initialize`, then assert:
+**The existing test suite already runs with no `dynamicRegistration` flags set.**
+`defaultClientCapabilities` in `Tooling.fs` leaves every `DynamicRegistration` field
+as `None` and `Workspace.Configuration = None`.  This means all existing tests
+exercise the static-capability path only.  Adding an explicit test for the
+capability-check guards in Steps 2 and 3 is therefore straightforward: use
+`emptyClientCapabilities` (already defined in `Tooling.fs`) as the `ClientCapabilities`
+in a new `LspClientProfile`, run `LoadSolution`, and assert:
 
 - `initialize` and `initialized` complete without the server process exiting.
-- No `client/registerCapability` or `workspace/configuration` request appears in the
-  RPC log.
+- No `client/registerCapability` or `workspace/configuration` entry appears in the
+  `ClientRpcCall` log (both methods are already logged by `configureRpcTransport` in
+  `Tooling.fs`, so absence is detectable).
 - A subsequent request (e.g. `textDocument/hover`) returns a valid response,
   confirming the server reached a working state with default config.
 
@@ -197,6 +200,21 @@ A complementary unit test using an in-process `CSharpLspClient` with a mock
 `sendServerRequest_` that returns `Error` payloads can verify that after Step 1,
 `sendServerRequest` returns `Result.Error { Code = -32601; ... }` instead of
 throwing.
+
+### Note: per-handler `registration` unit tests are not needed here
+
+The integration test above (all flags absent → `client/registerCapability` not sent)
+provides aggregate coverage: if any handler's `registration` function ignores its
+flag and returns `Some`, the registrations list would be non-empty and the test
+would fail.  Per-handler unit tests for each `registration` function are not
+warranted — the pattern is mechanical and uniform across all ~30 handlers.
+
+There is however a **pre-existing gap** not addressed by this plan: no test runs
+with any `dynamicRegistration = true` flag, so the `Some { Id = ...; Method = ...;
+RegisterOptions = ... }` branches of all handler `registration` functions are
+currently unexercised.  Fixing that gap (e.g. a `dynamicClientCapabilities` profile
+that enables all flags and verifies the `Registrations` array content in
+`client/registerCapability`) is out of scope here but worth tracking separately.
 
 ## Testing Checklist
 
