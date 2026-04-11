@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Fix semantic tokens so constants and fields have their own separate symbol kinds
+  - By @jktjkt15 in https://github.com/razzmatazz/csharp-language-server/pull/349
 * Fix compatibility with LSP clients that return errors for unsupported server→client requests (e.g. Claude Code built-in LSP client)
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/348
   - Reported by @anthropics in https://github.com/anthropics/claude-code/issues/16360
