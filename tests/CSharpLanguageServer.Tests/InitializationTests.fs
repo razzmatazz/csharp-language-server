@@ -242,6 +242,24 @@ let testMultiTargetWorkspace () =
     testHoverOnClass "folder1/Project/Class.cs" "void Class1.Method(string arg)"
 
 [<Test>]
+let testClientRegisterCapabilityIsNotSentWhenNoDynamicRegistrationsAreRequested () =
+    // When the client advertises no dynamicRegistration flags, getDynamicRegistrations
+    // returns an empty list and handleInitialized must skip client/registerCapability
+    // entirely rather than sending an empty Registrations array.
+    use client =
+        activateFixtureExt
+            "genericProject"
+            { defaultClientProfile with
+                ClientCapabilities = emptyClientCapabilities }
+            emptyFixturePatch
+            id
+
+    Assert.IsFalse(
+        client.ServerDidInvoke "client/registerCapability",
+        "server must not send client/registerCapability when all dynamicRegistration flags are absent"
+    )
+
+[<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
     // Some LSP clients (e.g. crush/powernap) send RootPath as a path like "/E:/proj2/fracture"
     // which is not a valid URI on Windows. Since RootUri is valid, initialization should succeed
