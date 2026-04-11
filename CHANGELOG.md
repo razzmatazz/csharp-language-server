@@ -5,13 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
-* More workspace/state management race fixes
-  - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
+* Add support for specifying output locale via `--locale` / `csharp.locale` / `DOTNET_CLI_UI_LANGUAGE`
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/346
 * Fix `completionItem/resolve` crash when client sends sentinel `-1` positions in `textEdit`
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/344
   - Reported by @lightningund in https://github.com/razzmatazz/csharp-language-server/issues/323
-* Add support for specifying output locale via `--locale` / `csharp.locale` / `DOTNET_CLI_UI_LANGUAGE`
-  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/346
+* More workspace/state management race fixes
+  - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
 
 **Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.23.0...main
 
