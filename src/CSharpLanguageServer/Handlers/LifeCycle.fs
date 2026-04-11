@@ -118,20 +118,23 @@ module LifeCycle =
 
             logger.LogDebug("handleInitialized: registrationParams..")
 
-            let registrationParams =
-                { Registrations =
-                    getDynamicRegistrations context.Config context.ClientCapabilities
-                    |> List.toArray }
+            let registrations =
+                getDynamicRegistrations context.Config context.ClientCapabilities
 
-            logger.LogDebug("handleInitialized: ClientRegisterCapability..")
-            // TODO: Retry on error?
-            try
-                match! lspClient.ClientRegisterCapability registrationParams with
-                | Ok _ -> ()
-                | Error error ->
-                    logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
-            with ex ->
-                logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
+            if registrations.IsEmpty then
+                logger.LogDebug("handleInitialized: no dynamic registrations, skipping client/registerCapability")
+            else
+                let registrationParams = { Registrations = registrations |> List.toArray }
+
+                logger.LogDebug("handleInitialized: ClientRegisterCapability..")
+                // TODO: Retry on error?
+                try
+                    match! lspClient.ClientRegisterCapability registrationParams with
+                    | Ok _ -> ()
+                    | Error error ->
+                        logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
+                with ex ->
+                    logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
             logger.LogDebug("handleInitialized: retrieve csharp settings..")
 
