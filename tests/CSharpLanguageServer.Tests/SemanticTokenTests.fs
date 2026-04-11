@@ -82,7 +82,7 @@ let testSemanticTokens () =
 
     let legend = semanticTokensOptions.Value.Legend
     Assert.AreEqual([| "static" |], legend.TokenModifiers)
-    Assert.AreEqual(18, legend.TokenTypes.Length)
+    Assert.AreEqual(20, legend.TokenTypes.Length)
 
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
