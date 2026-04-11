@@ -6,9 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 * Fix compatibility with LSP clients that return errors for unsupported server→client requests (e.g. Claude Code built-in LSP client)
-  - `sendServerRequest` no longer crashes on error responses — converts them to typed `Result.Error` instead of throwing
-  - `client/registerCapability` is skipped when no dynamic registrations are needed
-  - `workspace/configuration` is skipped when the client has not advertised support via `ClientCapabilities.Workspace.Configuration`
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/348
   - Reported by @anthropics in https://github.com/anthropics/claude-code/issues/16360
 * Add support for specifying output locale via `--locale` / `csharp.locale` / `DOTNET_CLI_UI_LANGUAGE`
