@@ -143,31 +143,39 @@ module LifeCycle =
             //
             let mutable wsUpdate = LspWorkspaceUpdate.Empty
 
-            try
-                let! workspaceCSharpConfig =
-                    lspClient.WorkspaceConfiguration(
-                        { Items =
-                            [| { Section = Some "csharp"
-                                 ScopeUri = None } |] }
+            let configurationSupported =
+                context.ClientCapabilities.Workspace
+                |> Option.bind _.Configuration
+                |> Option.defaultValue false
+
+            if not configurationSupported then
+                logger.LogDebug("handleInitialized: client does not support workspace/configuration, skipping")
+            else
+                try
+                    let! workspaceCSharpConfig =
+                        lspClient.WorkspaceConfiguration(
+                            { Items =
+                                [| { Section = Some "csharp"
+                                     ScopeUri = None } |] }
+                        )
+
+                    let csharpConfig =
+                        workspaceCSharpConfig
+                        |> Option.fromResult
+                        |> Option.bind Seq.tryHead
+                        |> Option.bind deserialize<CSharpConfiguration option>
+
+                    match csharpConfig with
+                    | None -> ()
+                    | Some csharpConfig ->
+                        let newConfig = mergeCSharpConfiguration context.Config csharpConfig
+                        wsUpdate <- wsUpdate.WithSettingsChange(newConfig)
+
+                with ex ->
+                    logger.LogWarning(
+                        "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",
+                        ex |> string
                     )
-
-                let csharpConfig =
-                    workspaceCSharpConfig
-                    |> Option.fromResult
-                    |> Option.bind Seq.tryHead
-                    |> Option.bind deserialize<CSharpConfiguration option>
-
-                match csharpConfig with
-                | None -> ()
-                | Some csharpConfig ->
-                    let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                    wsUpdate <- wsUpdate.WithSettingsChange(newConfig)
-
-            with ex ->
-                logger.LogWarning(
-                    "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",
-                    ex |> string
-                )
 
             return Ok(), wsUpdate
         }
