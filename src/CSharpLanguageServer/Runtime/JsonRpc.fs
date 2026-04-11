@@ -1,3 +1,6 @@
+/// JSON-RPC 2.0 transport implementation for the Language Server Protocol.
+/// This module is JSON-RPC 2.0 only — JSON-RPC 1.0 messages are not supported.
+/// LSP mandates JSON-RPC 2.0 exclusively, so no 1.0 compatibility is needed or provided.
 module CSharpLanguageServer.Runtime.JsonRpc
 
 open System
@@ -6,8 +9,6 @@ open System.Text
 open System.Threading
 
 open Newtonsoft.Json.Linq
-
-open CSharpLanguageServer.Types
 
 type JsonRpcLogEntry =
     | RpcRead of JObject
@@ -292,108 +293,136 @@ let startNotificationHandler postEvent (handler: JsonRpcNotificationHandler) (co
         cancellationToken = CancellationToken.None
     )
 
+/// Reject a message that lacks a valid "jsonrpc": "2.0" field.
+/// If an id is present, send -32600 Invalid Request; otherwise drop silently.
+let handleInvalidVersion state postEvent (id: JToken option) =
+    match id with
+    | Some requestId ->
+        let errorResponse =
+            makeErrorResponse requestId (makeError -32600 "Invalid Request: jsonrpc must be \"2.0\"")
+
+        enqueueOutboundMessage
+            postEvent
+            state
+            { Payload = errorResponse
+              CompletionRC = None }
+    | None ->
+        postEvent (
+            WriteRpcLogEntry(RpcError "handleInboundMessage: dropping message with missing or invalid jsonrpc field")
+        )
+
+        state
+
+/// Dispatch an inbound request (method + id present) to a registered call handler.
+/// Sends -32601 Method Not Found if no handler is registered.
+let handleInboundRequest state postEvent (m: string) (requestId: JToken) (msgParams: JToken option) =
+    let wireIdKey = string requestId
+
+    match state.CallHandlers |> Map.tryFind m with
+    | Some handler ->
+        let cts = new CancellationTokenSource()
+
+        let context =
+            { MethodName = m
+              RequestOrdinal = state.NextInboundRequestOrdinal
+              WireId = Some requestId
+              Params = msgParams
+              CancellationTokenSource = Some cts }
+
+        do startCallHandler postEvent handler context
+
+        { state with
+            NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
+            RunningInboundRequests = state.RunningInboundRequests |> Map.add wireIdKey context }
+    | None ->
+        let errorResponse =
+            makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
+
+        enqueueOutboundMessage
+            postEvent
+            state
+            { Payload = errorResponse
+              CompletionRC = None }
+
+/// Dispatch an inbound notification (method present, no id) to a registered notification handler.
+/// $/cancelRequest is handled specially. No response is ever sent.
+let handleInboundNotification state postEvent (m: string) (msg: JObject) =
+    if m = "$/cancelRequest" then
+        let idParam = msg.SelectToken("params.id") |> Option.ofObj
+
+        match idParam with
+        | Some cancelId -> postEvent (CancelRequest(string cancelId))
+        | None -> postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: $/cancelRequest missing 'id' parameter"))
+
+        state
+    else
+        let context =
+            { MethodName = m
+              RequestOrdinal = state.NextInboundRequestOrdinal
+              WireId = None
+              Params = msg.SelectToken("params") |> Option.ofObj
+              CancellationTokenSource = None }
+
+        match state.NotificationHandlers |> Map.tryFind m with
+        | Some handler -> do startNotificationHandler postEvent handler context
+        | None ->
+            postEvent (
+                WriteRpcLogEntry(RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" m))
+            )
+
+        { state with
+            NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
+
+/// Resolve a pending outbound call using an inbound response (no method, id present).
+/// Logs and ignores responses for unknown ids.
+let handleInboundResponse state postEvent (responseId: JToken) (msg: JObject) =
+    let idVal = int responseId
+
+    match state.PendingOutboundCalls |> Map.tryFind idVal with
+    | Some replyChannel ->
+        match msg.SelectToken("error") |> Option.ofObj with
+        | Some err -> replyChannel.Reply(Error err)
+        | None ->
+            let result =
+                msg.SelectToken("result")
+                |> Option.ofObj
+                |> Option.defaultWith (fun () -> JValue.CreateNull() :> JToken)
+
+            replyChannel.Reply(Ok result)
+
+        { state with
+            PendingOutboundCalls = state.PendingOutboundCalls |> Map.remove idVal }
+    | None ->
+        postEvent (
+            WriteRpcLogEntry(
+                RpcError(sprintf "handleInboundMessage: received response for unknown outbound call id %d" idVal)
+            )
+        )
+
+        state
+
+/// Top-level inbound message router. Validates the jsonrpc version field, then
+/// classifies the message and delegates to the appropriate handler.
 let handleInboundMessage state postEvent (msg: JObject) =
-    let method =
-        msg.SelectToken("method") |> Option.ofObj |> Option.map _.Value<string>()
+    let jsonrpc =
+        msg.SelectToken("jsonrpc") |> Option.ofObj |> Option.map _.Value<string>()
 
     let id = msg.SelectToken("id") |> Option.ofObj
 
-    match method with
-    | Some m ->
-        match id with
-        | Some requestId ->
-            // Request (has "id") — dispatch to request handlers asynchronously
-            let wireIdKey = string requestId
+    if jsonrpc <> Some "2.0" then
+        handleInvalidVersion state postEvent id
+    else
 
-            match state.CallHandlers |> Map.tryFind m with
-            | Some handler ->
-                let cts = new CancellationTokenSource()
+        let method =
+            msg.SelectToken("method") |> Option.ofObj |> Option.map _.Value<string>()
 
-                let context =
-                    { MethodName = m
-                      RequestOrdinal = state.NextInboundRequestOrdinal
-                      WireId = Some requestId
-                      Params = msg.SelectToken("params") |> Option.ofObj
-                      CancellationTokenSource = Some cts }
+        let msgParams = msg.SelectToken("params") |> Option.ofObj
 
-                do startCallHandler postEvent handler context
-
-                { state with
-                    NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
-                    RunningInboundRequests = state.RunningInboundRequests |> Map.add wireIdKey context }
-            | None ->
-                let errorResponse =
-                    makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
-
-                enqueueOutboundMessage
-                    postEvent
-                    state
-                    { Payload = errorResponse
-                      CompletionRC = None }
-        | None ->
-            // Notification (no "id") — dispatch to notification handlers, never send a response
-            // Special handling for $/cancelRequest
-            if m = "$/cancelRequest" then
-                let idParam = msg.SelectToken("params.id") |> Option.ofObj
-
-                match idParam with
-                | Some cancelId -> postEvent (CancelRequest(string cancelId))
-                | None ->
-                    postEvent (
-                        WriteRpcLogEntry(RpcError "handleInboundMessage: $/cancelRequest missing 'id' parameter")
-                    )
-
-                state
-            else
-                let context =
-                    { MethodName = m
-                      RequestOrdinal = state.NextInboundRequestOrdinal
-                      WireId = None
-                      Params = msg.SelectToken("params") |> Option.ofObj
-                      CancellationTokenSource = None }
-
-                match state.NotificationHandlers |> Map.tryFind m with
-                | Some handler -> do startNotificationHandler postEvent handler context
-                | None ->
-                    postEvent (
-                        WriteRpcLogEntry(
-                            RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" m)
-                        )
-                    )
-
-                { state with
-                    NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
-    | None ->
-        match id with
-        | Some responseId ->
-            // No method + has id = this is a response to one of our outbound calls
-            let idVal = int responseId
-
-            match state.PendingOutboundCalls |> Map.tryFind idVal with
-            | Some replyChannel ->
-                match msg.SelectToken("error") |> Option.ofObj with
-                | Some err -> replyChannel.Reply(Error err)
-                | None ->
-                    let result =
-                        msg.SelectToken("result")
-                        |> Option.ofObj
-                        |> Option.defaultWith (fun () -> JValue.CreateNull() :> JToken)
-
-                    replyChannel.Reply(Ok result)
-
-                { state with
-                    PendingOutboundCalls = state.PendingOutboundCalls |> Map.remove idVal }
-            | None ->
-                postEvent (
-                    WriteRpcLogEntry(
-                        RpcError(
-                            sprintf "handleInboundMessage: received response for unknown outbound call id %d" idVal
-                        )
-                    )
-                )
-
-                state
-        | None ->
+        match method, id with
+        | Some m, Some requestId -> handleInboundRequest state postEvent m requestId msgParams
+        | Some m, None -> handleInboundNotification state postEvent m msg
+        | None, Some responseId -> handleInboundResponse state postEvent responseId msg
+        | None, None ->
             postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: message has no 'method' or 'id' field"))
             state
 

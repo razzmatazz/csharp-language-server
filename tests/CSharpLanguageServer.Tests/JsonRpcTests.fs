@@ -1729,3 +1729,76 @@ let testOtherRequestsStillWorkAfterCancellation () =
     Assert.AreEqual("ok", string fastResponse.Value.["result"])
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+// ---- jsonrpc version field validation tests ----
+
+[<Test>]
+let testRequestWithMissingJsonRpcFieldReturnsInvalidRequest () =
+    // A request without "jsonrpc": "2.0" must be rejected with -32600 Invalid Request.
+    // The id is recoverable so must be echoed in the error response.
+    let request =
+        JObject(JProperty("id", 1), JProperty("method", "test/echo"), JProperty("params", JObject()))
+    // Deliberately no "jsonrpc" field
+
+    let stdin = makeInputStream [ string request ]
+    let stdout = new MemoryStream()
+
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
+
+    Assert.IsTrue(responseOpt.IsSome, "Expected an error response for missing jsonrpc field")
+
+    let response = responseOpt.Value
+    Assert.AreEqual(1, int response.["id"], "Error response must echo the request id")
+    Assert.AreEqual(-32600, int (response.SelectToken("error.code")), "Expected -32600 Invalid Request")
+
+[<Test>]
+let testRequestWithWrongJsonRpcVersionReturnsInvalidRequest () =
+    // A request with "jsonrpc": "1.0" (wrong version) must be rejected with -32600.
+    let request =
+        JObject(
+            JProperty("jsonrpc", "1.0"),
+            JProperty("id", 2),
+            JProperty("method", "test/echo"),
+            JProperty("params", JObject())
+        )
+
+    let stdin = makeInputStream [ string request ]
+    let stdout = new MemoryStream()
+
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
+
+    Assert.IsTrue(responseOpt.IsSome, "Expected an error response for wrong jsonrpc version")
+
+    let response = responseOpt.Value
+    Assert.AreEqual(2, int response.["id"], "Error response must echo the request id")
+    Assert.AreEqual(-32600, int (response.SelectToken("error.code")), "Expected -32600 Invalid Request")
+
+[<Test>]
+let testNotificationWithMissingJsonRpcFieldIsSilentlyDropped () =
+    // A notification (no id) with a missing "jsonrpc" field must be silently dropped.
+    // No response is ever sent for notifications, so the only observable effect is
+    // that the handler must NOT be called.
+    let handlerCalled = ref false
+
+    let notification =
+        JObject(JProperty("method", "test/notify"), JProperty("params", JObject()))
+    // Deliberately no "jsonrpc" field
+
+    let handler _ctx = async { handlerCalled.Value <- true }
+
+    let stdin = makeInputStream [ string notification ]
+    let stdout = new MemoryStream()
+
+    let _server =
+        startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.ofList [ "test/notify", handler ])
+
+    Async.Sleep 500 |> Async.RunSynchronously
+
+    Assert.AreEqual(0L, stdout.Length, "Dropped notification must produce no output")
+    Assert.IsFalse(handlerCalled.Value, "Handler must not be called for invalid notification")

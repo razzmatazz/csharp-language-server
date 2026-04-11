@@ -2,6 +2,8 @@
 
 An F# implementation of a [JSON-RPC 2.0](https://www.jsonrpc.org/specification) transport layer over stdio for use with the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/). It is symmetric by design and can be used on **either end** of an LSP connection — as the language server receiving requests from an editor, or as the client (e.g. in tests or a driver process) sending requests to a server.
 
+> **JSON-RPC version:** This implementation is **JSON-RPC 2.0 only**. JSON-RPC 1.0 messages (which lack the `jsonrpc` field and use `"id": null` for notifications) are not supported. This is intentional — LSP mandates JSON-RPC 2.0 exclusively.
+
 ## How it works
 
 The transport runs as a `MailboxProcessor` actor. All I/O and state transitions go through this single actor, keeping state mutation serialised without manual locking. Inbound request and notification handlers run on the thread pool and report back to the actor via events when complete.
@@ -59,6 +61,17 @@ let combined =
         fileCallback entry
         loggerCallback entry)
 ```
+
+## Version validation
+
+Every inbound message must carry `"jsonrpc": "2.0"`. Messages that fail this check are rejected before any dispatch:
+
+| Message shape | Behaviour |
+|---|---|
+| Has `id` (request-shaped) | Replied to immediately with `-32600 Invalid Request`, echoing the `id` from the message so the caller can correlate the error. No handler is invoked. |
+| No `id` (notification-shaped) | Silently dropped. A `RpcError` log entry is emitted. No response is sent. |
+
+This applies to both a missing `jsonrpc` field and a wrong value (e.g. `"1.0"`).
 
 ## Receiving requests
 
@@ -173,6 +186,7 @@ Write well-formed `Content-Length`-framed JSON into the input stream and read re
 
 | Code    | Meaning             | When sent                                                                                         |
 |---------|---------------------|---------------------------------------------------------------------------------------------------|
+| -32600  | Invalid Request     | Inbound message with a missing or non-`"2.0"` `jsonrpc` field (request-shaped, i.e. has `id`)    |
 | -32099  | Transport shut down | Pending `sendJsonRpcCall` on shutdown or stdin EOF; late `sendJsonRpcCall` in `ShuttingDown`/`Stopped` |
 | -32601  | Method not found    | Inbound request for an unregistered method                                                        |
 | -32603  | Internal error      | Inbound handler threw an unhandled exception                                                      |
