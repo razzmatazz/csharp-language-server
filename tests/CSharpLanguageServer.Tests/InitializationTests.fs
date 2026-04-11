@@ -259,6 +259,54 @@ let testClientRegisterCapabilityIsNotSentWhenNoDynamicRegistrationsAreRequested 
         "server must not send client/registerCapability when all dynamicRegistration flags are absent"
     )
 
+[<TestCase(false, TestName = "absent: not sent")>]
+[<TestCase(true, TestName = "Some true: sent")>]
+let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
+    // When Workspace.Configuration = Some true the server must send workspace/configuration.
+    // When it is absent the server must skip the call entirely.
+    //
+    // Synchronize via Shutdown(): handleInitialized runs asynchronously after "initialized",
+    // but the sequential scheduler ensures it completes before the server responds to "shutdown",
+    // so the RPC log is stable by the time we inspect it.
+    let caps =
+        { emptyClientCapabilities with
+            Workspace =
+                if configurationSupported then
+                    Some
+                        { defaultClientCapabilities.Workspace.Value with
+                            Configuration = Some true }
+                else
+                    None }
+
+    // Precondition: the caps we built actually reflect the parameter.
+    let actualFlag = caps.Workspace |> Option.bind _.Configuration
+    let actualSupported = actualFlag = Some true
+
+    Assert.AreEqual(
+        configurationSupported,
+        actualSupported,
+        "test precondition failed: built ClientCapabilities does not match configurationSupported parameter"
+    )
+
+    use client =
+        activateFixtureExt
+            "genericProject"
+            { defaultClientProfile with
+                ClientCapabilities = caps }
+            emptyFixturePatch
+            id
+
+    client.Shutdown()
+
+    Assert.AreEqual(
+        configurationSupported,
+        client.ServerDidInvoke "workspace/configuration",
+        sprintf
+            "workspace/configuration invocation expected=%b when Workspace.Configuration=%A"
+            configurationSupported
+            actualFlag
+    )
+
 [<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
     // Some LSP clients (e.g. crush/powernap) send RootPath as a path like "/E:/proj2/fracture"
