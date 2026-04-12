@@ -7,6 +7,7 @@ open System.IO
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 
 let private runDotnetBuild (dir: string) =
@@ -82,3 +83,92 @@ let ``rebuilding a loaded source generator does not fail due to DLL locking`` ()
             stdout
             stderr
     )
+
+// Class.cs line 5 (0-based): "    static void Main() => System.Console.WriteLine(Hello.World);"
+// "Hello" starts at character 52.
+let private helloPosition: Position = { Line = 5u; Character = 52u }
+
+[<Test>]
+let ``go-to-definition on a generated symbol returns a csharp:/generated/ URI`` () =
+    use client = activateFixture "projectWithSourceGenerator"
+    use classFile = client.Open "Project/Class.cs"
+
+    let definitionParams: DefinitionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = helloPosition
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+
+    match definition with
+    | Some(U2.C2 locations) ->
+        Assert.AreEqual(1, locations.Length)
+        Assert.IsTrue(
+            locations.[0].Uri.StartsWith "csharp:/generated/",
+            sprintf "expected csharp:/generated/ URI, got: %s" locations.[0].Uri
+        )
+    | _ -> Assert.Fail(sprintf "expected Some Location[], got: %A" definition)
+
+[<Test>]
+let ``csharp/metadata returns source text for a generated document`` () =
+    use client = activateFixture "projectWithSourceGenerator"
+    use classFile = client.Open "Project/Class.cs"
+
+    // Resolve the generated URI via go-to-definition
+    let definitionParams: DefinitionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = helloPosition
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+
+    let generatedUri =
+        match definition with
+        | Some(U2.C2 [| loc |]) -> loc.Uri
+        | _ -> failwithf "expected single Location from go-to-definition, got: %A" definition
+
+    Assert.IsTrue(
+        generatedUri.StartsWith "csharp:/generated/",
+        sprintf "expected csharp:/generated/ URI, got: %s" generatedUri
+    )
+
+    let metadataParams: CSharpMetadataParams = { TextDocument = { Uri = generatedUri } }
+    let metadata: CSharpMetadataResponse option = client.Request("csharp/metadata", metadataParams)
+
+    Assert.IsTrue(metadata.IsSome, "expected Some response from csharp/metadata")
+
+    Assert.IsTrue(
+        metadata.Value.Source.Contains "public static class Hello",
+        sprintf "expected generated source to contain 'public static class Hello', got:\n%s" metadata.Value.Source
+    )
+
+[<Test>]
+let ``go-to-definition on generated symbol works without obj directory`` () =
+    // The fixture temp dir is copied without bin/ or obj/, so the generated .g.cs
+    // file does not exist on disk. This test validates that the virtual URI path
+    // works regardless of whether obj/ files are present.
+    use client = activateFixture "projectWithSourceGenerator"
+    use classFile = client.Open "Project/Class.cs"
+
+    let definitionParams: DefinitionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = helloPosition
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+
+    match definition with
+    | Some(U2.C2 locations) when locations.Length > 0 ->
+        Assert.IsTrue(
+            locations.[0].Uri.StartsWith "csharp:/generated/",
+            sprintf "expected csharp:/generated/ URI, got: %s" locations.[0].Uri
+        )
+    | _ ->
+        Assert.Fail(
+            sprintf
+                "expected Some Location[] with csharp:/generated/ URI even without obj/, got: %A"
+                definition
+        )
