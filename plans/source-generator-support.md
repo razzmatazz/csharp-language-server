@@ -21,8 +21,9 @@ affected.)
 
 ### Fix: shadow-copy on load
 
-Add a custom `IAnalyzerAssemblyLoader` that copies each DLL to a temp directory before
-loading it:
+`IAnalyzerAssemblyLoader` is a **public** Roslyn interface (`Microsoft.CodeAnalysis.dll`)
+with two methods: `AddDependencyLocation(string)` and `LoadFromPath(string) : Assembly`.
+Implement it directly in F# — no reflection needed for the loader itself:
 
 ```fsharp
 // src/CSharpLanguageServer/Roslyn/WorkspaceServices.fs
@@ -40,27 +41,59 @@ type ShadowCopyAnalyzerAssemblyLoader(shadowDir: string) =
                 Assembly.LoadFrom(dest))
 ```
 
-### Wiring
+`Assembly.LoadFrom` loads into the default `AssemblyLoadContext`. If isolation or
+unload/reload support is needed later, switch to a custom `AssemblyLoadContext`.
+
+### Wiring via reflection — `DefaultAnalyzerAssemblyLoaderProvider`
 
 `WorkspaceServicesInterceptor` already intercepts every `GetService` call on the
-workspace's `HostWorkspaceServices` (via Castle DynamicProxy) and returns custom
-implementations when Roslyn asks for a service the server doesn't provide. It already
-silently handles `ISourceGeneratorTelemetryCollectorWorkspaceService` and
-`ISourceGeneratorTelemetryReporterWorkspaceService`.
+workspace's `HostWorkspaceServices` (via Castle DynamicProxy), using the same
+`Assembly.Load("…").GetType("…")` → `Activator.CreateInstance` pattern established
+throughout `WorkspaceServices.fs` for other internal Roslyn types.
 
-The loader can be injected the same way. `IAnalyzerAssemblyLoaderProvider` is an internal
-Roslyn interface — determine its full type name at runtime and intercept it in
-`WorkspaceServicesInterceptor.Intercept`, returning a provider that yields our shadow-copy
-loader. Alternatively, if Roslyn injects `IAnalyzerAssemblyLoader` directly into
-`AnalyzerFileReference`, intercept at that point instead. The exact injection surface
-needs runtime investigation against Roslyn 5.3.0.
+The injection point is `IAnalyzerAssemblyLoaderProvider`
+(`Microsoft.CodeAnalysis.Workspaces.dll`, `internal`). Its concrete implementation
+`DefaultAnalyzerAssemblyLoaderProvider` (`internal sealed`) has a **public constructor**:
 
-Roslyn's own `ShadowCopyAnalyzerAssemblyLoader` is `internal sealed` — a hand-rolled
-implementation is required.
+```
+ctor(IEnumerable<IAnalyzerAssemblyResolver> assemblyResolvers,
+     IEnumerable<IAnalyzerPathResolver> assemblyPathResolvers)
+```
 
-`Assembly.LoadFrom` loads into the default `AssemblyLoadContext`. This matches OmniSharp's
-approach. If isolation or unload/reload support is needed later, switch to a custom
-`AssemblyLoadContext`.
+This means we can instantiate it reflectively without needing `BindingFlags.NonPublic`:
+
+```fsharp
+// inside WorkspaceServicesInterceptor.Intercept, in the GetService branch:
+| "Microsoft.CodeAnalysis.Host.IAnalyzerAssemblyLoaderProvider" ->
+    let wkspAsm = Assembly.Load "Microsoft.CodeAnalysis.Workspaces"
+    let providerType =
+        wkspAsm.GetType "Microsoft.CodeAnalysis.Host.DefaultAnalyzerAssemblyLoaderProvider"
+        |> nonNull "DefaultAnalyzerAssemblyLoaderProvider"
+
+    // ShadowCopyAnalyzerPathResolver is internal in Microsoft.CodeAnalysis.dll
+    // but has a public ctor(string baseDirectory) — same pattern as above
+    let coreAsm = Assembly.Load "Microsoft.CodeAnalysis"
+    let resolverType =
+        coreAsm.GetType "Microsoft.CodeAnalysis.ShadowCopyAnalyzerPathResolver"
+        |> nonNull "ShadowCopyAnalyzerPathResolver"
+    let shadowResolver = Activator.CreateInstance(resolverType, shadowDir)
+
+    // IAnalyzerPathResolver is internal — wrap in an IEnumerable<obj> via Array
+    let resolvers = Array.CreateInstance(resolverType, 1)
+    resolvers.SetValue(shadowResolver, 0)
+
+    Activator.CreateInstance(providerType, [||], resolvers)  // no assembly resolvers
+```
+
+`ShadowCopyAnalyzerPathResolver` (in `Microsoft.CodeAnalysis.dll`, `internal sealed`)
+intercepts `GetResolvedAnalyzerPath` to return a shadow-copy path, so the underlying
+`AnalyzerAssemblyLoader` never holds a handle on the original DLL. This is exactly how
+Roslyn's own tooling achieves shadow-copying — the path resolver is the extension point.
+
+Note: `ShadowCopyAnalyzerAssemblyLoader` no longer exists in Roslyn 5.x; the
+functionality was split into the `ShadowCopyAnalyzerPathResolver` + `AnalyzerAssemblyLoader`
+components in this version. The hand-rolled loader shown above remains a valid fallback
+if the provider injection proves unstable.
 
 ### Cleanup
 
@@ -71,8 +104,8 @@ exits are acceptable — they live in the system temp directory.
 
 | File | Change |
 |---|---|
-| `Roslyn/WorkspaceServices.fs` | Add `ShadowCopyAnalyzerAssemblyLoader`; add a service-intercept branch in `WorkspaceServicesInterceptor` |
-| `Roslyn/Solution.fs` | Pass shadow dir to `CSharpLspHostServices` if the loader needs to be instantiated there |
+| `Roslyn/WorkspaceServices.fs` | Add `ShadowCopyAnalyzerAssemblyLoader` (fallback loader); add `IAnalyzerAssemblyLoaderProvider` intercept branch in `WorkspaceServicesInterceptor` that instantiates `DefaultAnalyzerAssemblyLoaderProvider` with a `ShadowCopyAnalyzerPathResolver` |
+| `Roslyn/Solution.fs` | Create and pass the shadow temp dir path into `CSharpLspHostServices` at workspace construction; register a `Shutdown` cleanup handler |
 
 ---
 
@@ -255,6 +288,270 @@ what the editor opens).
 
 ---
 
+## 3 — Test Fixture
+
+### Approach
+
+All integration tests follow one pattern: a static fixture directory under
+`tests/CSharpLanguageServer.Tests/Fixtures/` is copied to a fresh temp directory at
+test startup, a real server process is launched against it, and assertions are made over
+the live JSON-RPC wire (`Tooling.fs`). The same pattern works for source generators.
+
+No existing fixture includes a source generator. This will be the first.
+
+### Fixture structure
+
+```
+Fixtures/
+  projectWithSourceGenerator/
+    Generator/
+      Generator.csproj      ← builds the generator; compiled by MSBuild during load
+      Generator.cs          ← IIncrementalGenerator implementation
+    Project/
+      Project.csproj        ← references Generator as an Analyzer
+      Class.cs              ← uses a symbol produced by the generator
+```
+
+Using a `<ProjectReference OutputItemType="Analyzer">` inside the same fixture tree
+means the fixture is self-contained and offline — no NuGet package download required at
+test runtime. The fixture copy filter already preserves `.csproj` and `.cs` files;
+`bin/` and `obj/` are excluded, so MSBuild inside the server process will restore and
+build the generator fresh.
+
+#### `Generator/Generator.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>  <!-- required for analyzers -->
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.0.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
+```
+
+Targeting `netstandard2.0` is the conventional requirement for Roslyn source generators.
+
+#### `Generator/Generator.cs`
+
+A minimal incremental generator that emits one class so there is exactly one generated
+symbol to navigate to:
+
+```csharp
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
+using System.Text;
+
+[assembly: System.Reflection.AssemblyVersion("1.0.0")]
+
+namespace TestGenerator;
+
+[Generator]
+public class HelloGenerator : IIncrementalGenerator
+{
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        context.RegisterPostInitializationOutput(ctx =>
+        {
+            ctx.AddSource("Generated.g.cs", SourceText.From("""
+                namespace Generated;
+                public static class Hello
+                {
+                    public static string World => "hello";
+                }
+                """, Encoding.UTF8));
+        });
+    }
+}
+```
+
+Using `RegisterPostInitializationOutput` (no trigger — always fires) keeps the fixture
+simple and deterministic. The generated class is `Generated.Hello`.
+
+#### `Project/Project.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Generator\Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>
+```
+
+#### `Project/Class.cs`
+
+```csharp
+// line 0: comment
+using Generated;        // line 1
+                        // line 2
+class Program           // line 3
+{                       // line 4
+    static void Main() => System.Console.WriteLine(Hello.World);  // line 5
+}
+```
+
+The `Hello` reference is on line 5 (0-based), character 52 (start of `Hello` after the
+`(` at char 51). This is the navigation target for go-to-definition tests.
+
+### Test file: `SourceGeneratorTests.fs`
+
+```fsharp
+module CSharpLanguageServer.Tests.SourceGeneratorTests
+
+open System.Diagnostics
+open System.IO
+open NUnit.Framework
+open Ionide.LanguageServerProtocol.Types
+open CSharpLanguageServer.Tests.Tooling
+
+[<TestFixture>]
+type SourceGeneratorTests() =
+
+    [<Test; Platform("Win")>]
+    member _.``rebuilding a loaded source generator does not fail due to DLL locking``() =
+        use client = activateFixture "projectWithSourceGenerator"
+        use classFile = client.Open("Project/Class.cs")
+
+        let generatorDir = Path.Combine(client.SolutionDir, "Generator")
+        let psi = ProcessStartInfo("dotnet", "build")
+        psi.WorkingDirectory <- generatorDir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+
+        use proc = Process.Start(psi)
+        proc.WaitForExit(60_000) |> ignore
+
+        Assert.AreEqual(
+            0, proc.ExitCode,
+            sprintf "dotnet build failed (exit %d) — generator DLL is likely locked:\n%s"
+                proc.ExitCode (proc.StandardError.ReadToEnd()))
+
+    [<Test>]
+    member _.``go-to-definition on a generated symbol returns a csharp:/generated/ URI``() =
+        use client = activateFixture "projectWithSourceGenerator"
+        use classFile = client.Open("Project/Class.cs")
+
+        let def: Declaration option =
+            client.Request(
+                "textDocument/definition",
+                { TextDocument = { Uri = classFile.Uri }
+                  Position = { Line = 5u; Character = 52u }  // "Hello" in Hello.World
+                  WorkDoneToken = None
+                  PartialResultToken = None })
+
+        match def with
+        | Some(U2.C2 locations) ->
+            Assert.AreEqual(1, locations.Length)
+            Assert.IsTrue(
+                locations.[0].Uri.StartsWith("csharp:/generated/"),
+                sprintf "expected csharp:/generated/ URI, got: %s" locations.[0].Uri)
+        | _ -> Assert.Fail("expected Location[]")
+
+    [<Test>]
+    member _.``csharp/metadata returns source text for a generated document``() =
+        use client = activateFixture "projectWithSourceGenerator"
+        use classFile = client.Open("Project/Class.cs")
+
+        // First resolve the generated URI via go-to-definition
+        let def: Declaration option =
+            client.Request(
+                "textDocument/definition",
+                { TextDocument = { Uri = classFile.Uri }
+                  Position = { Line = 5u; Character = 52u }
+                  WorkDoneToken = None
+                  PartialResultToken = None })
+
+        let generatedUri =
+            match def with
+            | Some(U2.C2 [| loc |]) -> loc.Uri
+            | _ -> failwith "expected single Location"
+
+        let metadata: CSharpMetadataResponse option =
+            client.Request(
+                "csharp/metadata",
+                { TextDocument = { Uri = generatedUri } })
+
+        Assert.IsTrue(metadata.IsSome)
+        Assert.IsTrue(
+            metadata.Value.Source.Contains("public static class Hello"),
+            "expected generated source in response")
+
+    [<Test>]
+    member _.``go-to-definition on generated symbol works after dotnet clean``() =
+        // Validates that the virtual URI path does not depend on obj/ files existing.
+        // The fixture temp dir has no obj/ (excluded by copy filter), so this is
+        // already the case without any extra setup.
+        use client = activateFixture "projectWithSourceGenerator"
+        use classFile = client.Open("Project/Class.cs")
+
+        let def: Declaration option =
+            client.Request(
+                "textDocument/definition",
+                { TextDocument = { Uri = classFile.Uri }
+                  Position = { Line = 5u; Character = 52u }
+                  WorkDoneToken = None
+                  PartialResultToken = None })
+
+        Assert.IsTrue(def.IsSome, "definition should resolve even without obj/")
+```
+
+### Fixture registration
+
+Add to `CSharpLanguageServer.Tests.fsproj` after the last existing `<Compile>` entry:
+
+```xml
+<Compile Include="SourceGeneratorTests.fs" />
+```
+
+### DLL locking regression test (issue #312)
+
+The same fixture can reproduce the locking bug. The test rebuilds the generator project
+while the server holds the loaded DLL, which fails on Windows without shadow-copying.
+
+`client.SolutionDir` exposes the temp directory path. After the server finishes loading
+(the generator DLL is now locked in the server process), run `dotnet build` on the
+generator subproject and assert on the exit code. The test code is included inline in the
+`SourceGeneratorTests.fs` listing above.
+
+**Platform gating:** `[<Platform("Win")>]` is an NUnit attribute that skips the test on
+non-Windows runners. On Linux/macOS file replacement works even when the file is memory-
+mapped, so the bug only manifests on Windows. CI already runs on `windows-latest` (in
+`test.yaml` matrix: `[windows-latest, ubuntu-24.04]`).
+
+**Why this is a failing test today:** The server loads the generator DLL via Roslyn's
+default `AnalyzerAssemblyLoader`, which holds an open file handle on Windows. `dotnet
+build` tries to write the recompiled DLL to the same `bin/` path and fails with an
+`IOException` (file in use). After the shadow-copy fix, the server loads from a temp
+copy, leaving the original path unlocked — `dotnet build` succeeds and the test passes.
+
+Note: `LspTestClient.Dispose` already has special handling for Windows CI — it skips
+temp directory cleanup when `GITHUB_ACTIONS` is set, specifically because of file-locking
+issues. This test exercises the same class of problem at the application level.
+
+### Coverage
+
+| What is tested | Test |
+|---|---|
+| go-to-definition emits `csharp:/generated/` URI | `go-to-definition on a generated symbol…` |
+| `csharp/metadata` serves generated source text | `csharp/metadata returns source text…` |
+| virtual URI doesn't require `obj/` to exist on disk | `go-to-definition…works after dotnet clean` |
+| **generator DLL not locked after load (Windows)** | **`rebuilding a loaded source generator…`** |
+| (follow-up) references, hover, semantic tokens work over generated URI | add to existing test classes once URI scheme lands |
+
+---
+
 ## Validation notes
 
 _Last validated: 2025-04-11 against codebase at Roslyn 5.3.0 / net10.0_
@@ -270,8 +567,13 @@ codebase. Key references: `WorkspaceServicesInterceptor` (WorkspaceServices.fs:2
 **Roslyn APIs** — `SourceGeneratedDocument`, `GetSourceGeneratedDocumentsAsync`,
 `IAnalyzerAssemblyLoader`, `AnalyzerFileReference` are all public in 5.3.0.
 `SourceGeneratedDocument.Identity` is public since 4.4.
-`ShadowCopyAnalyzerAssemblyLoader` is `internal sealed`.
-`IAnalyzerAssemblyLoaderProvider` is internal.
+`ShadowCopyAnalyzerAssemblyLoader` does not exist in Roslyn 5.x — the type was split
+into `ShadowCopyAnalyzerPathResolver` (`internal sealed`, public ctor, `Microsoft.CodeAnalysis.dll`)
+and `AnalyzerAssemblyLoader` (`internal` abstract, `Microsoft.CodeAnalysis.dll`).
+`IAnalyzerAssemblyLoaderProvider` is `internal`; its concrete implementation
+`DefaultAnalyzerAssemblyLoaderProvider` (`Microsoft.CodeAnalysis.Workspaces.dll`) has a
+public constructor and is instantiable via `Activator.CreateInstance` using the same
+`Assembly.Load("…").GetType("…")` pattern already in `WorkspaceServices.fs`.
 
 **Docs to update post-implementation:**
 
