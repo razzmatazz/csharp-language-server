@@ -47,9 +47,10 @@ jobs:
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $workers = [Math]::Max(1, [Math]::Floor($env:NUMBER_OF_PROCESSORS / 2))
+          $cores = [int]$env:NUMBER_OF_PROCESSORS
+          $workers = [Math]::Max(1, [Math]::Floor($cores / 2))
 
-          Write-Host "Total cores: $cores, running tests with $workers"
+          Write-Host "Total cores: $cores, running tests with $workers workers"
           dotnet test --no-build -- NUnit.NumberOfTestWorkers=$workers
 
       - name: Run Fantomas check
