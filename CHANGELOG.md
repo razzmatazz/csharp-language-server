@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @lightningund in https://github.com/razzmatazz/csharp-language-server/issues/323
 * More workspace/state management race fixes
   - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
+* Add go-to-definition and `csharp/metadata` support for source-generated documents (requires `metadataUris` feature)
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/350
 
 **Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.23.0...main
 
