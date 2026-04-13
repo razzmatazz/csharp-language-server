@@ -72,8 +72,15 @@ type LspWorkspaceFolderUpdateFn = LspWorkspaceFolder -> LspWorkspaceFolder
 
 type LspWorkspaceFolderDocumentType =
     | UserDocument // user Document from solution, on disk
-    | DecompiledDocument // Document decompiled from metadata, readonly
+    | DecompiledDocument // Document decompiled from metadata, served via csharp:/<proj>/decompiled/<symbol>.cs URI
+    | GeneratedDocument // source-generated document, served via csharp:/<proj>/generated/<hint>.g.cs URI
     | AnyDocument
+
+/// Represents a parsed virtual csharp: URI for a non-user document.
+type CSharpDocumentUri =
+    | DecompiledDocumentUri of projectFilePath: string * symbolMetadataName: string
+    | GeneratedDocumentUri of projectFilePath: string * hintName: string
+    | UnrecognizedDocumentUri
 
 let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
     match wf.Solution with
@@ -136,29 +143,59 @@ let workspaceFolderMetadataSymbolSourceViewUri
 
     sprintf "csharp:/%s/decompiled/%s.cs" projectFile (Uri.EscapeDataString symbolMetadataName)
 
-let workspaceFolderParseMetadataSymbolSourceViewUri (uri: string) (_wf: LspWorkspaceFolder) : option<string * string> =
-    let uri = uri |> Uri
+/// Build a virtual URI for a source-generated document.
+/// Format: csharp:/<projectFile>/generated/<hintName>
+/// where <projectFile> is the .csproj path normalised the same way as decompiled URIs
+/// (passed through Uri then stripped of the "file:///" prefix).
+/// HintName is unique within a project (Roslyn API guarantee).
+let encodeGeneratedDocumentUri (projectFilePath: string) (hintName: string) : string =
+    let projectFile =
+        projectFilePath
+        |> Uri
+        |> string
+        |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
+        |> _.TrimEnd('/')
 
-    match uri.Scheme with
-    | "csharp" ->
-        let path = uri.LocalPath
+    sprintf "csharp:/%s/generated/%s" projectFile hintName
 
-        let decompiledSourcePathPrefix =
-            sprintf ".csproj%sdecompiled%s" (string Path.DirectorySeparatorChar) (string Path.DirectorySeparatorChar)
+/// Parse a virtual csharp: URI into a CSharpDocumentUri (decompiled or generated).
+/// Returns UnrecognizedDocumentUri if the URI does not match a known csharp: URI pattern.
+let workspaceFolderParseCSharpDocumentUri (uri: string) (_wf: LspWorkspaceFolder) : CSharpDocumentUri =
+    try
+        let u = Uri uri
 
-        match path.IndexOf decompiledSourcePathPrefix with
-        | -1 -> None
-        | idx ->
-            let projectFile = path.Substring(0, idx + ".csproj".Length)
+        match u.Scheme with
+        | "csharp" ->
+            let path = u.LocalPath
 
-            let symbolMetadataName =
-                path
-                |> _.Substring(idx + decompiledSourcePathPrefix.Length)
-                |> _.TrimEnd(".cs".ToCharArray())
-                |> Uri.UnescapeDataString
+            let decompiledPrefix =
+                sprintf
+                    ".csproj%sdecompiled%s"
+                    (string Path.DirectorySeparatorChar)
+                    (string Path.DirectorySeparatorChar)
 
-            Some(projectFile, symbolMetadataName)
-    | _ -> None
+            let generatedPrefix =
+                sprintf ".csproj%sgenerated%s" (string Path.DirectorySeparatorChar) (string Path.DirectorySeparatorChar)
+
+            match path.IndexOf decompiledPrefix with
+            | idx when idx >= 0 ->
+                let projectFilePath = path.Substring(0, idx + ".csproj".Length)
+                let symbolMetadataName =
+                    path.Substring(idx + decompiledPrefix.Length)
+                    |> _.TrimEnd(".cs".ToCharArray())
+                    |> Uri.UnescapeDataString
+
+                DecompiledDocumentUri(projectFilePath, symbolMetadataName)
+            | _ ->
+                match path.IndexOf generatedPrefix with
+                | idx when idx >= 0 ->
+                    let projectFilePath = path.Substring(0, idx + ".csproj".Length)
+                    let hintName = path.Substring(idx + generatedPrefix.Length)
+                    GeneratedDocumentUri(projectFilePath, hintName)
+                | _ -> UnrecognizedDocumentUri
+        | _ -> UnrecognizedDocumentUri
+    with _ ->
+        UnrecognizedDocumentUri
 
 let documentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
@@ -198,7 +235,7 @@ let documentFromMetadata
         return project.AddDocument(mdDocumentFilename, text = text), text
     }
 
-let workspaceFolderDocumentFromMetadata
+let workspaceFolderDecompiledDocumentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     wf
@@ -236,7 +273,7 @@ let workspaceFolderWithDocumentFromMetadata
     wf
     =
     async {
-        let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
+        let! symbolMetadata, wfUpdates = workspaceFolderDecompiledDocumentFromMetadata project symbol wf
         let updatedWf = Seq.fold (|>) wf wfUpdates
         return updatedWf, symbolMetadata
     }
@@ -244,7 +281,7 @@ let workspaceFolderWithDocumentFromMetadata
 let workspaceFolderSymbolLocationsInMetadata project symbol wf = async {
     let! ct = Async.CancellationToken
 
-    let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
+    let! symbolMetadata, wfUpdates = workspaceFolderDecompiledDocumentFromMetadata project symbol wf
 
     // figure out location on the document (approx implementation)
     let! syntaxTree = symbolMetadata.Document.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
@@ -269,27 +306,54 @@ let workspaceFolderSymbolLocationsInMetadata project symbol wf = async {
         | ls -> ls, wfUpdates
 }
 
+/// If useMetadataUris is enabled and `l` points into a source-generated document in
+/// `wf`'s solution, returns a virtual csharp:/<proj>/generated/<hint> Location for it;
+/// otherwise returns None.
+let workspaceFolderSourceGeneratedLocation
+    (config: CSharpConfiguration)
+    (l: Microsoft.CodeAnalysis.Location)
+    (wf: LspWorkspaceFolder)
+    : Location option =
+    let useMetadataUris = config.useMetadataUris |> Option.defaultValue false
+
+    match useMetadataUris, wf.Solution with
+    | true, Ready(_, solution) ->
+        l.SourceTree
+        |> Option.ofObj
+        |> Option.bind (fun tree -> solution.GetDocument(tree) |> Option.ofObj)
+        |> Option.bind (fun doc ->
+            match doc with
+            | :? SourceGeneratedDocument as genDoc -> Some genDoc
+            | _ -> None)
+        |> Option.map (fun genDoc ->
+            let span = l.GetLineSpan().Span
+            Location.fromSourceGeneratedDocument encodeGeneratedDocumentUri genDoc span)
+    | _, _ -> None
+
 let workspaceFolderResolveSymbolLocation
     (config: CSharpConfiguration)
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     (l: Microsoft.CodeAnalysis.Location)
     (wf: LspWorkspaceFolder)
-    =
+    : Async<Location list * LspWorkspaceFolderUpdateFn list> =
     match l.IsInMetadata, l.IsInSource with
     | true, _ ->
         match config.useMetadataUris |> Option.defaultValue false with
         | true -> workspaceFolderSymbolLocationsInMetadata project symbol wf
-        | false -> ([], []) |> async.Return
+        | false -> async.Return([], [])
 
     | false, true ->
-        let wfPathToUri path = workspaceFolderPathToUri path wf
+        let locations: Location list =
+            let wfPathToUri path = workspaceFolderPathToUri path wf
 
-        match Location.fromRoslynLocation wfPathToUri l with
-        | Some loc -> ([ loc ], []) |> async.Return
-        | None -> ([], []) |> async.Return
+            workspaceFolderSourceGeneratedLocation config l wf
+            |> Option.orElseWith (fun () -> Location.fromRoslynLocation wfPathToUri l)
+            |> Option.toList
 
-    | _, _ -> ([], []) |> async.Return
+        async.Return(locations, [])
+
+    | _, _ -> async.Return([], [])
 
 /// The process of retrieving locations may update LspWorkspaceFolder itself,
 /// thus return value is a pair of symbol location list * LspWorkspaceFolder
@@ -334,15 +398,34 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
             | _ -> None
 
         let matchingDecompiledDocumentMaybe =
-            workspaceFolderParseMetadataSymbolSourceViewUri u wf
-            |> Option.bind (fun (projectPath, symbolMetadataName) ->
-                Map.tryFind (projectPath, symbolMetadataName) wf.DecompiledSymbolMetadata)
-            |> Option.map (fun x -> x.Document, DecompiledDocument)
+            match workspaceFolderParseCSharpDocumentUri u wf with
+            | DecompiledDocumentUri(projectFilePath, symbolMetadataName) ->
+                Map.tryFind (projectFilePath, symbolMetadataName) wf.DecompiledSymbolMetadata
+                |> Option.map (fun x -> x.Document, DecompiledDocument)
+            | _ -> None
+
+        let matchingGeneratedDocumentMaybe =
+            match workspaceFolderParseCSharpDocumentUri u wf with
+            | GeneratedDocumentUri(projectFilePath, hintName) ->
+                solution.Projects
+                |> Seq.tryFind (fun p -> p.FilePath = projectFilePath)
+                |> Option.bind (fun project ->
+                    project.GetSourceGeneratedDocumentsAsync()
+                    |> _.AsTask()
+                    |> Async.AwaitTask
+                    |> Async.RunSynchronously
+                    |> Seq.tryFind (fun (d: SourceGeneratedDocument) -> d.HintName = hintName))
+                |> Option.map (fun d -> d :> Document, GeneratedDocument)
+            | _ -> None
 
         match docType with
         | UserDocument -> matchingUserDocumentMaybe
         | DecompiledDocument -> matchingDecompiledDocumentMaybe
-        | AnyDocument -> matchingUserDocumentMaybe |> Option.orElse matchingDecompiledDocumentMaybe
+        | GeneratedDocument -> matchingGeneratedDocumentMaybe
+        | AnyDocument ->
+            matchingUserDocumentMaybe
+            |> Option.orElse matchingDecompiledDocumentMaybe
+            |> Option.orElse matchingGeneratedDocumentMaybe
 
 let workspaceFolderDocument docType u wf =
     workspaceFolderDocumentDetails docType u wf |> Option.map fst

@@ -26,6 +26,34 @@ let private runDotnetBuild (dir: string) =
     proc.WaitForExit(60_000) |> ignore
     proc.ExitCode, proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd()
 
+/// Build the generator DLL before the server starts, so Roslyn can load it as an analyzer.
+/// The fixture temp dir has no bin/ or obj/, so the DLL does not exist until we build it.
+let private prebuildGenerator (solutionDir: string) =
+    let generatorDir = Path.Combine(solutionDir, "Generator")
+    let exitCode, stdout, stderr = runDotnetBuild generatorDir
+
+    if exitCode <> 0 then
+        failwithf "Pre-build of generator failed (exit %d):\nstdout:\n%s\nstderr:\n%s" exitCode stdout stderr
+
+// Class.cs line 5 (0-based): "    static void Main() => System.Console.WriteLine(Hello.World);"
+// "Hello" starts at character 52.
+let private helloPosition: Position = { Line = 5u; Character = 52u }
+
+/// Build the exact URI that the server emits for the source-generated file.
+/// Format: csharp:/<projectFile>/generated/<hintName>
+/// where <projectFile> is the .csproj path passed through Uri then stripped of "file:///".
+let private expectedGeneratedUri (solutionDir: string) =
+    let projectFilePath = Path.Combine(solutionDir, "Project", "Project.csproj")
+
+    let projectFile =
+        projectFilePath
+        |> Uri
+        |> string
+        |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
+        |> _.TrimEnd('/')
+
+    sprintf "csharp:/%s/generated/Generated.g.cs" projectFile
+
 /// Regression guard for issue #312 (generator DLL locking on Windows).
 ///
 /// Older Roslyn versions (≤4.13) locked analyzer/generator DLLs via
@@ -44,15 +72,6 @@ let ``rebuilding a loaded source generator does not fail due to DLL locking`` ()
     // On Linux/macOS file replacement works even with memory-mapped files, so the
     // locking issue only ever manifested on Windows.
     Assume.That(Environment.OSVersion.Platform = PlatformID.Win32NT, "DLL locking only occurs on Windows")
-
-    // Pre-build the generator in the temp fixture dir before the server starts, so
-    // the DLL exists and Roslyn will actually load it when the workspace is opened.
-    let prebuildGenerator (solutionDir: string) =
-        let generatorDir = Path.Combine(solutionDir, "Generator")
-        let exitCode, stdout, stderr = runDotnetBuild generatorDir
-
-        if exitCode <> 0 then
-            failwithf "Pre-build of generator failed (exit %d):\nstdout:\n%s\nstderr:\n%s" exitCode stdout stderr
 
     use client =
         activateFixtureExt "projectWithSourceGenerator" defaultClientProfile prebuildGenerator id
@@ -84,13 +103,11 @@ let ``rebuilding a loaded source generator does not fail due to DLL locking`` ()
             stderr
     )
 
-// Class.cs line 5 (0-based): "    static void Main() => System.Console.WriteLine(Hello.World);"
-// "Hello" starts at character 52.
-let private helloPosition: Position = { Line = 5u; Character = 52u }
-
 [<Test>]
-let ``go-to-definition on a generated symbol returns a csharp:/generated/ URI`` () =
-    use client = activateFixture "projectWithSourceGenerator"
+let ``go-to-definition on a generated symbol returns a csharp:/<proj>/generated/ URI`` () =
+    use client =
+        activateFixtureExt "projectWithSourceGenerator" defaultClientProfile prebuildGenerator id
+
     use classFile = client.Open "Project/Class.cs"
 
     let definitionParams: DefinitionParams =
@@ -99,20 +116,22 @@ let ``go-to-definition on a generated symbol returns a csharp:/generated/ URI`` 
           WorkDoneToken = None
           PartialResultToken = None }
 
-    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+    let definition: Declaration option =
+        client.Request("textDocument/definition", definitionParams)
+
+    let expectedUri = expectedGeneratedUri client.SolutionDir
 
     match definition with
     | Some(U2.C2 locations) ->
         Assert.AreEqual(1, locations.Length)
-        Assert.IsTrue(
-            locations.[0].Uri.StartsWith "csharp:/generated/",
-            sprintf "expected csharp:/generated/ URI, got: %s" locations.[0].Uri
-        )
+        Assert.AreEqual(expectedUri, string locations.[0].Uri)
     | _ -> Assert.Fail(sprintf "expected Some Location[], got: %A" definition)
 
 [<Test>]
 let ``csharp/metadata returns source text for a generated document`` () =
-    use client = activateFixture "projectWithSourceGenerator"
+    use client =
+        activateFixtureExt "projectWithSourceGenerator" defaultClientProfile prebuildGenerator id
+
     use classFile = client.Open "Project/Class.cs"
 
     // Resolve the generated URI via go-to-definition
@@ -122,20 +141,22 @@ let ``csharp/metadata returns source text for a generated document`` () =
           WorkDoneToken = None
           PartialResultToken = None }
 
-    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+    let definition: Declaration option =
+        client.Request("textDocument/definition", definitionParams)
+
+    let expectedUri = expectedGeneratedUri client.SolutionDir
 
     let generatedUri =
         match definition with
         | Some(U2.C2 [| loc |]) -> loc.Uri
         | _ -> failwithf "expected single Location from go-to-definition, got: %A" definition
 
-    Assert.IsTrue(
-        generatedUri.StartsWith "csharp:/generated/",
-        sprintf "expected csharp:/generated/ URI, got: %s" generatedUri
-    )
+    Assert.AreEqual(expectedUri, string generatedUri)
 
     let metadataParams: CSharpMetadataParams = { TextDocument = { Uri = generatedUri } }
-    let metadata: CSharpMetadataResponse option = client.Request("csharp/metadata", metadataParams)
+
+    let metadata: CSharpMetadataResponse option =
+        client.Request("csharp/metadata", metadataParams)
 
     Assert.IsTrue(metadata.IsSome, "expected Some response from csharp/metadata")
 
@@ -146,10 +167,13 @@ let ``csharp/metadata returns source text for a generated document`` () =
 
 [<Test>]
 let ``go-to-definition on generated symbol works without obj directory`` () =
-    // The fixture temp dir is copied without bin/ or obj/, so the generated .g.cs
-    // file does not exist on disk. This test validates that the virtual URI path
-    // works regardless of whether obj/ files are present.
-    use client = activateFixture "projectWithSourceGenerator"
+    // The generator DLL itself is pre-built (so Roslyn loads the analyzer), but the
+    // generated .g.cs file is never written to disk — it lives only inside the
+    // Roslyn in-memory compilation. This validates that our virtual URI path works
+    // even when the generated file does not exist on disk.
+    use client =
+        activateFixtureExt "projectWithSourceGenerator" defaultClientProfile prebuildGenerator id
+
     use classFile = client.Open "Project/Class.cs"
 
     let definitionParams: DefinitionParams =
@@ -158,17 +182,14 @@ let ``go-to-definition on generated symbol works without obj directory`` () =
           WorkDoneToken = None
           PartialResultToken = None }
 
-    let definition: Declaration option = client.Request("textDocument/definition", definitionParams)
+    let definition: Declaration option =
+        client.Request("textDocument/definition", definitionParams)
+
+    let expectedUri = expectedGeneratedUri client.SolutionDir
 
     match definition with
-    | Some(U2.C2 locations) when locations.Length > 0 ->
-        Assert.IsTrue(
-            locations.[0].Uri.StartsWith "csharp:/generated/",
-            sprintf "expected csharp:/generated/ URI, got: %s" locations.[0].Uri
-        )
+    | Some(U2.C2 locations) when locations.Length > 0 -> Assert.AreEqual(expectedUri, string locations.[0].Uri)
     | _ ->
         Assert.Fail(
-            sprintf
-                "expected Some Location[] with csharp:/generated/ URI even without obj/, got: %A"
-                definition
+            sprintf "expected Some Location[] with csharp:/<proj>/generated/ URI even without obj/, got: %A" definition
         )

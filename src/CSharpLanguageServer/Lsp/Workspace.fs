@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Lsp.Workspace
 
 open System
+open System.IO
 
 open Ionide.LanguageServerProtocol.Types
 

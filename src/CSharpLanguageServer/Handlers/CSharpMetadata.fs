@@ -21,15 +21,39 @@ module CSharpMetadata =
 
             match wf, sln with
             | Some wf, Some solution ->
-                let projectAndSymbolFromUri =
-                    p.TextDocument.Uri
-                    |> string
-                    |> fun uri -> workspaceFolderParseMetadataSymbolSourceViewUri uri wf
 
-                match projectAndSymbolFromUri with
-                | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
-                | Some(projectPath, symbolMetadataName) ->
-                    let project = solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectPath)
+                match workspaceFolderParseCSharpDocumentUri (string p.TextDocument.Uri) wf with
+                | UnrecognizedDocumentUri -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+
+                // --- Path A: source-generated document ---
+                | GeneratedDocumentUri(projectFilePath, hintName) ->
+                    let project =
+                        solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectFilePath)
+
+                    match project with
+                    | Some project ->
+                        let! generatedDocs = project.GetSourceGeneratedDocumentsAsync(ct).AsTask() |> Async.AwaitTask
+                        let doc = generatedDocs |> Seq.tryFind (fun d -> d.HintName = hintName)
+
+                        match doc with
+                        | Some doc ->
+                            let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+
+                            let metadata: CSharpMetadataInformation =
+                                { ProjectName = project.Name
+                                  AssemblyName = project.AssemblyName
+                                  SymbolName = hintName
+                                  Source = sourceText.ToString() }
+
+                            return Some metadata |> LspResult.success, LspWorkspaceUpdate.Empty
+
+                        | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+                    | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+
+                // --- Path B: decompiled metadata symbol ---
+                | DecompiledDocumentUri(projectFilePath, symbolMetadataName) ->
+                    let project =
+                        solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectFilePath)
 
                     match project with
                     | Some project ->
@@ -38,7 +62,8 @@ module CSharpMetadata =
 
                         match symbol with
                         | Some symbol ->
-                            let! symbolMetadata, wfUpdates = workspaceFolderDocumentFromMetadata project symbol wf
+                            let! symbolMetadata, wfUpdates =
+                                workspaceFolderDecompiledDocumentFromMetadata project symbol wf
 
                             let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
                             let lspResult = symbolMetadata.Metadata |> Some |> LspResult.success
