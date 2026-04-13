@@ -32,19 +32,41 @@ collection from the `<Analyzer>` items in the project file.  However, when diagn
 the code calls:
 
 ```fsharp
-// push path (PushDiagnostics.fs)
-doc.GetSemanticModelAsync() |> … |> semanticModel.GetDiagnostics()
+// push path (PushDiagnostics.fs — resolveDocumentDiagnostics)
+let! semanticModelMaybe = doc.GetSemanticModelAsync()
+// …
+let diagnostics =
+    semanticModel.GetDiagnostics()
+    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+    |> Seq.map fst
+    |> Array.ofSeq
 
-// pull path (Handlers/Diagnostic.fs)
-semanticModel.GetDiagnostics()
+// pull path (Handlers/Diagnostic.fs — handle)
+let diagnostics =
+    semanticModel.GetDiagnostics()
+    |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
+    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+    |> Seq.map fst
+    |> Array.ofSeq
 
-// workspace pull path (Handlers/Diagnostic.fs)
-compilation.GetDiagnostics()
+// workspace pull path (Handlers/Diagnostic.fs — getWorkspaceDiagnosticReports)
+let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+// …
+compilation.GetDiagnostics(ct)
+|> Seq.filter (fun d -> …)
 ```
 
-All three call sites use **compiler diagnostics only**.  The analyzer pipeline is separate and must be
-invoked explicitly through
+All three call sites use **compiler diagnostics only**.  None of them pass a `CancellationToken` in
+the document-level paths (`semanticModel.GetDiagnostics()` is called without arguments); only the
+workspace pull path threads `ct` via `let! ct = Async.CancellationToken`.  The push path in
+`PushDiagnostics.fs` runs inside a `task { }` CE with no cancellation token at all.
+
+The analyzer pipeline is separate and must be invoked explicitly through
 `Microsoft.CodeAnalysis.Diagnostics.CompilationWithAnalyzers` / `AnalysisResult`.
+
+> **Note:** The codebase currently has **zero references** to `CompilationWithAnalyzers`,
+> `WithAnalyzers`, `AnalyzerOptions`, `AnalyzerReferences`, `GetAnalyzers`, or
+> `AnalyzerConfigDocument` in any `.fs` source file.  Analyzer support is entirely absent.
 
 ---
 
@@ -99,7 +121,9 @@ keys.
 
 ### Shared helper
 
-Introduce a shared helper in `Diagnostics.fs` (or a new `Roslyn/Analyzers.fs`):
+Introduce a new module `Roslyn/Analyzers.fs`.  (`Diagnostics.fs` is **not** a shared utility — it
+contains the `--diagnose` CLI command implementation and `LspClientStub`; it is the wrong place.)
+Insert in `.fsproj` compile order after `Roslyn/Solution.fs`.
 
 ```fsharp
 // Returns compiler diagnostics + all analyzer diagnostics for a compilation.
@@ -146,48 +170,107 @@ let getDocumentDiagnosticsWithAnalyzers
 ```
 
 > **Performance note:** `WithAnalyzers` runs analyzers incrementally; results for unchanged
-> compilations are cached by Roslyn internally.  However, running all analyzers on every keystroke is
-> expensive.  A safe starting point is to gate analyzer execution on a debounce already present in
-> `PushDiagnosticsBacklogUpdate` and use the existing `CancellationToken` from
-> `workspaceFolderTeardown` to abort stale runs.
+> compilations are cached by Roslyn internally.  Running all analyzers on large projects can add
+> latency, but this is the same tradeoff made by VS / VS Code and is acceptable.  The existing
+> debounce in `PushDiagnosticsBacklogUpdate` and the `CancellationToken` from
+> `workspaceFolderTeardown` are sufficient to keep stale runs from piling up.
 
 ### Call-site changes
 
 **`Handlers/Diagnostic.fs` — `handle` (per-document pull):**
 
+The `handle` function receives `context: RequestContext` and `p: DocumentDiagnosticParams`.
+It obtains the semantic model via `workspaceFolderDocumentSemanticModel`.  The change needs to also
+obtain the `Project` object (for `AnalyzerReferences`) — this requires plumbing it from the
+workspace-folder lookup.  There is **no explicit `CancellationToken`** available in the document
+pull handler today; one must be obtained via `let! ct = Async.CancellationToken`.
+
 ```fsharp
-// Before
-let! diagnostics = semanticModel.GetDiagnostics() |> async.Return
+// Before (Diagnostic.fs, handle, ~line 61)
+let diagnostics =
+    semanticModel.GetDiagnostics()
+    |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
+    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+    |> Seq.map fst
+    |> Array.ofSeq
 
 // After
-let! diagnostics =
-    getDocumentDiagnosticsWithAnalyzers project semanticModel context.CancellationToken
+let! ct = Async.CancellationToken
+let! allDiags = getDocumentDiagnosticsWithAnalyzers project semanticModel ct
+let diagnostics =
+    allDiags
+    |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
+    |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+    |> Seq.map fst
+    |> Array.ofSeq
 ```
+
+> **Plumbing note:** `workspaceFolderDocumentSemanticModel` currently returns
+> `(SemanticModel * string) option`.  We also need the `Project` to extract
+> `AnalyzerReferences`.  Options: (a) add a new helper that returns
+> `(Project * SemanticModel * string) option`, or (b) look up the project separately via
+> `workspaceFolderProjectForPath`.
 
 **`Handlers/Diagnostic.fs` — `getWorkspaceDiagnosticReports` (workspace pull):**
 
+The workspace pull path already has `project` and `ct` in scope.
+
 ```fsharp
-// Before
-let diags = compilation.GetDiagnostics()
+// Before (~line 100)
+compilation.GetDiagnostics(ct)
+|> Seq.filter (fun d -> …)
 
 // After
-let! diags =
-    getCompilationDiagnosticsWithAnalyzers project compilation ct
-    |> Async.StartAsTask
-    |> fun t -> t.Result   // already inside a Task.Run / async context
+let! allDiags = getCompilationDiagnosticsWithAnalyzers project compilation ct
+allDiags
+|> Seq.filter (fun d -> …)
 ```
+
+Note: the code inside `getWorkspaceDiagnosticReports` spawns one `Async.Start` per project.
+The `getCompilationDiagnosticsWithAnalyzers` call is already async and returns
+`Async<ImmutableArray<Diagnostic>>`, so it fits naturally.
 
 **`Runtime/PushDiagnostics.fs` — `resolveDocumentDiagnostics`:**
 
-```fsharp
-// Before
-let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
+This is the most delicate call site.  The push path runs inside a `task { }` CE, not an
+`async { }` CE.  There is **no `CancellationToken`** in scope — `doc.GetSemanticModelAsync()` is
+called without one.  Additionally, the push path does not have a `Project` in scope — it has only
+the `Document` (obtained from `workspaceFolderDocument`).
 
-// After
-let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
-let! diags = getDocumentDiagnosticsWithAnalyzers project semanticModel ct
+```fsharp
+// Before (~line 87)
+let resolveDocumentDiagnostics () : Task = task {
+    let! semanticModelMaybe = doc.GetSemanticModelAsync()
+    // …
+    let diagnostics =
+        semanticModel.GetDiagnostics()
+        |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+        |> Seq.map fst
+        |> Array.ofSeq
+    Ok(docUri, None, diagnostics) |> postResolution
+}
+
+// After — needs project + cancellation token threading
+let resolveDocumentDiagnostics () : Task = task {
+    let! semanticModelMaybe = doc.GetSemanticModelAsync()
+    // …
+    let! allDiags =
+        getDocumentDiagnosticsWithAnalyzersTask project semanticModel ct
+    let diagnostics =
+        allDiags
+        |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
+        |> Seq.map fst
+        |> Array.ofSeq
+    Ok(docUri, None, diagnostics) |> postResolution
+}
 ```
+
+> **Threading issues to resolve:**
+> 1. The `project` must be passed down to `processPendingPushDiagnostics` or obtained from
+>    `doc.Project` (which is available on `Document` and returns the containing `Project`).
+> 2. A `CancellationToken` should be plumbed through — ideally from the workspace folder's
+>    `CancellationTokenSource` to ensure stale analyzer runs abort on reload.
+> 3. The `task { }` CE needs a `Task`-returning overload of the helper (or `Async.StartAsTask`).
 
 ---
 
@@ -234,6 +317,10 @@ itself uses in `CSharpCommandLineParser`.
 All tests must be written **before** the implementation and used in TDD style to drive the work.
 
 ### New fixture: `projectWithEditorConfigAnalyzers`
+
+> **Naming note:** A `projectWithEditorConfig` fixture already exists, but it contains only
+> **formatting rules** (`csharp_space_after_keywords_in_control_flow_statements`, etc.) — no
+> diagnostic severity rules.  The new fixture must be distinct.
 
 Create `tests/CSharpLanguageServer.Tests/Fixtures/projectWithEditorConfigAnalyzers/` with:
 
@@ -297,7 +384,20 @@ class MyClass
 
 Location: `tests/CSharpLanguageServer.Tests/AnalyzerTests.fs`
 
-Must be added to `CSharpLanguageServer.Tests.fsproj` **before** the existing tests that could share fixtures.
+Must be added to `CSharpLanguageServer.Tests.fsproj` in the `<Compile>` list (e.g. after
+`DiagnosticTests.fs`).
+
+> **Style note:** The existing test files use **module-level `[<Test>]` `let` bindings**, not
+> `[<TestFixture>]` class style.  `AnalyzerTests.fs` must follow this pattern.
+
+> **Pull diagnostics capability:** `defaultClientCapabilities` sets
+> `TextDocument.Diagnostic = None` and `Workspace.Diagnostics = None`, meaning pull diagnostics
+> are **not** advertised by default.  Pull-diagnostic tests must use `activateFixtureExt` with a
+> custom `LspClientProfile` that sets both capabilities, the same way `DiagnosticTests.fs` does.
+
+> **Push diagnostics access:** There is **no** `GetPublishedDiagnostics` method on
+> `LspTestClient`.  Push diagnostics are accessed via `client.GetState().PushDiagnostics`,
+> which returns `Map<string, int option * Diagnostic[]>`.
 
 ```fsharp
 module CSharpLanguageServer.Tests.AnalyzerTests
@@ -306,114 +406,120 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestFixture>]
-[<Parallelizable(ParallelScope.All)>]
-type AnalyzerTests() =
+// Client profile with pull diagnostics enabled
+let private analyzerClientProfile =
+    { defaultClientProfile with
+        ClientCapabilities =
+            { defaultClientCapabilities with
+                TextDocument =
+                    Some { defaultClientCapabilities.TextDocument.Value with
+                            Diagnostic = Some { DynamicRegistration = Some true
+                                                 RelatedDocumentSupport = None } }
+                Workspace =
+                    Some { defaultClientCapabilities.Workspace.Value with
+                            Diagnostics = Some { RefreshSupport = Some true } } } }
 
-    /// Pull diagnostics on a file with editorconfig style violations
-    /// should include IDE0040, IDE0051, IDE0032 in addition to compiler diagnostics.
-    [<Test>]
-    member _.testPullDiagnosticsIncludeEditorConfigRules() =
-        use client = activateFixture "projectWithEditorConfigAnalyzers"
-        use classFile = client.Open("Project/Class.cs")
+[<Test>]
+let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile emptyFixturePatch id
+    use classFile = client.Open("Project/Class.cs")
 
-        let pullParams: DocumentDiagnosticParams =
-            { TextDocument = { Uri = classFile.Uri }
-              Identifier = None
-              PreviousResultId = None
-              WorkDoneToken = None
-              PartialResultToken = None }
+    let diagnosticParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
 
-        let result: DocumentDiagnosticReport option =
-            client.Request("textDocument/diagnostic", pullParams)
+    let report: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
 
-        match result with
-        | Some(U2.C1 full) ->
-            let codes =
-                full.Items
-                |> Array.choose (fun d -> d.Code |> Option.map (fun c -> c.ToString()))
-                |> Set.ofArray
-            Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040, got: {codes}")
-            Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051, got: {codes}")
-            Assert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032, got: {codes}")
-        | _ -> Assert.Fail("Expected a full document diagnostic report")
-
-    /// Push diagnostics should also surface editorconfig violations.
-    [<Test>]
-    member _.testPushDiagnosticsIncludeEditorConfigRules() =
-        use client = activateFixture "projectWithEditorConfigAnalyzers"
-        use classFile = client.Open("Project/Class.cs")
-
-        // Wait for push diagnostics (same budget as testPushDiagnosticsWork)
-        System.Threading.Thread.Sleep(8000)
-
-        let publishedDiags =
-            client.GetPublishedDiagnostics(classFile.Uri)
-
+    match report with
+    | Some(U2.C1 report) ->
         let codes =
-            publishedDiags
-            |> Array.choose (fun d -> d.Code |> Option.map (fun c -> c.ToString()))
+            report.Items
+            |> Array.choose (fun d -> d.Code |> Option.map string)
             |> Set.ofArray
+        Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040, got: {codes}")
+        Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051, got: {codes}")
+        Assert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032, got: {codes}")
+    | _ -> failwith "U2.C1 (full report) was expected"
 
-        Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codes}")
-        Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codes}")
+[<Test>]
+let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
+    use client = activateFixture "projectWithEditorConfigAnalyzers"
+    use classFile = client.Open("Project/Class.cs")
 
-    /// Workspace-level pull diagnostics should include analyzer diagnostics.
-    [<Test>]
-    member _.testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics() =
-        use client = activateFixture "projectWithEditorConfigAnalyzers"
+    // Wait for push diagnostics — same budget as testPushDiagnosticsWork
+    System.Threading.Thread.Sleep(8000)
 
-        let wsParams: WorkspaceDiagnosticParams =
-            { Identifier = None
-              PreviousResultIds = [||]
-              WorkDoneToken = None
-              PartialResultToken = None }
+    let state = client.GetState()
+    let diag = state.PushDiagnostics |> Map.tryFind classFile.Uri
+    Assert.IsTrue(diag.IsSome, "Expected push diagnostics for Class.cs")
 
-        let report: WorkspaceDiagnosticReport option =
-            client.Request("workspace/diagnostic", wsParams)
+    let _version, diagnosticList = diag.Value
+    let codes =
+        diagnosticList
+        |> Array.choose (fun d -> d.Code |> Option.map string)
+        |> Set.ofArray
 
-        match report with
-        | Some r ->
-            let allCodes =
-                r.Items
-                |> Array.collect (fun item ->
-                    match item with
-                    | U2.C1 full -> full.Items |> Array.choose (fun d -> d.Code |> Option.map string)
-                    | _ -> [||])
-                |> Set.ofArray
-            Assert.IsTrue(allCodes.Contains("IDE0040"), $"Expected IDE0040, got: {allCodes}")
-        | None -> Assert.Fail("Expected a workspace diagnostic report")
+    Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codes}")
+    Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codes}")
 
-    /// Third-party NuGet analyzer diagnostics should appear.
-    /// Uses the existing `projectWithEditorConfigAnalyzers` fixture extended with
-    /// a NetAnalyzers package reference.
-    [<Test>]
-    member _.testNuGetAnalyzerDiagnosticsAreSurfaced() =
-        // This test is a placeholder — the fixture needs a NuGet analyzer package
-        // reference (e.g. Microsoft.CodeAnalysis.NetAnalyzers). Adding a NuGet restore
-        // step to the fixture setup is outside the scope of the first iteration.
-        // For now, assert that the pull diagnostic call does not crash and returns a
-        // result (i.e., the analyzer pipeline is wired up and robust to analyzers
-        // that are present).
-        use client = activateFixture "projectWithEditorConfigAnalyzers"
-        use classFile = client.Open("Project/Class.cs")
+[<Test>]
+let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile emptyFixturePatch id
 
-        let pullParams: DocumentDiagnosticParams =
-            { TextDocument = { Uri = classFile.Uri }
-              Identifier = None
-              PreviousResultId = None
-              WorkDoneToken = None
-              PartialResultToken = None }
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
 
-        let result: DocumentDiagnosticReport option =
-            client.Request("textDocument/diagnostic", pullParams)
+    let report: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
 
-        Assert.IsNotNull(result, "Pull diagnostics must not crash when analyzers are present")
+    match report with
+    | Some report ->
+        let allCodes =
+            report.Items
+            |> Array.collect (fun item ->
+                match item with
+                | U2.C1 fullReport ->
+                    fullReport.Items |> Array.choose (fun d -> d.Code |> Option.map string)
+                | _ -> [||])
+            |> Set.ofArray
+        Assert.IsTrue(allCodes.Contains("IDE0040"), $"Expected IDE0040, got: {allCodes}")
+    | _ -> failwith "'Some' was expected"
+
+[<Test>]
+let testAnalyzerPipelineDoesNotCrashWhenNoAnalyzersPresent () =
+    // Verify that the analyzer pipeline is robust when a project has no analyzer references.
+    // Uses the existing genericProject fixture which has no .editorconfig analyzer rules.
+    use client =
+        activateFixtureExt "genericProject" analyzerClientProfile emptyFixturePatch id
+    use classFile = client.Open("Project/Class.cs")
+
+    let diagnosticParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
+
+    let report: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
+
+    // Should get a report (possibly with zero items) — not a crash
+    match report with
+    | Some(U2.C1 _) -> ()
+    | _ -> failwith "U2.C1 (full report) was expected"
 ```
 
-> **Note on `GetPublishedDiagnostics`:** if this helper doesn't exist in `Tooling.fs`, add a
-> thin wrapper around the `textDocument/publishDiagnostics` notification log stored during the
-> session.
+> **`LspClientState.PushDiagnostics`** is a `Map<string, int option * Diagnostic[]>` keyed by
+> document URI.  The `int option` is the document version.
 
 ### Additional integration test: `projectWithAnalyzerPackage` (future)
 
@@ -428,39 +534,81 @@ projectWithAnalyzerPackage/
     └── DisposableClass.cs      (class with IDisposable field but no Dispose → CA1001)
 ```
 
+### Pre-build callback
+
+The `projectWithSourceGenerator` tests use a `prebuildGenerator` callback passed as the
+`patchFixtureDir` argument to `activateFixtureExt`.  The `projectWithEditorConfigAnalyzers` fixture
+may also need a pre-build step (e.g. `dotnet build` to trigger NuGet restore and populate
+`obj/project.assets.json`) so that `MSBuildWorkspace` can resolve `AnalyzerReferences`.
+
+If needed, add a similar callback:
+
+```fsharp
+let prebuildProject (fixtureDir: string) =
+    let projectDir = Path.Combine(fixtureDir, "Project")
+    let psi = ProcessStartInfo("dotnet", "build")
+    psi.WorkingDirectory <- projectDir
+    psi.RedirectStandardOutput <- true
+    psi.RedirectStandardError <- true
+    let proc = Process.Start(psi)
+    proc.WaitForExit()
+    Assert.AreEqual(0, proc.ExitCode, "Pre-build of analyzer fixture failed")
+```
+
+### Server CLI flags in tests
+
+The test harness currently starts the server with `--features razor-support` hardcoded in
+`Tooling.fs`.  No changes to CLI flags are needed — analyzers run unconditionally.
+
 ---
 
 ## Implementation Order
 
 1. **Write tests** (this step is first, per TDD):
-   - Create `Fixtures/projectWithEditorConfigAnalyzers/` with the files above.
-   - Create `Tests/AnalyzerTests.fs` and add it to the test `.fsproj`.
+   - Create `Fixtures/projectWithEditorConfigAnalyzers/` with the files specified above
+     (`.sln`, `.csproj`, `.editorconfig`, `Class.cs`).
+   - Pre-build the fixture (`dotnet build`) to ensure `obj/project.assets.json` exists; decide
+     whether to commit the `obj/` artifacts or use a `patchFixtureDir` callback.
+   - Create `AnalyzerTests.fs` and add `<Compile Include="AnalyzerTests.fs" />` to
+     `CSharpLanguageServer.Tests.fsproj` (after `DiagnosticTests.fs`).
    - Run `dotnet test --filter AnalyzerTests` — all tests should fail (red).
 
 2. **Add `Roslyn/Analyzers.fs`** with `getCompilationDiagnosticsWithAnalyzers` and
-   `getDocumentDiagnosticsWithAnalyzers` helpers.  Add to `.fsproj` after `Roslyn/Solution.fs`.
+   `getDocumentDiagnosticsWithAnalyzers` helpers.  Add `<Compile Include="Roslyn/Analyzers.fs" />`
+   to `CSharpLanguageServer.fsproj` after `Roslyn/Solution.fs`.  Provide both
+   `Async`-returning and `Task`-returning overloads (the push path uses `task { }`, not
+   `async { }`).
 
 3. **Wire helpers into pull diagnostics** (`Handlers/Diagnostic.fs`):
-   - Replace `semanticModel.GetDiagnostics()` with `getDocumentDiagnosticsWithAnalyzers`.
-   - Replace `compilation.GetDiagnostics()` with `getCompilationDiagnosticsWithAnalyzers`.
+   - In `handle`: obtain `CancellationToken` via `let! ct = Async.CancellationToken`; plumb the
+     `Project` (either via `doc.Project` from the resolved `Document`, or a new helper); replace
+     `semanticModel.GetDiagnostics()` with `getDocumentDiagnosticsWithAnalyzers`.
+   - In `getWorkspaceDiagnosticReports`: replace `compilation.GetDiagnostics(ct)` with
+     `getCompilationDiagnosticsWithAnalyzers project compilation ct`.
 
 4. **Wire helpers into push diagnostics** (`Runtime/PushDiagnostics.fs`):
-   - Replace the `GetSemanticModelAsync` → `GetDiagnostics` chain with the shared helper.
+   - In `resolveDocumentDiagnostics` (`task { }` CE): use `doc.Project` to get the `Project`;
+     thread the workspace folder's `CancellationToken`; replace
+     `semanticModel.GetDiagnostics()` with the `Task`-returning analyzer helper.
+   - In the Razor (`.cshtml`) path: same change (replace `semanticModel.GetDiagnostics()`).
 
 5. **Verify Item C (EditorConfig surfacing):**
-   - Run the new tests; if IDE0xxx codes are absent, investigate `AnalyzerConfigDocument` loading.
-   - If missing, add manual `.editorconfig` discovery in `Roslyn/Solution.fs` and pass it to
-     `AnalyzerOptions`.
+   - Run the new tests; if IDE0xxx codes are absent, investigate whether
+     `project.AnalyzerConfigOptions` / `project.AdditionalDocuments` includes `.editorconfig`
+     entries after `MSBuildWorkspace.OpenSolutionAsync`.
+   - If missing, add manual `.editorconfig` discovery in `Roslyn/Solution.fs` and pass via
+     `AnalyzerConfigOptionsProvider` to the `CompilationWithAnalyzersOptions` constructor.
 
 6. **Item B — shadow-copy loader** (Windows, can be done in parallel with Items A/C):
-   - Add `IAnalyzerAssemblyLoaderProvider` intercept in `WorkspaceServicesInterceptor`.
+   - Add `IAnalyzerAssemblyLoaderProvider` intercept in `WorkspaceServicesInterceptor` (shares
+     implementation with `plans/source-generator-support.md`).
    - Add Windows-only integration test in `AnalyzerTests.fs` that builds the project while the
      server is running (asserts no file-lock error).
 
 7. **Run full test suite** (`dotnet test`) — all tests green.
 
-8. **Manual verification** with Spacemacs/Emacs using `lsp-mode` and the `testDiagnosticsWork`
-   fixture extended with an `.editorconfig` that triggers `IDE0051`.
+8. **Manual verification** with Spacemacs/Emacs using `lsp-mode` and a project with
+   `.editorconfig` that triggers `IDE0040` / `IDE0051`.
 
 ---
 
@@ -468,15 +616,15 @@ projectWithAnalyzerPackage/
 
 | File | Action |
 |------|--------|
-| `src/CSharpLanguageServer/Roslyn/Analyzers.fs` | **Create** — shared diagnostic helpers |
+| `src/CSharpLanguageServer/Roslyn/Analyzers.fs` | **Create** — shared diagnostic helpers (Async + Task overloads) |
 | `src/CSharpLanguageServer/CSharpLanguageServer.fsproj` | **Modify** — add `Roslyn/Analyzers.fs` after `Roslyn/Solution.fs` |
-| `src/CSharpLanguageServer/Handlers/Diagnostic.fs` | **Modify** — use analyzer helpers |
-| `src/CSharpLanguageServer/Runtime/PushDiagnostics.fs` | **Modify** — use analyzer helpers |
+| `src/CSharpLanguageServer/Handlers/Diagnostic.fs` | **Modify** — use analyzer helpers; plumb `Project` and `CancellationToken` |
+| `src/CSharpLanguageServer/Runtime/PushDiagnostics.fs` | **Modify** — use analyzer helpers; plumb `Project` via `doc.Project`; thread `CancellationToken` |
 | `src/CSharpLanguageServer/Roslyn/WorkspaceServices.fs` | **Modify (Item B)** — shadow-copy loader intercept |
-| `src/CSharpLanguageServer/Roslyn/Solution.fs` | **Modify (Item C/B)** — editorconfig surfacing, shadow dir cleanup |
-| `tests/CSharpLanguageServer.Tests/Fixtures/projectWithEditorConfigAnalyzers/` | **Create** — fixture |
-| `tests/CSharpLanguageServer.Tests/AnalyzerTests.fs` | **Create** — integration tests |
-| `tests/CSharpLanguageServer.Tests/CSharpLanguageServer.Tests.fsproj` | **Modify** — add `AnalyzerTests.fs` |
+| `src/CSharpLanguageServer/Roslyn/Solution.fs` | **Modify (Item C/B)** — editorconfig surfacing investigation, shadow dir cleanup |
+| `tests/.../Fixtures/projectWithEditorConfigAnalyzers/` | **Create** — fixture (`.sln`, `.csproj`, `.editorconfig`, `Class.cs`) |
+| `tests/.../AnalyzerTests.fs` | **Create** — integration tests (module-level `let` bindings, not class-based) |
+| `tests/.../CSharpLanguageServer.Tests.fsproj` | **Modify** — add `<Compile Include="AnalyzerTests.fs" />` |
 
 ---
 
@@ -484,26 +632,49 @@ projectWithAnalyzerPackage/
 
 1. **Performance budget:** Running `CompilationWithAnalyzers.GetAllDiagnosticsAsync` on large
    projects (hundreds of files, many analyzers) can be slow (2–10 s).  The existing debounce in
-   `PushDiagnosticsBacklogUpdate` provides some relief.  Consider adding a separate
-   `--no-analyzers` flag (or `csharp.analyzers = false`) as an escape hatch, similar to how
-   `useMetadataUris` gates virtual URI emission.
+   `PushDiagnosticsBacklogUpdate` and cancellation on workspace reload provide the main
+   mitigation.  Analyzers run unconditionally — no feature flag or config setting is needed.
 
 2. **IDE analyzer availability:** The IDE analyzers live in
    `Microsoft.CodeAnalysis.CSharp.Features`.  When loaded from NuGet (not from the SDK), the
    versions may diverge from the runtime Roslyn version, causing assembly load failures.  The
-   project currently references `Microsoft.CodeAnalysis.CSharp.Features 5.3.0` directly, so this
-   should be fine for SDK-supplied analyzers but may surface for older project TFMs.
+   project currently references `Microsoft.CodeAnalysis.CSharp.Features 5.3.0` (set via
+   `RoslynPackageVersion` in `Directory.Packages.props`), so this should be fine for SDK-supplied
+   analyzers but may surface for older project TFMs.
 
 3. **`AnalyzerOptions` and `.editorconfig`:** Needs confirmation that
    `project.AdditionalDocuments` includes `AnalyzerConfigDocument` entries after
    `MSBuildWorkspace.OpenSolutionAsync`.  If not, a manual
    `AnalyzerConfigOptionsProvider` must be constructed from the `.editorconfig` files on disk.
+   Note: the existing `projectWithEditorConfig` fixture uses formatting-only rules and does not
+   exercise diagnostic severity overrides at all.
 
 4. **Severity filtering:** Some analyzers emit `Hidden` severity items (e.g. code refactoring
-   suggestions).  The `diagnosticIsToBeListed` helper in `Diagnostic.fs` currently only filters
-   `CS8019` on `.cshtml`.  A broader severity filter (e.g. suppress `Hidden` unless the client
-   opt-in) may be warranted to avoid flooding the editor with low-signal hints.
+   suggestions).  The `diagnosticIsToBeListed` helper in `Handlers/Diagnostic.fs` currently only
+   filters `CS8019` on `.cshtml` URIs.  A broader severity filter (e.g. suppress `Hidden` unless
+   the client opts in) may be warranted to avoid flooding the editor with low-signal hints.
+   This ties into the existing `workspace/diagnostic` flood issue documented in
+   `plans/workspace-diagnostics-flood.md`.
 
-5. **Cancellation:** `CompilationWithAnalyzers` honors a `CancellationToken` — the workspace-
+5. **Cancellation threading:** `CompilationWithAnalyzers` honors a `CancellationToken`.
+   Currently, the document pull handler (`Diagnostic.fs` `handle`) has **no** cancellation token —
+   it must add `let! ct = Async.CancellationToken`.  The push path (`PushDiagnostics.fs`
+   `resolveDocumentDiagnostics`) runs in a `task { }` CE with no token at all.  The workspace
    folder's `CancellationTokenSource` (bumped on `workspaceFolderTeardown`) should be threaded
    through to all analyzer calls to ensure stale runs abort promptly on reload.
+
+6. **`doc.Project` availability:** The push diagnostics path currently only has a `Document`
+   object (from `workspaceFolderDocument`), not the `Project`.  Roslyn's `Document.Project`
+   property provides the containing `Project` — verify this returns a `Project` with populated
+   `AnalyzerReferences` and not a stripped-down view.
+
+7. **Fixture pre-build / obj/ artifacts:** MSBuildWorkspace needs `obj/project.assets.json` to
+   resolve `<PackageReference>` analyzer entries.  The `projectWithSourceGenerator` fixture uses
+   a `prebuildGenerator` callback in `patchFixtureDir` to pre-build before the server starts.
+   The analyzer fixture may need a similar approach.  Alternatively, commit the `obj/` directory
+   (like `genericProject` does) — but this ties the fixture to a specific SDK version.
+
+8. **`task { }` vs `async { }` in helpers:** The push diagnostics path uses `task { }`, while
+   the pull diagnostics path uses `async { }`.  The shared helpers in `Roslyn/Analyzers.fs`
+   should provide both `Async<_>` and `Task<_>` overloads to avoid unnecessary
+   `Async.AwaitTask` / `Async.StartAsTask` round-trips.
