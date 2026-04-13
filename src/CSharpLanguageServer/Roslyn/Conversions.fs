@@ -66,6 +66,16 @@ module Location =
 
         | _ -> None
 
+    /// Build an LSP Location for a symbol inside a source-generated document.
+    /// `encodeUri` turns (projectFilePath, hintName) into the virtual csharp:/../generated/hint URI.
+    let fromSourceGeneratedDocument
+        (encodeUri: string -> string -> string)
+        (doc: Microsoft.CodeAnalysis.SourceGeneratedDocument)
+        (span: LinePositionSpan)
+        : Location =
+        { Uri = encodeUri doc.Project.FilePath doc.HintName
+          Range = Range.fromLinePositionSpan span }
+
 module TextEdit =
     let fromTextChange (lines: TextLineCollection) (changes: TextChange) : TextEdit =
         { Range = changes.Span |> Range.fromTextSpan lines

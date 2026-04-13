@@ -406,7 +406,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             |> Seq.map fst
             |> Seq.distinct
             |> Seq.map (fun uri -> workspaceFolder uri state.Workspace)
-            |> Seq.collect (fun wf -> if wf.IsSome then [ wf.Value ] else [])
+            |> Seq.collect Option.toList
             |> Seq.filter _.Solution.IsUninitialized
             |> List.ofSeq
 

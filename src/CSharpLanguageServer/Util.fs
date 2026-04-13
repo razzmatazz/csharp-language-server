@@ -94,3 +94,8 @@ module Option =
         match r with
         | Ok v -> Some v
         | _ -> None
+
+    let toList o =
+        match o with
+        | Some v -> [ v ]
+        | None -> []
