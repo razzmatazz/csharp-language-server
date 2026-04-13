@@ -180,6 +180,7 @@ let workspaceFolderParseCSharpDocumentUri (uri: string) (_wf: LspWorkspaceFolder
             match path.IndexOf decompiledPrefix with
             | idx when idx >= 0 ->
                 let projectFilePath = path.Substring(0, idx + ".csproj".Length)
+
                 let symbolMetadataName =
                     path.Substring(idx + decompiledPrefix.Length)
                     |> _.TrimEnd(".cs".ToCharArray())
