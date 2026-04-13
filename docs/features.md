@@ -1,57 +1,75 @@
-# Support for decompilation
+# Decompiled and Source-Generated Document URIs
 
-## API
+When the `metadataUris` feature is enabled, `textDocument/definition` on a
+symbol that lives outside the user's own source files returns a virtual
+`csharp:/` URI instead of a temporary file path. There are two kinds:
 
-The api is "csharp/metadata" and in neovim, you can request it like
+| Kind | URI format |
+|------|-----------|
+| Decompiled assembly symbol | `csharp:/<project.csproj>/decompiled/<Symbol>.cs` |
+| Source-generated file | `csharp:/<project.csproj>/generated/<HintName>` |
 
-```lua
-  local result, err = client.request_sync("csharp/metadata", params, 10000)
-```
+The URI can be passed to the custom `csharp/metadata` LSP request to retrieve
+the source text.
 
-## Request Parameters
-You need to send a uri, it is like
+## Enabling the feature
 
-**csharp:/metadata/projects/trainning2/assemblies/System.Console/symbols/System.Console.cs**
+Any one of the following is sufficient:
 
-The `uri` parameter should be the URI of the symbol obtained from an LSP `textDocument/definition` (or similar) request.
+- Set `csharp.useMetadataUris = true` in your editor's workspace configuration
+  (`workspace/configuration` / `workspace/didChangeConfiguration`)
+- Pass `--features metadata-uris` on the command line
+- Set the `experimental.csharp.metadataUris` client capability to `true` during
+  LSP initialization
 
-The key to send is like
+## `csharp/metadata` request
 
-```lua
-local params = {
-	timeout = 5000,
-	textDocument = {
-		uri = uri,
-	}
-}
-```
+### Request
 
-The key of textDocument is needed.
-
-## Response Structure
-
-The object received is like
-
-```lua
+```json
 {
-	projectName = "csharp-test",
-	assemblyName = "System.Runtime",
-	symbolName = "System.String",
-	source = "using System.Buffers;\n ...."
+  "textDocument": {
+    "uri": "csharp:/<project.csproj>/decompiled/System.String.cs"
+  }
 }
 ```
 
-And In neovim, You receive the "result" above, you can get the decompile source from
+The `uri` must be a `csharp:/` URI obtained from a prior `textDocument/definition`
+(or similar) response. Both decompiled and source-generated URIs are accepted.
+
+### Response
+
+```json
+{
+  "projectName": "MyProject",
+  "assemblyName": "System.Runtime",
+  "symbolName": "System.String",
+  "source": "using System.Buffers;\n..."
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `projectName` | Name of the Roslyn project that owns the document |
+| `assemblyName` | Assembly name (decompiled: containing assembly; generated: project assembly) |
+| `symbolName` | Fully-qualified type name (decompiled) or hint name (source-generated) |
+| `source` | Full source text of the decompiled or generated document |
+
+## Editor integration
+
+### Neovim
 
 ```lua
-
+local params = { textDocument = { uri = uri } }
 local result, err = client.request_sync("csharp/metadata", params, 10000)
-local source
 if not err then
-	source = result.result.source
+  local source = result.result.source
 end
 ```
 
-And there is a plugin of neovim for you to decompile it.
+A ready-made plugin is available:
+[csharpls-extended-lsp.nvim](https://github.com/Decodetalkers/csharpls-extended-lsp.nvim)
 
-[csharpls-extended-lsp.nvim](https://github.com/chen244/csharpls-extended-lsp.nvim)
+### Visual Studio Code
+
+[vscode-csharp-ls](https://github.com/vytautassurvila/vscode-csharp-ls)
