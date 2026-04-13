@@ -49,8 +49,8 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.applyFormattingOptions` - use formatting options as supplied by the
   client (may override `.editorconfig` values); defaults to `false`
 
-- `csharp.useMetadataUris` - serve decompiled metadata sources under `csharp:/`
-  URIs instead of temp files; defaults to `false`
+- `csharp.useMetadataUris` - serve decompiled metadata and source-generated
+  documents under `csharp:/` URIs; defaults to `false`
 
 - `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
   defaults to `false`
@@ -108,10 +108,18 @@ via the `[langId].trace.server` setting.
 
 ## Extended Client Capabilities
 
-### Decompiled Code/Metadata URIs
-`csharp:/` metadata URIs can be enabled via the `csharp.useMetadataUris`
-configuration setting, the `--features metadata-uris` CLI flag, or by setting
-the `experimental.csharp.metadataUris` client capability to `true`.
+### Decompiled and Source-Generated Document URIs
+When enabled, `textDocument/definition` on symbols in compiled assemblies or
+source-generated files returns a virtual `csharp:/` URI instead of a temporary
+file path. The URI can then be passed to the custom `csharp/metadata` request to
+retrieve the decompiled or generated source text.
+
+- Decompiled symbols: `csharp:/<project.csproj>/decompiled/<Symbol>.cs`
+- Source-generated files: `csharp:/<project.csproj>/generated/<HintName>`
+
+This can be enabled via the `csharp.useMetadataUris` configuration setting, the
+`--features metadata-uris` CLI flag, or by setting the
+`experimental.csharp.metadataUris` client capability to `true`.
 
 ### Razor (.cshtml) support
 Can be enabled via the `csharp.razorSupport` configuration setting or by passing
