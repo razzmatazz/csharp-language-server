@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Unreleased
+* Add Roslyn analyzer support: diagnostics now include IDE code-style rules and third-party NuGet analyzer packages alongside compiler errors
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/351
+* Add go-to-definition and `csharp/metadata` support for source-generated documents (requires `metadataUris` feature)
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/350
 * Fix semantic tokens so constants and fields have their own separate symbol kinds
   - By @jktjkt15 in https://github.com/razzmatazz/csharp-language-server/pull/349
 * Fix compatibility with LSP clients that return errors for unsupported server→client requests (e.g. Claude Code built-in LSP client)
@@ -17,8 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @lightningund in https://github.com/razzmatazz/csharp-language-server/issues/323
 * More workspace/state management race fixes
   - By @razzmatazzz in https://github.com/razzmatazz/csharp-language-server/pull/343
-* Add go-to-definition and `csharp/metadata` support for source-generated documents (requires `metadataUris` feature)
-  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/350
 
 **Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.23.0...main
 
