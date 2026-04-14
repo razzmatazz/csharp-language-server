@@ -913,6 +913,44 @@ type LspTestClient(clientProfile: LspClientProfile) =
         file.OpenWithText(text)
         file
 
+/// Serializes all `dotnet build` invocations across the test suite so that concurrent
+/// test runs on Windows (where MSBuild file-locking is stricter) do not interfere.
+let private dotnetBuildSemaphore = new SemaphoreSlim(1, 1)
+
+/// Run `dotnet build` in <paramref name="dir"/>, serialized globally so that at most
+/// one build runs at a time.  Returns (exitCode, stdout, stderr).
+let runDotnetBuild (dir: string) =
+    dotnetBuildSemaphore.Wait()
+
+    try
+        let psi = ProcessStartInfo("dotnet", "build")
+        psi.WorkingDirectory <- dir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+
+        let proc =
+            match Process.Start(psi) with
+            | null -> failwith "Failed to start dotnet build process"
+            | p -> p
+
+        use _ = proc
+        // Read stdout/stderr asynchronously to prevent deadlocks when pipe buffers fill up.
+        let stdoutTask = proc.StandardOutput.ReadToEndAsync()
+        let stderrTask = proc.StandardError.ReadToEndAsync()
+
+        let exited = proc.WaitForExit(120_000)
+        let stdout = stdoutTask.Result
+        let stderr = stderrTask.Result
+
+        if not exited then
+            proc.Kill(entireProcessTree = true)
+            failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
+
+        proc.ExitCode, stdout, stderr
+    finally
+        dotnetBuildSemaphore.Release() |> ignore
+
 let activeClientsSemaphore =
     new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
 
