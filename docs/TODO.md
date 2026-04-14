@@ -97,3 +97,86 @@ correct equality semantics) everywhere it is called with `Type` arguments:
 - `SingleCaseUnionConverter.canConvert`
 
 **Upstream repo:** https://github.com/ionide/Ionide.LanguageServerProtocol
+
+## Upstream `JsonRpc.fs` + `docs/jsonrpc.md`
+
+The `JsonRpc.fs` transport implementation and its companion documentation (`docs/jsonrpc.md`) are
+general-purpose and not specific to `csharp-ls`. They should be extracted and contributed upstream
+— either to `Ionide.LanguageServerProtocol` or as a standalone NuGet package — so that other F#
+LSP server authors can benefit from the symmetric JSON-RPC 2.0 transport without duplicating it.
+
+**Upstream repo:** https://github.com/ionide/Ionide.LanguageServerProtocol
+
+## Replace Newtonsoft.Json with System.Text.Json for LSP serialization/deserialization
+
+`csharp-ls` currently uses `Newtonsoft.Json` (via `Ionide.LanguageServerProtocol`) for all LSP
+message serialization and deserialization. Several bugs in `TODO.md` and `plans/` trace directly
+to Newtonsoft quirks (`uint32` overflow, `memoriseByHash` hash collision, `ErasedUnionConverter`
+catch-all swallowing errors, etc.).
+
+The goal is to reimplement (or adopt an upstream reimplementation of) the `serialize` /
+`deserialize` helpers — and the converters they depend on (`OptionConverter`, `ErasedUnionConverter`,
+`SingleCaseUnionConverter`) — using `System.Text.Json` instead of `Newtonsoft.Json`. Key
+considerations:
+
+- `System.Text.Json` is already a .NET runtime dependency (no extra NuGet weight).
+- F# discriminated-union and option handling requires custom `JsonConverter<'T>` implementations
+  equivalent to the existing Ionide converters — these should be written to avoid the
+  `memoriseByHash` collision class of bugs (use exact `Type` equality as dictionary key, not hash).
+- The `JToken`/`JObject`/`JValue` API surface used in `JsonRpc.fs` and handlers must be replaced
+  with `JsonElement` / `JsonDocument` or a thin wrapper.
+- The change is best done in a branch that keeps the Newtonsoft path alive behind a compile flag
+  until the new path has full test coverage.
+- If Ionide upstream adopts `System.Text.Json` first, prefer pulling that in rather than
+  maintaining a fork.
+
+**Upstream tracker:** https://github.com/ionide/Ionide.LanguageServerProtocol
+
+## Analyzer support improvements
+
+See `plans/analyzer-support.md` for the full design. Three specific improvements are needed on
+top of the base implementation:
+
+### (a) Disable analyzers by default; make them configurable via `workspace/configuration`
+
+Running `CompilationWithAnalyzers` unconditionally on every diagnostic request adds latency that
+not all users want. Analyzers should be **off by default** and enabled via a workspace
+configuration key, e.g.:
+
+```json
+{
+  "csharp": {
+    "analyzerEnabled": true
+  }
+}
+```
+
+The server should send a `workspace/configuration` request on startup (and re-request on
+`workspace/didChangeConfiguration`) to read this key, storing the result in the workspace-folder
+state alongside other settings. All three diagnostic paths (`Handlers/Diagnostic.fs` `handle`,
+`getWorkspaceDiagnosticReports`, `Runtime/PushDiagnostics.fs` `resolveDocumentDiagnostics`) should
+gate analyzer execution on this flag.
+
+### (b) Disable analyzers in tests by default; restore full concurrency
+
+The test harness (`Tooling.fs`) starts the server with a fixed set of flags. Analyzer runs add
+significant latency and non-determinism to integration tests that are not specifically testing
+analyzer behavior. Analyzer support should be **disabled in the default test server configuration**
+(e.g. via the workspace/configuration mechanism above, or a dedicated CLI flag), and only enabled
+explicitly in tests that actually exercise analyzer output — i.e. the tests in `AnalyzerTests.fs`
+described in `plans/analyzer-support.md`.
+
+Once analyzers are disabled by default, the `activeClientsSemaphore` concurrency cap in
+`Tooling.fs` — currently `min Environment.ProcessorCount 4` — should be raised back to
+`Environment.ProcessorCount` (full nproc). The `4` cap was introduced because each active test
+client runs an LSP server that in turn runs analyzers, making the per-test CPU cost proportional
+to the number of analyzers; with analyzers off the cost drops back to the level where running one
+server per logical core is safe.
+
+### (c) Hash `configuration.analyzerEnabled` into `partialResultId`
+
+The workspace pull-diagnostic path (`getWorkspaceDiagnosticReports`) generates `partialResultId`
+tokens used by clients to diff incremental results. The token computation must include the
+`analyzerEnabled` setting so that toggling analyzers on or off invalidates any cached result the
+client holds. Without this, a client that has a stale "analyzers off" result would not request a
+fresh report after the user enables analyzers, and vice versa.
