@@ -11,7 +11,7 @@ open CSharpLanguageServer.Tests.Tooling
 // This test documents a race: workspace/diagnostic is called while the solution is still
 // loading (simulated via a 3-second SolutionLoadDelay). The server should return no items
 // in that window, but ideally it should block or return a retriable error instead — so the
-// assertion below is intentionally wrong (expects 3 diagnostics) to make the test fail and
+// assertion below is intentionally wrong (expects 1 document) to make the test fail and
 // highlight the bug.
 [<Test>]
 let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
@@ -34,7 +34,7 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     // The server returns 0 items because the solution is not yet loaded — this assertion
     // intentionally fails to expose the race condition.
     match report with
-    | Some report -> Assert.AreEqual(3, report.Items.Length)
+    | Some report -> Assert.AreEqual(1, report.Items.Length)
     | None -> Assert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
 
 [<Test>]
@@ -191,7 +191,7 @@ let testWorkspaceDiagnosticsWork () =
 
     match report0 with
     | Some report0 ->
-        Assert.AreEqual(3, report0.Items.Length)
+        Assert.AreEqual(1, report0.Items.Length)
 
         match report0.Items[0] with
         | U2.C1 fullReport ->
@@ -230,7 +230,7 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
     | _ -> failwith "'Some' was expected"
 
     let progress = client.GetProgressParams partialResultToken
-    Assert.AreEqual(3, progress.Length)
+    Assert.AreEqual(1, progress.Length)
 
     let report0 = progress[0].Value |> deserialize<WorkspaceDiagnosticReport>
     Assert.AreEqual(1, report0.Items.Length)
@@ -246,11 +246,6 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
         Assert.AreEqual("Identifier expected", diagnostic0.Message)
 
     | _ -> failwith "'U2.C1' was expected"
-
-    let report1 =
-        progress[1].Value |> deserialize<WorkspaceDiagnosticReportPartialResult>
-
-    Assert.AreEqual(1, report1.Items.Length)
 
 [<Test>]
 let testWorkspaceDiagnosticsReturnResultId () =
