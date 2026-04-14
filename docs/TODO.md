@@ -107,6 +107,16 @@ LSP server authors can benefit from the symmetric JSON-RPC 2.0 transport without
 
 **Upstream repo:** https://github.com/ionide/Ionide.LanguageServerProtocol
 
+## Abstract and upstream `RequestScheduling.fs`
+
+`RequestScheduling.fs` implements LSP request-queue semantics (read-only vs. read-write
+concurrency, per-document and per-workspace locking, cancellation propagation) in a way that is
+reusable by any F# LSP server. Before upstreaming, the module should be reviewed for
+`csharp-ls`-specific assumptions (e.g. Roslyn `Solution` references) and abstracted over them so
+the scheduling logic itself is dependency-free.
+
+**Upstream repo:** https://github.com/ionide/Ionide.LanguageServerProtocol
+
 ## Replace Newtonsoft.Json with System.Text.Json for LSP serialization/deserialization
 
 `csharp-ls` currently uses `Newtonsoft.Json` (via `Ionide.LanguageServerProtocol`) for all LSP
