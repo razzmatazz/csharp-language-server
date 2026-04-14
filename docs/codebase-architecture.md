@@ -195,8 +195,9 @@ folders. `processPendingPushDiagnostics` pops the next URI, resolves diagnostics
    - **Normal `.cs` documents:** Obtains `doc: Microsoft.CodeAnalysis.Document` from the
      workspace. The containing `Project` is accessible via `doc.Project`. Runs in an
      `async { }` CE via `Async.StartChild`. Obtains `CancellationToken` via
-     `let! ct = Async.CancellationToken`. Calls
-     `Analyzers.getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel ct`.
+     `let! ct = Async.CancellationToken`. When `config.analyzersEnabled = true`, calls
+     `Analyzers.getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel`; otherwise
+     falls back to `semanticModel.GetDiagnostics(ct)`.
    - **Razor `.cshtml` documents:** Falls through when `docForUri = None`, uses
      `solutionGetRazorDocumentForPath` to get the compilation and syntax tree, then calls
      `compilation.GetSemanticModel cshtmlTree` directly. Uses compiler diagnostics only
@@ -216,14 +217,18 @@ Both paths include **compiler and analyzer diagnostics** via `Roslyn/Analyzers.f
 folder and semantic model via `workspaceFolderDocumentSemanticModel`. Also looks up the
 document via `workspaceFolderDocument` to obtain `doc.Project` (needed for analyzer
 references). Filters through `diagnosticIsToBeListed` (suppresses `CS8019` on `.cshtml`).
-Calls `Analyzers.getDocumentDiagnosticsWithAnalyzers project semanticModel ct`.
+When `config.analyzersEnabled = true`, calls
+`Analyzers.getDocumentDiagnosticsWithAnalyzers project semanticModel`; otherwise falls
+back to `semanticModel.GetDiagnostics(ct)`.
 
-**Workspace pull (`getWorkspaceDiagnosticReports`):** Takes a `knownResultIds` map (for
-unchanged-report optimization) and the list of workspace folders. For each project:
-- Checks if the client already holds results for this `project.Version` → emits `Unchanged`
-- Otherwise calls `project.GetCompilationAsync(ct)` →
-  `Analyzers.getCompilationDiagnosticsWithAnalyzers project compilation ct`,
-  groups diagnostics by document URI, and emits `Full` reports
+**Workspace pull (`getWorkspaceDiagnosticReports`):** Takes `config`, a `knownResultIds`
+map (for unchanged-report optimization), and the list of workspace folders. For each project:
+- Builds `resultId = "{project.Version}/{analyzersEnabled}"` so toggling `analyzersEnabled`
+  invalidates any cached "unchanged" result the client holds
+- Checks if the client already holds results for this `resultId` → emits `Unchanged`
+- Otherwise calls `project.GetCompilationAsync(ct)`; when `config.analyzersEnabled = true`
+  uses `Analyzers.getCompilationDiagnosticsWithAnalyzers project compilation`, otherwise
+  `compilation.GetDiagnostics()`; groups diagnostics by document URI and emits `Full` reports
 - Results flow through a bounded `Channel<WorkspaceDiagnosticsReportsChannelItem>(256)` with
   one `Async.Start` per project writing to the channel and the main consumer yielding from
   it as `AsyncSeq`
@@ -377,7 +382,9 @@ Tests do **not** use in-process hosting. Instead:
    feeds it via `rpcLogCallback` and `UpdateState` posts from notification handlers.
 
 3. **Concurrency control** — `activeClientsSemaphore` (`SemaphoreSlim` initialized to
-   `Environment.ProcessorCount`) throttles simultaneous server processes
+   `Environment.ProcessorCount`) throttles simultaneous server processes; analyzers are
+   disabled by default in tests so per-server CPU cost is low enough to run one process
+   per logical core safely
 
 ### 7.3 Key Test Classes
 
@@ -434,6 +441,7 @@ type LspClientProfile =
     { LoggingEnabled: bool                  // echo RPC traffic to stderr
       ClientCapabilities: ClientCapabilities
       SolutionLoadDelay: int option         // injected via csharp.debug.solutionLoadDelay config
+      AnalyzersEnabled: bool option         // injected via csharp.analyzersEnabled config; defaults to false
       ExtraEnv: Map<string, string>         // additional env vars for the server process
       ExtraArgs: string list }              // additional CLI args (appended to --features razor-support)
 ```
@@ -441,17 +449,22 @@ type LspClientProfile =
 `defaultClientProfile` uses `defaultClientCapabilities` which sets:
 - `TextDocument.Diagnostic = None` (pull diagnostics **not** advertised)
 - `Workspace.Diagnostics = None` (workspace pull diagnostics **not** advertised)
+- `Workspace.Configuration = Some true` (server pulls `workspace/configuration` on startup)
 - `TextDocument.CodeAction.CodeActionLiteralSupport = Some { ... }` (empty `ValueSet`)
 - `TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = Some true`
 - `Window.WorkDoneProgress = Some true`
 - `Experimental = Some {| csharp = {| metadataUris = true |} |}`
 
-To test pull diagnostics, create a custom profile that sets both `TextDocument.Diagnostic`
-and `Workspace.Diagnostics`:
+`defaultClientProfile` has `AnalyzersEnabled = None` (treated as `false`); only
+`AnalyzerTests.fs` sets this to `Some true` via a custom profile.
+
+To test pull diagnostics with analyzers enabled, create a custom profile that sets
+`TextDocument.Diagnostic`, `Workspace.Diagnostics`, and `AnalyzersEnabled`:
 
 ```fsharp
-let pullDiagProfile =
+let analyzerPullDiagProfile =
     { defaultClientProfile with
+        AnalyzersEnabled = Some true
         ClientCapabilities =
             { defaultClientCapabilities with
                 TextDocument =
@@ -572,7 +585,7 @@ let testSomething () =
 | CSharp metadata (go-to-decompiled) integration tests | `CSharpMetadataTests.fs` | Integration tests via `LspTestClient` |
 | Call hierarchy integration tests | `CallHierarchyTests.fs` | Integration tests via `LspTestClient` |
 | Source generator tests | `SourceGeneratorTests.fs` | Uses `prebuildGenerator` callback + `projectWithSourceGenerator` fixture |
-| Analyzer / EditorConfig diagnostic tests | `AnalyzerTests.fs` | Uses `prebuildProject` callback + `projectWithEditorConfigAnalyzers` fixture; custom `LspClientProfile` with pull diagnostics enabled |
+| Analyzer / EditorConfig diagnostic tests | `AnalyzerTests.fs` | Uses `prebuildProject` callback + `projectWithEditorConfigAnalyzers` fixture; custom `LspClientProfile` with `AnalyzersEnabled = Some true` and pull diagnostics enabled |
 | Internal / cross-cutting tests | `InternalTests.fs` | Tests for internal utilities and cross-cutting concerns |
 
 ---
