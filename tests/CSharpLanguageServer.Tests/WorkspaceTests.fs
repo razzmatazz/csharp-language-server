@@ -36,12 +36,17 @@ let testDidChangeWatchedFilesChangedCsFileReloadsDocument () =
           Identifier = None
           PreviousResultId = None }
 
-    // Baseline: no errors
+    // Baseline: no compiler errors (analyzer warnings may be present)
     let report0: DocumentDiagnosticReport option =
         client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report0 with
-    | Some(U2.C1 report) -> Assert.AreEqual(0, report.Items.Length)
+    | Some(U2.C1 report) ->
+        let errorItems =
+            report.Items
+            |> Array.filter (fun d -> d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+        Assert.AreEqual(0, errorItems.Length, "Expected no compiler errors on baseline")
     | _ -> failwith "U2.C1 is expected"
 
     // Overwrite the file on disk with broken C# and notify the server

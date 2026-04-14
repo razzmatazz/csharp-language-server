@@ -79,16 +79,18 @@ let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
             |> Array.choose (fun d -> d.Code |> Option.map (fun c -> string c))
             |> Set.ofArray
 
-        Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in pull diagnostics, got: {codes}")
-        Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in pull diagnostics, got: {codes}")
-        Assert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032 in pull diagnostics, got: {codes}")
+        let codesStr = codes |> String.concat "; "
+        Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in pull diagnostics, got: {codesStr}")
+        Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in pull diagnostics, got: {codesStr}")
+        Assert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032 in pull diagnostics, got: {codesStr}")
 
     | _ -> failwith "U2.C1 (full report) was expected"
 
 [<Test>]
 [<Retry(3)>]
 let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
-    use client = activateFixtureExt "projectWithEditorConfigAnalyzers" defaultClientProfile prebuildProject id
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" defaultClientProfile prebuildProject id
 
     use classFile = client.Open("Project/Class.cs")
 
@@ -106,8 +108,9 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
         |> Array.choose (fun d -> d.Code |> Option.map (fun c -> string c))
         |> Set.ofArray
 
-    Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codes}")
-    Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codes}")
+    let codesStr = codes |> String.concat "; "
+    Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codesStr}")
+    Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codesStr}")
 
 [<Test>]
 let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
@@ -130,7 +133,8 @@ let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
             |> Array.collect (fun item ->
                 match item with
                 | U2.C1 fullReport ->
-                    fullReport.Items |> Array.choose (fun d -> d.Code |> Option.map (fun c -> string c))
+                    fullReport.Items
+                    |> Array.choose (fun d -> d.Code |> Option.map (fun c -> string c))
                 | _ -> [||])
             |> Set.ofArray
 

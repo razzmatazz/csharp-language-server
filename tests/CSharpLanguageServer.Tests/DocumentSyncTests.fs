@@ -28,6 +28,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
 
     // update the file (and NOT save it to disk) -- then send the "textDocument/didClose"
     // notification (classFile.Dispose() will do that for us)
+    let mutable baselineCount = 0
+
     do
         use classFile = client.Open("Project/Class.cs")
 
@@ -37,7 +39,15 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         match report0 with
         | Some(U2.C1 report) ->
             Assert.AreEqual("full", report.Kind)
-            Assert.AreEqual(0, report.Items.Length)
+            // Capture baseline — may be non-zero if SDK analyzers emit warnings on this file.
+            // We assert no compiler errors (no Error-severity items), not zero total items.
+            let errorItems =
+                report.Items
+                |> Array.filter (fun d ->
+                    d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+            Assert.AreEqual(0, errorItems.Length, "Expected no compiler errors on baseline")
+            baselineCount <- report.Items.Length
         | _ -> failwith "U2.C1 is expected"
 
         // now change file to contain "xxx" to trigger diagnostics
@@ -49,19 +59,30 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report1 with
-        | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
+        | Some(U2.C1 report) ->
+            let errorItems =
+                report.Items
+                |> Array.filter (fun d ->
+                    d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+            Assert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after change to 'xxx'")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
 
     // test the file has been reverted on the in-memory solution by pulling
-    // the diagnostics for the file and validating there are no errors
+    // the diagnostics for the file and validating it matches baseline
     do
         let report2: DocumentDiagnosticReport option =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report2 with
-        | Some(U2.C1 report) -> Assert.AreEqual(0, report.Items.Length)
+        | Some(U2.C1 report) ->
+            Assert.AreEqual(
+                baselineCount,
+                report.Items.Length,
+                "Expected diagnostics to revert to baseline after didClose"
+            )
         | _ -> failwith "U2.C1 is expected"
 
     // ok, now open the file again and do save the file to disk this time
@@ -72,7 +93,8 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report3 with
-        | Some(U2.C1 report) -> Assert.AreEqual(0, report.Items.Length)
+        | Some(U2.C1 report) ->
+            Assert.AreEqual(baselineCount, report.Items.Length, "Expected baseline diagnostics on re-open")
         | _ -> failwith "U2.C1 is expected"
 
         // now change file to contain "xxx" to trigger diagnostics
@@ -84,7 +106,13 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report4 with
-        | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
+        | Some(U2.C1 report) ->
+            let errorItems =
+                report.Items
+                |> Array.filter (fun d ->
+                    d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+            Assert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after second change to 'xxx'")
         | _ -> failwith "U2.C1 is expected"
 
         classFile.Save()
@@ -95,7 +123,13 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report5 with
-        | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
+        | Some(U2.C1 report) ->
+            let errorItems =
+                report.Items
+                |> Array.filter (fun d ->
+                    d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+            Assert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after save of broken file")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -105,7 +139,13 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report6 with
-        | Some(U2.C1 report) -> Assert.AreEqual(3, report.Items.Length)
+        | Some(U2.C1 report) ->
+            let errorItems =
+                report.Items
+                |> Array.filter (fun d ->
+                    d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
+
+            Assert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after save (post-close state)")
         | _ -> failwith "U2.C1 is expected"
 
 [<Test>]

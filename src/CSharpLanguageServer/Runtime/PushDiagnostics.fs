@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Logging
+open CSharpLanguageServer.Roslyn.Analyzers
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Lsp.Workspace
@@ -125,8 +126,10 @@ let processPendingPushDiagnostics
                         | None -> Error(Exception("could not GetSemanticModelAsync")) |> postResolution
 
                         | Some semanticModel ->
+                            let! allDiags = getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel
+
                             let diagnostics =
-                                semanticModel.GetDiagnostics()
+                                allDiags
                                 |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                                 |> Seq.map fst
                                 |> Array.ofSeq
