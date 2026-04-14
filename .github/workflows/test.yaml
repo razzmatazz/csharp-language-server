@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [windows-latest, ubuntu-24.04]
@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           $cores = [int]$env:NUMBER_OF_PROCESSORS
-          $workers = [Math]::Max(1, [Math]::Floor($cores / 2))
+          $workers = 1
 
           Write-Host "Total cores: $cores, running tests with $workers workers"
           dotnet test --no-build -- NUnit.NumberOfTestWorkers=$workers
