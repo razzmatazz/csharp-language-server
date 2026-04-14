@@ -165,10 +165,84 @@ solution-ready awaiters). Processes events including:
 `Workspace`, `RequestQueue`, `PushDiagnostics`, `PeriodicTickTimer`, `ShutdownReceived`,
 `SolutionReadyAwaiters`.
 
-### 3.7 Push Diagnostics (`Runtime/PushDiagnostics.fs`)
+### 3.7 Diagnostics Pipeline
+
+#### Push Diagnostics (`Runtime/PushDiagnostics.fs`)
 
 Encapsulates the background push-diagnostics pipeline, which pro-actively publishes `textDocument/publishDiagnostics`
 notifications to clients that do not support pull diagnostics.
+
+**Push vs Pull selection:** Push diagnostics are enabled only when the client does **not**
+advertise `TextDocument.Diagnostic` capability. When the client sets
+`TextDocument.Diagnostic = Some { ... }`, push is disabled and the client is expected to
+use `textDocument/diagnostic` (pull) instead. The server always responds to pull requests
+regardless of whether the client advertised the capability.
+
+**State:** `PushDiagnosticsState` holds a `DocumentBacklog` (URIs of open documents sorted
+by most-recently-touched) and `CurrentDocTask` (at most one in-flight resolution).
+`pushDiagnosticsBacklogUpdate` rebuilds the backlog from all open documents across workspace
+folders. `processPendingPushDiagnostics` pops the next URI, resolves diagnostics via
+`doc.GetSemanticModelAsync()` → `semanticModel.GetDiagnostics()`, and posts the result.
+
+**Internal flow of `processPendingPushDiagnostics`:**
+
+1. Checks `CurrentDocTask` — if one is already in flight, returns immediately.
+2. Pops the next URI from `DocumentBacklog`.
+3. Looks up the workspace folder via `workspaceFolder docUri` and the document via
+   `workspaceFolderDocument AnyDocument docUri`.
+4. Two code paths:
+   - **Normal `.cs` documents:** Obtains `doc: Microsoft.CodeAnalysis.Document` from the
+     workspace. The containing `Project` is accessible via `doc.Project`. Runs in an
+     `async { }` CE via `Async.StartChild`. Obtains `CancellationToken` via
+     `let! ct = Async.CancellationToken`.
+   - **Razor `.cshtml` documents:** Falls through when `docForUri = None`, uses
+     `solutionGetRazorDocumentForPath` to get the compilation and syntax tree, then calls
+     `compilation.GetSemanticModel cshtmlTree` directly.
+5. Both paths call `semanticModel.GetDiagnostics()` (no cancellation token argument), map
+   via `Diagnostic.fromRoslynDiagnostic`, and post the result.
+
+**Test access:** Push diagnostics are observable via `client.GetState().PushDiagnostics`,
+which returns `Map<string, int option * Diagnostic[]>` keyed by document URI (the
+`int option` is the document version).
+
+#### Pull Diagnostics (`Handlers/Diagnostic.fs`)
+
+Handles `textDocument/diagnostic` (per-document) and `workspace/diagnostic` (all projects).
+Both paths currently use only **compiler diagnostics** (`semanticModel.GetDiagnostics()` /
+`compilation.GetDiagnostics(ct)`) — Roslyn analyzer diagnostics are not yet included.
+
+**Document pull (`handle`):** Receives `DocumentDiagnosticParams`, resolves the workspace
+folder and semantic model via `workspaceFolderDocumentSemanticModel` (returns
+`SemanticModel option`). Filters diagnostics through `diagnosticIsToBeListed` which
+suppresses `CS8019` (unnecessary using) on `.cshtml` files. Obtains `CancellationToken` via
+`let! ct = Async.CancellationToken` but does **not** pass it to `GetDiagnostics()`.
+
+> **Note:** The document pull path does not currently have the `Project` object in scope —
+> only the `SemanticModel`. To access `Project.AnalyzerReferences`, either use
+> `workspaceFolderDocumentSemanticModel` to also return the `Document` (whose `.Project`
+> property gives the containing project), or add a separate lookup.
+
+**Workspace pull (`getWorkspaceDiagnosticReports`):** Takes a `knownResultIds` map (for
+unchanged-report optimization) and the list of workspace folders. For each project:
+- Checks if the client already holds results for this `project.Version` → emits `Unchanged`
+- Otherwise calls `project.GetCompilationAsync(ct)` → `compilation.GetDiagnostics(ct)`,
+  groups diagnostics by document URI, and emits `Full` reports
+- Results flow through a bounded `Channel<WorkspaceDiagnosticsReportsChannelItem>(256)` with
+  one `Async.Start` per project writing to the channel and the main consumer yielding from
+  it as `AsyncSeq`
+
+The `handleWorkspaceDiagnostic` function supports two modes based on `PartialResultToken`:
+- `None` → collects all reports into a single `WorkspaceDiagnosticReport`
+- `Some token` → streams each report via `$/progress` notifications, returns empty report
+
+#### Current Limitation — No Analyzer Support
+
+All diagnostic code paths (push, pull-document, pull-workspace) call only
+`semanticModel.GetDiagnostics()` or `compilation.GetDiagnostics(ct)`, which return
+**compiler diagnostics only**. Roslyn analyzer diagnostics (IDE code-style rules from
+`.editorconfig`, third-party analyzers) require explicit invocation via
+`CompilationWithAnalyzers`. The codebase currently has **zero references** to
+`CompilationWithAnalyzers`, `WithAnalyzers`, or `AnalyzerOptions`.
 
 ## 4. Handler Module Pattern
 
@@ -321,13 +395,115 @@ file.Save()                                   // sends textDocument/didSave
 // Dispose sends textDocument/didClose
 ```
 
-### 7.4 Fixture Preparation
+### 7.4 Test Harness API (`Tooling.fs`)
 
-`prepareTempTestDirFrom` copies fixture project files (`.cs`, `.csproj`, `.sln`, `.slnx`,
-`.cshtml`, `.editorconfig`, `global.json`, `.txt`) to a temp directory, filtering out
+#### Client Activation Functions
+
+```fsharp
+// Simple: default profile, no fixture patching, no InitializeParams customization
+let activateFixture (fixtureName: string) : LspTestClient
+
+// Full control: custom profile, fixture dir patch callback, InitializeParams transform
+let activateFixtureExt
+    (fixtureName: string)
+    (clientProfile: LspClientProfile)
+    (patchFixtureDir: string -> unit)       // called after temp copy, before server start
+    (initializeParamsUpdate: InitializeParams -> InitializeParams)
+    : LspTestClient
+
+let emptyFixturePatch: string -> unit       // no-op, for use when no patching needed
+```
+
+#### `LspClientProfile` type
+
+Controls per-test server/client configuration:
+
+```fsharp
+type LspClientProfile =
+    { LoggingEnabled: bool                  // echo RPC traffic to stderr
+      ClientCapabilities: ClientCapabilities
+      SolutionLoadDelay: int option         // injected via csharp.debug.solutionLoadDelay config
+      ExtraEnv: Map<string, string>         // additional env vars for the server process
+      ExtraArgs: string list }              // additional CLI args (appended to --features razor-support)
+```
+
+`defaultClientProfile` uses `defaultClientCapabilities` which sets:
+- `TextDocument.Diagnostic = None` (pull diagnostics **not** advertised)
+- `Workspace.Diagnostics = None` (workspace pull diagnostics **not** advertised)
+- `TextDocument.CodeAction.CodeActionLiteralSupport = Some { ... }` (empty `ValueSet`)
+- `TextDocument.DocumentSymbol.HierarchicalDocumentSymbolSupport = Some true`
+- `Window.WorkDoneProgress = Some true`
+- `Experimental = Some {| csharp = {| metadataUris = true |} |}`
+
+To test pull diagnostics, create a custom profile that sets both `TextDocument.Diagnostic`
+and `Workspace.Diagnostics`:
+
+```fsharp
+let pullDiagProfile =
+    { defaultClientProfile with
+        ClientCapabilities =
+            { defaultClientCapabilities with
+                TextDocument =
+                    Some { defaultClientCapabilities.TextDocument.Value with
+                            Diagnostic = Some { DynamicRegistration = Some true
+                                                 RelatedDocumentSupport = None } }
+                Workspace =
+                    Some { defaultClientCapabilities.Workspace.Value with
+                            Diagnostics = Some { RefreshSupport = Some true } } } }
+```
+
+#### Other Tooling Utilities
+
+- `patchFixtureWithTfm (newTfm: string)` — returns a `patchFixtureDir` callback that
+  rewrites `<TargetFramework>` in all `.csproj` files under the fixture
+- `activateFixtureWithLoggingEnabled` — shorthand for `activateFixtureExt` with
+  `LoggingEnabled = true`
+- `getWorkspaceDiagnosticsForUri` — helper to extract diagnostics for a specific URI from
+  a `WorkspaceDiagnosticReport`
+- `waitUntilOrTimeout` — polls a predicate with 50ms intervals, fails after timeout
+
+### 7.5 Fixtures
+
+#### Temp-dir Preparation
+
+`prepareTempTestDirFrom` copies fixture project files to a temp directory, filtering out
 `bin`/`obj`. On macOS, prepends `/private` to the temp path.
 
-Available fixtures:
+**File filter** — only these extensions are copied: `.cs`, `.csproj`, `.sln`, `.slnx`,
+`.cshtml`, `.editorconfig`, `global.json`, `.txt`. All other files and `bin`/`obj`
+directories are excluded.
+
+#### Directory Conventions
+
+- Directory name matches the `.sln` file name (e.g. `genericProject/genericProject.sln`)
+- C# source files live in a `Project/` subdirectory alongside `Project.csproj`
+- Multi-project fixtures may omit the `.sln` (e.g. `projectWithSourceGenerator/`)
+
+#### Pre-Build Pattern
+
+Since `bin`/`obj` are excluded from the temp copy, fixtures that need NuGet-restored assets
+(e.g. `obj/project.assets.json` for `MSBuildWorkspace` to resolve `AnalyzerReferences` or
+source generator DLLs) must be pre-built after the copy. This is done via the
+`patchFixtureDir` callback in `activateFixtureExt`:
+
+```fsharp
+let private prebuildProject (solutionDir: string) =
+    let projectDir = Path.Combine(solutionDir, "Project")
+    let psi = ProcessStartInfo("dotnet", "build")
+    psi.WorkingDirectory <- projectDir
+    // ...
+    let proc = Process.Start(psi)
+    proc.WaitForExit()
+
+use client =
+    activateFixtureExt "someFixture" defaultClientProfile prebuildProject id
+```
+
+Fixtures using this pattern:
+- `projectWithSourceGenerator` — builds the generator DLL so Roslyn can load it as an analyzer
+- `projectWithEditorConfigAnalyzers` — restores the project so `MSBuildWorkspace` sees analyzer references
+
+#### Available Fixtures
 
 | Fixture | Purpose |
 |---------|---------|
@@ -335,12 +511,31 @@ Available fixtures:
 | `aspnetProject` | ASP.NET project with controllers, views, and Razor files |
 | `multiFolderWorkspace` | Two separate project folders for multi-root workspace tests |
 | `multiTargetProject` | Project targeting multiple TFMs |
-| `projectWithEditorConfig` | Project with an `.editorconfig` for formatting tests |
+| `projectWithEditorConfig` | Project with an `.editorconfig` for formatting-only rules |
+| `projectWithEditorConfigAnalyzers` | Project with `.editorconfig` diagnostic severity rules (IDE0040, IDE0051, IDE0032) for analyzer tests |
 | `projectWithSlnx` | Project using a `.slnx` solution file |
+| `projectWithSourceGenerator` | Project with an incremental source generator for generated-document tests |
 | `testDiagnosticsWork` | Project with deliberate errors for diagnostic tests |
 | `testReferenceWorksDotnet8` | Project pinned to .NET 8 for reference/Go-to-def tests |
 
-### 7.5 Typical Test Pattern
+### 7.6 Test File Conventions
+
+- **Module-level `[<Test>]` let bindings** — all test files use top-level module functions,
+  not `[<TestFixture>]` class style:
+  ```fsharp
+  module CSharpLanguageServer.Tests.SomeFeatureTests
+  // ...
+  [<Test>]
+  let testSomething () = ...
+  ```
+- **`.fsproj` compile order matters** — F# requires files in dependency order. New test
+  files are added as `<Compile Include="SomeFeatureTests.fs" />` in the `<ItemGroup>`.
+  Test files come after `Tooling.fs` (which defines the harness). Place new entries near
+  related existing test files.
+- **Naming:** file name matches module suffix (e.g. `AnalyzerTests.fs` →
+  `module CSharpLanguageServer.Tests.AnalyzerTests`)
+
+### 7.7 Typical Test Pattern
 
 ```fsharp
 [<Test>]
@@ -355,7 +550,7 @@ let testSomething () =
     // Dispose: didClose → shutdown → kill process → delete temp dir
 ```
 
-### 7.6 Other Test Categories
+### 7.8 Other Test Categories
 
 | Category | File | How it works |
 |----------|------|-------------|
@@ -365,6 +560,8 @@ let testSomething () =
 | Request scheduling unit tests | `RequestSchedulingTests.fs` | Tests `RequestQueue` directly with no server process |
 | CSharp metadata (go-to-decompiled) integration tests | `CSharpMetadataTests.fs` | Integration tests via `LspTestClient` |
 | Call hierarchy integration tests | `CallHierarchyTests.fs` | Integration tests via `LspTestClient` |
+| Source generator tests | `SourceGeneratorTests.fs` | Uses `prebuildGenerator` callback + `projectWithSourceGenerator` fixture |
+| Analyzer / EditorConfig diagnostic tests | `AnalyzerTests.fs` | Uses `prebuildProject` callback + `projectWithEditorConfigAnalyzers` fixture; custom `LspClientProfile` with pull diagnostics enabled |
 | Internal / cross-cutting tests | `InternalTests.fs` | Tests for internal utilities and cross-cutting concerns |
 
 ---
