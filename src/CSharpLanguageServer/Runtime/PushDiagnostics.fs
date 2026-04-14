@@ -1,8 +1,6 @@
 module CSharpLanguageServer.Runtime.PushDiagnostics
 
 open System
-open System.Threading.Tasks
-
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.Extensions.Logging
@@ -18,7 +16,7 @@ let private logger = Logging.getLoggerByName "Runtime.PushDiagnostics"
 
 type PushDiagnosticsState =
     { DocumentBacklog: string list
-      CurrentDocTask: (string * Task) option }
+      CurrentDocTask: (string * Async<unit>) option }
 
     static member Empty =
         { DocumentBacklog = []
@@ -119,8 +117,9 @@ let processPendingPushDiagnostics
                     return newState
 
                 | Some wf, Some doc ->
-                    let resolveDocumentDiagnostics () : Task = task {
-                        let! semanticModelMaybe = doc.GetSemanticModelAsync()
+                    let resolveDocumentDiagnostics = async {
+                        let! ct = Async.CancellationToken
+                        let! semanticModelMaybe = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
 
                         match semanticModelMaybe |> Option.ofObj with
                         | None -> Error(Exception("could not GetSemanticModelAsync")) |> postResolution
@@ -135,11 +134,11 @@ let processPendingPushDiagnostics
                             Ok(docUri, None, diagnostics) |> postResolution
                     }
 
-                    let newTask = Task.Run(resolveDocumentDiagnostics)
+                    let! childAsync = Async.StartChild resolveDocumentDiagnostics
 
                     return
                         { newState with
-                            CurrentDocTask = Some(docUri, newTask) }
+                            CurrentDocTask = Some(docUri, childAsync) }
 
                 | _, _ -> return newState
 
