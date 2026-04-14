@@ -25,7 +25,7 @@ csharp-language-server/
 │   ├── Util.fs                      # General utilities
 │   ├── Types.fs                     # CSharpConfiguration, ICSharpLspServer, document filters
 │   ├── DocumentationUtil.fs         # XML-doc / symbol documentation helpers
-│   ├── Diagnostics.fs               # `--diagnose` command implementation
+│   ├── DiagnoseCommand.fs           # `--diagnose` command implementation
 │   │
 │   ├── Lsp/                         # ── LSP protocol layer ──
 │   │   ├── Client.fs                # CSharpLspClient (server→client messages)

@@ -32,7 +32,7 @@
     <Compile Include="Roslyn/Document.fs" />
     <Compile Include="Roslyn/Symbol.fs" />
     <Compile Include="DocumentationUtil.fs" />
-    <Compile Include="Diagnostics.fs" />
+    <Compile Include="DiagnoseCommand.fs" />
     <Compile Include="Lsp/Client.fs" />
     <Compile Include="Lsp/WorkspaceFolder.fs" />
     <Compile Include="Lsp/Workspace.fs" />
