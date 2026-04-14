@@ -40,8 +40,19 @@ let private runDotnetBuild (dir: string) =
         | p -> p
 
     use _ = proc
-    proc.WaitForExit(120_000) |> ignore
-    proc.ExitCode, proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd()
+    // Read stdout/stderr asynchronously to prevent deadlocks when the buffers fill up.
+    let stdoutTask = proc.StandardOutput.ReadToEndAsync()
+    let stderrTask = proc.StandardError.ReadToEndAsync()
+
+    let exited = proc.WaitForExit(180_000)
+    let stdout = stdoutTask.Result
+    let stderr = stderrTask.Result
+
+    if not exited then
+        proc.Kill(entireProcessTree = true)
+        failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
+
+    proc.ExitCode, stdout, stderr
 
 /// Pre-build the project so that obj/project.assets.json exists and MSBuildWorkspace
 /// can resolve AnalyzerReferences from the project file.
