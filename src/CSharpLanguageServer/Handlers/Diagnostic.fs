@@ -8,6 +8,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 
+open CSharpLanguageServer.Roslyn.Analyzers
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Types
@@ -87,8 +88,20 @@ module Diagnostic =
 
                     let wfPathToUri path = workspaceFolderPathToUri path wf
 
+                    let project =
+                        workspaceFolderDocument AnyDocument p.TextDocument.Uri wf
+                        |> Option.map _.Project
+
+                    let! allDiags =
+                        match project with
+                        | Some project -> getDocumentDiagnosticsWithAnalyzers project semanticModel
+                        | None -> async {
+                            let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
+                            return diags |> List.ofSeq
+                          }
+
                     let diagnostics =
-                        semanticModel.GetDiagnostics()
+                        allDiags
                         |> Seq.filter (diagnosticIsToBeListed p.TextDocument.Uri)
                         |> Seq.map (Diagnostic.fromRoslynDiagnostic wfPathToUri)
                         |> Seq.map fst
@@ -145,8 +158,10 @@ module Diagnostic =
                     | Some compilation ->
                         let pathToUri path = workspaceFolderPathToUri path wf
 
+                        let! allDiags = getCompilationDiagnosticsWithAnalyzers project compilation
+
                         let diagnosticsByDocument =
-                            compilation.GetDiagnostics(ct)
+                            allDiags
                             |> Seq.filter (fun d ->
                                 let uri = d.Location.GetMappedLineSpan().Path |> pathToUri
                                 diagnosticIsToBeListed uri d)

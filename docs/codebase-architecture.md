@@ -44,6 +44,7 @@ csharp-language-server/
 │   │   ├── Conversions.fs           # LSP ↔ Roslyn type conversions
 │   │   ├── Document.fs              # Roslyn Document helpers
 │   │   ├── Solution.fs              # Solution loading/management
+│   │   ├── Analyzers.fs             # Shared helpers: compiler + analyzer diagnostics via CompilationWithAnalyzers
 │   │   ├── Symbol.fs                # Symbol resolution
 │   │   └── WorkspaceServices.fs     # Custom workspace services
 │   │
@@ -182,7 +183,7 @@ regardless of whether the client advertised the capability.
 by most-recently-touched) and `CurrentDocTask` (at most one in-flight resolution).
 `pushDiagnosticsBacklogUpdate` rebuilds the backlog from all open documents across workspace
 folders. `processPendingPushDiagnostics` pops the next URI, resolves diagnostics via
-`doc.GetSemanticModelAsync()` → `semanticModel.GetDiagnostics()`, and posts the result.
+`doc.GetSemanticModelAsync()` → `Analyzers.getDocumentDiagnosticsWithAnalyzers`, and posts the result.
 
 **Internal flow of `processPendingPushDiagnostics`:**
 
@@ -194,12 +195,13 @@ folders. `processPendingPushDiagnostics` pops the next URI, resolves diagnostics
    - **Normal `.cs` documents:** Obtains `doc: Microsoft.CodeAnalysis.Document` from the
      workspace. The containing `Project` is accessible via `doc.Project`. Runs in an
      `async { }` CE via `Async.StartChild`. Obtains `CancellationToken` via
-     `let! ct = Async.CancellationToken`.
+     `let! ct = Async.CancellationToken`. Calls
+     `Analyzers.getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel ct`.
    - **Razor `.cshtml` documents:** Falls through when `docForUri = None`, uses
      `solutionGetRazorDocumentForPath` to get the compilation and syntax tree, then calls
-     `compilation.GetSemanticModel cshtmlTree` directly.
-5. Both paths call `semanticModel.GetDiagnostics()` (no cancellation token argument), map
-   via `Diagnostic.fromRoslynDiagnostic`, and post the result.
+     `compilation.GetSemanticModel cshtmlTree` directly. Uses compiler diagnostics only
+     (no analyzer support for Razor files yet).
+5. Results are mapped via `Diagnostic.fromRoslynDiagnostic` and posted.
 
 **Test access:** Push diagnostics are observable via `client.GetState().PushDiagnostics`,
 which returns `Map<string, int option * Diagnostic[]>` keyed by document URI (the
@@ -208,24 +210,19 @@ which returns `Map<string, int option * Diagnostic[]>` keyed by document URI (th
 #### Pull Diagnostics (`Handlers/Diagnostic.fs`)
 
 Handles `textDocument/diagnostic` (per-document) and `workspace/diagnostic` (all projects).
-Both paths currently use only **compiler diagnostics** (`semanticModel.GetDiagnostics()` /
-`compilation.GetDiagnostics(ct)`) — Roslyn analyzer diagnostics are not yet included.
+Both paths include **compiler and analyzer diagnostics** via `Roslyn/Analyzers.fs`.
 
 **Document pull (`handle`):** Receives `DocumentDiagnosticParams`, resolves the workspace
-folder and semantic model via `workspaceFolderDocumentSemanticModel` (returns
-`SemanticModel option`). Filters diagnostics through `diagnosticIsToBeListed` which
-suppresses `CS8019` (unnecessary using) on `.cshtml` files. Obtains `CancellationToken` via
-`let! ct = Async.CancellationToken` but does **not** pass it to `GetDiagnostics()`.
-
-> **Note:** The document pull path does not currently have the `Project` object in scope —
-> only the `SemanticModel`. To access `Project.AnalyzerReferences`, either use
-> `workspaceFolderDocumentSemanticModel` to also return the `Document` (whose `.Project`
-> property gives the containing project), or add a separate lookup.
+folder and semantic model via `workspaceFolderDocumentSemanticModel`. Also looks up the
+document via `workspaceFolderDocument` to obtain `doc.Project` (needed for analyzer
+references). Filters through `diagnosticIsToBeListed` (suppresses `CS8019` on `.cshtml`).
+Calls `Analyzers.getDocumentDiagnosticsWithAnalyzers project semanticModel ct`.
 
 **Workspace pull (`getWorkspaceDiagnosticReports`):** Takes a `knownResultIds` map (for
 unchanged-report optimization) and the list of workspace folders. For each project:
 - Checks if the client already holds results for this `project.Version` → emits `Unchanged`
-- Otherwise calls `project.GetCompilationAsync(ct)` → `compilation.GetDiagnostics(ct)`,
+- Otherwise calls `project.GetCompilationAsync(ct)` →
+  `Analyzers.getCompilationDiagnosticsWithAnalyzers project compilation ct`,
   groups diagnostics by document URI, and emits `Full` reports
 - Results flow through a bounded `Channel<WorkspaceDiagnosticsReportsChannelItem>(256)` with
   one `Async.Start` per project writing to the channel and the main consumer yielding from
@@ -235,14 +232,28 @@ The `handleWorkspaceDiagnostic` function supports two modes based on `PartialRes
 - `None` → collects all reports into a single `WorkspaceDiagnosticReport`
 - `Some token` → streams each report via `$/progress` notifications, returns empty report
 
-#### Current Limitation — No Analyzer Support
+#### Analyzer Helpers (`Roslyn/Analyzers.fs`)
 
-All diagnostic code paths (push, pull-document, pull-workspace) call only
-`semanticModel.GetDiagnostics()` or `compilation.GetDiagnostics(ct)`, which return
-**compiler diagnostics only**. Roslyn analyzer diagnostics (IDE code-style rules from
-`.editorconfig`, third-party analyzers) require explicit invocation via
-`CompilationWithAnalyzers`. The codebase currently has **zero references** to
-`CompilationWithAnalyzers`, `WithAnalyzers`, or `AnalyzerOptions`.
+Two functions used by all three diagnostic code paths:
+
+**`getDocumentDiagnosticsWithAnalyzers project semanticModel ct`**
+- Falls back to `semanticModel.GetDiagnostics(ct)` when `project.AnalyzerReferences` is empty.
+- Otherwise wraps in `CompilationWithAnalyzers` using `project.AnalyzerOptions` (which
+  `MSBuildWorkspace` populates with the `AnalyzerConfigOptionsProvider` derived from
+  `.editorconfig` files), calls `GetAllDiagnosticsAsync`, and filters to the document's
+  file path. Uses `GetAllDiagnosticsAsync` rather than `GetAnalyzerSemanticDiagnosticsAsync`
+  because the span-based filter in the latter misses some IDE diagnostics (e.g. IDE0040).
+
+**`getCompilationDiagnosticsWithAnalyzers project compilation ct`**
+- Falls back to `compilation.GetDiagnostics(ct)` when no analyzers are present.
+- Otherwise calls `compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)` →
+  `GetAllDiagnosticsAsync(ct)`.
+
+**Key design point:** `project.AnalyzerOptions` is the `AnalyzerOptions` instance that
+`MSBuildWorkspace` builds from the project's `<Analyzer>` items and `.editorconfig` files.
+It already carries the `AnalyzerConfigOptionsProvider` that makes `.editorconfig`
+severity rules (e.g. `dotnet_diagnostic.IDE0051.severity = warning`) visible to
+analyzers — no manual `.editorconfig` discovery is needed.
 
 ## 4. Handler Module Pattern
 
