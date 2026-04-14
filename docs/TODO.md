@@ -147,51 +147,7 @@ considerations:
 See `plans/analyzer-support.md` for the full design. Three specific improvements are needed on
 top of the base implementation:
 
-### (a) Disable analyzers by default; make them configurable via `workspace/configuration`
-
-Running `CompilationWithAnalyzers` unconditionally on every diagnostic request adds latency that
-not all users want. Analyzers should be **off by default** and enabled via a workspace
-configuration key, e.g.:
-
-```json
-{
-  "csharp": {
-    "analyzerEnabled": true
-  }
-}
-```
-
-The server should send a `workspace/configuration` request on startup (and re-request on
-`workspace/didChangeConfiguration`) to read this key, storing the result in the workspace-folder
-state alongside other settings. All three diagnostic paths (`Handlers/Diagnostic.fs` `handle`,
-`getWorkspaceDiagnosticReports`, `Runtime/PushDiagnostics.fs` `resolveDocumentDiagnostics`) should
-gate analyzer execution on this flag.
-
-### (b) Disable analyzers in tests by default; restore full concurrency
-
-The test harness (`Tooling.fs`) starts the server with a fixed set of flags. Analyzer runs add
-significant latency and non-determinism to integration tests that are not specifically testing
-analyzer behavior. Analyzer support should be **disabled in the default test server configuration**
-(e.g. via the workspace/configuration mechanism above, or a dedicated CLI flag), and only enabled
-explicitly in tests that actually exercise analyzer output — i.e. the tests in `AnalyzerTests.fs`
-described in `plans/analyzer-support.md`.
-
-Once analyzers are disabled by default, the `activeClientsSemaphore` concurrency cap in
-`Tooling.fs` — currently `min Environment.ProcessorCount 4` — should be raised back to
-`Environment.ProcessorCount` (full nproc). The `4` cap was introduced because each active test
-client runs an LSP server that in turn runs analyzers, making the per-test CPU cost proportional
-to the number of analyzers; with analyzers off the cost drops back to the level where running one
-server per logical core is safe.
-
-### (c) Hash `configuration.analyzerEnabled` into `partialResultId`
-
-The workspace pull-diagnostic path (`getWorkspaceDiagnosticReports`) generates `partialResultId`
-tokens used by clients to diff incremental results. The token computation must include the
-`analyzerEnabled` setting so that toggling analyzers on or off invalidates any cached result the
-client holds. Without this, a client that has a stale "analyzers off" result would not request a
-fresh report after the user enables analyzers, and vice versa.
-
-### (d) Analyzer-supplied code fixes and other analyzer features
+### Analyzer-supplied code fixes and other analyzer features
 
 Roslyn analyzers can ship paired `CodeFixProvider` implementations that offer fixes for their
 diagnostics (e.g. "add accessibility modifier" for IDE0040, "remove unused member" for IDE0051).
