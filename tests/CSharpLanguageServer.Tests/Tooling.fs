@@ -952,7 +952,8 @@ let runDotnetBuild (dir: string) =
         dotnetBuildSemaphore.Release() |> ignore
 
 let activeClientsSemaphore =
-    new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount)
+    let concurrency = min Environment.ProcessorCount 4
+    new SemaphoreSlim(concurrency, concurrency)
 
 let activateFixtureExt
     fixtureName

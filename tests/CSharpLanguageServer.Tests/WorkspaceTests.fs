@@ -73,7 +73,7 @@ let testDidChangeWatchedFilesDeletedCsFileRemovesDocument () =
     let csFilePath = Path.Combine(client.SolutionDir, "Project", "Class.cs")
     let csFileUri = "Project/Class.cs" |> fileUriForProjectDir client.SolutionDir
 
-    let timeout = TimeSpan.FromSeconds(10L)
+    let timeout = TimeSpan.FromSeconds(30L)
 
     // Inject errors into the file so the server emits diagnostics for it.
     // This is important for the post-delete assertion: if the document were
@@ -191,7 +191,7 @@ let testDidChangeWatchedFilesDeletedCshtmlFileRemovesDocument () =
     let cshtmlUri =
         "Project/Views/Test/Index.cshtml" |> fileUriForProjectDir client.SolutionDir
 
-    let timeout = TimeSpan.FromSeconds(10L)
+    let timeout = TimeSpan.FromSeconds(30L)
 
     // Inject errors into the file so the server emits diagnostics for it.
     // This is important for the post-delete assertion: if the document were

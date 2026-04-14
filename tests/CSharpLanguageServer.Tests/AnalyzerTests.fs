@@ -77,14 +77,15 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
 
     use classFile = client.Open("Project/Class.cs")
 
-    // Wait for push diagnostics — same budget as testPushDiagnosticsWork
-    Thread.Sleep(8000)
+    // Poll until push diagnostics arrive rather than using a fixed sleep, so the
+    // test passes as soon as the server publishes and only fails after the full budget.
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds(30.0))
+        (fun () -> client.GetState().PushDiagnostics |> Map.containsKey classFile.Uri)
+        "Expected push diagnostics for Project/Class.cs"
 
     let state = client.GetState()
-    let diag = state.PushDiagnostics |> Map.tryFind classFile.Uri
-    Assert.IsTrue(diag.IsSome, "Expected push diagnostics for Project/Class.cs")
-
-    let _version, diagnosticList = diag.Value
+    let _version, diagnosticList = state.PushDiagnostics[classFile.Uri]
 
     let codes =
         diagnosticList
