@@ -72,18 +72,19 @@ The analyzer pipeline is separate and must be invoked explicitly through
 
 ## What Needs to Change
 
-There are three largely independent work items:
+There are two largely independent work items:
 
 | # | Item | Files touched |
 |---|------|---------------|
 | A | **Run analyzers in the diagnostic pipeline** | `Handlers/Diagnostic.fs`, `Runtime/PushDiagnostics.fs` |
-| B | **DLL locking fix on Windows (shadow-copy loader)** | `Roslyn/WorkspaceServices.fs`, `Roslyn/Solution.fs` |
-| C | **EditorConfig / code-style analyzers via compiler options** | `Roslyn/Solution.fs`, possibly `Types.fs` |
+| B | **EditorConfig / code-style analyzers via compiler options** | `Roslyn/Solution.fs`, possibly `Types.fs` |
 
-Item B is a prerequisite on Windows (the analyzer DLLs are locked, which blocks incremental builds),
-but is not needed for correctness on Linux/macOS.  Item C ensures the full set of IDE/style
-diagnostics is available to Roslyn in the first place; without it the IDE analyzers are absent from
-`Project.AnalyzerReferences`.
+Item B ensures the full set of IDE/style diagnostics is available to Roslyn in the first place;
+without it the IDE analyzers are absent from `Project.AnalyzerReferences`.
+
+> **Note on DLL locking (Windows):** Analyzer DLL locking on Windows that previously required a
+> shadow-copy loader workaround is presumed fixed in the version of Roslyn currently in use.  No
+> `WorkspaceServicesInterceptor` changes are needed for analyzer loading.
 
 ---
 
@@ -274,22 +275,7 @@ let resolveDocumentDiagnostics () : Task = task {
 
 ---
 
-## Item B — DLL Locking Fix (Shadow-Copy Loader)
-
-> **Prerequisite for Windows only.**  On Linux/macOS file handles do not prevent concurrent writes,
-> so this item does not block Item A on those platforms.
-
-Described in detail in [`plans/source-generator-support.md`](source-generator-support.md).  The same
-shadow-copy loader intercept that prevents source-generator DLL locking also prevents analyzer DLL
-locking.  The two fixes share a single implementation in `WorkspaceServicesInterceptor`.
-
-Briefly: intercept `IAnalyzerAssemblyLoaderProvider` in `WorkspaceServicesInterceptor.Intercept` and
-return a proxy that wraps `DefaultAnalyzerAssemblyLoaderProvider` with
-`ShadowCopyAnalyzerPathResolver`.
-
----
-
-## Item C — EditorConfig / Code-Style Analyzers
+## Item B — EditorConfig / Code-Style Analyzers
 
 IDE code-style rules (`IDE0xxx`) are implemented by the `Microsoft.CodeAnalysis.CSharp.Features`
 assembly (already a dependency) as `DiagnosticAnalyzer` subclasses.  They are activated when:
@@ -592,22 +578,16 @@ The test harness currently starts the server with `--features razor-support` har
      `semanticModel.GetDiagnostics()` with the `Task`-returning analyzer helper.
    - In the Razor (`.cshtml`) path: same change (replace `semanticModel.GetDiagnostics()`).
 
-5. **Verify Item C (EditorConfig surfacing):**
+5. **Verify Item B (EditorConfig surfacing):**
    - Run the new tests; if IDE0xxx codes are absent, investigate whether
      `project.AnalyzerConfigOptions` / `project.AdditionalDocuments` includes `.editorconfig`
      entries after `MSBuildWorkspace.OpenSolutionAsync`.
    - If missing, add manual `.editorconfig` discovery in `Roslyn/Solution.fs` and pass via
      `AnalyzerConfigOptionsProvider` to the `CompilationWithAnalyzersOptions` constructor.
 
-6. **Item B — shadow-copy loader** (Windows, can be done in parallel with Items A/C):
-   - Add `IAnalyzerAssemblyLoaderProvider` intercept in `WorkspaceServicesInterceptor` (shares
-     implementation with `plans/source-generator-support.md`).
-   - Add Windows-only integration test in `AnalyzerTests.fs` that builds the project while the
-     server is running (asserts no file-lock error).
+6. **Run full test suite** (`dotnet test`) — all tests green.
 
-7. **Run full test suite** (`dotnet test`) — all tests green.
-
-8. **Manual verification** with Spacemacs/Emacs using `lsp-mode` and a project with
+7. **Manual verification** with Spacemacs/Emacs using `lsp-mode` and a project with
    `.editorconfig` that triggers `IDE0040` / `IDE0051`.
 
 ---
@@ -620,8 +600,7 @@ The test harness currently starts the server with `--features razor-support` har
 | `src/CSharpLanguageServer/CSharpLanguageServer.fsproj` | **Modify** — add `Roslyn/Analyzers.fs` after `Roslyn/Solution.fs` |
 | `src/CSharpLanguageServer/Handlers/Diagnostic.fs` | **Modify** — use analyzer helpers; plumb `Project` and `CancellationToken` |
 | `src/CSharpLanguageServer/Runtime/PushDiagnostics.fs` | **Modify** — use analyzer helpers; plumb `Project` via `doc.Project`; thread `CancellationToken` |
-| `src/CSharpLanguageServer/Roslyn/WorkspaceServices.fs` | **Modify (Item B)** — shadow-copy loader intercept |
-| `src/CSharpLanguageServer/Roslyn/Solution.fs` | **Modify (Item C/B)** — editorconfig surfacing investigation, shadow dir cleanup |
+| `src/CSharpLanguageServer/Roslyn/Solution.fs` | **Modify (Item B)** — editorconfig surfacing investigation |
 | `tests/.../Fixtures/projectWithEditorConfigAnalyzers/` | **Create** — fixture (`.sln`, `.csproj`, `.editorconfig`, `Class.cs`) |
 | `tests/.../AnalyzerTests.fs` | **Create** — integration tests (module-level `let` bindings, not class-based) |
 | `tests/.../CSharpLanguageServer.Tests.fsproj` | **Modify** — add `<Compile Include="AnalyzerTests.fs" />` |
