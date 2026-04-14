@@ -1,0 +1,11 @@
+root = true
+
+[*.cs]
+# IDE0040: Add accessibility modifiers
+dotnet_style_require_accessibility_modifiers = always:warning
+
+# IDE0051: Remove unused private members
+dotnet_diagnostic.IDE0051.severity = warning
+
+# IDE0032: Use auto property
+dotnet_style_prefer_auto_properties = true:warning
