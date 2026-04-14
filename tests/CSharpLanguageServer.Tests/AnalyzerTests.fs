@@ -75,7 +75,9 @@ let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
 [<Retry(3)>]
 let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
     // Use a push-diagnostics profile (no Diagnostic capability) with analyzers on.
-    let pushAnalyzerProfile = { defaultClientProfile with AnalyzersEnabled = Some true }
+    let pushAnalyzerProfile =
+        { defaultClientProfile with
+            AnalyzersEnabled = Some true }
 
     use client =
         activateFixtureExt "projectWithEditorConfigAnalyzers" pushAnalyzerProfile prebuildProject id
