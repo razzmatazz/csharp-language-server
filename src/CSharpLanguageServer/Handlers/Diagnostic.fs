@@ -92,10 +92,12 @@ module Diagnostic =
                         workspaceFolderDocument AnyDocument p.TextDocument.Uri wf
                         |> Option.map _.Project
 
+                    let analyzersEnabled = context.Config.analyzersEnabled |> Option.defaultValue false
+
                     let! allDiags =
-                        match project with
-                        | Some project -> getDocumentDiagnosticsWithAnalyzers project semanticModel
-                        | None -> async {
+                        match project, analyzersEnabled with
+                        | Some project, true -> getDocumentDiagnosticsWithAnalyzers project semanticModel
+                        | _ -> async {
                             let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
                             return diags |> List.ofSeq
                           }
@@ -118,6 +120,7 @@ module Diagnostic =
         | ReportingDoneForProject
 
     let private getWorkspaceDiagnosticReports
+        (config: CSharpConfiguration)
         (knownResultIds: Map<string, string>)
         (workspaceFolders: LspWorkspaceFolder list)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
@@ -128,7 +131,10 @@ module Diagnostic =
                 channel.Writer.WriteAsync(item) |> _.AsTask() |> Async.AwaitTask
 
             let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
-                let resultId = string project.Version
+                let analyzersEnabled = config.analyzersEnabled |> Option.defaultValue false
+                // Include analyzersEnabled in the resultId so that toggling the setting
+                // invalidates any cached "unchanged" result the client holds.
+                let resultId = sprintf "%s/%b" (string project.Version) analyzersEnabled
 
                 // Collect URIs the client already holds for this exact project version.
                 // If any exist, the client received the full set on a previous poll —
@@ -175,7 +181,11 @@ module Diagnostic =
                         let sep = string System.IO.Path.DirectorySeparatorChar
                         let isUnderObjDir (path: string) = path.Contains(sep + "obj" + sep)
 
-                        let! allDiags = getCompilationDiagnosticsWithAnalyzers project compilation
+                        let! allDiags =
+                            if analyzersEnabled then
+                                getCompilationDiagnosticsWithAnalyzers project compilation
+                            else
+                                async { return compilation.GetDiagnostics() |> List.ofSeq }
 
                         let diagnosticsByDocument =
                             allDiags
@@ -257,7 +267,7 @@ module Diagnostic =
                 let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
 
                 let! diagnosticReports =
-                    getWorkspaceDiagnosticReports knownResultIds workspaceFolders
+                    getWorkspaceDiagnosticReports context.Config knownResultIds workspaceFolders
                     |> AsyncSeq.toArrayAsync
 
                 let fullReport: WorkspaceDiagnosticReport = { Items = diagnosticReports }
@@ -285,7 +295,7 @@ module Diagnostic =
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)
-                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports knownResultIds workspaceFolders)
+                    |> AsyncSeq.zip (getWorkspaceDiagnosticReports context.Config knownResultIds workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
                 let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }

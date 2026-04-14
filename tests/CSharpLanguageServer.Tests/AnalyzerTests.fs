@@ -10,8 +10,10 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Tests.Tooling
 
 // Client profile with pull diagnostics enabled (both textDocument and workspace)
+// and analyzers explicitly turned on.
 let private analyzerClientProfile =
     { defaultClientProfile with
+        AnalyzersEnabled = Some true
         ClientCapabilities =
             { defaultClientCapabilities with
                 TextDocument =
@@ -72,8 +74,11 @@ let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
 [<Test>]
 [<Retry(3)>]
 let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
+    // Use a push-diagnostics profile (no Diagnostic capability) with analyzers on.
+    let pushAnalyzerProfile = { defaultClientProfile with AnalyzersEnabled = Some true }
+
     use client =
-        activateFixtureExt "projectWithEditorConfigAnalyzers" defaultClientProfile prebuildProject id
+        activateFixtureExt "projectWithEditorConfigAnalyzers" pushAnalyzerProfile prebuildProject id
 
     use classFile = client.Open("Project/Class.cs")
 
@@ -100,6 +105,12 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
 let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
     use client =
         activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile prebuildProject id
+
+    // Open a file to ensure the solution is fully loaded and the workspace/configuration
+    // SettingsChange (analyzersEnabled = true) has been applied before we fire
+    // workspace/diagnostic. textDocument/didOpen is ReadWrite and blocks until it
+    // completes, by which point ServerState.Config is settled.
+    use _classFile = client.Open("Project/Class.cs")
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None

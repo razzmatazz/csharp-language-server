@@ -15,6 +15,7 @@ type CSharpDebugConfiguration =
 type CSharpConfiguration =
     { logLevel: string option
       applyFormattingOptions: bool option
+      analyzersEnabled: bool option
       useMetadataUris: bool option
       razorSupport: bool option
       locale: string option
@@ -30,6 +31,7 @@ type CSharpConfiguration =
     static member Default =
         { logLevel = None
           applyFormattingOptions = None
+          analyzersEnabled = None
           useMetadataUris = None
           razorSupport = None
           locale = None
@@ -41,6 +43,7 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
       applyFormattingOptions =
         newConfig.applyFormattingOptions
         |> Option.orElse oldConfig.applyFormattingOptions
+      analyzersEnabled = newConfig.analyzersEnabled |> Option.orElse oldConfig.analyzersEnabled
       useMetadataUris = newConfig.useMetadataUris |> Option.orElse oldConfig.useMetadataUris
       razorSupport = newConfig.razorSupport |> Option.orElse oldConfig.razorSupport
       locale = newConfig.locale |> Option.orElse oldConfig.locale

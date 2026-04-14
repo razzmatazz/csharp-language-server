@@ -49,6 +49,10 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.applyFormattingOptions` - use formatting options as supplied by the
   client (may override `.editorconfig` values); defaults to `false`
 
+- `csharp.analyzersEnabled` - run Roslyn analyzers (e.g. IDE style rules, third-party
+  NuGet analyzers) as part of diagnostics; increases diagnostic latency and CPU usage;
+  defaults to `false`
+
 - `csharp.useMetadataUris` - serve decompiled metadata and source-generated
   documents under `csharp:/` URIs; defaults to `false`
 
