@@ -41,6 +41,7 @@ let pushDiagnosticsBacklogUpdate (workspace: LspWorkspace) (state: PushDiagnosti
 let processPendingPushDiagnostics
     (workspace: LspWorkspace)
     (clientCapabilities: ClientCapabilities)
+    (config: CSharpConfiguration)
     (postResolution: Result<(string * int option * Diagnostic array), Exception> -> unit)
     (state: PushDiagnosticsState)
     : Async<PushDiagnosticsState> =
@@ -126,7 +127,15 @@ let processPendingPushDiagnostics
                         | None -> Error(Exception("could not GetSemanticModelAsync")) |> postResolution
 
                         | Some semanticModel ->
-                            let! allDiags = getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel
+                            let analyzersEnabled = config.analyzersEnabled |> Option.defaultValue false
+
+                            let! allDiags =
+                                if analyzersEnabled then
+                                    getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel
+                                else async {
+                                    let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
+                                    return diags |> List.ofSeq
+                                }
 
                             let diagnostics =
                                 allDiags

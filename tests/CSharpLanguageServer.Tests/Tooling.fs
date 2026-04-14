@@ -33,6 +33,7 @@ type LspClientProfile =
     { LoggingEnabled: bool
       ClientCapabilities: ClientCapabilities
       SolutionLoadDelay: int option
+      AnalyzersEnabled: bool option
       ExtraEnv: Map<string, string>
       ExtraArgs: string list }
 
@@ -47,7 +48,7 @@ let defaultClientCapabilities =
                   Symbol = None
                   ExecuteCommand = None
                   WorkspaceFolders = None
-                  Configuration = None
+                  Configuration = Some true
                   SemanticTokens = None
                   CodeLens = None
                   FileOperations = None
@@ -111,6 +112,7 @@ let defaultClientProfile =
     { LoggingEnabled = false
       ClientCapabilities = defaultClientCapabilities
       SolutionLoadDelay = None
+      AnalyzersEnabled = None  // defaults to false; only set to Some true in analyzer-specific tests
       ExtraEnv = Map.empty
       ExtraArgs = [] }
 
@@ -176,6 +178,7 @@ let initialClientState =
         { LoggingEnabled = false
           ClientCapabilities = emptyClientCapabilities
           SolutionLoadDelay = None
+          AnalyzersEnabled = None
           ExtraEnv = Map.empty
           ExtraArgs = [] }
       LoggingEnabled = false
@@ -206,7 +209,10 @@ let buildConfigurationResponse (paramsToken: JToken option) (clientProfile: LspC
                 | Some ms -> Some {| solutionLoadDelay = ms |}
                 | None -> None
 
+            let analyzersEnabled = clientProfile.AnalyzersEnabled |> Option.defaultValue false
+
             {| metadataUris = true
+               analyzersEnabled = analyzersEnabled
                debug = debugObj |}
             |> serialize
             |> Some
@@ -952,7 +958,9 @@ let runDotnetBuild (dir: string) =
         dotnetBuildSemaphore.Release() |> ignore
 
 let activeClientsSemaphore =
-    let concurrency = min Environment.ProcessorCount 4
+    // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
+    // per-test CPU cost is low enough to run one server per logical core safely.
+    let concurrency = Environment.ProcessorCount
     new SemaphoreSlim(concurrency, concurrency)
 
 let activateFixtureExt

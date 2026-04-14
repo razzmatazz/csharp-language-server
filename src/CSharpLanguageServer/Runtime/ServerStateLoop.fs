@@ -340,7 +340,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         let! newPD =
             state.PushDiagnostics
-            |> processPendingPushDiagnostics state.Workspace state.ClientCapabilities postResolution
+            |> processPendingPushDiagnostics state.Workspace state.ClientCapabilities state.Config postResolution
 
         return { state with PushDiagnostics = newPD }
 
