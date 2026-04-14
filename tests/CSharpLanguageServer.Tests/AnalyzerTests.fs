@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Tests.AnalyzerTests
 
 open System
-open System.Diagnostics
 open System.IO
 open System.Threading
 
@@ -26,33 +25,6 @@ let private analyzerClientProfile =
                     Some
                         { defaultClientCapabilities.Workspace.Value with
                             Diagnostics = Some { RefreshSupport = Some true } } } }
-
-let private runDotnetBuild (dir: string) =
-    let psi = ProcessStartInfo("dotnet", "build")
-    psi.WorkingDirectory <- dir
-    psi.RedirectStandardOutput <- true
-    psi.RedirectStandardError <- true
-    psi.UseShellExecute <- false
-
-    let proc =
-        match Process.Start(psi) with
-        | null -> failwith "Failed to start dotnet build process"
-        | p -> p
-
-    use _ = proc
-    // Read stdout/stderr asynchronously to prevent deadlocks when the buffers fill up.
-    let stdoutTask = proc.StandardOutput.ReadToEndAsync()
-    let stderrTask = proc.StandardError.ReadToEndAsync()
-
-    let exited = proc.WaitForExit(180_000)
-    let stdout = stdoutTask.Result
-    let stderr = stderrTask.Result
-
-    if not exited then
-        proc.Kill(entireProcessTree = true)
-        failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
-
-    proc.ExitCode, stdout, stderr
 
 /// Pre-build the project so that obj/project.assets.json exists and MSBuildWorkspace
 /// can resolve AnalyzerReferences from the project file.

@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           $cores = [int]$env:NUMBER_OF_PROCESSORS
-          $workers = 1
+          $workers = [Math]::Max(1, [Math]::Floor($cores / 2))
 
           Write-Host "Total cores: $cores, running tests with $workers workers"
           dotnet test --no-build -- NUnit.NumberOfTestWorkers=$workers

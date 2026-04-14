@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Tests.SourceGeneratorTests
 
 open System
-open System.Diagnostics
 open System.IO
 
 open NUnit.Framework
@@ -26,22 +25,6 @@ let private pullDiagnosticsClientProfile =
                     Some
                         { defaultClientCapabilities.Workspace.Value with
                             Diagnostics = Some { RefreshSupport = Some true } } } }
-
-let private runDotnetBuild (dir: string) =
-    let psi = ProcessStartInfo("dotnet", "build")
-    psi.WorkingDirectory <- dir
-    psi.RedirectStandardOutput <- true
-    psi.RedirectStandardError <- true
-    psi.UseShellExecute <- false
-
-    let proc =
-        match Process.Start(psi) with
-        | null -> failwith "Failed to start dotnet build process"
-        | p -> p
-
-    use _ = proc
-    proc.WaitForExit(60_000) |> ignore
-    proc.ExitCode, proc.StandardOutput.ReadToEnd(), proc.StandardError.ReadToEnd()
 
 /// Build the generator DLL before the server starts, so Roslyn can load it as an analyzer.
 /// The fixture temp dir has no bin/ or obj/, so the DLL does not exist until we build it.
