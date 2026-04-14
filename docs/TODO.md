@@ -180,3 +180,15 @@ tokens used by clients to diff incremental results. The token computation must i
 `analyzerEnabled` setting so that toggling analyzers on or off invalidates any cached result the
 client holds. Without this, a client that has a stale "analyzers off" result would not request a
 fresh report after the user enables analyzers, and vice versa.
+
+### (d) Analyzer-supplied code fixes and other analyzer features
+
+Roslyn analyzers can ship paired `CodeFixProvider` implementations that offer fixes for their
+diagnostics (e.g. "add accessibility modifier" for IDE0040, "remove unused member" for IDE0051).
+These fixes surface in editors as `textDocument/codeAction` responses. Investigate whether the
+current code-action handler already picks them up via the Roslyn host services layer, or whether
+it only sees compiler-supplied fixes. If analyzer code fixes are absent, wire them in — the
+mechanism is `CodeFixContext` / `ICodeFixProvider.RegisterCodeFixesAsync`, driven by the same
+`CompilationWithAnalyzers` diagnostic results used in the diagnostic pipeline. Also check whether
+any other analyzer-adjacent features (e.g. `CodeRefactoringProvider`-based refactorings,
+`ICodeStyleService` suggestions) are missing and worth adding at the same time.
