@@ -158,10 +158,30 @@ module Diagnostic =
                     | Some compilation ->
                         let pathToUri path = workspaceFolderPathToUri path wf
 
+                        // Collect file paths of source-generated documents (IIncrementalGenerator
+                        // output) so we can suppress their diagnostics. Users have no control over
+                        // generated code, so surfacing those diagnostics would only cause noise.
+                        let! generatedDocs = project.GetSourceGeneratedDocumentsAsync(ct).AsTask() |> Async.AwaitTask
+
+                        let sourceGeneratedFilePaths =
+                            generatedDocs
+                            |> Seq.choose (fun (d: Microsoft.CodeAnalysis.SourceGeneratedDocument) ->
+                                d.FilePath |> Option.ofObj)
+                            |> Set.ofSeq
+
+                        // MSBuild also injects auto-generated files (AssemblyInfo.cs,
+                        // AssemblyAttributes.cs, …) that live under the project's obj/
+                        // directory as ordinary Documents.  Users cannot edit those either.
+                        let sep = string System.IO.Path.DirectorySeparatorChar
+                        let isUnderObjDir (path: string) = path.Contains(sep + "obj" + sep)
+
                         let! allDiags = getCompilationDiagnosticsWithAnalyzers project compilation
 
                         let diagnosticsByDocument =
                             allDiags
+                            |> Seq.filter (fun d ->
+                                let path = d.Location.GetMappedLineSpan().Path
+                                not (sourceGeneratedFilePaths.Contains(path)) && not (isUnderObjDir path))
                             |> Seq.filter (fun d ->
                                 let uri = d.Location.GetMappedLineSpan().Path |> pathToUri
                                 diagnosticIsToBeListed uri d)

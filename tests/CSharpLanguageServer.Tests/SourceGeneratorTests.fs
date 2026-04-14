@@ -10,6 +10,23 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 
+/// Client profile with pull diagnostics enabled (both textDocument and workspace).
+let private pullDiagnosticsClientProfile =
+    { defaultClientProfile with
+        ClientCapabilities =
+            { defaultClientCapabilities with
+                TextDocument =
+                    Some
+                        { defaultClientCapabilities.TextDocument.Value with
+                            Diagnostic =
+                                Some
+                                    { DynamicRegistration = Some true
+                                      RelatedDocumentSupport = None } }
+                Workspace =
+                    Some
+                        { defaultClientCapabilities.Workspace.Value with
+                            Diagnostics = Some { RefreshSupport = Some true } } } }
+
 let private runDotnetBuild (dir: string) =
     let psi = ProcessStartInfo("dotnet", "build")
     psi.WorkingDirectory <- dir
@@ -192,4 +209,48 @@ let ``go-to-definition on generated symbol works without obj directory`` () =
     | _ ->
         Assert.Fail(
             sprintf "expected Some Location[] with csharp:/<proj>/generated/ URI even without obj/, got: %A" definition
+        )
+
+[<Test>]
+let ``workspace diagnostics do not include diagnostics from source-generated files`` () =
+    // The generator fixture emits Generated.g.cs with a deliberate CS8600 warning
+    // (assigning null to a non-nullable string). Users cannot edit generated files, so
+    // the server should suppress diagnostics that originate from them.
+    use client =
+        activateFixtureExt "projectWithSourceGenerator" pullDiagnosticsClientProfile prebuildGenerator id
+
+    let diagnosticParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let report: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", diagnosticParams)
+
+    match report with
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
+    | Some report ->
+        // Collect all URIs that appear in the workspace diagnostic report
+        let reportedUris =
+            report.Items
+            |> Array.choose (fun item ->
+                match item with
+                | U2.C1 full -> Some full.Uri
+                | U2.C2 unchanged -> Some unchanged.Uri)
+
+        // Source-generated file paths contain "/obj/" in their on-disk path, which
+        // the server converts to a file:// URI. No diagnostic URI should point there.
+        let generatedFileUris =
+            reportedUris
+            |> Array.filter (fun uri ->
+                // Roslyn places generated files under obj/ in the temp build directory
+                uri.Contains("/obj/") || uri.Contains("\\obj\\"))
+
+        Assert.AreEqual(
+            [||],
+            generatedFileUris,
+            sprintf
+                "workspace/diagnostic should not report diagnostics from source-generated files, but got URIs: %A"
+                generatedFileUris
         )
