@@ -607,3 +607,188 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
             | U2.C1 fullReport ->
                 Assert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
     | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+
+[<Test>]
+let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
+    // Regression: when a document goes from having diagnostics to having none (e.g. after
+    // toggling analyzersEnabled off removes analyzer diagnostics), the server must emit an
+    // explicit empty full report for that URI so VS Code clears the stale diagnostic count.
+    //
+    // Before the fix, documents with zero diagnostics after a re-scan were silently omitted
+    // from the response.  VS Code never received a "full { items: [] }" for them, so the
+    // old diagnostics stayed visible in the Problems panel indefinitely.
+    //
+    // The scenario is simulated by doing a first poll that produces resultIds with a "/true"
+    // suffix, then sending a second poll whose previousResultIds have "/false" — forcing a
+    // full re-scan.  Any URI that produces zero diagnostics must appear as an empty full
+    // report, not be absent.
+    let profile =
+        { defaultClientProfile with
+            AnalyzersEnabled = Some true }
+
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" profile emptyFixturePatch id
+
+    // Open a file to trigger solution loading before polling
+    use _classFile = client.Open("Project/Class.cs")
+
+    // First poll — captures resultIds (all have "/true" suffix from analyzers=true)
+    let firstParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let firstReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", firstParams)
+
+    let firstResultIds =
+        match firstReport with
+        | Some report ->
+            report.Items
+            |> Array.choose (fun item ->
+                match item with
+                | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                | U2.C2 _ -> None)
+        | None -> failwith "expected first workspace/diagnostic to succeed"
+
+    Assert.IsTrue(firstResultIds.Length > 0, "expected resultIds from first poll (analyzers=true)")
+
+    // Simulate toggling analyzers off: replace "/true" with "/false" in each resultId.
+    // The server recomputes resultId as "V/true" (analyzers are still on in the test
+    // client), so every URI mismatches → full re-scan.  Documents that have zero
+    // diagnostics after re-scan must appear as empty full reports, not be silently omitted.
+    let previousResultIds =
+        firstResultIds
+        |> Array.map (fun r ->
+            { r with
+                Value = r.Value.Replace("/true", "/false") })
+
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = previousResultIds }
+
+    let secondReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    match secondReport with
+    | Some report ->
+        for prevId in previousResultIds do
+            let item =
+                report.Items
+                |> Array.tryFind (fun item ->
+                    match item with
+                    | U2.C1 full -> full.Uri = prevId.Uri
+                    | U2.C2 unchanged -> unchanged.Uri = prevId.Uri)
+
+            Assert.IsTrue(
+                item.IsSome,
+                sprintf
+                    "URI %s was in previousResultIds but is absent from the second poll — \
+                     server must emit an explicit empty full report for documents with zero \
+                     diagnostics so VS Code can clear stale counts"
+                    prevId.Uri
+            )
+
+            match item.Value with
+            | U2.C2 _ ->
+                Assert.Fail(
+                    sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri
+                )
+            | U2.C1 _ -> ()
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+
+[<Test>]
+let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesClean () =
+    // Streaming variant of the test above: mismatched resultIds (simulating analyzer toggle)
+    // must cause a full re-scan; every URI from previousResultIds must appear in $/progress.
+    let profile =
+        { defaultClientProfile with
+            AnalyzersEnabled = Some true }
+
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" profile emptyFixturePatch id
+
+    // Open a file to trigger solution loading before polling
+    use _classFile = client.Open("Project/Class.cs")
+
+    // First streaming poll — capture resultId stubs from the final response body
+    let token1: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
+
+    let firstParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some token1
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let firstResponse: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", firstParams)
+
+    let firstResultIds =
+        match firstResponse with
+        | Some report ->
+            report.Items
+            |> Array.choose (fun item ->
+                match item with
+                | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                | U2.C2 unchanged ->
+                    Some
+                        { Uri = unchanged.Uri
+                          Value = unchanged.ResultId })
+        | None -> failwith "expected first workspace/diagnostic to succeed"
+
+    Assert.IsTrue(firstResultIds.Length > 0, "expected resultId stubs from first poll")
+
+    // Simulate toggling analyzers off by mutating the "/true" suffix to "/false"
+    let previousResultIds =
+        firstResultIds
+        |> Array.map (fun r ->
+            { r with
+                Value = r.Value.Replace("/true", "/false") })
+
+    let token2: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
+
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some token2
+          Identifier = None
+          PreviousResultIds = previousResultIds }
+
+    let _secondResponse: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    let progressItems =
+        client.GetProgressParams token2
+        |> List.collect (fun pp ->
+            let items = pp.Value["items"] |> Option.ofObj
+
+            match items with
+            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | None -> [])
+
+    Assert.IsTrue(progressItems.Length > 0, "expected $/progress items from second streaming poll")
+
+    for prevId in previousResultIds do
+        let item =
+            progressItems
+            |> List.tryFind (fun item ->
+                match item with
+                | U2.C1 full -> full.Uri = prevId.Uri
+                | U2.C2 unchanged -> unchanged.Uri = prevId.Uri)
+
+        Assert.IsTrue(
+            item.IsSome,
+            sprintf
+                "URI %s was in previousResultIds but absent from $/progress — \
+                 server must emit an explicit empty full report for documents with no \
+                 diagnostics after a re-scan (uri: %s)"
+                prevId.Uri
+                prevId.Uri
+        )
+
+        match item.Value with
+        | U2.C2 _ ->
+            Assert.Fail(sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri)
+        | U2.C1 _ -> ()
