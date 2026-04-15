@@ -1,10 +1,17 @@
-namespace CSharpLanguageServer.Lsp
+module CSharpLanguageServer.Lsp.Client
 
 open Newtonsoft.Json.Linq
+open Microsoft.Extensions.Logging
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
+
+open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
+open CSharpLanguageServer.Logging
+
+let logger = Logging.getLoggerByName "Lsp.Client"
 
 type CSharpLspClient
     (
@@ -90,3 +97,27 @@ type CSharpLspClient
 
     override __.Progress progressParams =
         sendServerNotification "$/progress" (serialize progressParams)
+
+    /// Query the client for the `csharp` workspace configuration section.
+    /// Returns `None` when the call fails or the response cannot be deserialized.
+    static member TryPullCSharpConfig (lspClient: ILspClient) : Async<CSharpConfiguration option> =
+        async {
+            try
+                let! result: Result<JToken[], _> =
+                    lspClient.WorkspaceConfiguration(
+                        { Items = [| { Section = Some "csharp"; ScopeUri = None } |] }
+                    )
+
+                return
+                    result
+                    |> Option.fromResult
+                    |> Option.bind Seq.tryHead
+                    |> Option.bind deserialize<CSharpConfiguration option>
+            with ex ->
+                logger.LogWarning(
+                    "could not retrieve `csharp` workspace configuration section: {error}",
+                    ex |> string
+                )
+
+                return None
+        }

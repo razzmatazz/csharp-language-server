@@ -15,6 +15,7 @@ open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Lsp.Client
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 
@@ -143,12 +144,12 @@ module Workspace =
                 match wf, Path.GetExtension(change.Uri) with
                 | Some wf, ".csproj" ->
                     do! windowShowMessage "change to .csproj detected, will reload solution"
-                    wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
+                    wsUpdate <- wsUpdate.WithReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | Some wf, ".sln"
                 | Some wf, ".slnx" ->
                     do! windowShowMessage "change to .sln(x) detected, will reload solution"
-                    wsUpdate <- wsUpdate.WithWorkspaceReloadRequested(TimeSpan.FromSeconds(5: int64))
+                    wsUpdate <- wsUpdate.WithReloadRequested(TimeSpan.FromSeconds(5: int64))
 
                 | Some wf, ".cs" ->
                     let currentWf = currentWfByUri |> Map.tryFind wf.Uri |> Option.defaultValue wf
@@ -190,13 +191,28 @@ module Workspace =
         (configParams: DidChangeConfigurationParams)
         : Async<LspResult<unit> * LspWorkspaceUpdate> =
         async {
-            let csharpSettingsMaybe =
+            let pushedConfig =
                 configParams.Settings
-                |> deserialize<DidChangeConfigurationSettingsDto>
-                |> _.csharp
+                |> Option.ofObj
+                |> Option.bind deserialize<DidChangeConfigurationSettingsDto option>
+                |> Option.map _.csharp
+                |> Option.bind id // flatten option option, also guards against null from Newtonsoft
+
+            let configurationSupported =
+                context.ClientCapabilities.Workspace
+                |> Option.bind _.Configuration
+                |> Option.defaultValue false
+
+            // When Settings is null the client expects us to pull the config via
+            // workspace/configuration (if supported), rather than push it in the notification.
+            let! pulledConfig = async {
+                match pushedConfig, configurationSupported with
+                | None, true -> return! CSharpLspClient.TryPullCSharpConfig context.LspClient
+                | _ -> return None
+            }
 
             let wsUpdate =
-                match csharpSettingsMaybe with
+                match pushedConfig |> Option.orElse pulledConfig with
                 | None -> LspWorkspaceUpdate.Empty
                 | Some csharpSettings ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpSettings
@@ -206,7 +222,7 @@ module Workspace =
                         newConfig |> string
                     )
 
-                    LspWorkspaceUpdate.Empty.WithSettingsChange(newConfig)
+                    LspWorkspaceUpdate.Empty.WithConfigurationChange(newConfig)
 
             return Ok(), wsUpdate
         }
@@ -228,5 +244,5 @@ module Workspace =
                 |> Seq.append p.Event.Added
                 |> List.ofSeq
 
-            return Ok(), LspWorkspaceUpdate.Empty.WithWorkspaceConfigurationChanged(updatedWorkspaceFolders)
+            return Ok(), LspWorkspaceUpdate.Empty.WithFolderReconfiguration(updatedWorkspaceFolders)
         }
