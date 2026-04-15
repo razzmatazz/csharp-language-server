@@ -108,3 +108,14 @@ let emptyClientCapabilities: ClientCapabilities =
       Window = None
       General = None
       Experimental = None }
+
+type DebugWorkspaceFolderInfo =
+    { uri: string
+      name: string
+      solutionState: string }
+
+type DebugWorkspaceInfo =
+    { phase: string
+      folders: DebugWorkspaceFolderInfo list }
+
+type DebugInfo = { workspace: DebugWorkspaceInfo }

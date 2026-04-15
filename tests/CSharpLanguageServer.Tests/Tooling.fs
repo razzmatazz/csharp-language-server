@@ -17,6 +17,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Runtime.JsonRpc
+open CSharpLanguageServer.Types
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
@@ -906,6 +907,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists containsPred
+
+    member self.GetDebugState() : DebugInfo =
+        match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
+        | Some s -> s
+        | None -> failwith "$/csharp/debugInfo returned None — start the server with --debug"
 
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
         sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
