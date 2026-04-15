@@ -274,7 +274,11 @@ module Diagnostic =
                 return fullReport |> LspResult.success, LspWorkspaceUpdate.Empty
 
             | Some partialResultToken ->
+                let mutable sentReports: WorkspaceDocumentDiagnosticReport list = []
+
                 let sendWorkspaceDiagnosticReport (documentReport, index) = async {
+                    sentReports <- documentReport :: sentReports
+
                     let progressParams =
                         if index = 0 then
                             let report: WorkspaceDiagnosticReport = { Items = [| documentReport |] }
@@ -298,6 +302,24 @@ module Diagnostic =
                     |> AsyncSeq.zip (getWorkspaceDiagnosticReports context.Config knownResultIds workspaceFolders)
                     |> AsyncSeq.iterAsync sendWorkspaceDiagnosticReport
 
-                let emptyReport: WorkspaceDiagnosticReport = { Items = Array.empty }
-                return emptyReport |> LspResult.success, LspWorkspaceUpdate.Empty
+                // Echo back an unchanged-kind stub for every document we streamed via
+                // $/progress. This gives the client the uri+resultId pairs it needs to
+                // populate previousResultIds on the next poll, breaking the busy loop
+                // where previousResultIds was always empty.
+                let stubItems =
+                    sentReports
+                    |> List.rev
+                    |> Array.ofList
+                    |> Array.map (fun r ->
+                        match r with
+                        | U2.C1 full ->
+                            U2.C2
+                                { Kind = "unchanged"
+                                  ResultId = full.ResultId |> Option.defaultValue ""
+                                  Uri = full.Uri
+                                  Version = None }
+                        | U2.C2 unchanged -> U2.C2 unchanged)
+
+                let finalReport: WorkspaceDiagnosticReport = { Items = stubItems }
+                return finalReport |> LspResult.success, LspWorkspaceUpdate.Empty
         }
