@@ -86,6 +86,9 @@ type CSharpLspClient
     override __.WorkspaceSemanticTokensRefresh() =
         sendServerRequest "workspace/semanticTokens/refresh" (JValue.CreateNull())
 
+    override __.WorkspaceDiagnosticRefresh() =
+        sendServerRequest "workspace/diagnostic/refresh" (JValue.CreateNull())
+
     override __.TextDocumentPublishDiagnostics p =
         sendServerNotification "textDocument/publishDiagnostics" (serialize p)
 

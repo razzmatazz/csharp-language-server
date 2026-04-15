@@ -212,20 +212,44 @@ module Diagnostic =
                                 diagnosticIsToBeListed uri d)
                             |> Seq.map (Diagnostic.fromRoslynDiagnostic pathToUri)
                             |> Seq.groupBy snd
+                            |> Map.ofSeq
 
-                        for uri, uriItems in diagnosticsByDocument do
+                        // Emit full reports for every URI that has diagnostics.
+                        for KeyValue(uri, uriItems) in diagnosticsByDocument do
                             let items = uriItems |> Seq.map fst |> Array.ofSeq
 
-                            if items.Length > 0 then
-                                let documentReport: WorkspaceDocumentDiagnosticReport =
-                                    U2.C1
-                                        { Kind = "full"
-                                          ResultId = Some resultId
-                                          Uri = uri
-                                          Items = items
-                                          Version = None }
+                            let documentReport: WorkspaceDocumentDiagnosticReport =
+                                U2.C1
+                                    { Kind = "full"
+                                      ResultId = Some resultId
+                                      Uri = uri
+                                      Items = items
+                                      Version = None }
 
-                                do! writeToChannel (DiagnosticsReport documentReport)
+                            do! writeToChannel (DiagnosticsReport documentReport)
+
+                        // Also emit an explicit empty full report for any URI the client
+                        // previously knew about (via previousResultIds) that now has zero
+                        // diagnostics.  Without this, VS Code never clears stale diagnostics
+                        // for documents that become clean after a config change (e.g. toggling
+                        // analyzersEnabled off removes analyzer diagnostics from project2 but
+                        // the server previously emitted nothing for it, leaving the old count).
+                        let clientKnownUrisForProject =
+                            knownResultIds
+                            |> Map.toSeq
+                            |> Seq.map fst
+                            |> Seq.filter (fun uri -> not (diagnosticsByDocument.ContainsKey uri))
+
+                        for uri in clientKnownUrisForProject do
+                            let documentReport: WorkspaceDocumentDiagnosticReport =
+                                U2.C1
+                                    { Kind = "full"
+                                      ResultId = Some resultId
+                                      Uri = uri
+                                      Items = [||]
+                                      Version = None }
+
+                            do! writeToChannel (DiagnosticsReport documentReport)
             }
 
             let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
