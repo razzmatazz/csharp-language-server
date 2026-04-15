@@ -224,9 +224,16 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
     let report0: WorkspaceDiagnosticReport option =
         client.Request("workspace/diagnostic", diagnosticParams)
 
-    // report should have 0 results, all of them streamed to lsp client via $/progress instead
+    // The final response body contains unchanged-kind stubs (uri+resultId) for each
+    // document that was streamed via $/progress, so the client can build previousResultIds.
+    // The actual diagnostic content was delivered via $/progress, not here.
     match report0 with
-    | Some report0 -> Assert.AreEqual(0, report0.Items.Length)
+    | Some report0 ->
+        Assert.AreEqual(1, report0.Items.Length)
+
+        match report0.Items[0] with
+        | U2.C2 stub -> Assert.AreEqual("unchanged", stub.Kind)
+        | U2.C1 _ -> failwith "expected unchanged stub in final response body, got full report"
     | _ -> failwith "'Some' was expected"
 
     let progress = client.GetProgressParams partialResultToken
@@ -246,6 +253,105 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
         Assert.AreEqual("Identifier expected", diagnostic0.Message)
 
     | _ -> failwith "'U2.C1' was expected"
+
+[<Test>]
+let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
+    // Regression: when the client sends previousResultIds that it collected from
+    // $/progress notifications of a previous streaming poll, the server must respond
+    // with WorkspaceUnchangedDocumentDiagnosticReport for all unchanged documents.
+    //
+    // The bug: the streaming path returned { items: [] } as the final response body,
+    // so the client had no resultIds to send back and every subsequent poll triggered
+    // a full re-scan (busy loop visible in csharp-ls-rpc.log).
+    //
+    // The fix: the final response body must echo back at least the uri+resultId of each
+    // document that was streamed, so the client can populate previousResultIds.
+    use client = activateFixture "testDiagnosticsWork"
+
+    // First streaming poll — collect resultIds from $/progress notifications
+    let token1: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
+
+    let firstParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some token1
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let firstResponse: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", firstParams)
+
+    // Collect all document items from $/progress for token1
+    let progressItems1 =
+        client.GetProgressParams token1
+        |> List.collect (fun pp ->
+            // The first notification uses WorkspaceDiagnosticReport,
+            // subsequent ones use WorkspaceDiagnosticReportPartialResult;
+            // both have an `items` array at the top level.
+            let items = pp.Value["items"] |> Option.ofObj
+
+            match items with
+            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | None -> [])
+
+    Assert.IsTrue(progressItems1.Length > 0, "expected $/progress items from first streaming poll")
+
+    // The final response body must now contain the resultId stubs so the client
+    // can build previousResultIds — this is the assertion that fails before the fix.
+    let previousResultIds =
+        match firstResponse with
+        | Some report ->
+            report.Items
+            |> Array.choose (fun item ->
+                match item with
+                | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                | U2.C2 unchanged ->
+                    Some
+                        { Uri = unchanged.Uri
+                          Value = unchanged.ResultId })
+        | None ->
+            Assert.Fail("expected Some from first workspace/diagnostic")
+            Array.empty
+
+    Assert.IsTrue(
+        previousResultIds.Length > 0,
+        "expected the final response body to contain resultId stubs for each streamed document, \
+         so the client can send previousResultIds on the next poll (busy-loop fix)"
+    )
+
+    // Second streaming poll — send back the resultIds we collected
+    let token2: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
+
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some token2
+          Identifier = None
+          PreviousResultIds = previousResultIds }
+
+    let _secondResponse: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    // All $/progress items for the second poll must be Unchanged
+    let progressItems2 =
+        client.GetProgressParams token2
+        |> List.collect (fun pp ->
+            let items = pp.Value["items"] |> Option.ofObj
+
+            match items with
+            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | None -> [])
+
+    Assert.IsTrue(progressItems2.Length > 0, "expected $/progress items from second streaming poll")
+
+    for item in progressItems2 do
+        match item with
+        | U2.C2 unchanged -> Assert.AreEqual("unchanged", unchanged.Kind)
+        | U2.C1 full ->
+            Assert.Fail(
+                sprintf
+                    "expected Unchanged on second streaming poll but got full report for %s — \
+                     server is not honouring previousResultIds in the streaming path"
+                    full.Uri
+            )
 
 [<Test>]
 let testWorkspaceDiagnosticsReturnResultId () =
