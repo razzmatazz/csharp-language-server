@@ -103,7 +103,7 @@ let testPullDiagnosticsWork () =
     match report0 with
     | Some(U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
-        Assert.AreEqual(None, report.ResultId)
+        Assert.IsTrue(report.ResultId.IsSome)
         Assert.AreEqual(3, report.Items.Length)
 
         let diagnostic0 = report.Items.[0]
@@ -139,7 +139,7 @@ let testPullDiagnosticsWork () =
     match report1 with
     | Some(U2.C1 report) ->
         Assert.AreEqual("full", report.Kind)
-        Assert.AreEqual(None, report.ResultId)
+        Assert.IsTrue(report.ResultId.IsSome)
         Assert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
 
@@ -350,6 +350,128 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
                 sprintf
                     "expected Unchanged on second streaming poll but got full report for %s — \
                      server is not honouring previousResultIds in the streaming path"
+                    full.Uri
+            )
+
+[<Test>]
+let testWorkspaceDiagnosticsReturnUnchangedOnSecondPollWhenDocumentResultIdProvided () =
+    // Regression for the VS Code busy-loop: VS Code opens a file and pulls
+    // textDocument/diagnostic for it.  When it next polls workspace/diagnostic it
+    // substitutes the document-level resultId over the workspace-level one when building
+    // previousResultIds (see getAllResultIds() in vscode-languageserver-node).
+    // If textDocument/diagnostic returns ResultId = None the substituted entry has
+    // resultId = undefined and is dropped, so previousResultIds is always empty.
+    //
+    // Fix: textDocument/diagnostic now returns the same resultId formula as the workspace
+    // path (project.Version/analyzersEnabled), so the client can include it in
+    // previousResultIds and receive Unchanged for that document on the next poll.
+    use client = activateFixture "testDiagnosticsWork"
+    use classFile = client.Open("Project/Class.cs")
+
+    // Pull textDocument/diagnostic — simulates VS Code pulling on open
+    let docParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
+
+    let docReport: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", docParams)
+
+    let docResultId =
+        match docReport with
+        | Some(U2.C1 report) ->
+            Assert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
+            report.ResultId.Value
+        | _ -> failwith "U2.C1 was expected from textDocument/diagnostic"
+
+    // Now poll workspace/diagnostic, passing the document resultId back — exactly what
+    // VS Code does via getAllResultIds() when documentPullStates shadows workspacePullStates
+    let workspaceParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds =
+            [| { Uri = classFile.Uri
+                 Value = docResultId } |] }
+
+    let workspaceReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", workspaceParams)
+
+    match workspaceReport with
+    | Some report ->
+        for item in report.Items do
+            match item with
+            | U2.C2 unchanged ->
+                Assert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
+            | U2.C1 full ->
+                Assert.Fail(
+                    sprintf
+                        "expected Unchanged for %s but got full report — \
+                         textDocument/diagnostic resultId does not match workspace/diagnostic resultId"
+                        full.Uri
+                )
+    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
+
+[<Test>]
+let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResultIdProvided () =
+    // Streaming variant of the test above: same VS Code scenario but with partialResultToken.
+    use client = activateFixture "testDiagnosticsWork"
+    use classFile = client.Open("Project/Class.cs")
+
+    // Pull textDocument/diagnostic to get the resultId VS Code would store
+    let docParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
+
+    let docReport: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", docParams)
+
+    let docResultId =
+        match docReport with
+        | Some(U2.C1 report) ->
+            Assert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
+            report.ResultId.Value
+        | _ -> failwith "U2.C1 was expected from textDocument/diagnostic"
+
+    // Streaming workspace/diagnostic poll with the document resultId in previousResultIds
+    let token: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
+
+    let workspaceParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = Some token
+          Identifier = None
+          PreviousResultIds =
+            [| { Uri = classFile.Uri
+                 Value = docResultId } |] }
+
+    let _response: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", workspaceParams)
+
+    let progressItems =
+        client.GetProgressParams token
+        |> List.collect (fun pp ->
+            let items = pp.Value["items"] |> Option.ofObj
+
+            match items with
+            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | None -> [])
+
+    Assert.IsTrue(progressItems.Length > 0, "expected $/progress items")
+
+    for item in progressItems do
+        match item with
+        | U2.C2 unchanged ->
+            Assert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
+        | U2.C1 full ->
+            Assert.Fail(
+                sprintf
+                    "expected Unchanged for %s but got full report — \
+                     textDocument/diagnostic resultId does not match workspace/diagnostic resultId"
                     full.Uri
             )
 
