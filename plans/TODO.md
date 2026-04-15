@@ -1,5 +1,11 @@
 # TODO
 
+## Test performance improvements
+
+See `plans/test-performance-improvements.md` for the full plan.
+
+---
+
 ## Suppress type inlay hints when type is apparent from the initializer
 
 **Affects:** `textDocument/inlayHint` — `InlayHint.fs`, `toInlayHint` function.
