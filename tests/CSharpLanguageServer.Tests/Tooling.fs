@@ -115,7 +115,7 @@ let defaultClientProfile =
       SolutionLoadDelay = None
       AnalyzersEnabled = None // defaults to false; only set to Some true in analyzer-specific tests
       ExtraEnv = Map.empty
-      ExtraArgs = [] }
+      ExtraArgs = [ "--debug" ] }
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)

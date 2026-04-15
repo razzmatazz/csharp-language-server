@@ -1,10 +1,15 @@
 module CSharpLanguageServer.Tests.InitializationTests
 
+open System
+open System.IO
+
 open NUnit.Framework
 
 open Ionide.LanguageServerProtocol.Types
+open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Types
 
 let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
     use classFile = client.Open(file)
@@ -141,6 +146,84 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
     Assert.IsTrue(client.ServerDidRespondTo "initialize")
     Assert.IsTrue(client.ClientDidSendNotification "initialized")
+
+[<Test>]
+let testSolutionPathOverrideViaDidChangeConfiguration () =
+    // The fixture has two solution files: SolutionA.sln and SolutionB.sln.
+    // SolutionA references ProjectA (ClassA.cs, uses UndefinedTypeFromProjectA).
+    // SolutionB references ProjectB (ClassB.cs, uses UndefinedTypeFromProjectB).
+    // Solution loading is lazy, so we can push solutionPathOverride before opening
+    // any file to control exactly which solution is loaded in each phase.
+
+    use client = activateFixture "projectWithTwoSolutions"
+
+    let solutionAPath = Path.Combine(client.SolutionDir, "SolutionA.sln")
+    let solutionBPath = Path.Combine(client.SolutionDir, "SolutionB.sln")
+
+    let sendOverride path =
+        client.Notify(
+            "workspace/didChangeConfiguration",
+            { Settings = {| csharp = {| solutionPathOverride = path |} |} |> serialize }
+        )
+
+    let getDiagnosticMessages (docHandle: LspDocumentHandle) =
+        let p: DocumentDiagnosticParams =
+            { WorkDoneToken = None
+              PartialResultToken = None
+              TextDocument = { Uri = docHandle.Uri }
+              Identifier = None
+              PreviousResultId = None }
+
+        match
+            client.Request<DocumentDiagnosticParams, DocumentDiagnosticReport option>("textDocument/diagnostic", p)
+        with
+        | Some(U2.C1 full) -> full.Items |> Array.toList |> List.map _.Message
+        | _ -> []
+
+    let waitForReady label =
+        waitUntilOrTimeout
+            (TimeSpan.FromSeconds 30.0)
+            (fun () ->
+                try
+                    (client.GetDebugState()).workspaceFolders
+                    |> List.exists (fun f -> f.solutionState = "Ready")
+                with _ ->
+                    false)
+            (sprintf "timed out waiting for solution to reach Ready state (%s)" label)
+
+    // ── Phase 1: explicitly select SolutionA before triggering any load ───────
+    sendOverride solutionAPath
+
+    use classAFile = client.Open("ProjectA/ClassA.cs")
+    waitForReady "SolutionA"
+
+    let folderA = (client.GetDebugState()).workspaceFolders |> List.exactlyOne
+    Assert.AreEqual("Ready", folderA.solutionState)
+    Assert.AreEqual(solutionAPath, folderA.loadedSolutionPath.Value)
+
+    let diagsA = getDiagnosticMessages classAFile
+
+    Assert.IsTrue(
+        diagsA |> List.exists (fun m -> m.Contains "UndefinedTypeFromProjectA"),
+        sprintf "expected UndefinedTypeFromProjectA diagnostic, got: %A" diagsA
+    )
+
+    // ── Phase 2: switch to SolutionB ──────────────────────────────────────────
+    sendOverride solutionBPath
+
+    use classBFile = client.Open("ProjectB/ClassB.cs")
+    waitForReady "SolutionB"
+
+    let folderB = (client.GetDebugState()).workspaceFolders |> List.exactlyOne
+    Assert.AreEqual("Ready", folderB.solutionState)
+    Assert.AreEqual(solutionBPath, folderB.loadedSolutionPath.Value)
+
+    let diagsB = getDiagnosticMessages classBFile
+
+    Assert.IsTrue(
+        diagsB |> List.exists (fun m -> m.Contains "UndefinedTypeFromProjectB"),
+        sprintf "expected UndefinedTypeFromProjectB diagnostic, got: %A" diagsB
+    )
 
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
