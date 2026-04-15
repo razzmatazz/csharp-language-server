@@ -56,6 +56,9 @@ module Diagnostic =
 
             Some registration
 
+    let private projectResultId (analyzersEnabled: bool) (project: Microsoft.CodeAnalysis.Project) =
+        sprintf "%s/%b" (string project.Version) analyzersEnabled
+
     let private diagnosticIsToBeListed (uri: string) (d: Microsoft.CodeAnalysis.Diagnostic) =
         if uri.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) then
             // CS8019 (Unnecessary using directive) has no correct line-mapping on .cshtml
@@ -109,8 +112,20 @@ module Diagnostic =
                         |> Seq.map fst
                         |> Array.ofSeq
 
+                    // Populate resultId so that VS Code's diagnostic client can include it in
+                    // previousResultIds on the next workspace/diagnostic poll.  Without this,
+                    // VS Code substitutes the document-level pull state (which has resultId=None)
+                    // over the workspace pull state for any open file, causing previousResultIds
+                    // to be empty on every poll and triggering a perpetual full re-scan.
+                    let resultId = project |> Option.map (projectResultId analyzersEnabled)
+
                     return
-                        { emptyReport with Items = diagnostics } |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
+                        { emptyReport with
+                            Items = diagnostics
+                            ResultId = resultId }
+                        |> U2.C1
+                        |> LspResult.success,
+                        LspWorkspaceUpdate.Empty
 
                 | None -> return emptyReport |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
         }
@@ -134,7 +149,7 @@ module Diagnostic =
                 let analyzersEnabled = config.analyzersEnabled |> Option.defaultValue false
                 // Include analyzersEnabled in the resultId so that toggling the setting
                 // invalidates any cached "unchanged" result the client holds.
-                let resultId = sprintf "%s/%b" (string project.Version) analyzersEnabled
+                let resultId = project |> projectResultId analyzersEnabled
 
                 // Collect URIs the client already holds for this exact project version.
                 // If any exist, the client received the full set on a previous poll —
