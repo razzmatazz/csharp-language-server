@@ -7,6 +7,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open Ionide.LanguageServerProtocol.Server
 open Microsoft.CodeAnalysis.Text
+open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer
 open CSharpLanguageServer.Util
@@ -199,6 +200,12 @@ module Workspace =
                 | None -> LspWorkspaceUpdate.Empty
                 | Some csharpSettings ->
                     let newConfig = mergeCSharpConfiguration context.Config csharpSettings
+
+                    logger.LogInformation(
+                        "didChangeConfiguration: csharp config updated: {config}",
+                        newConfig |> string
+                    )
+
                     LspWorkspaceUpdate.Empty.WithSettingsChange(newConfig)
 
             return Ok(), wsUpdate
