@@ -18,20 +18,20 @@ type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
       ClientShutdownEmitted: bool
       ClientCapabilityChange: ClientCapabilities option
-      SettingsChange: CSharpConfiguration option
+      ConfigurationChange: CSharpConfiguration option
       TraceLevelChange: TraceValues option
-      WorkspaceConfigurationChanged: WorkspaceFolder list option
-      WorkspaceReloadRequested: TimeSpan list
+      ReloadRequested: TimeSpan list
+      FolderReconfiguration: WorkspaceFolder list option
       FolderUpdates: Map<string, LspWorkspaceFolderUpdateFn list> }
 
     static member Empty =
         { ClientInitializeEmitted = false
           ClientShutdownEmitted = false
           ClientCapabilityChange = None
-          SettingsChange = None
+          ConfigurationChange = None
           TraceLevelChange = None
-          WorkspaceConfigurationChanged = None
-          WorkspaceReloadRequested = []
+          FolderReconfiguration = None
+          ReloadRequested = []
           FolderUpdates = Map.empty }
 
     member this.WithClientInitialize() =
@@ -46,21 +46,21 @@ type LspWorkspaceUpdate =
         { this with
             ClientCapabilityChange = Some capabilities }
 
-    member this.WithSettingsChange(config) =
+    member this.WithConfigurationChange(configuration) =
         { this with
-            SettingsChange = Some config }
+            ConfigurationChange = Some configuration }
 
     member this.WithTraceLevelChange(traceLevel) =
         { this with
             TraceLevelChange = Some traceLevel }
 
-    member this.WithWorkspaceConfigurationChanged(folders) =
+    member this.WithReloadRequested(delay) =
         { this with
-            WorkspaceConfigurationChanged = Some folders }
+            ReloadRequested = this.ReloadRequested @ [ delay ] }
 
-    member this.WithWorkspaceReloadRequested(delay) =
+    member this.WithFolderReconfiguration(folders) =
         { this with
-            WorkspaceReloadRequested = this.WorkspaceReloadRequested @ [ delay ] }
+            FolderReconfiguration = Some folders }
 
     member this.WithFolderUpdates(wfUri: string, updates: LspWorkspaceFolderUpdateFn list) =
         let wfUpdateList = this.FolderUpdates |> Map.tryFind wfUri |> Option.defaultValue []

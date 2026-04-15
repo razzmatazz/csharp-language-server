@@ -36,9 +36,9 @@ type ServerEvent =
     | RequestQueueDrained
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
-    | SettingsChange of CSharpConfiguration
+    | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
-    | WorkspaceConfigurationChanged of WorkspaceFolder list
+    | WorkspaceFolderConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | WorkspaceReloadRequested of TimeSpan
@@ -87,7 +87,7 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
 
 let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
-    | SettingsChange newConfig ->
+    | ConfigurationChange newConfig ->
         if newConfig.locale <> state.Config.locale then
             let culture =
                 match newConfig.locale with
@@ -154,7 +154,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = newRequestQueue }
 
     | ApplyWorkspaceUpdate wsUpdate ->
-
         if wsUpdate.ClientInitializeEmitted then
             do postServerEvent ClientInitialize
 
@@ -164,16 +163,16 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.ClientCapabilityChange
         |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
 
-        wsUpdate.SettingsChange
-        |> Option.iter (fun cfg -> do postServerEvent (SettingsChange cfg))
+        wsUpdate.ConfigurationChange
+        |> Option.iter (fun cfg -> do postServerEvent (ConfigurationChange cfg))
 
         wsUpdate.TraceLevelChange
         |> Option.iter (fun level -> do postServerEvent (TraceLevelChange level))
 
-        wsUpdate.WorkspaceConfigurationChanged
-        |> Option.iter (fun folders -> do postServerEvent (WorkspaceConfigurationChanged folders))
+        wsUpdate.FolderReconfiguration
+        |> Option.iter (fun folders -> do postServerEvent (WorkspaceFolderConfigurationChanged folders))
 
-        wsUpdate.WorkspaceReloadRequested
+        wsUpdate.ReloadRequested
         |> List.iter (fun delay -> do postServerEvent (WorkspaceReloadRequested delay))
 
         wsUpdate.FolderUpdates
@@ -212,7 +211,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         | Waiting -> return state
 
-    | WorkspaceConfigurationChanged workspaceFolders ->
+    | WorkspaceFolderConfigurationChanged workspaceFolders ->
         for (_, rc) in state.SolutionReadyAwaiters do
             rc.Reply(None)
 

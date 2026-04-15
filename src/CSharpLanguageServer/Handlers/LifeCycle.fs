@@ -12,6 +12,7 @@ open Microsoft.Extensions.Logging
 
 open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Lsp.Client
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Roslyn.Solution
@@ -101,7 +102,7 @@ module LifeCycle =
                     .WithClientInitialize()
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
-                    .WithWorkspaceConfigurationChanged(workspaceFolders)
+                    .WithFolderReconfiguration(workspaceFolders)
 
             return initializeResult |> LspResult.success, wsUpdate
         }
@@ -152,35 +153,14 @@ module LifeCycle =
                     logger.LogDebug("handleInitialized: client does not support workspace/configuration, skipping")
                     return context.Config
                 else
-                    try
-                        let! workspaceCSharpConfig =
-                            lspClient.WorkspaceConfiguration(
-                                { Items =
-                                    [| { Section = Some "csharp"
-                                         ScopeUri = None } |] }
-                            )
+                    let! csharpConfig = CSharpLspClient.TryPullCSharpConfig lspClient
 
-                        let csharpConfig =
-                            workspaceCSharpConfig
-                            |> Option.fromResult
-                            |> Option.bind Seq.tryHead
-                            |> Option.bind deserialize<CSharpConfiguration option>
-
-                        match csharpConfig with
-                        | None -> return context.Config
-                        | Some csharpConfig ->
-                            let newConfig = mergeCSharpConfiguration context.Config csharpConfig
-                            wsUpdate <- wsUpdate.WithSettingsChange(newConfig)
-
-                            return newConfig
-
-                    with ex ->
-                        logger.LogWarning(
-                            "handleInitialized: could not retrieve `csharp` workspace configuration section: {error}",
-                            ex |> string
-                        )
-
-                        return context.Config
+                    match csharpConfig with
+                    | None -> return context.Config
+                    | Some csharpConfig ->
+                        let newConfig = mergeCSharpConfiguration context.Config csharpConfig
+                        wsUpdate <- wsUpdate.WithConfigurationChange(newConfig)
+                        return newConfig
             }
 
             logger.LogInformation("initialize: initial csharp config: {config}", initialConfig |> string)

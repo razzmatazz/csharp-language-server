@@ -19,6 +19,7 @@ open CSharpLanguageServer.Runtime
 open CSharpLanguageServer.Runtime.JsonRpc
 open CSharpLanguageServer.Runtime.RequestScheduling
 open CSharpLanguageServer.Runtime.ServerStateLoop
+open CSharpLanguageServer.Lsp.Client
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Util
 
