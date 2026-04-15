@@ -101,6 +101,17 @@ let documentSelectorForCSharpAndRazorDocuments (config: CSharpConfiguration) : D
     | true -> [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
     | false -> [| csharpDocumentFilter |> U2.C1 |]
 
+type DebugWorkspaceFolderInfo =
+    { uri: string
+      name: string
+      solutionPathOverride: string option
+      solutionState: string
+      loadedSolutionPath: string option
+      openDocumentUris: string list }
+
+type DebugStateResponse =
+    { workspaceFolders: DebugWorkspaceFolderInfo list }
+
 let emptyClientCapabilities: ClientCapabilities =
     { Workspace = None
       TextDocument = None

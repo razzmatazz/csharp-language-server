@@ -76,6 +76,7 @@
     <Compile Include="Handlers/TypeHierarchy.fs" />
     <Compile Include="Handlers/Workspace.fs" />
     <Compile Include="Handlers/WorkspaceSymbol.fs" />
+    <Compile Include="Handlers/Debug.fs" />
     <Compile Include="Lsp/Server.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

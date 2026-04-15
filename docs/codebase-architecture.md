@@ -321,15 +321,39 @@ These are sent to the client during `handleInitialized` via `client/registerCapa
 
 ---
 
-## 7. Test Infrastructure
+## 7. Debug Introspection Endpoint (`$/csharp/debugState`)
 
-### 7.1 Test Framework
+A `ReadOnly` request handler in `Handlers/Debug.fs` that returns a snapshot of current
+workspace state. Only registered when the server is started with `--debug`
+(`config.debug.debugMode = Some true`); absent otherwise so production servers are
+unaffected.
+
+The `$/` prefix follows the LSP convention for implementation-specific methods — unrecognised
+by clients, they receive a standard `MethodNotFound` (-32601).
+
+Response type (`Types.fs`): `DebugStateResponse option` — `None` when not in debug mode,
+otherwise a record containing a `workspaceFolders` list. Each entry carries `uri`, `name`,
+`solutionPathOverride`, `solutionState` (`"Uninitialized"` / `"Loading"` / `"Ready"` /
+`"Defunct"`), `loadedSolutionPath` (Roslyn `Solution.FilePath` when `Ready`), and
+`openDocumentUris`.
+
+The handler uses `GetWorkspaceFolderList(withSolutionReady = false)` so it never blocks on
+solution loading and is safe to call from a polling loop.
+
+In tests, activate with `ExtraArgs = ["--debug"]` and call `client.GetDebugState()`
+(`Tooling.fs`) which wraps the raw request and throws if the server returns `None`.
+
+---
+
+## 8. Test Infrastructure
+
+### 8.1 Test Framework
 
 - **NUnit** with `[<Parallelizable(ParallelScope.All)>]` — all tests run in parallel
 - **net10.0** target, references main server project directly
 - `Tooling.fs` is the test harness, compiled before all test files
 
-### 7.2 Integration Test Architecture: Out-of-Process via stdio
+### 8.2 Integration Test Architecture: Out-of-Process via stdio
 
 Tests do **not** use in-process hosting. Instead:
 
@@ -348,7 +372,7 @@ Tests do **not** use in-process hosting. Instead:
    disabled by default in tests so per-server CPU cost is low enough to run one process
    per logical core safely
 
-### 7.3 Key Test Classes
+### 8.3 Key Test Classes
 
 #### `LspTestClient` (primary test API)
 
@@ -375,7 +399,7 @@ file.Save()                                   // sends textDocument/didSave
 // Dispose sends textDocument/didClose
 ```
 
-### 7.4 Test Harness API (`Tooling.fs`)
+### 8.4 Test Harness API (`Tooling.fs`)
 
 #### Client Activation Functions
 
@@ -448,7 +472,7 @@ let analyzerPullDiagProfile =
   a `WorkspaceDiagnosticReport`
 - `waitUntilOrTimeout` — polls a predicate with 50ms intervals, fails after timeout
 
-### 7.5 Fixtures
+### 8.5 Fixtures
 
 #### Temp-dir Preparation
 
@@ -504,7 +528,7 @@ Fixtures using this pattern:
 | `testDiagnosticsWork` | Project with deliberate errors for diagnostic tests |
 | `testReferenceWorksDotnet8` | Project pinned to .NET 8 for reference/Go-to-def tests |
 
-### 7.6 Test File Conventions
+### 8.6 Test File Conventions
 
 - **Module-level `[<Test>]` let bindings** — all test files use top-level module functions,
   not `[<TestFixture>]` class style:
@@ -521,7 +545,7 @@ Fixtures using this pattern:
 - **Naming:** file name matches module suffix (e.g. `AnalyzerTests.fs` →
   `module CSharpLanguageServer.Tests.AnalyzerTests`)
 
-### 7.7 Typical Test Pattern
+### 8.7 Typical Test Pattern
 
 ```fsharp
 [<Test>]
@@ -536,7 +560,7 @@ let testSomething () =
     // Dispose: didClose → shutdown → kill process → delete temp dir
 ```
 
-### 7.8 Other Test Categories
+### 8.8 Other Test Categories
 
 | Category | File | How it works |
 |----------|------|-------------|
@@ -552,7 +576,7 @@ let testSomething () =
 
 ---
 
-## 8. Adding a New LSP Feature — Checklist
+## 9. Adding a New LSP Feature — Checklist
 
 1. **Create handler file** `Handlers/NewFeature.fs` following the handler module pattern
    (export `provider`, `registration`, `handle`)
