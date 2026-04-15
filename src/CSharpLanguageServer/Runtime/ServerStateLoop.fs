@@ -98,6 +98,28 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             CultureInfo.DefaultThreadCurrentCulture <- culture
             CultureInfo.DefaultThreadCurrentUICulture <- culture
 
+        // When analyzersEnabled toggles, the resultId format changes (it encodes the flag),
+        // so the client's cached resultIds are stale.  Ask the client to re-poll immediately
+        // rather than waiting for its next scheduled workspace/diagnostic cycle.
+        let analyzersEnabledChanged =
+            newConfig.analyzersEnabled <> state.Config.analyzersEnabled
+
+        let clientSupportsRefresh =
+            state.ClientCapabilities.Workspace
+            |> Option.bind _.Diagnostics
+            |> Option.bind _.RefreshSupport
+            |> Option.defaultValue false
+
+        if analyzersEnabledChanged && clientSupportsRefresh then
+            state.LspClient
+            |> Option.iter (fun lspClient ->
+                Async.Start(
+                    async {
+                        let! _ = lspClient.WorkspaceDiagnosticRefresh()
+                        ()
+                    }
+                ))
+
         return { state with Config = newConfig }
 
     | TraceLevelChange newTraceLevel ->
