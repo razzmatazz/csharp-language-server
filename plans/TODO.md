@@ -1,5 +1,45 @@
 # TODO
 
+## Suppress type inlay hints when type is apparent from the initializer
+
+**Affects:** `textDocument/inlayHint` — `InlayHint.fs`, `toInlayHint` function.
+
+For `var` declarations where the right-hand side already makes the type obvious to the reader,
+the type inlay hint is redundant noise. Example:
+
+```csharp
+var someValue = getIntAbove10();  // showing `: int` here adds no value
+```
+
+The `VariableDeclarationSyntax` match arm in `toInlayHint` does not currently inspect the
+initializer expression at all — it emits a hint for every `var x = <anything>` as long as the
+type resolves without error.
+
+### Recommended fix
+
+Add an `isTypeApparentFromExpression` helper (mirroring Roslyn's own
+`CSharpInlineTypeHintsService` suppression logic) and call it on the initializer before emitting
+the hint. Suppress when the initializer is one of:
+
+- `InvocationExpressionSyntax` — method/delegate call (`getIntAbove10()`)
+- `ObjectCreationExpressionSyntax` — `new Foo(...)`
+- `CastExpressionSyntax` — `(int)x`
+- `LiteralExpressionSyntax` — `42`, `"hi"`, `true`, `null`
+- `DefaultExpressionSyntax` — `default(T)` / `default`
+- `TypeOfExpressionSyntax` — `typeof(T)`
+- `SizeOfExpressionSyntax` — `sizeof(T)`
+- `BinaryExpressionSyntax` with `AsExpression` kind — `expr as T`
+- `ParenthesizedExpressionSyntax` — recurse into inner expression
+
+The same suppression should be applied to the `DeclarationExpressionSyntax`,
+`SingleVariableDesignationSyntax`, and `ForEachStatementSyntax` arms where an initializer is
+accessible.
+
+The existing TODO comment in the file already notes:
+> `// TODO: Support the configuration whether or not to show some kinds of inlay hints.`
+
+---
+
 ## `completionItem/resolve` crash on sentinel `-1` positions (Neovim et al.)
 
 **Affects:** `completionItem/resolve` when a client sends `"line": -1, "character": -1` in the
