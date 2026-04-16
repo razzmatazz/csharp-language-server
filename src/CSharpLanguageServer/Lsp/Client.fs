@@ -103,24 +103,22 @@ type CSharpLspClient
 
     /// Query the client for the `csharp` workspace configuration section.
     /// Returns `None` when the call fails or the response cannot be deserialized.
-    static member TryPullCSharpConfig (lspClient: ILspClient) : Async<CSharpConfiguration option> =
-        async {
-            try
-                let! result: Result<JToken[], _> =
-                    lspClient.WorkspaceConfiguration(
-                        { Items = [| { Section = Some "csharp"; ScopeUri = None } |] }
-                    )
-
-                return
-                    result
-                    |> Option.fromResult
-                    |> Option.bind Seq.tryHead
-                    |> Option.bind deserialize<CSharpConfiguration option>
-            with ex ->
-                logger.LogWarning(
-                    "could not retrieve `csharp` workspace configuration section: {error}",
-                    ex |> string
+    static member TryPullCSharpConfig(lspClient: ILspClient) : Async<CSharpConfiguration option> = async {
+        try
+            let! (result: Result<JToken[], _>) =
+                lspClient.WorkspaceConfiguration(
+                    { Items =
+                        [| { Section = Some "csharp"
+                             ScopeUri = None } |] }
                 )
 
-                return None
-        }
+            return
+                result
+                |> Option.fromResult
+                |> Option.bind Seq.tryHead
+                |> Option.bind deserialize<CSharpConfiguration option>
+        with ex ->
+            logger.LogWarning("could not retrieve `csharp` workspace configuration section: {error}", ex |> string)
+
+            return None
+    }
