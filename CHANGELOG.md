@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
-## [0.24.0] - 2026-04-08 / Ignalina
+## [0.24.0] - 2026-04-16 / Ignalina
 * Fix pull diagnostics with VS Code: stop `workspace/diagnostic` busy loop, clear stale diagnostics after `analyzersEnabled` toggle, re-fetch config on `workspace/didChangeConfiguration`
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/354
 * Add `csharp.analyzersEnabled` configuration setting to enable Roslyn analyzers on demand; analyzers are now off by default to avoid unexpected latency
