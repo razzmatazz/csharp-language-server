@@ -153,6 +153,60 @@ LSP server authors can benefit from the symmetric JSON-RPC 2.0 transport without
 
 **Upstream repo:** https://github.com/ionide/Ionide.LanguageServerProtocol
 
+## Merge `Runtime/RequestScheduling.fs` into `Lsp/Workspace.fs`
+
+### Context
+
+`RequestScheduling.fs` defines `RequestQueue`, `RequestContext`, `RequestMode`,
+`RequestInfo`, and `processRequestQueue`. The queue is held as a field on `ServerState`
+inside `ServerStateLoop.fs`, and the lifecycle events that advance it
+(`EnterRequestContext`, `LeaveRequestContext`, `ProcessRequestQueue`,
+`RequestQueueDrained`) are handled in the same state loop alongside all other server
+events.
+
+Draining is triggered from the `PeriodicTimerTick` branch of the state loop, which calls
+`enterDrainingMode` when a `WorkspaceReloadPending` deadline has passed. The
+`RequestQueueDrained` event then performs `workspaceTeardown` and re-enters dispatching
+mode. This means the drain/teardown/reinitialise cycle is spread across three locations:
+`RequestScheduling.fs`, `ServerStateLoop.fs`, and `WorkspaceFolder.fs`.
+
+### What to do
+
+Move `RequestQueue` ownership and the drain coordination logic into `Lsp/Workspace.fs`
+(or `Lsp/WorkspaceFolder.fs`), so the workspace layer directly controls when to freeze
+the queue, wait for it to drain, tear itself down, and restart. The state loop would then
+delegate queue advancement to a method on the workspace rather than pattern-matching on
+scheduling events itself.
+
+### Benefits
+
+- **Simpler state loop** — `ServerState` sheds the `RequestQueue` field and several
+  event arms (`EnterRequestContext`, `LeaveRequestContext`, `ProcessRequestQueue`,
+  `RequestQueueDrained`). The state loop becomes a thinner orchestrator.
+- **Collocated drain/reload logic** — draining before a workspace folder reload, clearing
+  `SolutionReadyAwaiters` on teardown (Race 5 in `plans/server-state-improvement.md`),
+  and resetting workspace folder state all live in the same module, making the sequencing
+  explicit and easier to audit.
+- **Simpler startup wiring** — `Lsp/Server.fs` (`configureRpcTransport`) currently
+  plumbs `EnterRequestContext` / `LeaveRequestContext` events to the state actor by hand
+  inside `wrapHandler`. With the queue owned by the workspace, `wrapHandler` could call
+  workspace methods directly.
+- **Foundation for the race-condition fixes** in `plans/server-state-improvement.md` —
+  the generation-counter fix (Race 1) and the `SolutionReadyAwaiters` teardown fix
+  (Race 5) both touch the reload boundary; having queue and workspace in the same scope
+  makes those fixes more natural to implement.
+
+### Considerations
+
+- `RequestScheduling.fs` has its own unit-test file (`RequestSchedulingTests.fs`) that
+  tests `RequestQueue` directly without a server process. The public API of `RequestQueue`
+  should be preserved (or the tests updated) so that isolation is not lost.
+- Care is needed around the `ReadOnlyBackground` scheduling mode used by the push-diagnostics
+  pipeline (`PushDiagnostics.fs`) — it must continue to never block other requests after
+  the refactor.
+
+---
+
 ## Abstract and upstream `RequestScheduling.fs`
 
 `RequestScheduling.fs` implements LSP request-queue semantics (read-only vs. read-write
