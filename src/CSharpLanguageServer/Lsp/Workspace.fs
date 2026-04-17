@@ -9,10 +9,9 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 type LspWorkspace =
-    { Folders: LspWorkspaceFolder list
-      ReloadPending: DateTime option }
+    { Folders: LspWorkspaceFolder list }
 
-    static member Empty = { Folders = []; ReloadPending = None }
+    static member Empty = { Folders = [] }
 
 type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
@@ -134,5 +133,4 @@ let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
     { workspace with
-        Folders = tornDownFolders
-        ReloadPending = None }
+        Folders = tornDownFolders }
