@@ -127,7 +127,22 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     }
                 ))
 
-        return { state with Config = newConfig }
+        let solutionPathChanged =
+            newConfig.solutionPathOverride <> state.Config.solutionPathOverride
+
+        if solutionPathChanged then
+            postServerEvent DrainIfPendingOperationsReady
+
+        let newPendingOps =
+            if solutionPathChanged then
+                state.PendingOperations @ [ PendingSolutionPathChange newConfig ]
+            else
+                state.PendingOperations
+
+        return
+            { state with
+                Config = newConfig
+                PendingOperations = newPendingOps }
 
     | TraceLevelChange newTraceLevel ->
         Logging.setLspTraceLevel newTraceLevel

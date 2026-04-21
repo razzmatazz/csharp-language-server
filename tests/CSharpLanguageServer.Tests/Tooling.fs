@@ -1029,7 +1029,7 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
     if stopwatch.Elapsed >= timeout then
         Assert.Fail(failureMessage)
 
-let getWorkspaceDiagnosticsForUri (client: LspTestClient) uri =
+let getWorkspaceDiagnosticsForUri (client: LspTestClient) (uri: DocumentUri) : Diagnostic list =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
           PartialResultToken = None
