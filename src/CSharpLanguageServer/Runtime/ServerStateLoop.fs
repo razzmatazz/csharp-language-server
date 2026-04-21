@@ -36,17 +36,22 @@ type ServerEvent =
     | LeaveRequestContext of int64 * LspWorkspaceUpdate
     | PeriodicTimerTick
     | ApplyWorkspaceUpdate of LspWorkspaceUpdate
+    | DrainIfPendingOperationsReady
     | ProcessRequestQueue
     | RequestQueueDrained
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
     | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
-    | WorkspaceFolderConfigurationChanged of WorkspaceFolder list
     | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
-    | WorkspaceReloadRequested of TimeSpan
     | ProcessSolutionAwaiters
+
+/// A workspace-disrupting operation to be applied after the request queue drains.
+type WorkspacePendingOperation =
+    | PendingReload of reloadNoLaterThan: DateTime
+    | PendingFolderReplacement of newFolders: WorkspaceFolder list
+    | PendingSolutionPathChange of newConfig: CSharpConfiguration
 
 type ServerState =
     { Config: CSharpConfiguration
@@ -60,7 +65,8 @@ type ServerState =
       ShutdownReceived: bool
       SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>>
       LastDebugDumpTime: DateTime
-      GetRpcStats: (unit -> Async<JsonRpcStats>) option }
+      GetRpcStats: (unit -> Async<JsonRpcStats>) option
+      PendingOperations: WorkspacePendingOperation list }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -74,7 +80,8 @@ type ServerState =
           ShutdownReceived = false
           SolutionReadyAwaiters = []
           LastDebugDumpTime = DateTime.MinValue
-          GetRpcStats = None }
+          GetRpcStats = None
+          PendingOperations = [] }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let getWorkspaceFolder uri withSolutionReady =
@@ -219,19 +226,28 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.TraceLevelChange
         |> Option.iter (fun level -> do postServerEvent (TraceLevelChange level))
 
-        wsUpdate.FolderReconfiguration
-        |> Option.iter (fun folders -> do postServerEvent (WorkspaceFolderConfigurationChanged folders))
+        let newPendingOps =
+            let fromFolderReconfig =
+                wsUpdate.FolderReconfiguration
+                |> Option.map PendingFolderReplacement
+                |> Option.toList
 
-        wsUpdate.ReloadRequested
-        |> List.iter (fun delay -> do postServerEvent (WorkspaceReloadRequested delay))
+            let fromReloads =
+                wsUpdate.ReloadRequested
+                |> List.map (fun delay -> PendingReload(DateTime.UtcNow + delay))
+
+            state.PendingOperations @ fromFolderReconfig @ fromReloads
 
         wsUpdate.FolderUpdates
         |> Map.toSeq
         |> Seq.iter (fun (wfUri, wfUpdates) -> do postServerEvent (WorkspaceFolderUpdates(wfUri, wfUpdates)))
 
         do postServerEvent PushDiagnosticsBacklogUpdate
+        do postServerEvent DrainIfPendingOperationsReady
 
-        return state
+        return
+            { state with
+                PendingOperations = newPendingOps }
 
     | ProcessRequestQueue ->
         let result =
@@ -373,18 +389,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     Workspace = newWS
                     PushDiagnostics = newPD }
 
-    | WorkspaceReloadRequested quietPeriod ->
-        // Sliding-window debounce: each new event resets the deadline to now+delay,
-        // so a burst of changes (e.g. `dotnet add package` touching multiple files
-        // over several seconds) fully settles before the reload begins.
-        let newDeadline = DateTime.UtcNow + quietPeriod
-
-        let newWorkspace =
-            { state.Workspace with
-                ReloadPending = newDeadline |> Some }
-
-        return { state with Workspace = newWorkspace }
-
     | PushDiagnosticsProcessPendingDocuments ->
         let postResolution = PushDiagnosticsDocumentDiagnosticsResolution >> postServerEvent
 
@@ -404,21 +408,35 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        for (_, rc) in state.SolutionReadyAwaiters do
+        for _, rc in state.SolutionReadyAwaiters do
             rc.Reply(None)
 
         let tornDownWorkspace = workspaceTeardown state.Workspace
+
+        let applyPendingOperation (ws: LspWorkspace) (op: WorkspacePendingOperation) : LspWorkspace =
+            match op with
+            | PendingReload _ -> ws // workspace shape unchanged; folders already Uninitialized from teardown
+
+            | PendingFolderReplacement newFolders ->
+                workspaceFrom newFolders |> workspaceWithSolutionPathOverride state.Config
+
+            | PendingSolutionPathChange _ -> workspaceWithSolutionPathOverride state.Config ws
+
+        let newWorkspace =
+            state.PendingOperations |> List.fold applyPendingOperation tornDownWorkspace
 
         postServerEvent ProcessRequestQueue
 
         return
             { state with
-                Workspace = tornDownWorkspace
+                Workspace = newWorkspace
                 SolutionReadyAwaiters = []
+                PendingOperations = []
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
+        postServerEvent DrainIfPendingOperationsReady
 
         let! jsonRpcStats =
             match state.GetRpcStats with
@@ -443,15 +461,22 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 DateTime.Now
             | _ -> state.RequestQueue, state.LastDebugDumpTime
 
-        let state =
+        return
             { state with
                 RequestQueue = updatedRequestQueue
                 LastDebugDumpTime = updatedLastDebugDumpTime }
 
-        let solutionReloadDeadline =
-            state.Workspace.ReloadPending |> Option.defaultValue (DateTime.UtcNow.AddDays 1)
+    | DrainIfPendingOperationsReady ->
+        let shouldDrain =
+            state.PendingOperations
+            |> List.exists (fun op ->
+                match op with
+                | PendingFolderReplacement _
+                | PendingSolutionPathChange _ -> true
+                | PendingReload deadline -> deadline < DateTime.UtcNow)
 
-        match solutionReloadDeadline < DateTime.UtcNow with
+        match shouldDrain with
+        | false -> return state
         | true ->
             match enterDrainingMode state.RequestQueue with
             | Some updatedRequestQueue ->
@@ -461,8 +486,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     { state with
                         RequestQueue = updatedRequestQueue }
             | None -> return state
-
-        | false -> return state
 
     | ProcessSolutionAwaiters ->
         let mutable newState = state

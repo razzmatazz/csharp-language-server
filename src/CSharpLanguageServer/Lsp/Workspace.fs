@@ -145,5 +145,4 @@ let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
     { workspace with
-        Folders = tornDownFolders
-        ReloadPending = None }
+        Folders = tornDownFolders }
