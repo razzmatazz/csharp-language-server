@@ -459,16 +459,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         let mutable newState = state
 
         //
-        // initiate solution load for wfs where wf.Solution is Pending
+        // initiate solution load for all wfs where wf.Solution is Uninitialized
         //
         let wfsWithUninitializedSolution =
-            state.SolutionReadyAwaiters
-            |> Seq.map fst
-            |> Seq.distinct
-            |> Seq.map (fun uri -> workspaceFolder uri state.Workspace)
-            |> Seq.collect Option.toList
-            |> Seq.filter _.Solution.IsUninitialized
-            |> List.ofSeq
+            state.Workspace.Folders
+            |> List.filter _.Solution.IsUninitialized
 
         for wf in wfsWithUninitializedSolution do
             let onSolutionInitCompletion newSolution =
@@ -481,14 +476,14 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     state.ClientCapabilities
                     onSolutionInitCompletion
 
-            let newWorkspace = state.Workspace |> workspaceWithFolderUpdated updatedWf
+            let newWorkspace = newState.Workspace |> workspaceWithFolderUpdated updatedWf
 
             newState <-
                 { newState with
                     Workspace = newWorkspace }
 
         //
-        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Ready or Defunct
+        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
         //
         let mutable awaitersToKeep = []
 
@@ -502,7 +497,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
             | Some wf ->
                 match wf.Solution with
-                | Ready _ -> awaiterRC.Reply(Some wf)
+                | Loaded _ -> awaiterRC.Reply(Some wf)
                 | Defunct _ -> awaiterRC.Reply(None)
                 | Uninitialized
                 | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep

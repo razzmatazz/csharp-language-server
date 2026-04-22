@@ -70,7 +70,7 @@ module Workspace =
                 let updateWf =
                     let fileText = docFilePath |> File.ReadAllText
                     let updatedDoc = fileText |> SourceText.From |> doc.WithText
-                    workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution
+                    workspaceFolderWithLoadedSolutionReplaced updatedDoc.Project.Solution
 
                 [ updateWf ]
 
@@ -93,7 +93,7 @@ module Workspace =
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            let updateWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution
+            let updateWf = workspaceFolderWithLoadedSolutionReplaced updatedProject.Solution
             let updateWf2 = workspaceFolderWithDocClosed uri
 
             [ updateWf; updateWf2 ]

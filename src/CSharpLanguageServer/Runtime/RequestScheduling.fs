@@ -51,7 +51,7 @@ type RequestContext
         | None -> return None, None
         | Some wf ->
             match wf.Solution with
-            | Ready(_, solution) -> return Some wf, Some solution
+            | Loaded(_, solution) -> return Some wf, Some solution
             | _ -> return Some wf, None
     }
 
