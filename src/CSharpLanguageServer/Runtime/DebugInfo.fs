@@ -97,14 +97,6 @@ let assembleDebugInfo
     if not debugMode then
         None
     else
-        let workspacePhase =
-            match workspace.ReloadPending with
-            | Some _ -> "ReloadPending"
-            | None ->
-                match requestQueue.Mode with
-                | Dispatching -> "Dispatching"
-                | DrainingUpTo ord -> $"DrainingUpTo({ord})"
-
         let queueMode =
             match requestQueue.Mode with
             | Dispatching -> "Dispatching"
@@ -122,7 +114,7 @@ let assembleDebugInfo
 
         Some
             { workspace =
-                { phase = workspacePhase
+                { phase = string workspace.Phase
                   folders = workspace.Folders |> List.map toDebugWorkspaceFolderInfo }
               requestQueue =
                 { mode = queueMode

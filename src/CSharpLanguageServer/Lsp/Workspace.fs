@@ -8,11 +8,22 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
+[<RequireQualifiedAccess>]
+type LspWorkspacePhase =
+    | Uninitialized
+    | Initializing
+    | Ready
+    | ShuttingDown
+
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list
+      Phase: LspWorkspacePhase
       ReloadPending: DateTime option }
 
-    static member Empty = { Folders = []; ReloadPending = None }
+    static member Empty =
+        { Folders = []
+          Phase = LspWorkspacePhase.Uninitialized
+          ReloadPending = None }
 
 type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
