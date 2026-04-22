@@ -3,6 +3,7 @@ module CSharpLanguageServer.Lsp.Workspace
 open System
 open System.IO
 
+open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Lsp.WorkspaceFolder
@@ -166,6 +167,35 @@ let workspacePDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace * boo
             { ws with Folders = newWSFolders }
 
     newWS, havePDBacklogUpdatePending
+
+type WorkspaceFolderSolutionChange = (string * Guid * LspWorkspaceFolderSolution) list
+
+/// For every workspace folder whose solution is still `Uninitialized`, kick off an async
+/// solution load and return the workspace with those folders updated to `Loading`.
+/// `onSolutionChange` is called (on the async load's continuation thread) once each folder's
+/// load settles — it receives the list of `(uri, generation, newSolution)` tuples so the
+/// caller can dispatch a single `WorkspaceFolderSolutionChange` event per folder.
+let workspaceInitializeUninitializedFolders
+    (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
+    (onSolutionChange: WorkspaceFolderSolutionChange -> unit)
+    (workspace: LspWorkspace)
+    : LspWorkspace =
+    let uninitializedFolders =
+        workspace.Folders |> List.filter _.Solution.IsUninitialized
+
+    uninitializedFolders
+    |> List.fold
+        (fun ws wf ->
+            let onCompletion newSolution =
+                onSolutionChange [ wf.Uri, wf.Generation, newSolution ]
+
+            let updatedWf =
+                wf
+                |> workspaceFolderSolutionInitialized lspClient clientCapabilities onCompletion
+
+            ws |> workspaceFolderUpdated updatedWf)
+        workspace
 
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown

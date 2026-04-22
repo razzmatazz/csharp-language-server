@@ -60,7 +60,7 @@ let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspace
         match wf.Solution with
         | Uninitialized -> "Uninitialized"
         | Loading _ -> "Loading"
-        | Ready _ -> "Ready"
+        | Loaded _ -> "Loaded"
         | Defunct _ -> "Defunct"
 
     { uri = wf.Uri
@@ -68,22 +68,10 @@ let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspace
       solutionState = solutionState }
 
 let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
-    let mode =
-        match r.Mode with
-        | ReadOnly -> "ReadOnly"
-        | ReadWrite -> "ReadWrite"
-        | ReadOnlyBackground -> "ReadOnlyBackground"
-
-    let phase =
-        match r.Phase with
-        | Pending -> "Pending"
-        | Running -> "Running"
-        | Finished -> "Finished"
-
     { ordinal = ordinal
       name = r.Name
-      mode = mode
-      phase = phase }
+      mode = string r.Mode
+      phase = string r.Phase }
 
 let assembleDebugInfo
     (config: CSharpConfiguration)

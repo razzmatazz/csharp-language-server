@@ -58,7 +58,7 @@ module WorkspaceSymbol =
 
                 let! symbols =
                     match wf.Solution with
-                    | Ready(_, solution) ->
+                    | Loaded(_, solution) ->
                         match pattern with
                         | Some pat ->
                             SymbolFinder.FindSourceDeclarationsWithPatternAsync(
