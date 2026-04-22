@@ -11,7 +11,8 @@ open CSharpLanguageServer.Types
 [<RequireQualifiedAccess>]
 type LspWorkspacePhase =
     | Uninitialized
-    | Initializing
+    | Configured
+    | Loading
     | Ready
     | ShuttingDown
 
@@ -20,7 +21,7 @@ type LspWorkspace =
         Phase: LspWorkspacePhase
         Folders: LspWorkspaceFolder list
 
-        /// Opaque identity token, bumped every time workspace is is shut down.
+        /// Opaque identity token, bumped every time workspace is shut down.
         /// Used to detect and discard stale async completion events (e.g. from a cancelled
         /// solution load) that belong to a previous generation of the workspace.
         Generation: Guid

@@ -175,13 +175,13 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
 
     let wsUpdate =
-        LspWorkspaceUpdate.Empty.WithPhaseTransition(LspWorkspacePhase.Initializing)
+        LspWorkspaceUpdate.Empty.WithPhaseTransition(LspWorkspacePhase.Configured)
 
     let updated = queue |> finishRequest 1L wsUpdate
 
     let req = updated.Requests.[1L]
     Assert.AreEqual(Finished, req.Phase)
-    Assert.AreEqual(Some LspWorkspacePhase.Initializing, req.WorkspaceUpdate.PhaseTransition)
+    Assert.AreEqual(Some LspWorkspacePhase.Configured, req.WorkspaceUpdate.PhaseTransition)
 
 // ---------------------------------------------------------------------------
 // processRequestQueue — Retired cases
