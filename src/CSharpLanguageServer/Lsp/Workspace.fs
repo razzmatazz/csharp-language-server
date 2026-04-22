@@ -16,12 +16,20 @@ type LspWorkspacePhase =
     | ShuttingDown
 
 type LspWorkspace =
-    { Phase: LspWorkspacePhase
-      Folders: LspWorkspaceFolder list }
+    {
+        Phase: LspWorkspacePhase
+        Folders: LspWorkspaceFolder list
+
+        /// Opaque identity token, bumped every time workspace is is shut down.
+        /// Used to detect and discard stale async completion events (e.g. from a cancelled
+        /// solution load) that belong to a previous generation of the workspace.
+        Generation: Guid
+    }
 
     static member Empty =
         { Phase = LspWorkspacePhase.Uninitialized
-          Folders = [] }
+          Folders = []
+          Generation = Guid.NewGuid() }
 
 type LspWorkspaceUpdate =
     { PhaseTransition: LspWorkspacePhase option
@@ -138,4 +146,5 @@ let workspaceShutdown (workspace: LspWorkspace) : LspWorkspace =
 
     { workspace with
         Phase = LspWorkspacePhase.Uninitialized
-        Folders = tornDownFolders }
+        Folders = tornDownFolders
+        Generation = Guid.NewGuid() }

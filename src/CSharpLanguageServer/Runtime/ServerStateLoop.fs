@@ -332,7 +332,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             match wf with
             | None -> state.Workspace
             | Some wf ->
-                if wf.Generation <> generation then
+                if state.Workspace.Generation <> generation then
                     // Stale event from a cancelled/superseded load — discard silently.
                     state.Workspace
                 else
@@ -462,12 +462,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         // initiate solution load for all wfs where wf.Solution is Uninitialized
         //
         let wfsWithUninitializedSolution =
-            state.Workspace.Folders
-            |> List.filter _.Solution.IsUninitialized
+            state.Workspace.Folders |> List.filter _.Solution.IsUninitialized
 
         for wf in wfsWithUninitializedSolution do
             let onSolutionInitCompletion newSolution =
-                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, wf.Generation, newSolution))
+                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, newState.Workspace.Generation, newSolution))
 
             let updatedWf =
                 wf
