@@ -99,7 +99,7 @@ module LifeCycle =
 
             let wsUpdate =
                 LspWorkspaceUpdate.Empty
-                    .WithPhaseTransition(LspWorkspacePhase.Initializing)
+                    .WithPhaseTransition(LspWorkspacePhase.Configured)
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
                     .WithFolderReconfiguration(workspaceFolders)
