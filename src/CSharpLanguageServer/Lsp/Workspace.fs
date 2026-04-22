@@ -8,11 +8,48 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
+/// LspWorkspacePhase state machine:
+///
+/// Normal lifecycle:
+///
+/// <code>
+///   Uninitialized ──► Configured ──► Loading ──► Ready ──► ShuttingDown
+/// </code>
+///
+/// When dynamic server configuration arrives while already configured/loading/ready,
+/// the phase detours through Reconfiguring and back to Configured:
+///
+/// <code>
+///   Configured ──┐
+///   Loading    ──┼──► Reconfiguring ──► Configured
+///   Ready      ──┘
+/// </code>
+///
+/// <c>Configured</c> is entered after <c>LifeCycle.handleInitialized</c> is processed,
+/// ensuring the initial server configuration and workspace folder list are both known
+/// before any solution(s) can be loaded.
+///
+/// <c>Reconfiguring</c> exists to drain the request queue before the workspace folder
+/// solutions are torn down and reconfiguration is applied to them; in-flight requests
+/// must finish against the current solutions before they are replaced.
+[<RequireQualifiedAccess>]
+type LspWorkspacePhase =
+    | Uninitialized
+    | Configured
+    | Loading
+    | Ready
+    | Reconfiguring
+    | ShuttingDown
+
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list
+      Phase: LspWorkspacePhase
       ReloadPending: DateTime option }
 
-    static member Empty = { Folders = []; ReloadPending = None }
+    static member Empty =
+        { Folders = []
+          Phase = LspWorkspacePhase.Uninitialized
+          ReloadPending = None }
 
 type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
