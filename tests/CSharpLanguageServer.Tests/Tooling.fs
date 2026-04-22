@@ -268,7 +268,7 @@ let configureRpcTransport
                       EmitLogMessage(
                           DateTime.Now,
                           "ClientRpcCall",
-                          sprintf "client/registerCapability: params=%A" ctx.Params
+                          sprintf "client/registerCapability: params=%s" (string ctx.Params)
                       )
                   )
 
@@ -280,7 +280,7 @@ let configureRpcTransport
                       EmitLogMessage(
                           DateTime.Now,
                           "ClientRpcCall",
-                          sprintf "workspace/configuration: params=%A" ctx.Params
+                          sprintf "workspace/configuration: params=%s" (string ctx.Params)
                       )
                   )
 
@@ -302,7 +302,7 @@ let configureRpcTransport
                       EmitLogMessage(
                           DateTime.Now,
                           "ClientRpcCall",
-                          sprintf "window/workDoneProgress/create: params=%A" ctx.Params
+                          sprintf "window/workDoneProgress/create: params=%s" (string ctx.Params)
                       )
                   )
 
@@ -346,12 +346,15 @@ let configureRpcTransport
                   match ctx.Params with
                   | Some p ->
                       let value = p["value"] |> Option.ofObj
+                      let kind = value |> indexJToken "kind"
+                      let message = value |> indexJToken "message"
+                      let title = value |> indexJToken "title"
 
                       post (
                           EmitLogMessage(
                               DateTime.Now,
                               "$/progress",
-                              String.Format("{0} {1}", value |> indexJToken "kind", value |> indexJToken "message")
+                              String.Format("{0} {1}", kind, title |> Option.orElse message)
                           )
                       )
                   | None -> ()
