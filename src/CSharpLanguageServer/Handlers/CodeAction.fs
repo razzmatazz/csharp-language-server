@@ -188,8 +188,8 @@ module CodeAction =
         async {
             let originalSolution =
                 match wf.Solution with
-                | Ready(_, solution) -> solution
-                | _ -> failwith "lspDocChangesFromSolutionDiff: workspace folder is not in Ready state"
+                | Loaded(_, solution) -> solution
+                | _ -> failwith "lspDocChangesFromSolutionDiff: workspace folder is not in Loaded state"
 
             // make a list of changes
             let solutionProjectChanges =

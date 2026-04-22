@@ -267,7 +267,7 @@ module Diagnostic =
             for wf in workspaceFolders do
                 let solutionProjects =
                     match wf.Solution with
-                    | Ready(_, solution) -> solution.Projects |> List.ofSeq
+                    | Loaded(_, solution) -> solution.Projects |> List.ofSeq
                     | _ -> []
 
                 numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
