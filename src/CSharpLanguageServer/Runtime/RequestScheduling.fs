@@ -245,7 +245,11 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
 
     formatInColumns (headerRow :: dataRows)
 
-let dumpAndResetRequestStats (debugMode: bool) (requestQueue: RequestQueue) : RequestQueue =
+let dumpAndResetRequestStats
+    (debugMode: bool)
+    (workspacePhase: LspWorkspacePhase)
+    (requestQueue: RequestQueue)
+    : RequestQueue =
     let statsDumpDeadline = requestQueue.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
 
     if debugMode && statsDumpDeadline < DateTime.Now then
@@ -254,8 +258,10 @@ let dumpAndResetRequestStats (debugMode: bool) (requestQueue: RequestQueue) : Re
             | Dispatching -> "Dispatching"
             | DrainingUpTo ord -> $"DrainingUpTo({ord})"
 
+        let workspacePhaseLabel = string workspacePhase
+
         if not (Map.isEmpty requestQueue.Requests) then
-            logger.LogDebug("------ Current Requests ({mode}) ------", modeLabel)
+            logger.LogDebug("------ Current Requests ({mode}, ws:{wsPhase}) ------", modeLabel, workspacePhaseLabel)
             logger.LogDebug("{requests}", (requestQueue |> formatCurrentRequests))
             logger.LogDebug("---------------------------------------")
 

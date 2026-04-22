@@ -12,18 +12,19 @@ open CSharpLanguageServer.Types
 type LspWorkspacePhase =
     | Uninitialized
     | Initializing
-    | Running
+    | Ready
     | ShuttingDown
 
 type LspWorkspace =
     { Phase: LspWorkspacePhase
       Folders: LspWorkspaceFolder list }
 
-    static member Empty = { Phase = LspWorkspacePhase.Uninitialized; Folders = [] }
+    static member Empty =
+        { Phase = LspWorkspacePhase.Uninitialized
+          Folders = [] }
 
 type LspWorkspaceUpdate =
-    { ClientInitializeEmitted: bool
-      ClientShutdownEmitted: bool
+    { PhaseTransition: LspWorkspacePhase option
       ClientCapabilityChange: ClientCapabilities option
       ConfigurationChange: CSharpConfiguration option
       TraceLevelChange: TraceValues option
@@ -32,8 +33,7 @@ type LspWorkspaceUpdate =
       FolderUpdates: Map<string, LspWorkspaceFolderUpdateFn list> }
 
     static member Empty =
-        { ClientInitializeEmitted = false
-          ClientShutdownEmitted = false
+        { PhaseTransition = None
           ClientCapabilityChange = None
           ConfigurationChange = None
           TraceLevelChange = None
@@ -41,13 +41,9 @@ type LspWorkspaceUpdate =
           ReloadRequested = []
           FolderUpdates = Map.empty }
 
-    member this.WithClientInitialize() =
+    member this.WithPhaseTransition(phase) =
         { this with
-            ClientInitializeEmitted = true }
-
-    member this.WithClientShutdown() =
-        { this with
-            ClientShutdownEmitted = true }
+            PhaseTransition = Some phase }
 
     member this.WithClientCapabilityChange(capabilities) =
         { this with
@@ -137,8 +133,9 @@ let workspaceWithPDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace *
 
     newWS, havePDBacklogUpdatePending
 
-let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
+let workspaceShutdown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
     { workspace with
+        Phase = LspWorkspacePhase.Uninitialized
         Folders = tornDownFolders }
