@@ -243,7 +243,6 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
 
     formatInColumns (headerRow :: dataRows)
 
-
 let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
     let newRequest =
         { Phase = Pending

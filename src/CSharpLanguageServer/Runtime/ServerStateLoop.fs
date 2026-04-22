@@ -211,11 +211,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = newRequestQueue }
 
     | ApplyWorkspaceUpdate wsUpdate ->
-        if wsUpdate.ClientInitializeEmitted then
-            do postServerEvent ClientInitialize
-
-        if wsUpdate.ClientShutdownEmitted then
-            do postServerEvent ClientShutdown
+        wsUpdate.PhaseTransition
+        |> Option.iter (fun phase ->
+            match phase with
+            | LspWorkspacePhase.Initializing -> postServerEvent ClientInitialize
+            | LspWorkspacePhase.ShuttingDown -> postServerEvent ClientShutdown
+            | _ -> ())
 
         wsUpdate.ClientCapabilityChange
         |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
@@ -308,8 +309,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 period = 250
             )
 
+        let updatedWorkspace =
+            { state.Workspace with
+                Phase = LspWorkspacePhase.Initializing }
+
         return
             { state with
+                Workspace = updatedWorkspace
                 PeriodicTickTimer = Some timer }
 
     | ClientShutdown ->
@@ -319,10 +325,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Some timer -> timer.Dispose()
         | None -> ()
 
-        let _ = workspaceTeardown state.Workspace
+        let updatedWorkspace = workspaceShutdown state.Workspace
 
         return
             { state with
+                Workspace = updatedWorkspace
                 LspClient = None
                 PeriodicTickTimer = None
                 ShutdownReceived = true }
@@ -411,7 +418,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         for _, rc in state.SolutionReadyAwaiters do
             rc.Reply(None)
 
-        let tornDownWorkspace = workspaceTeardown state.Workspace
+        let tornDownWorkspace = workspaceShutdown state.Workspace
 
         let applyPendingOperation (ws: LspWorkspace) (op: WorkspacePendingOperation) : LspWorkspace =
             match op with
@@ -475,17 +482,25 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 | PendingSolutionPathChange _ -> true
                 | PendingReload deadline -> deadline < DateTime.UtcNow)
 
-        match shouldDrain with
-        | false -> return state
-        | true ->
-            match enterDrainingMode state.RequestQueue with
-            | Some updatedRequestQueue ->
-                postServerEvent ProcessRequestQueue
+        let updatedState =
+            match shouldDrain with
+            | false -> state
+            | true ->
+                match enterDrainingMode state.RequestQueue with
+                | None -> state
+                | Some updatedRequestQueue ->
+                    postServerEvent ProcessRequestQueue
 
-                return
                     { state with
                         RequestQueue = updatedRequestQueue }
-            | None -> return state
+
+        let updatedWorkspace =
+            { state.Workspace with
+                Phase = LspWorkspacePhase.ShuttingDown }
+
+        return
+            { updatedState with
+                Workspace = updatedWorkspace }
 
     | ProcessSolutionAwaiters ->
         let mutable newState = state
