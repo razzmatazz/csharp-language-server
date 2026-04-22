@@ -45,7 +45,7 @@ module Implementation =
         let! ct = Async.CancellationToken
 
         match wf.Solution with
-        | Ready(_, solution) ->
+        | Loaded(_, solution) ->
             let! baseImpls =
                 SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
                 |> Async.AwaitTask

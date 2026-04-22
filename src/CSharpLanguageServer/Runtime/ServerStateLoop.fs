@@ -43,7 +43,7 @@ type ServerEvent =
     | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
     | WorkspaceFolderConfigurationChanged of WorkspaceFolder list
-    | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
+    | WorkspaceFolderSolutionChanged of WorkspaceFolderSolutionChange
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | WorkspaceReloadRequested of TimeSpan
     | ProcessSolutionAwaiters
@@ -331,18 +331,20 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ClientCapabilities = cc
                 Config = newConfig }
 
-    | WorkspaceFolderSolutionChange(uri, generation, newSolution) ->
-        let wf = state.Workspace |> workspaceFolder uri
-
+    | WorkspaceFolderSolutionChanged changes ->
         let newWorkspace =
-            match wf with
-            | None -> state.Workspace
-            | Some wf ->
-                if wf.Generation <> generation then
-                    // Stale event from a cancelled/superseded load — discard silently.
-                    state.Workspace
-                else
-                    state.Workspace |> workspaceFolderUpdated { wf with Solution = newSolution }
+            changes
+            |> List.fold
+                (fun ws (uri, generation, newSolution) ->
+                    match ws |> workspaceFolder uri with
+                    | None -> ws
+                    | Some wf ->
+                        if wf.Generation <> generation then
+                            // Stale event from a cancelled/superseded load — discard silently.
+                            ws
+                        else
+                            ws |> workspaceFolderUpdated { wf with Solution = newSolution })
+                state.Workspace
 
         do postServerEvent ProcessSolutionAwaiters
         return { state with Workspace = newWorkspace }
@@ -468,36 +470,24 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         let mutable newState = state
 
         //
-        // initiate solution load for wfs where wf.Solution is Pending
+        // initiate solution load for all wfs where wf.Solution is Uninitialized
         //
-        let wfsWithUninitializedSolution =
-            state.SolutionReadyAwaiters
-            |> Seq.map fst
-            |> Seq.distinct
-            |> Seq.map (fun uri -> workspaceFolder uri state.Workspace)
-            |> Seq.collect Option.toList
-            |> Seq.filter _.Solution.IsUninitialized
-            |> List.ofSeq
+        let newWorkspace =
+            let onWorkspaceSolutionLoad changes =
+                postServerEvent (WorkspaceFolderSolutionChanged changes)
 
-        for wf in wfsWithUninitializedSolution do
-            let onSolutionInitCompletion newSolution =
-                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, wf.Generation, newSolution))
+            state.Workspace
+            |> workspaceInitializeUninitializedFolders
+                state.LspClient.Value
+                state.ClientCapabilities
+                onWorkspaceSolutionLoad
 
-            let updatedWf =
-                wf
-                |> workspaceFolderSolutionInitialized
-                    state.LspClient.Value
-                    state.ClientCapabilities
-                    onSolutionInitCompletion
-
-            let newWorkspace = state.Workspace |> workspaceFolderUpdated updatedWf
-
-            newState <-
-                { newState with
-                    Workspace = newWorkspace }
+        newState <-
+            { newState with
+                Workspace = newWorkspace }
 
         //
-        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Ready or Defunct
+        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
         //
         let mutable awaitersToKeep = []
 
@@ -511,7 +501,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
             | Some wf ->
                 match wf.Solution with
-                | Ready _ -> awaiterRC.Reply(Some wf)
+                | Loaded _ -> awaiterRC.Reply(Some wf)
                 | Defunct _ -> awaiterRC.Reply(None)
                 | Uninitialized
                 | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
