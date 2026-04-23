@@ -41,7 +41,7 @@ type ServerEvent =
     | PushDiagnosticsProcessPendingDocuments
     | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
-    | WorkspaceFolderSolutionChange of uri: string * generation: Guid * LspWorkspaceFolderSolution
+    | WorkspaceLoadCompleted of generation: Guid * (string * LspWorkspaceFolderSolution) list
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | ProcessSolutionAwaiters
 
@@ -325,21 +325,16 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ClientCapabilities = cc
                 Config = newConfig }
 
-    | WorkspaceFolderSolutionChange(uri, generation, newSolution) ->
-        let wf = state.Workspace |> workspaceFolder uri
+    | WorkspaceLoadCompleted(generation, folderSolutionChanges) ->
+        if state.Workspace.Generation <> generation then
+            // Stale event from a cancelled/superseded load — discard silently.
+            return state
+        else
+            let newWorkspace =
+                state.Workspace |> workspaceWithLoadCompleted folderSolutionChanges
 
-        let newWorkspace =
-            match wf with
-            | None -> state.Workspace
-            | Some wf ->
-                if state.Workspace.Generation <> generation then
-                    // Stale event from a cancelled/superseded load — discard silently.
-                    state.Workspace
-                else
-                    state.Workspace |> workspaceWithFolderUpdated { wf with Solution = newSolution }
-
-        do postServerEvent ProcessSolutionAwaiters
-        return { state with Workspace = newWorkspace }
+            do postServerEvent ProcessSolutionAwaiters
+            return { state with Workspace = newWorkspace }
 
     | WorkspaceFolderUpdates(wfUri, wfUpdates) ->
         let wf = state.Workspace |> workspaceFolder wfUri
@@ -456,56 +451,43 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Workspace = updatedWorkspace }
 
     | ProcessSolutionAwaiters ->
-        let mutable newState = state
+        match state.SolutionReadyAwaiters with
+        | [] -> return state
+        | solutionReadyAwaiters ->
+            match state.Workspace.Phase with
+            | LspWorkspacePhase.Configured ->
+                let workspaceLoadCompletionCallback folderSolutionChanges =
+                    postServerEvent (WorkspaceLoadCompleted(state.Workspace.Generation, folderSolutionChanges))
 
-        //
-        // initiate solution load for all wfs where wf.Solution is Uninitialized
-        //
-        let wfsWithUninitializedSolution =
-            state.Workspace.Folders |> List.filter _.Solution.IsUninitialized
+                let newWorkspace =
+                    state.Workspace
+                    |> workspaceWithLoadInitiated
+                        state.LspClient.Value
+                        state.ClientCapabilities
+                        workspaceLoadCompletionCallback
 
-        for wf in wfsWithUninitializedSolution do
-            let onSolutionInitCompletion newSolution =
-                postServerEvent (WorkspaceFolderSolutionChange(wf.Uri, newState.Workspace.Generation, newSolution))
+                return { state with Workspace = newWorkspace }
 
-            let updatedWf =
-                wf
-                |> workspaceFolderWithSolutionInitialized
-                    state.LspClient.Value
-                    state.ClientCapabilities
-                    onSolutionInitCompletion
+            | LspWorkspacePhase.Ready ->
+                // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
+                for awaiter in state.SolutionReadyAwaiters do
+                    let awaiterWfUri, awaiterRC = awaiter
 
-            let newWorkspace = newState.Workspace |> workspaceWithFolderUpdated updatedWf
+                    let wf = state.Workspace |> workspaceFolder awaiterWfUri
 
-            newState <-
-                { newState with
-                    Workspace = newWorkspace }
+                    match wf with
+                    | None -> awaiterRC.Reply(None)
+                    | Some wf ->
+                        match wf.Solution with
+                        | Loaded _ -> awaiterRC.Reply(Some wf)
+                        | Defunct _ -> awaiterRC.Reply(None)
+                        | _ -> failwithf "Unexpected wf.Solution state '%s'" (string (wf.Solution.GetType()))
 
-        //
-        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
-        //
-        let mutable awaitersToKeep = []
+                return
+                    { state with
+                        SolutionReadyAwaiters = [] }
 
-        for awaiter in newState.SolutionReadyAwaiters do
-            let (awaiterWfUri, awaiterRC) = awaiter
-
-            let wf = newState.Workspace |> workspaceFolder awaiterWfUri
-
-            match wf with
-            | None -> awaiterRC.Reply(None)
-
-            | Some wf ->
-                match wf.Solution with
-                | Loaded _ -> awaiterRC.Reply(Some wf)
-                | Defunct _ -> awaiterRC.Reply(None)
-                | Uninitialized
-                | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
-
-        newState <-
-            { newState with
-                SolutionReadyAwaiters = awaitersToKeep }
-
-        return newState
+            | _ -> return state
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =

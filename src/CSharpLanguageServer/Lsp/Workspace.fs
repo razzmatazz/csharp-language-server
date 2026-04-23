@@ -2,17 +2,20 @@ module CSharpLanguageServer.Lsp.Workspace
 
 open System
 open System.IO
-
+open System.Threading
+open System.Threading.Tasks
+open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Lsp.WorkspaceFolder
+open CSharpLanguageServer.Roslyn.Solution
 open CSharpLanguageServer.Types
 
 [<RequireQualifiedAccess>]
 type LspWorkspacePhase =
     | Uninitialized
     | Configured
-    | Loading
+    | Loading of CancellationTokenSource
     | Ready
     | ShuttingDown
 
@@ -141,6 +144,84 @@ let workspaceWithPDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace *
             { ws with Folders = newWSFolders }
 
     newWS, havePDBacklogUpdatePending
+
+type LspWorkspaceLoadCompletionFn = (string * LspWorkspaceFolderSolution) list -> unit
+
+let workspaceLoadAsync
+    (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
+    (wfs: LspWorkspaceFolder list)
+    : Async<(string * LspWorkspaceFolderSolution) array> =
+
+    let loadFolder wf = async {
+        let! solution = workspaceFolderLoadAsync lspClient clientCapabilities wf
+        return wf.Uri, solution
+    }
+
+    wfs |> List.map loadFolder |> Async.Parallel
+
+let workspaceWithLoadInitiated
+    (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
+    (workspaceLoadCompletionCallback: LspWorkspaceLoadCompletionFn)
+    (workspace: LspWorkspace)
+    : LspWorkspace =
+
+    match workspace.Phase with
+    | LspWorkspacePhase.Configured ->
+        let wfsWithUninitializedSolution =
+            workspace.Folders |> List.filter _.Solution.IsUninitialized
+
+        let loadingAsync =
+            workspaceLoadAsync lspClient clientCapabilities wfsWithUninitializedSolution
+
+        let onLoadingTaskComplete (t: Task<(string * LspWorkspaceFolderSolution) array>) =
+            if t.IsFaulted || t.IsCanceled then
+                let errorMsg =
+                    t.Exception
+                    |> Option.ofObj
+                    |> Option.map string
+                    |> Option.defaultValue "Solution initialization has faulted or has been cancelled"
+
+                let defunctResults =
+                    wfsWithUninitializedSolution |> List.map (fun wf -> wf.Uri, Defunct errorMsg)
+
+                workspaceLoadCompletionCallback defunctResults
+            else
+                workspaceLoadCompletionCallback (t.Result |> Array.toList)
+
+        let cts = new CancellationTokenSource()
+        let task = Async.StartAsTask(loadingAsync, cancellationToken = cts.Token)
+        task.ContinueWith(onLoadingTaskComplete) |> ignore
+
+        let markFolderAsLoading wf = { wf with Solution = Loading }
+        let updatedFolders = workspace.Folders |> List.map markFolderAsLoading
+
+        { workspace with
+            Phase = LspWorkspacePhase.Loading cts
+            Folders = updatedFolders }
+
+    | _ -> failwithf "Cannot initiate load for a workspace that is in phase '%s'" (string (workspace.Phase.GetType()))
+
+let workspaceWithLoadCompleted
+    (folderSolutionChanges: (string * LspWorkspaceFolderSolution) list)
+    (workspace: LspWorkspace)
+    : LspWorkspace =
+
+    match workspace.Phase with
+    | LspWorkspacePhase.Loading _ ->
+        let applyFolderSolutionChange wf =
+            match folderSolutionChanges |> List.tryFind (fun (uri, _) -> uri = wf.Uri) with
+            | Some(_, newSolution) -> { wf with Solution = newSolution }
+            | None -> wf
+
+        let updatedFolders = workspace.Folders |> List.map applyFolderSolutionChange
+
+        { workspace with
+            Phase = LspWorkspacePhase.Ready
+            Folders = updatedFolders }
+
+    | _ -> failwithf "Cannot complete load for a workspace that is in phase '%s'" (string (workspace.Phase.GetType()))
 
 let workspaceShutdown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown

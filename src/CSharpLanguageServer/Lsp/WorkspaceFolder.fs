@@ -31,7 +31,7 @@ type LspWorkspaceOpenDocInfo = { Version: int; Touched: DateTime }
 
 type LspWorkspaceFolderSolution =
     | Uninitialized
-    | Loading of Async<LspWorkspaceFolderSolution> * CancellationTokenSource
+    | Loading
     | Loaded of Workspace * Solution
     | Defunct of string
 
@@ -86,7 +86,7 @@ let workspaceFolderWithLoadedSolutionUpdated (update: Solution -> Solution) wf =
             Solution = Loaded(workspace, updatedSolution) }
 
     | Uninitialized -> failwith "wf.Solution in Uninitialized state!"
-    | Loading _ -> failwith "wf.Solution in Loading state!"
+    | Loading -> failwith "wf.Solution in Loading state!"
     | Defunct _ -> failwith "wf.Solution in Defunct state!"
 
 let workspaceFolderWithLoadedSolutionReplaced (sln: Solution) wf =
@@ -379,7 +379,7 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
 
     match wf.Solution with
     | Uninitialized -> None
-    | Loading _ -> None
+    | Loading -> None
     | Defunct _ -> None
     | Loaded(_, solution) ->
         let matchingUserDocuments =
@@ -552,7 +552,7 @@ let workspaceFolderAdditionalTextDocumentAdd
 let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
     | Uninitialized
-    | Loading _
+    | Loading
     | Defunct _ -> wf
     | Loaded(workspace, solution) ->
         let filename = workspaceFolderUriToPath uri wf
@@ -668,92 +668,51 @@ let workspaceFolderWithDocTouched
                 OpenDocs = wf.OpenDocs |> Map.add uri updated
                 PushDiagnosticsBacklogUpdatePending = true }
 
+/// Async computation that loads a single workspace folder's solution.
+/// Returns the resulting LspWorkspaceFolderSolution (Loaded or Defunct).
+let workspaceFolderLoadAsync
+    (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
+    (wf: LspWorkspaceFolder)
+    : Async<LspWorkspaceFolderSolution> =
+    async {
+        let progressReporter = ProgressReporter(lspClient, clientCapabilities)
+
+        let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
+
+        let beginMessageSolutionPath =
+            wf.SolutionPathOverride
+            |> Option.map Path.GetFileName
+            |> Option.map (sprintf ", solution \"%s\"")
+            |> Option.defaultValue ""
+
+        let beginMessage =
+            sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
+
+        do! progressReporter.Begin(beginMessage)
+
+        let! newSolution =
+            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
+
+        let endMessage =
+            sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
+
+        do! progressReporter.End(endMessage)
+
+        return
+            match newSolution with
+            | Some(workspace, solution) -> Loaded(workspace, solution)
+            | None -> Defunct(sprintf "Solution could not be loaded on path \"%s\"" wfRootDir)
+    }
+
 let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
     | Defunct _ -> ()
     | Uninitialized -> ()
-    | Loading(_, cts) ->
-        cts.Cancel()
-        cts.Dispose()
+    | Loading -> ()
     | Loaded(workspace, _) -> workspace.Dispose()
 
     { wf with
         Solution = Uninitialized
         DecompiledSymbolMetadata = Map.empty
         OpenDocs = Map.empty }
-
-/// Ensures the workspace folder has its solution either already settled (Loaded/Defunct)
-/// or actively on its way — initiating an async load from Uninitialized if needed.
-/// The folder is immediately returned with its Solution set to Loading.
-/// When loading completes, `completionCB` is called with the resulting LspWorkspaceFolderSolution
-/// (either Loaded or Defunct), intended to be threaded back through ServerStateLoop.
-/// Does nothing (returns wf unchanged) when the solution is already Loading, Loaded, or Defunct.
-let workspaceFolderWithSolutionInitialized
-    (lspClient: ILspClient)
-    (clientCapabilities: ClientCapabilities)
-    (completionCB: LspWorkspaceFolderSolution -> unit)
-    (wf: LspWorkspaceFolder)
-    : LspWorkspaceFolder =
-    match wf.Solution with
-    | Loading _ -> wf
-
-    | Loaded _
-    | Defunct _ ->
-        completionCB wf.Solution
-        wf
-
-    | Uninitialized ->
-        let loadingAsync = async {
-            let progressReporter = ProgressReporter(lspClient, clientCapabilities)
-
-            let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
-
-            let beginMessageSolutionPath =
-                wf.SolutionPathOverride
-                |> Option.map Path.GetFileName
-                |> Option.map (sprintf ", solution \"%s\"")
-                |> Option.defaultValue ""
-
-            let beginMessage =
-                sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
-
-            do! progressReporter.Begin(beginMessage)
-
-            let! newSolution =
-                solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
-
-            let endMessage =
-                sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
-
-            do! progressReporter.End(endMessage)
-
-            return
-                match newSolution with
-                | Some(workspace, solution) -> Loaded(workspace, solution)
-                | None -> Defunct(sprintf "Solution could not be loaded on path \"%s\"" wfRootDir)
-        }
-
-        let cts = new CancellationTokenSource()
-
-        let task = Async.StartAsTask(loadingAsync, cancellationToken = cts.Token)
-
-        task.ContinueWith(fun (t: System.Threading.Tasks.Task<LspWorkspaceFolderSolution>) ->
-            if t.IsCanceled then
-                completionCB (
-                    Defunct(sprintf "Solution initialization was cancelled, task.Status=%s" (string t.Status))
-                )
-            else if t.IsFaulted then
-                completionCB (
-                    Defunct(
-                        t.Exception
-                        |> Option.ofObj
-                        |> Option.map string
-                        |> Option.defaultValue "Solution initialization has faulted"
-                    )
-                )
-            else
-                completionCB t.Result)
-        |> ignore
-
-        { wf with
-            Solution = Loading(loadingAsync, cts) }

@@ -14,7 +14,7 @@ module Debug =
         let solutionState, _solutionFilePath =
             match wf.Solution with
             | Uninitialized -> "Uninitialized", None
-            | Loading _ -> "Loading", None
+            | Loading -> "Loading", None
             | Loaded(_, solution) -> "Loaded", Some solution.FilePath
             | Defunct _ -> "Defunct", None
 
