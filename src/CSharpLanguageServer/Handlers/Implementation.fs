@@ -46,9 +46,22 @@ module Implementation =
 
         match wf.Solution with
         | Ready(_, solution) ->
-            let! impls =
+            let! baseImpls =
                 SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
                 |> Async.AwaitTask
+
+            // FindImplementationsAsync on a class symbol returns only interface
+            // implementations, not derived classes. For class symbols also enumerate
+            // transitively-derived classes via FindDerivedClassesAsync so
+            // textDocument/implementation behaves correctly on class declarations.
+            let! derivedClasses =
+                match sym with
+                | :? INamedTypeSymbol as nts when nts.TypeKind = TypeKind.Class ->
+                    SymbolFinder.FindDerivedClassesAsync(nts, solution, true, cancellationToken = ct)
+                    |> Async.AwaitTask
+                | _ -> async { return Seq.empty }
+
+            let impls = Seq.append baseImpls (derivedClasses |> Seq.cast<ISymbol>)
 
             let mutable aggregatedWf = wf
             let mutable aggregatedWfUpdates = []
