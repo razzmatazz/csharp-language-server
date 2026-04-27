@@ -18,7 +18,7 @@ and customization provided with csharp-ls.
 See [docs/troubleshooting.md](docs/troubleshooting.md) for server troubleshooting and
 diagnostics.
 
-See [docs/contributing.md](docs/contributing.md) for build instructions and codebase overview.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions and codebase overview.
 
 See [docs/codebase-architecture.md](docs/codebase-architecture.md) for an overview of the project structure, LSP message handling, request scheduling, and test infrastructure.
 
