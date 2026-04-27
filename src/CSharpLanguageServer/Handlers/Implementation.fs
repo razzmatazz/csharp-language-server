@@ -54,12 +54,16 @@ module Implementation =
             // implementations, not derived classes. For class symbols also enumerate
             // transitively-derived classes via FindDerivedClassesAsync so
             // textDocument/implementation behaves correctly on class declarations.
-            let! derivedClasses =
+            let! derivedClasses = async {
                 match sym with
                 | :? INamedTypeSymbol as nts when nts.TypeKind = TypeKind.Class ->
-                    SymbolFinder.FindDerivedClassesAsync(nts, solution, true, cancellationToken = ct)
-                    |> Async.AwaitTask
-                | _ -> async { return Seq.empty }
+                    let! derivedClasses =
+                        SymbolFinder.FindDerivedClassesAsync(nts, solution, true, cancellationToken = ct)
+                        |> Async.AwaitTask
+
+                    return derivedClasses |> List.ofSeq
+                | _ -> return []
+            }
 
             let impls = Seq.append baseImpls (derivedClasses |> Seq.cast<ISymbol>)
 
