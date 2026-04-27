@@ -107,7 +107,7 @@ type LspWorkspaceUpdate =
         { this with
             FolderUpdates = newFolderUpdates }
 
-let workspaceWithSolutionPathOverride (config: CSharpConfiguration) (workspace: LspWorkspace) =
+let workspaceSolutionPathOverride (config: CSharpConfiguration) (workspace: LspWorkspace) =
     let folders =
         match config.solutionPathOverride, workspace.Folders with
         | Some solutionPath, firstFolder :: rest ->
@@ -141,7 +141,7 @@ let workspaceFolder (uri: string) (workspace: LspWorkspace) =
 
     workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
 
-let workspaceWithFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWorkspace) =
+let workspaceFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWorkspace) =
     let updatedFolders =
         workspace.Folders
         |> List.map (fun wf -> if wf.Uri = updatedWf.Uri then updatedWf else wf)
@@ -149,7 +149,7 @@ let workspaceWithFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWo
     { workspace with
         Folders = updatedFolders }
 
-let workspaceWithPDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace * bool =
+let workspacePDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace * bool =
     let havePDBacklogUpdatePending =
         ws.Folders |> Seq.tryFind _.PushDiagnosticsBacklogUpdatePending |> Option.isSome
 

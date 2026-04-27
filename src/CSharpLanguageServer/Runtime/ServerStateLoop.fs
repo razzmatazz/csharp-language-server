@@ -268,7 +268,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         let _ = workspaceTeardown state.Workspace
 
         let newWorkspace =
-            workspaceFrom workspaceFolders |> workspaceWithSolutionPathOverride state.Config
+            workspaceFrom workspaceFolders |> workspaceSolutionPathOverride state.Config
 
         return
             { state with
@@ -342,7 +342,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                     // Stale event from a cancelled/superseded load — discard silently.
                     state.Workspace
                 else
-                    state.Workspace |> workspaceWithFolderUpdated { wf with Solution = newSolution }
+                    state.Workspace |> workspaceFolderUpdated { wf with Solution = newSolution }
 
         do postServerEvent ProcessSolutionAwaiters
         return { state with Workspace = newWorkspace }
@@ -355,13 +355,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             | None -> state.Workspace
             | Some wf ->
                 let updatedWf = wfUpdates |> List.fold (|>) wf
-                state.Workspace |> workspaceWithFolderUpdated updatedWf
+                state.Workspace |> workspaceFolderUpdated updatedWf
 
         return { state with Workspace = newWorkspace }
 
     | PushDiagnosticsBacklogUpdate ->
         let newWS, pdBacklogUpdatePending =
-            state.Workspace |> workspaceWithPDBacklogUpdatePendingReset
+            state.Workspace |> workspacePDBacklogUpdatePendingReset
 
         match pdBacklogUpdatePending with
         | false -> return { state with Workspace = newWS }
@@ -485,12 +485,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
             let updatedWf =
                 wf
-                |> workspaceFolderWithSolutionInitialized
+                |> workspaceFolderSolutionInitialized
                     state.LspClient.Value
                     state.ClientCapabilities
                     onSolutionInitCompletion
 
-            let newWorkspace = state.Workspace |> workspaceWithFolderUpdated updatedWf
+            let newWorkspace = state.Workspace |> workspaceFolderUpdated updatedWf
 
             newState <-
                 { newState with

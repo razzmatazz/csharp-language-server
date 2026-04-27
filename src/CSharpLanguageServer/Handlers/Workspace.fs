@@ -70,7 +70,7 @@ module Workspace =
                 let updateWf =
                     let fileText = docFilePath |> File.ReadAllText
                     let updatedDoc = fileText |> SourceText.From |> doc.WithText
-                    workspaceFolderWithReadySolutionReplaced updatedDoc.Project.Solution
+                    workspaceFolderLoadedSolutionReplaced updatedDoc.Project.Solution
 
                 [ updateWf ]
 
@@ -93,8 +93,8 @@ module Workspace =
         | Some existingDoc ->
             let updatedProject = existingDoc.Project.RemoveDocument(existingDoc.Id)
 
-            let updateWf = workspaceFolderWithReadySolutionReplaced updatedProject.Solution
-            let updateWf2 = workspaceFolderWithDocClosed uri
+            let updateWf = workspaceFolderLoadedSolutionReplaced updatedProject.Solution
+            let updateWf2 = workspaceFolderDocClosed uri
 
             [ updateWf; updateWf2 ]
 
@@ -108,7 +108,7 @@ module Workspace =
             match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
             | Some doc ->
                 // AdditionalDocument already in solution — update its text
-                [ workspaceFolderWithAdditionalTextDocumentTextUpdated doc newSourceText ]
+                [ workspaceFolderAdditionalTextDocumentTextUpdated doc newSourceText ]
             | None ->
                 // Not yet registered — add it
                 let _, wfUpdates = workspaceFolderAdditionalTextDocumentAdd cshtmlPath fileText wf
@@ -120,7 +120,7 @@ module Workspace =
         | Some cshtmlPath ->
             match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
             | None -> []
-            | Some _ -> [ workspaceFolderWithAdditionalDocumentRemoved uri ]
+            | Some _ -> [ workspaceFolderAdditionalDocumentRemoved uri ]
 
     let didChangeWatchedFiles
         (context: RequestContext)

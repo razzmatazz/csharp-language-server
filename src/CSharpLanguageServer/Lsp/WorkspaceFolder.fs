@@ -82,7 +82,7 @@ type CSharpDocumentUri =
     | GeneratedDocumentUri of projectFilePath: string * hintName: string
     | UnrecognizedDocumentUri
 
-let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
+let workspaceFolderLoadedSolutionUpdated (update: Solution -> Solution) wf =
     match wf.Solution with
     | Ready(workspace, solution) ->
         let updatedSolution = update solution
@@ -94,8 +94,8 @@ let workspaceFolderWithReadySolutionUpdated (update: Solution -> Solution) wf =
     | Loading _ -> failwith "wf.Solution in Loading state!"
     | Defunct _ -> failwith "wf.Solution in Defunct state!"
 
-let workspaceFolderWithReadySolutionReplaced (sln: Solution) wf =
-    workspaceFolderWithReadySolutionUpdated (fun _ -> sln) wf
+let workspaceFolderLoadedSolutionReplaced (sln: Solution) wf =
+    workspaceFolderLoadedSolutionUpdated (fun _ -> sln) wf
 
 // Unescape some necessary char before passing string to Uri.
 // Can't use Uri.UnescapeDataString here. For example, if uri is "file:///z%3a/src/c%23/ProjDir" ("%3a" is
@@ -268,7 +268,7 @@ let workspaceFolderDecompiledDocumentFromMetadata
             return symbolMetadata, [ updateFn ]
     }
 
-let workspaceFolderWithDocumentFromMetadata
+let workspaceFolderDocumentFromMetadata
     (project: Microsoft.CodeAnalysis.Project)
     (symbol: Microsoft.CodeAnalysis.ISymbol)
     wf
@@ -472,19 +472,19 @@ let workspaceFolderDocumentAdd
         let newDoc =
             proj.AddDocument(name = docName, text = SourceText.From text, folders = null, filePath = docFilePath)
 
-        let updateWf = workspaceFolderWithReadySolutionReplaced newDoc.Project.Solution
+        let updateWf = workspaceFolderLoadedSolutionReplaced newDoc.Project.Solution
 
         Some newDoc, [ updateWf ]
 
     | None ->
         logger.LogTrace(
-            "workspaceFolderWithDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
+            "workspaceFolderDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
             docFilePath
         )
 
         None, []
 
-let workspaceFolderWithAdditionalTextDocumentTextUpdated
+let workspaceFolderAdditionalTextDocumentTextUpdated
     (textDoc: TextDocument)
     (newSourceText: SourceText)
     (wf: LspWorkspaceFolder)
@@ -495,14 +495,14 @@ let workspaceFolderWithAdditionalTextDocumentTextUpdated
         |> _.AddAdditionalDocument(textDoc.Name, newSourceText, textDoc.Folders, textDoc.FilePath)
         |> _.Project.Solution
 
-    workspaceFolderWithReadySolutionReplaced sln wf
+    workspaceFolderLoadedSolutionReplaced sln wf
 
-let workspaceFolderWithDocumentTextUpdated (doc: Document) (newSourceText: SourceText) (wf: LspWorkspaceFolder) =
+let workspaceFolderDocumentTextUpdated (doc: Document) (newSourceText: SourceText) (wf: LspWorkspaceFolder) =
     let sln = newSourceText |> doc.WithText |> _.Project.Solution
 
-    workspaceFolderWithReadySolutionReplaced sln wf
+    workspaceFolderLoadedSolutionReplaced sln wf
 
-let workspaceFolderWithDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
+let workspaceFolderDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     let removeDoc (solution: Solution) =
         let filename = workspaceFolderUriToPath uri wf
 
@@ -514,10 +514,10 @@ let workspaceFolderWithDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : 
         match doc with
         | Some doc -> solution.RemoveDocument(doc.Id)
         | None ->
-            logger.LogTrace("workspaceFolderWithDocumentRemoved: No document found for uri \"{uri}\"", uri)
+            logger.LogTrace("workspaceFolderDocumentRemoved: No document found for uri \"{uri}\"", uri)
             solution
 
-    workspaceFolderWithReadySolutionUpdated removeDoc wf
+    workspaceFolderLoadedSolutionUpdated removeDoc wf
 
 let workspaceFolderAdditionalTextDocumentAdd
     (docFilePath: string)
@@ -542,19 +542,19 @@ let workspaceFolderAdditionalTextDocumentAdd
                 filePath = docFilePath
             )
 
-        let updateWf = workspaceFolderWithReadySolutionReplaced (newDoc.Project.Solution)
+        let updateWf = workspaceFolderLoadedSolutionReplaced (newDoc.Project.Solution)
 
         Some newDoc, [ updateWf ]
 
     | None ->
         logger.LogTrace(
-            "workspaceFolderWithAdditionalTextDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
+            "workspaceFolderAdditionalTextDocumentAdded: No parent project could be resolved to add file \"{file}\" to workspace!",
             docFilePath
         )
 
         None, []
 
-let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
+let workspaceFolderAdditionalDocumentRemoved (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with
     | Uninitialized
     | Loading _
@@ -573,7 +573,7 @@ let workspaceFolderWithAdditionalDocumentRemoved (uri: string) (wf: LspWorkspace
                 Solution = Ready(workspace, solution.RemoveAdditionalDocument(doc.Id)) }
         | None ->
             logger.LogTrace(
-                "workspaceFolderWithAdditionalDocumentRemoved: No additional document found for uri \"{uri}\"",
+                "workspaceFolderAdditionalDocumentRemoved: No additional document found for uri \"{uri}\"",
                 uri
             )
 
@@ -641,7 +641,7 @@ let workspaceFolderDocumentSemanticModel (uri: DocumentUri) (wf: LspWorkspaceFol
 let workspaceFolderDocumentVersion (uri: string) (wf: LspWorkspaceFolder) : int option =
     wf.OpenDocs |> Map.tryFind uri |> Option.map _.Version
 
-let workspaceFolderWithDocOpened
+let workspaceFolderDocOpened
     (uri: string)
     (ver: int)
     (timestamp: DateTime)
@@ -653,16 +653,12 @@ let workspaceFolderWithDocOpened
         OpenDocs = wf.OpenDocs |> Map.add uri openDocInfo
         PushDiagnosticsBacklogUpdatePending = true }
 
-let workspaceFolderWithDocClosed (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
+let workspaceFolderDocClosed (uri: string) (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     { wf with
         OpenDocs = wf.OpenDocs |> Map.remove uri
         PushDiagnosticsBacklogUpdatePending = true }
 
-let workspaceFolderWithDocTouched
-    (uri: string)
-    (timestamp: DateTime)
-    (wf: LspWorkspaceFolder)
-    : LspWorkspaceFolder option =
+let workspaceFolderDocTouched (uri: string) (timestamp: DateTime) (wf: LspWorkspaceFolder) : LspWorkspaceFolder option =
     match wf.OpenDocs |> Map.tryFind uri with
     | None -> None
     | Some openDocInfo ->
@@ -694,7 +690,7 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
 /// When loading completes, `completionCB` is called with the resulting LspWorkspaceFolderSolution
 /// (either Ready or Defunct), intended to be threaded back through ServerStateLoop.
 /// Does nothing (returns wf unchanged) when the solution is already Loading, Ready, or Defunct.
-let workspaceFolderWithSolutionInitialized
+let workspaceFolderSolutionInitialized
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
     (completionCB: LspWorkspaceFolderSolution -> unit)
