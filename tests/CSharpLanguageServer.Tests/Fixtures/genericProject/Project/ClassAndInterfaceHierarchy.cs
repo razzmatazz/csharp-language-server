@@ -36,3 +36,13 @@ class Student : Person
         return $"Hi, I'm {Name} and I'm in grade {Grade}.";
     }
 }
+
+abstract class Animal
+{
+    public abstract string Sound();
+}
+
+class Dog : Animal
+{
+    public override string Sound() => "Woof";
+}
