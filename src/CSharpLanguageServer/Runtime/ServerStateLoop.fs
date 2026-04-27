@@ -330,8 +330,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             // Stale event from a cancelled/superseded load — discard silently.
             return state
         else
-            let newWorkspace =
-                state.Workspace |> workspaceWithLoadCompleted folderSolutionChanges
+            let newWorkspace = state.Workspace |> workspaceLoadCompleted folderSolutionChanges
 
             do postServerEvent ProcessSolutionAwaiters
             return { state with Workspace = newWorkspace }
@@ -344,13 +343,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             | None -> state.Workspace
             | Some wf ->
                 let updatedWf = wfUpdates |> List.fold (|>) wf
-                state.Workspace |> workspaceWithFolderUpdated updatedWf
+                state.Workspace |> workspaceFolderUpdated updatedWf
 
         return { state with Workspace = newWorkspace }
 
     | PushDiagnosticsBacklogUpdate ->
         let newWS, pdBacklogUpdatePending =
-            state.Workspace |> workspaceWithPDBacklogUpdatePendingReset
+            state.Workspace |> workspacePDBacklogUpdatePendingReset
 
         match pdBacklogUpdatePending with
         | false -> return { state with Workspace = newWS }
@@ -391,9 +390,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             | PendingReload _ -> ws // workspace shape unchanged; folders already Uninitialized from teardown
 
             | PendingFolderReplacement newFolders ->
-                workspaceFrom newFolders |> workspaceWithSolutionPathOverride state.Config
+                workspaceFrom newFolders |> workspaceSolutionPathOverride state.Config
 
-            | PendingSolutionPathChange _ -> workspaceWithSolutionPathOverride state.Config ws
+            | PendingSolutionPathChange _ -> workspaceSolutionPathOverride state.Config ws
 
         let newWorkspace =
             state.PendingOperations |> List.fold applyPendingOperation tornDownWorkspace
@@ -458,7 +457,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
                 let newWorkspace =
                     state.Workspace
-                    |> workspaceWithLoadInitiated
+                    |> workspaceLoadStarted
                         state.LspClient.Value
                         state.ClientCapabilities
                         workspaceLoadCompletionCallback

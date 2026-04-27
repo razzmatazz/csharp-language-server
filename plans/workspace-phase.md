@@ -305,8 +305,8 @@ This is already the pattern for three transitions today:
 
 | Function | Transition | Validates |
 |----------|-----------|-----------|
-| `workspaceWithLoadInitiated` | `Configured → Loading` | Asserts `Configured` |
-| `workspaceWithLoadCompleted` | `Loading → Ready` | Asserts `Loading` |
+| `workspaceLoadStarted` | `Configured → Loading` | Asserts `Configured` |
+| `workspaceLoadCompleted` | `Loading → Ready` | Asserts `Loading` |
 | `workspaceShutdown` | `* → Uninitialized` | (unconditional) |
 
 But two transitions are currently done by raw record-update in
@@ -319,23 +319,21 @@ These must be replaced with new `workspace*` functions.
 
 #### Naming convention
 
-Phase-transition functions use the pattern `workspace<PastParticiple>` — they
-describe the resulting state of the workspace, not the action being taken.
-Drop the `With` prefix that `workspaceWith*` uses for additive modifications
-(like `workspaceWithFolderUpdated`, `workspaceWithSolutionPathOverride`) —
-phase transitions are state changes, not property additions.
-
-The existing `workspaceWithLoadInitiated` and `workspaceWithLoadCompleted` are
-renamed to `workspaceLoadStarted` and `workspaceLoadCompleted` (drop `With`) for
-consistency.  `workspaceShutdown` already fits the pattern.
+All helpers in `Workspace.fs` use a flat `workspace<Noun/Verb>` prefix — no
+`With` infix anywhere.  The existing `workspaceWithLoadInitiated` and
+`workspaceWithLoadCompleted` have already been renamed to `workspaceLoadStarted`
+and `workspaceLoadCompleted`; `workspaceWithFolderUpdated`,
+`workspaceWithSolutionPathOverride`, and `workspaceWithPDBacklogUpdatePendingReset`
+have been renamed to drop `With` as well.  `workspaceShutdown` already fit the
+pattern.
 
 #### Phase-transition functions
 
 | Function | Transition | Validates | Notes |
 |----------|-----------|-----------|-------|
 | `workspaceConfigured` | `Uninitialized → Configured` | Asserts `Uninitialized` | **NEW.** Currently inlined in state loop. |
-| `workspaceLoadStarted` | `Configured → Loading` | Asserts `Configured` | **Rename** from `workspaceWithLoadInitiated`.  CTS moves out of the phase DU; function still creates and returns it but as a separate value (see §4.4). |
-| `workspaceLoadCompleted` | `Loading → Ready` | Asserts `Loading` | **Rename** from `workspaceWithLoadCompleted`. |
+| `workspaceLoadStarted` | `Configured → Loading` | Asserts `Configured` | ✅ Renamed. CTS moves out of the phase DU; function still creates and returns it but as a separate value (see §4.4). |
+| `workspaceLoadCompleted` | `Loading → Ready` | Asserts `Loading` | ✅ Renamed. |
 | `workspaceReconfiguring` | `Ready\|Loading → Reconfiguring` | Asserts `Ready` or `Loading` | **NEW.** If `Loading`, cancels folders' in-flight load markers. |
 | `workspaceShuttingDown` | `* → ShuttingDown` (except from `ShuttingDown`) | Asserts not already `ShuttingDown` | **NEW.** Currently inlined in state loop. |
 | `workspaceShutdown` | `* → Uninitialized` | (unconditional) | Existing — tears down folders, bumps `Generation`. |
@@ -605,9 +603,8 @@ config flag) that runs after every state transition.
    Propagate the type change.
 3. **`Workspace.fs` — phase-transition functions**: Add `workspaceConfigured`,
    `workspaceReconfiguring`, `workspaceShuttingDown`.  Rename
-   `workspaceWithLoadInitiated` → `workspaceLoadStarted` (returns CTS as
-   separate value).  Rename `workspaceWithLoadCompleted` →
-   `workspaceLoadCompleted`.  Each function validates source phase and performs
+   `workspaceLoadStarted` (returns CTS as separate value; already renamed).
+   `workspaceLoadCompleted` (already renamed).  Each function validates source phase and performs
    the transition.
 4. **`ServerStateLoop.fs` — use `workspace*` functions**: Replace all inline
    `{ workspace with Phase = ... }` with calls to the corresponding
