@@ -401,16 +401,15 @@ let activateRequest
     { requestQueue with
         Requests = requestQueue.Requests |> Map.add ordinal activatedRequest }
 
-/// Returns `true` when all non-background requests up to the drain ordinal
-/// have been retired. `ReadOnlyBackground` requests are excluded because they
-/// never emit state-changing events and must not block workspace reloads.
+/// Returns `true` when all requests up to the drain ordinal have been retired,
+/// including `ReadOnlyBackground` requests. Background requests hold live
+/// references to the current workspace/solution state; allowing them to run
+/// while the workspace is being torn down risks reading stale or half-destroyed
+/// state.
 let isDrained (requestQueue: RequestQueue) : bool =
     match requestQueue.Mode with
     | Dispatching -> false
-    | DrainingUpTo maxOrd ->
-        requestQueue.Requests
-        |> Map.exists (fun ord r -> ord <= maxOrd && r.Mode <> ReadOnlyBackground)
-        |> not
+    | DrainingUpTo maxOrd -> requestQueue.Requests |> Map.exists (fun ord _ -> ord <= maxOrd) |> not
 
 /// Returns the sorted list of pending requests eligible for activation,
 /// respecting the drain ordinal when in `DrainingUpTo` mode.
