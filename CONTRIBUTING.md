@@ -36,6 +36,25 @@ dotnet test --filter "FullyQualifiedName~RequestScheduling|FullyQualifiedName~Js
   dotnet fantomas <file-or-dir>
   ```
 
+## Commit Messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) style:
+
+```
+<type>(<scope>): <short summary>
+```
+
+Examples:
+
+```
+feat(hover): include XML doc summary for property symbols
+fix(completion): avoid NullReferenceException on empty import list
+refactor(diagnostics): extract analyzer helper into Roslyn/Analyzers.fs
+test(codeaction): add integration test for organize-imports action
+docs(contributing): add conventional commits guidance
+chore(deps): bump Fantomas to 7.0.3
+```
+
 ## Install locally
 
 ```

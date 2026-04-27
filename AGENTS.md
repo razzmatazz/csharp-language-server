@@ -20,7 +20,7 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full wa
 - Test infrastructure (`LspTestClient`, `LspDocumentHandle`, fixtures)
 - Checklist for adding a new LSP feature
 
-## Code Style
+## Code Style & Commit Conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 
@@ -31,5 +31,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 | Features & customization | [docs/features.md](docs/features.md) |
 | Troubleshooting / `--diagnose` | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | JSON-RPC transport internals | [docs/jsonrpc.md](docs/jsonrpc.md) |
-| Contributing / build / test / code style | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Contributing / build / test / code style & commits | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Architecture deep-dive | [docs/codebase-architecture.md](docs/codebase-architecture.md) |
