@@ -430,25 +430,22 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 | PendingSolutionPathChange _ -> true
                 | PendingReload deadline -> deadline < DateTime.UtcNow)
 
-        let updatedState =
-            match shouldDrain with
-            | false -> state
-            | true ->
-                match enterDrainingMode state.RequestQueue with
-                | None -> state
-                | Some updatedRequestQueue ->
-                    postServerEvent ProcessRequestQueue
+        match shouldDrain with
+        | false -> return state
+        | true ->
+            match enterDrainingMode state.RequestQueue with
+            | None -> return state
+            | Some updatedRequestQueue ->
+                postServerEvent ProcessRequestQueue
 
+                let updatedWorkspace =
+                    { state.Workspace with
+                        Phase = LspWorkspacePhase.ShuttingDown }
+
+                return
                     { state with
-                        RequestQueue = updatedRequestQueue }
-
-        let updatedWorkspace =
-            { state.Workspace with
-                Phase = LspWorkspacePhase.ShuttingDown }
-
-        return
-            { updatedState with
-                Workspace = updatedWorkspace }
+                        RequestQueue = updatedRequestQueue
+                        Workspace = updatedWorkspace }
 
     | ProcessSolutionAwaiters ->
         match state.SolutionReadyAwaiters with
