@@ -1,5 +1,7 @@
 # TODO
 
+## Bump Microsoft.Build.Locator version
+
 ## Test performance improvements
 
 See `plans/test-performance-improvements.md` for the full plan.
