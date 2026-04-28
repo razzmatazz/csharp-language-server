@@ -72,14 +72,20 @@ type RequestContext
     }
 
 type RequestInfo =
-    { Phase: RequestPhase
-      Mode: RequestMode
-      Name: string
-      RpcOrdinal: int64
-      Registered: DateTime
-      ActivationRC: AsyncReplyChannel<RequestContext>
-      RunningSince: option<DateTime>
-      WorkspaceUpdate: LspWorkspaceUpdate }
+    {
+        Phase: RequestPhase
+        Mode: RequestMode
+        Name: string
+        RpcOrdinal: int64
+        Registered: DateTime
+        ActivationRC: AsyncReplyChannel<RequestContext>
+        /// The CancellationTokenSource shared with the JsonRpc layer for this request.
+        /// `Some` for wire requests; `None` for internally-generated events.
+        /// Used by `enterDrainingMode` to cancel in-flight handlers immediately.
+        CancellationTokenSource: System.Threading.CancellationTokenSource option
+        RunningSince: option<DateTime>
+        WorkspaceUpdate: LspWorkspaceUpdate
+    }
 
 type RequestMetrics =
     { Count: int
@@ -278,7 +284,14 @@ let dumpAndResetRequestStats
     else
         requestQueue
 
-let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
+let registerRequest
+    requestRpcOrdinal
+    requestName
+    requestMode
+    (cts: System.Threading.CancellationTokenSource option)
+    activationReplyChannel
+    (requestQueue: RequestQueue)
+    =
     let newRequest =
         { Phase = Pending
           Name = requestName
@@ -286,6 +299,7 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
           Mode = requestMode
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
+          CancellationTokenSource = cts
           RunningSince = None
           WorkspaceUpdate = LspWorkspaceUpdate.Empty }
 
@@ -316,14 +330,21 @@ let finishRequest requestRpcOrdinal wsUpdate (requestQueue: RequestQueue) =
 
 /// Tries to retire the next eligible finished request from the queue.
 ///
-/// Walks requests from lowest ordinal. A finished `ReadOnlyBackground` request
-/// is retired immediately (it has no buffered events). A finished non-background
-/// request is retired and removed. A still-running `ReadOnlyBackground` request
-/// is skipped over (it never blocks retirement). Any other non-finished request
-/// stops the walk.
+/// Walks requests from lowest ordinal. A finished request of any mode is
+/// retired immediately. Any other non-finished, non-background request stops
+/// the walk.
 ///
-/// Returns `(updatedQueue, Some retiredRequest)` if a request was retired, or
-/// `(requestQueue, None)` if nothing is eligible.
+/// `ReadOnlyBackground` requests are treated differently depending on queue mode:
+/// - `Dispatching`: a still-running `ReadOnlyBackground` is skipped over so it
+///   never blocks retirement of later, higher-priority requests.
+/// - `DrainingUpTo`: a still-running `ReadOnlyBackground` at or below the drain
+///   watermark stops the walk. Background requests hold live references to the
+///   current workspace/solution; they must fully retire before the workspace is
+///   torn down. (Background requests above the watermark are never eligible for
+///   activation and will remain pending, so they do not block the drain.)
+///
+/// Returns `(Some retiredRequest, updatedQueue)` if a request was retired, or
+/// `(None, requestQueue)` if nothing is eligible.
 let retireNextFinishedRequest
     (config: CSharpConfiguration)
     (requestQueue: RequestQueue)
@@ -337,7 +358,13 @@ let retireNextFinishedRequest
         | (ordinal, request) :: rest ->
             match request.Phase, request.Mode with
             | Finished, _ -> Some(ordinal, request)
-            | _, ReadOnlyBackground -> findRetirable rest
+            | _, ReadOnlyBackground ->
+                // In DrainingUpTo mode, a running background request at or below
+                // the watermark must block retirement — it still holds workspace
+                // references and must drain before teardown.
+                match requestQueue.Mode with
+                | DrainingUpTo maxOrd when ordinal <= maxOrd -> None
+                | _ -> findRetirable rest
             | _ -> None
 
     let debugMode = config.debug |> Option.bind _.debugMode |> Option.defaultValue false
@@ -361,6 +388,11 @@ let retireNextFinishedRequest
 
 /// Enters `DrainingUpTo` mode if not already draining. Returns `Some` with
 /// the updated queue, or `None` if already in draining mode.
+///
+/// When entering drain mode, immediately cancels every `Running` or `Pending`
+/// request at or below the drain watermark.  This lets in-flight handlers
+/// receive `OperationCanceledException` right away rather than running to
+/// natural completion, making drains fast even for long-running handlers.
 let enterDrainingMode (requestQueue: RequestQueue) : RequestQueue option =
     match requestQueue.Mode with
     | DrainingUpTo _ -> None
@@ -370,6 +402,21 @@ let enterDrainingMode (requestQueue: RequestQueue) : RequestQueue option =
                 0L
             else
                 requestQueue.Requests |> Map.keys |> Seq.max
+
+        // Cancel all in-flight and pending requests up to the drain watermark.
+        requestQueue.Requests
+        |> Map.iter (fun ord r ->
+            if ord <= maxOrd then
+                match r.Phase with
+                | Running
+                | Pending ->
+                    r.CancellationTokenSource
+                    |> Option.iter (fun cts ->
+                        try
+                            cts.Cancel()
+                        with _ ->
+                            ())
+                | Finished -> ())
 
         Some
             { requestQueue with

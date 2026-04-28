@@ -599,8 +599,15 @@ config flag) that runs after every state transition.
    Add `InitializeRequested: bool`, `ShutdownRequested: bool`,
    `WithInitializeRequested()`, `WithShutdownRequested()`.  Update handler
    call sites (only two: `handleInitialize`, `handleShutdown`).
-2. **`LspWorkspacePhase`**: Add `Reconfiguring`, remove CTS from `Loading`.
-   Propagate the type change.
+2. ~~**`LspWorkspacePhase`**: Add `Reconfiguring`, remove CTS from `Loading`.
+   Propagate the type change.~~ **DEFERRED.** `Reconfiguring` was added
+   (`57496a77`) but the CTS has not been removed from `Loading of cts:`.
+   The private `cancelLoadCts` helper in `Workspace.fs` already extracts and
+   cancels it by pattern-matching the phase, so correctness is unaffected.
+   The only remaining impurity is the mutable value inside the DU case.
+   Removing it requires adding `LoadCts` to `ServerState` (step 5) and
+   threading the CTS out of `workspaceLoadStarted` — deferred to keep scope
+   manageable; revisit when integration tests (step 12) are passing.
 3. **`Workspace.fs` — phase-transition functions**: Add `workspaceConfigured`,
    `workspaceReconfiguring`, `workspaceShuttingDown`.  Rename
    `workspaceLoadStarted` (returns CTS as separate value; already renamed).
@@ -611,7 +618,8 @@ config flag) that runs after every state transition.
    `workspace*` function.  Replace `PhaseTransition` dispatch in
    `ApplyWorkspaceUpdate` with `InitializeRequested` → `postServerEvent
    ClientInitialize` and `ShutdownRequested` → `postServerEvent ClientShutdown`.
-5. Add `LoadCts` to `ServerState`; wire up CTS cancellation on phase change.
+5. ~~Add `LoadCts` to `ServerState`; wire up CTS cancellation on phase change.~~
+   **DEFERRED** (depends on step 2). See note on step 2 above.
 6. **Thread per-request CTS from JsonRpc → scheduling layer:**
    a. Add `CancellationTokenSource option` to `RequestInfo`.
    b. Update `EnterRequestContext` in `ServerEvent` to carry the CTS.

@@ -26,7 +26,12 @@ type ServerEvent =
     | ClientShutdown
     | ClientCapabilityChange of ClientCapabilities
     | PushDiagnosticsBacklogUpdate
-    | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
+    | EnterRequestContext of
+        int64 *
+        string *
+        RequestMode *
+        System.Threading.CancellationTokenSource option *
+        AsyncReplyChannel<RequestContext>
     | GetWorkspace of AsyncReplyChannel<LspWorkspace>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
@@ -142,12 +147,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 TraceLevel = newTraceLevel }
 
-    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, replyChannel) ->
+    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, cts, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
         let newRequestQueue =
             state.RequestQueue
-            |> registerRequest requestRpcOrdinal requestName requestMode replyChannel
+            |> registerRequest requestRpcOrdinal requestName requestMode cts replyChannel
 
         return
             { state with
@@ -197,12 +202,11 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 RequestQueue = newRequestQueue }
 
     | ApplyWorkspaceUpdate wsUpdate ->
-        wsUpdate.PhaseTransition
-        |> Option.iter (fun phase ->
-            match phase with
-            | LspWorkspacePhase.Configured -> postServerEvent ClientInitialize
-            | LspWorkspacePhase.ShuttingDown -> postServerEvent ClientShutdown
-            | _ -> ())
+        if wsUpdate.InitializeRequested then
+            postServerEvent ClientInitialize
+
+        if wsUpdate.ShutdownRequested then
+            postServerEvent ClientShutdown
 
         wsUpdate.ClientCapabilityChange
         |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
@@ -212,6 +216,19 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         wsUpdate.TraceLevelChange
         |> Option.iter (fun level -> do postServerEvent (TraceLevelChange level))
+
+        // Detect solutionPathOverride changes and route them based on current phase:
+        //   Ready | Loading | Reconfiguring → queue PendingSolutionPathChange; the
+        //     existing drain machinery picks it up (DrainIfPendingOperationsReady
+        //     for Ready/Loading, or the in-progress RequestQueueDrained for
+        //     Reconfiguring).
+        //   Configured | Uninitialized → apply workspaceSolutionPathOverride
+        //     immediately so the next workspaceLoadStarted uses the correct path.
+        //     No drain needed; nothing is running yet.
+        //   ShuttingDown → ignore (halting).
+        let solutionPathChangedConfig =
+            wsUpdate.ConfigurationChange
+            |> Option.filter (fun cfg -> cfg.solutionPathOverride <> state.Config.solutionPathOverride)
 
         let newPendingOps =
             let fromFolderReconfig =
@@ -223,7 +240,29 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 wsUpdate.ReloadRequested
                 |> List.map (fun delay -> PendingReload(DateTime.UtcNow + delay))
 
-            state.PendingOperations @ fromFolderReconfig @ fromReloads
+            let fromSolutionPathChange =
+                match solutionPathChangedConfig with
+                | None -> []
+                | Some newConfig ->
+                    match state.Workspace.Phase with
+                    | LspWorkspacePhase.Ready
+                    | LspWorkspacePhase.Loading _
+                    | LspWorkspacePhase.Reconfiguring -> [ PendingSolutionPathChange newConfig ]
+                    | _ -> []
+
+            state.PendingOperations
+            @ fromFolderReconfig
+            @ fromReloads
+            @ fromSolutionPathChange
+
+        let newWorkspace =
+            match solutionPathChangedConfig with
+            | Some newConfig ->
+                match state.Workspace.Phase with
+                | LspWorkspacePhase.Configured
+                | LspWorkspacePhase.Uninitialized -> workspaceSolutionPathOverride newConfig state.Workspace
+                | _ -> state.Workspace
+            | None -> state.Workspace
 
         wsUpdate.FolderUpdates
         |> Map.toSeq
@@ -234,6 +273,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         return
             { state with
+                Workspace = newWorkspace
                 PendingOperations = newPendingOps }
 
     | ProcessRequestQueue ->
@@ -280,13 +320,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 period = 250
             )
 
-        let updatedWorkspace =
-            { state.Workspace with
-                Phase = LspWorkspacePhase.Configured }
-
         return
             { state with
-                Workspace = updatedWorkspace
+                Workspace = workspaceConfigured state.Workspace
                 PeriodicTickTimer = Some timer }
 
     | ClientShutdown ->
@@ -296,14 +332,29 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Some timer -> timer.Dispose()
         | None -> ()
 
-        let updatedWorkspace = workspaceShutdown state.Workspace
+        // Transition to ShuttingDown (cancels in-flight load CTS if Loading).
+        let updatedWorkspace = workspaceShuttingDown state.Workspace
 
+        // Enter drain mode. If already draining (e.g. a Reconfiguring drain was
+        // in progress), keep the existing queue — just update the phase so
+        // RequestQueueDrained knows to halt rather than rebuild.
+        let updatedRequestQueue =
+            enterDrainingMode state.RequestQueue
+            |> Option.defaultWith (fun () -> state.RequestQueue)
+
+        postServerEvent ProcessRequestQueue
+
+        // LspClient is intentionally kept alive here. makeRequestContext uses
+        // state.LspClient.Value; clearing it now would crash the state loop if
+        // any pending requests get activated during the drain. LspClient is
+        // cleared in the RequestQueueDrained ShuttingDown branch once the drain
+        // is complete and no further activations can occur.
         return
             { state with
                 Workspace = updatedWorkspace
-                LspClient = None
                 PeriodicTickTimer = None
-                ShutdownReceived = true }
+                ShutdownReceived = true
+                RequestQueue = updatedRequestQueue }
 
     | ClientCapabilityChange cc ->
         let experimentalCapsBoolValue boolPropName =
@@ -380,31 +431,61 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        for _, rc in state.SolutionReadyAwaiters do
-            rc.Reply(None)
+        match state.Workspace.Phase with
+        | LspWorkspacePhase.Reconfiguring ->
+            // A pending-operation drain (config change / folder replacement / reload)
+            // has completed. Tear down, apply pending ops, and restart the load.
+            for _, rc in state.SolutionReadyAwaiters do
+                rc.Reply(None)
 
-        let tornDownWorkspace = workspaceShutdown state.Workspace
+            let tornDownWorkspace = workspaceShutdown state.Workspace
 
-        let applyPendingOperation (ws: LspWorkspace) (op: WorkspacePendingOperation) : LspWorkspace =
-            match op with
-            | PendingReload _ -> ws // workspace shape unchanged; folders already Uninitialized from teardown
+            let applyPendingOperation (ws: LspWorkspace) (op: WorkspacePendingOperation) : LspWorkspace =
+                match op with
+                | PendingReload _ -> ws // workspace shape unchanged; folders already Uninitialized from teardown
+                | PendingFolderReplacement newFolders ->
+                    workspaceFrom newFolders |> workspaceSolutionPathOverride state.Config
+                | PendingSolutionPathChange _ -> workspaceSolutionPathOverride state.Config ws
 
-            | PendingFolderReplacement newFolders ->
-                workspaceFrom newFolders |> workspaceSolutionPathOverride state.Config
+            let rebuiltWorkspace =
+                state.PendingOperations |> List.fold applyPendingOperation tornDownWorkspace
 
-            | PendingSolutionPathChange _ -> workspaceSolutionPathOverride state.Config ws
+            // Transition Uninitialized → Configured so workspaceLoadStarted can fire.
+            let configuredWorkspace = workspaceConfigured rebuiltWorkspace
 
-        let newWorkspace =
-            state.PendingOperations |> List.fold applyPendingOperation tornDownWorkspace
+            postServerEvent ProcessRequestQueue
+            postServerEvent ProcessSolutionAwaiters
 
-        postServerEvent ProcessRequestQueue
+            return
+                { state with
+                    Workspace = configuredWorkspace
+                    SolutionReadyAwaiters = []
+                    PendingOperations = []
+                    RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
-        return
-            { state with
-                Workspace = newWorkspace
-                SolutionReadyAwaiters = []
-                PendingOperations = []
-                RequestQueue = state.RequestQueue |> enterDispatchingMode }
+        | LspWorkspacePhase.ShuttingDown ->
+            // Client-initiated shutdown drain has completed. Tear down and halt;
+            // no rebuild. LspClient is cleared here (not in ClientShutdown) so
+            // that makeRequestContext does not crash for requests activated during
+            // the drain.
+            for _, rc in state.SolutionReadyAwaiters do
+                rc.Reply(None)
+
+            return
+                { state with
+                    Workspace = workspaceShutdown state.Workspace
+                    LspClient = None
+                    SolutionReadyAwaiters = []
+                    PendingOperations = []
+                    RequestQueue = state.RequestQueue |> enterDispatchingMode }
+
+        | other ->
+            // Should not happen; log and reset the queue gracefully.
+            logger.LogWarning("RequestQueueDrained fired in unexpected phase {phase}; resetting queue", string other)
+
+            return
+                { state with
+                    RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
@@ -429,7 +510,17 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 | PendingSolutionPathChange _ -> true
                 | PendingReload deadline -> deadline < DateTime.UtcNow)
 
-        match shouldDrain with
+        // Reconfiguring is only valid from Ready or Loading. In other phases
+        // (e.g. Configured, Uninitialized) the solution has not started loading
+        // yet, so there is nothing to drain and the pending ops will be picked
+        // up once the workspace reaches Ready.
+        let canReconfigure =
+            match state.Workspace.Phase with
+            | LspWorkspacePhase.Ready
+            | LspWorkspacePhase.Loading _ -> true
+            | _ -> false
+
+        match shouldDrain && canReconfigure with
         | false -> return state
         | true ->
             match enterDrainingMode state.RequestQueue with
@@ -437,14 +528,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             | Some updatedRequestQueue ->
                 postServerEvent ProcessRequestQueue
 
-                let updatedWorkspace =
-                    { state.Workspace with
-                        Phase = LspWorkspacePhase.ShuttingDown }
-
                 return
                     { state with
                         RequestQueue = updatedRequestQueue
-                        Workspace = updatedWorkspace }
+                        Workspace = workspaceReconfiguring state.Workspace }
 
     | ProcessSolutionAwaiters ->
         match state.SolutionReadyAwaiters with
@@ -486,12 +573,79 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             | _ -> return state
 }
 
+/// Checks key server-state invariants after each event is processed.
+/// Active only when `csharp.debug.debugMode` is true in the server configuration.
+/// Violations are logged as errors (log-and-continue, not failwith) so a bug
+/// surfaces in the log without crashing the server in production.
+let assertServerStateInvariants (state: ServerState) =
+    let debugMode =
+        state.Config.debug |> Option.bind _.debugMode |> Option.defaultValue false
+
+    if debugMode then
+        let phase = state.Workspace.Phase
+        let queueMode = state.RequestQueue.Mode
+
+        // Invariant A — Queue mode ↔ phase.
+        // DrainingUpTo must be set iff phase is Reconfiguring or ShuttingDown.
+        // Both transitions happen atomically in the same ServerEvent handler so
+        // this must hold at every observable state boundary.
+        let phaseExpectsDrain =
+            match phase with
+            | LspWorkspacePhase.Reconfiguring
+            | LspWorkspacePhase.ShuttingDown -> true
+            | _ -> false
+
+        let queueIsDraining =
+            match queueMode with
+            | DrainingUpTo _ -> true
+            | Dispatching -> false
+
+        if phaseExpectsDrain && not queueIsDraining then
+            logger.LogError(
+                "Invariant A violated: phase is {phase} but queue mode is {mode} (expected DrainingUpTo)",
+                string phase,
+                string queueMode
+            )
+
+        if queueIsDraining && not phaseExpectsDrain then
+            logger.LogError(
+                "Invariant A violated: queue is {mode} but phase is {phase} (expected Reconfiguring or ShuttingDown)",
+                string queueMode,
+                string phase
+            )
+
+        // Invariant B — PeriodicTickTimer ↔ phase.
+        // The timer is created in ClientInitialize (Uninitialized → Configured)
+        // and disposed in ClientShutdown (any → ShuttingDown).  It should be
+        // Some for every post-initialize, pre-shutdown phase.
+        let phaseExpectsTimer =
+            match phase with
+            | LspWorkspacePhase.Configured
+            | LspWorkspacePhase.Loading _
+            | LspWorkspacePhase.Ready
+            | LspWorkspacePhase.Reconfiguring -> true
+            | _ -> false
+
+        match state.PeriodicTickTimer, phaseExpectsTimer with
+        | None, true ->
+            logger.LogError(
+                "Invariant B violated: PeriodicTickTimer is None but phase is {phase} (expected Some)",
+                string phase
+            )
+        | Some _, false ->
+            logger.LogError(
+                "Invariant B violated: PeriodicTickTimer is Some but phase is {phase} (expected None)",
+                string phase
+            )
+        | _ -> ()
+
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =
     let rec loop state = async {
         let! msg = inbox.Receive()
 
         try
             let! newState = msg |> processServerEvent state inbox.Post inbox
+            assertServerStateInvariants newState
             return! loop newState
         with ex ->
             logger.LogError(ex, "serverEventLoop: crashed with {exception}", string ex)
