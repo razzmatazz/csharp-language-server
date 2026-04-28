@@ -1,5 +1,9 @@
 # Workspace Phase — Design Plan
 
+> **Status:** Partially implemented. See §7 (Implementation Order) for what is done,
+> deferred, and what newly needs fixing. See §8 for a known regression introduced by the
+> active-drain change (step 7) and the plan to fix it.
+
 ## 1. Motivation
 
 `LspWorkspacePhase` is intended to be the single source of truth for what the
@@ -641,3 +645,745 @@ config flag) that runs after every state transition.
     - Client `shutdown` during `Reconfiguring`.
     - Verify that in-flight handlers receive `OperationCanceledException`
       when drain starts (cancellation propagation test).
+
+---
+
+## 8. Regression: active drain cancels requests during initial load
+
+### 8.1 Symptom
+
+After step 7 (`enterDrainingMode` now cancels in-flight handlers), any handler
+test that issues a request before the workspace reaches `Ready` fails.
+Confirmed failures include `testDefinitionWorks` and `testHoverWorks`; the
+failure mode is generic to every handler that calls
+`GetWorkspaceFolderReadySolution` (Hover, Definition, References, Completion,
+Rename, InlayHint, CodeAction, TypeDefinition, Implementation, DocumentHighlight,
+DocumentSymbol, SignatureHelp, CodeLens, SemanticTokens, Diagnostic, …).
+The handler returns `None` because the awaiter parked on
+`SolutionReadyAwaiters` is replied with `None` (and/or the request CTS is
+cancelled) when an active drain fires during initial load.
+
+### 8.2 Root Cause
+
+The sequence of events during startup:
+
+```
+initialize
+  → handleInitialize returns:
+      WithFolderReconfiguration([workspaceFolders])   ← workspace folders set here
+      WithInitializeRequested()
+
+  ApplyWorkspaceUpdate:
+    → PendingFolderReplacement appended to PendingOperations
+    → DrainIfPendingOperationsReady posted
+
+  ClientInitialize (posted by ApplyWorkspaceUpdate):
+    → workspaceConfigured: Uninitialized → Configured
+
+  DrainIfPendingOperationsReady:
+    → phase is Configured → canReconfigure = false → no drain  ✓
+
+initialized
+  → handleInitialized pulls workspace/configuration
+  → returns WithConfigurationChange(...)
+
+  ApplyWorkspaceUpdate:
+    → DrainIfPendingOperationsReady posted
+    → phase is still Configured → no drain  ✓
+
+textDocument/didOpen
+textDocument/definition
+  → handler calls GetWorkspaceFolderReadySolution(uri, withSolutionReady=true)
+  → state loop adds caller to SolutionReadyAwaiters
+  → ProcessSolutionAwaiters posted
+
+  ProcessSolutionAwaiters:
+    → phase is Configured → workspaceLoadStarted → phase: Configured → Loading cts
+    → ASYNC Roslyn load starts in background
+
+  ApplyWorkspaceUpdate (from textDocument/didOpen retiring):
+    → DrainIfPendingOperationsReady posted
+
+  DrainIfPendingOperationsReady:
+    → phase is NOW Loading
+    → PendingFolderReplacement is ripe (always ripe)
+    → canReconfigure = true  ✗ BUG
+    → enterDrainingMode called
+    → definition request CTS cancelled!
+    → handler throws OperationCanceledException → returns None
+```
+
+The `PendingFolderReplacement` from `handleInitialize` is the **initial folder
+setup**, not a runtime reconfiguration.  It is unconditionally ripe and, once the
+phase reaches `Loading`, it triggers an immediate drain that cancels the very
+handlers that are waiting for the solution to load.
+
+### 8.3 Design overview: two complementary layers
+
+The fix is structured as two layers of defense.  Each layer alone closes
+most of the bug; together they make the bug class statically impossible
+*and* protocol-correct.
+
+| Layer | What it adds | Bug class addressed |
+|-------|--------------|---------------------|
+| **L1 — `Initializing` phase + load gate** | A new phase between `Uninitialized` and `Configured`; `workspaceLoadStarted` is type-restricted to `Configured`, which is only entered after a graduation predicate (`InitializedReceived ∧ PendingOperations = []`) holds. | Premature load in any phase that still has pending ops; type-level enforcement of the gate. |
+| **L2 — Synchronous handler completion** | `handleInitialize` and `handleInitialized` do not return their LSP response until the workspace has settled.  The next request from the client is therefore queued behind a fully-configured server. | The protocol-level race: a client sending `didOpen`/`hover` before `initialized` (or before its `workspace/configuration` response has been processed). |
+
+Both layers refer to the same `Initializing` phase but address different
+failure modes:
+
+- L1 closes the *internal* race (queued ops + first awaiter triggering
+  `Configured → Loading` while a stale pending op is still in the queue).
+- L2 closes the *external* race (a misbehaving or fast client racing past
+  `initialize`/`initialized` before server-side settlement).
+
+L1 is sufficient to fix the *currently observed* bug (`testHoverWorks`,
+`testDefinitionWorks`).  L2 is sufficient to keep the
+`Configured`-phase window invisible to clients.  Together they form
+defense-in-depth.
+
+### 8.4 Layer 1 — `Initializing` phase + graduation predicate
+
+#### 8.4.1 New state machine
+
+A new phase is added between `Uninitialized` and `Configured`:
+
+```
+Uninitialized → Initializing → Configured → Loading → Ready
+                ↑               ↑
+                │               └── workspaceConfigured (semantics changed:
+                │                    source phase is now Initializing)
+                └── workspaceInitializeStarted (NEW; Uninitialized → Initializing)
+```
+
+Phase contracts:
+
+- **`Initializing`** — `initialize` has retired and the periodic timer is
+  running, but at least one of:
+  - `initialized` has not yet been received from the client, *or*
+  - `PendingOperations` is non-empty.
+
+  In this phase `workspaceLoadStarted` is structurally forbidden — its
+  pattern match accepts only source phase `Configured`, so the type system
+  prevents the bug entirely.
+
+- **`Configured`** — `initialize` and `initialized` have both retired,
+  workspace folders/config have been fully applied, and the workspace is
+  ready to begin loading on the next awaiter.  Entered atomically via
+  `workspaceConfigured` only when both gating conditions are met.
+
+The reconfiguration path (`Reconfiguring → Uninitialized → … → Configured`)
+is unchanged in spirit: after the rebuild, the workspace transitions
+`Uninitialized → Initializing → Configured` in a single step, since
+`InitializedReceived` is already true and pending ops have been applied by
+the rebuild fold.
+
+#### 8.4.2 Workspace.fs changes
+
+Add `Initializing` to the phase enum:
+
+```fsharp
+type LspWorkspacePhase =
+    | Uninitialized
+    | Initializing      // NEW
+    | Configured
+    | Loading of CancellationTokenSource
+    | Ready
+    | Reconfiguring
+    | ShuttingDown
+```
+
+Add a new transition function:
+
+```fsharp
+let workspaceInitializeStarted (workspace: LspWorkspace) : LspWorkspace =
+    match workspace.Phase with
+    | LspWorkspacePhase.Uninitialized ->
+        { workspace with Phase = LspWorkspacePhase.Initializing }
+    | _ -> failwithf "workspaceInitializeStarted: expected Uninitialized but got '%A'" workspace.Phase
+```
+
+Change `workspaceConfigured`'s source phase from `Uninitialized` to
+`Initializing`:
+
+```fsharp
+let workspaceConfigured (workspace: LspWorkspace) : LspWorkspace =
+    match workspace.Phase with
+    | LspWorkspacePhase.Initializing ->
+        { workspace with Phase = LspWorkspacePhase.Configured }
+    | _ -> failwithf "workspaceConfigured: expected Initializing but got '%A'" workspace.Phase
+```
+
+Add a new field to `LspWorkspaceUpdate`:
+
+```fsharp
+type LspWorkspaceUpdate =
+    { …
+      InitializedReceived: bool   // NEW
+      … }
+
+    member this.WithInitializedReceived() =
+        { this with InitializedReceived = true }
+```
+
+`workspaceLoadStarted`, `workspaceReconfiguring`, `workspaceShuttingDown`,
+and `workspaceShutdown` are unchanged.
+
+#### 8.4.3 ServerStateLoop.fs changes
+
+Add a new server event:
+
+```fsharp
+type ServerEvent =
+    …
+    | ClientInitialized
+```
+
+Add a new field to `ServerState`:
+
+```fsharp
+type ServerState =
+    { …
+      InitializedReceived: bool   // default false
+      … }
+```
+
+Add a graduation helper:
+
+```fsharp
+let private tryGraduateInitializing (state: ServerState) postServerEvent : ServerState =
+    match state.Workspace.Phase, state.InitializedReceived, state.PendingOperations with
+    | LspWorkspacePhase.Initializing, true, [] ->
+        postServerEvent ProcessSolutionAwaiters
+        // (L2 will additionally signal handler-completion waiters here; see §8.5)
+        { state with Workspace = workspaceConfigured state.Workspace }
+    | _ -> state
+```
+
+Hoist `applyPendingOperation` to module scope (currently inlined inside
+`RequestQueueDrained`'s `Reconfiguring` branch):
+
+```fsharp
+let private applyPendingOperation
+    (config: CSharpConfiguration)
+    (ws: LspWorkspace)
+    (op: WorkspacePendingOperation) =
+    match op with
+    | PendingReload _ -> ws
+    | PendingFolderReplacement newFolders ->
+        workspaceFrom newFolders |> workspaceSolutionPathOverride config
+    | PendingSolutionPathChange _ ->
+        workspaceSolutionPathOverride config ws
+```
+
+`ApplyWorkspaceUpdate`:
+
+- Continue to post `ClientInitialize` when `wsUpdate.InitializeRequested`.
+- Additionally post `ClientInitialized` when `wsUpdate.InitializedReceived`.
+- **Remove** the early-phase inline `solutionPathOverride` handling
+  (`solutionPathChangedConfig` / `fromSolutionPathChange` / `newWorkspace`
+  blocks).  All `solutionPathOverride` changes now uniformly produce a
+  `PendingSolutionPathChange` regardless of phase, applied either inline
+  (via the `Initializing` branch of `DrainIfPendingOperationsReady`) or
+  destructively (via the `Ready/Loading` branch).
+
+`ClientInitialize`:
+
+```fsharp
+| ClientInitialize ->
+    let timer = …
+    let newState =
+        { state with
+            Workspace = workspaceInitializeStarted state.Workspace   // ← was workspaceConfigured
+            PeriodicTickTimer = Some timer }
+    return tryGraduateInitializing newState postServerEvent
+```
+
+(Graduation will fail here because `InitializedReceived` is still false,
+but the call site is uniform.)
+
+`ClientInitialized` (new):
+
+```fsharp
+| ClientInitialized ->
+    let newState = { state with InitializedReceived = true }
+    return tryGraduateInitializing newState postServerEvent
+```
+
+`DrainIfPendingOperationsReady`:
+
+```fsharp
+| DrainIfPendingOperationsReady ->
+    let shouldDrain = … // unchanged ripeness check
+
+    match state.Workspace.Phase with
+    | LspWorkspacePhase.Initializing when shouldDrain ->
+        // Apply pending ops inline.  No CTS cancellation, no torn solution —
+        // there is no live Roslyn solution yet.  Awaiters stay parked and are
+        // re-evaluated by tryGraduateInitializing.
+        let applied =
+            state.PendingOperations
+            |> List.fold (applyPendingOperation state.Config) state.Workspace
+        let newState =
+            { state with
+                Workspace = applied
+                PendingOperations = [] }
+        return tryGraduateInitializing newState postServerEvent
+
+    | LspWorkspacePhase.Ready | LspWorkspacePhase.Loading _ when shouldDrain ->
+        // existing destructive path
+        match enterDrainingMode state.RequestQueue with
+        | None -> return state
+        | Some updatedRequestQueue ->
+            postServerEvent ProcessRequestQueue
+            return { state with
+                       RequestQueue = updatedRequestQueue
+                       Workspace = workspaceReconfiguring state.Workspace }
+
+    | _ -> return state
+```
+
+`ProcessSolutionAwaiters`:
+
+```fsharp
+match state.Workspace.Phase with
+| LspWorkspacePhase.Configured ->
+    // Gate is now structural: we are only here if InitializedReceived is true
+    // and PendingOperations was empty at graduation time.
+    // Fire workspaceLoadStarted as before.
+    …
+
+| LspWorkspacePhase.Ready ->
+    // existing immediate-reply logic
+    …
+
+| _ -> return state    // Initializing, Loading, etc. — keep awaiters parked
+```
+
+`RequestQueueDrained.Reconfiguring`:
+
+```fsharp
+let configuredWorkspace =
+    rebuiltWorkspace
+    |> workspaceInitializeStarted   // Uninitialized → Initializing
+    |> workspaceConfigured          // Initializing → Configured
+                                    // (safe: InitializedReceived = true,
+                                    //  PendingOperations = [] after rebuild)
+```
+
+#### 8.4.4 LifeCycle.fs change
+
+`handleInitialized` adds the new flag unconditionally:
+
+```fsharp
+let mutable wsUpdate = LspWorkspaceUpdate.Empty.WithInitializedReceived()
+```
+
+Set regardless of whether the client supports `workspace/configuration`,
+since the gating signal is "`initialized` notification was received" —
+independent of whether config was successfully pulled.
+
+### 8.5 Layer 2 — Synchronous handler completion
+
+L1 alone leaves a window during which the workspace is `Initializing` but
+the client has already received `InitializeResult` and may have moved on.
+A misbehaving client (or simply a fast one) can race past this window with
+`didOpen`/`hover`.  L1 still parks those awaiters safely until graduation,
+but only ReadWrite serialization on `handleInitialized` keeps subsequent
+ReadWrite requests from interleaving — and ReadOnly requests may or may
+not be serialized similarly (see §8.8.4).
+
+L2 closes this race by making the relevant lifecycle handlers block until
+the server is fully configured.
+
+#### 8.5.1 Mechanism
+
+A new `ServerEvent` carries a one-shot reply channel:
+
+```fsharp
+type ServerEvent =
+    …
+    | WaitForWorkspaceConfigured of AsyncReplyChannel<unit>
+```
+
+A new field on `ServerState`:
+
+```fsharp
+type ServerState =
+    { …
+      WorkspaceConfiguredWaiters: AsyncReplyChannel<unit> list   // NEW
+      … }
+```
+
+Handler logic:
+
+```fsharp
+| WaitForWorkspaceConfigured replyChannel ->
+    match state.Workspace.Phase with
+    | LspWorkspacePhase.Configured
+    | LspWorkspacePhase.Loading _
+    | LspWorkspacePhase.Ready ->
+        // Already configured (or further along) — reply immediately.
+        replyChannel.Reply()
+        return state
+    | LspWorkspacePhase.ShuttingDown ->
+        // Server halting; do not block the handler.  Reply (the handler
+        // can detect ShutdownReceived via context if it wishes).
+        replyChannel.Reply()
+        return state
+    | _ ->
+        // Initializing or Uninitialized — park until graduation.
+        return { state with
+                   WorkspaceConfiguredWaiters = replyChannel :: state.WorkspaceConfiguredWaiters }
+```
+
+`tryGraduateInitializing` is extended to flush waiters on the
+`Initializing → Configured` transition:
+
+```fsharp
+let private tryGraduateInitializing (state: ServerState) postServerEvent : ServerState =
+    match state.Workspace.Phase, state.InitializedReceived, state.PendingOperations with
+    | LspWorkspacePhase.Initializing, true, [] ->
+        postServerEvent ProcessSolutionAwaiters
+        for rc in state.WorkspaceConfiguredWaiters do rc.Reply()
+        { state with
+            Workspace = workspaceConfigured state.Workspace
+            WorkspaceConfiguredWaiters = [] }
+    | _ -> state
+```
+
+Similarly, `ClientShutdown` flushes waiters so handlers stuck on
+`WaitForWorkspaceConfigured` during shutdown don't deadlock:
+
+```fsharp
+| ClientShutdown ->
+    …
+    for rc in state.WorkspaceConfiguredWaiters do rc.Reply()
+    return { state with
+               …
+               WorkspaceConfiguredWaiters = [] }
+```
+
+#### 8.5.2 RequestContext extension
+
+Expose the wait via `RequestContext`:
+
+```fsharp
+type RequestContext with
+    member _.WaitForWorkspaceConfigured() : Async<unit> =
+        inbox.PostAndAsyncReply(fun rc -> WaitForWorkspaceConfigured rc)
+```
+
+#### 8.5.3 Handler usage
+
+`handleInitialize` does **not** wait — graduation cannot fire until
+`initialized` arrives, so waiting here would deadlock.  It returns
+synchronously as today.
+
+`handleInitialized` waits at the end of its body, after building wsUpdate
+and triggering the lifecycle that will eventually graduate the workspace:
+
+```fsharp
+let handleInitialized lspClient getDynamicRegistrations context (_p: unit) = async {
+    …
+    // Build wsUpdate, including .WithInitializedReceived() and any
+    // .WithConfigurationChange(...) from pulled config.
+
+    // Block until the workspace has graduated to Configured.
+    // The wsUpdate we are about to return triggers the graduation chain
+    // (InitializedReceived flips true; pending ops drain; tryGraduateInitializing
+    //  fires).  By the time this method returns, the next request from the
+    //  client (queued behind us in the request scheduler) will dispatch into
+    //  a fully-configured server.
+    do! context.WaitForWorkspaceConfigured()
+
+    return Ok(), wsUpdate
+}
+```
+
+#### 8.5.4 Critical sequencing constraint
+
+**The handler must register the waiter before its wsUpdate has been
+applied** — otherwise graduation may fire before the waiter is parked, and
+the waiter waits forever.
+
+Today, the handler returns `(result, wsUpdate)`, the framework calls
+`LeaveRequestContext`, which queues the wsUpdate; only after that does
+`ApplyWorkspaceUpdate` run and `ClientInitialized` fire.  So the natural
+ordering is:
+
+```
+handler body running
+  → handler awaits WaitForWorkspaceConfigured  (waiter parked)
+  → handler returns (result, wsUpdate)
+  → framework calls LeaveRequestContext
+  → ApplyWorkspaceUpdate posted
+  → ClientInitialized posted (sets InitializedReceived = true)
+  → DrainIfPendingOperationsReady (applies pending ops)
+  → tryGraduateInitializing (replies to waiter)
+  → handler resumes → response sent to client
+```
+
+The waiter is parked **before** the wsUpdate is even submitted — this is
+correct: the mailbox is single-threaded, so the
+`WaitForWorkspaceConfigured` event runs to completion (parking the waiter
+on the state list) before any subsequent event can fire graduation.
+
+### 8.6 Event-flow walk-through (post-fix, both layers)
+
+```
+initialize retires:
+  Handler body completes; framework wraps:
+    → LeaveRequestContext (with wsUpdate having InitializeRequested + FolderReconfiguration)
+    → ApplyWorkspaceUpdate posted
+
+  ApplyWorkspaceUpdate:
+    → PendingFolderReplacement queued
+    → ClientInitialize posted
+    → DrainIfPendingOperationsReady posted
+
+  ClientInitialize:
+    → workspaceInitializeStarted: Uninitialized → Initializing
+    → tryGraduateInitializing: InitializedReceived=false → no transition
+
+  DrainIfPendingOperationsReady:
+    → phase = Initializing, shouldDrain = true
+    → applyPendingOperation folds → folders applied
+    → PendingOperations = []
+    → tryGraduateInitializing: still InitializedReceived=false → no transition
+
+  Client receives InitializeResult.
+
+initialized retires:
+  Handler body running:
+    → builds wsUpdate with WithInitializedReceived() and WithConfigurationChange(...)
+    → do! WaitForWorkspaceConfigured()       ← waiter parked
+    → handler return is suspended
+
+  WaitForWorkspaceConfigured event:
+    → phase = Initializing → waiter added to WorkspaceConfiguredWaiters
+
+  Handler returns (Ok(), wsUpdate).
+  LeaveRequestContext → ApplyWorkspaceUpdate posted:
+    → PendingSolutionPathChange queued (if config has solutionPathOverride)
+    → ConfigurationChange event posted (inline application)
+    → ClientInitialized posted
+    → DrainIfPendingOperationsReady posted
+
+  ClientInitialized:
+    → InitializedReceived = true
+    → tryGraduateInitializing: PendingOperations may be non-empty → no transition (yet)
+
+  DrainIfPendingOperationsReady:
+    → phase = Initializing, shouldDrain = true (or false if no pending ops)
+    → applies any pending ops
+    → tryGraduateInitializing: InitializedReceived=true, PendingOperations=[]
+        → workspaceConfigured: Initializing → Configured
+        → ProcessSolutionAwaiters posted
+        → WorkspaceConfiguredWaiters flushed → handler resumes
+
+  Handler completes; framework sends `initialized` ack (no-op for a notification,
+  but the request scheduler now retires it and dispatches the next request).
+
+textDocument/didOpen, textDocument/hover (queued behind handleInitialized):
+  Hover handler → GetWorkspaceFolderReadySolution
+    → awaiter parked
+    → ProcessSolutionAwaiters posted
+
+  ProcessSolutionAwaiters:
+    → phase = Configured → workspaceLoadStarted: Configured → Loading cts
+    → Roslyn load starts in background
+
+  Hover awaiter is satisfied when WorkspaceLoadCompleted fires.
+```
+
+Even if a misbehaving client sends `hover` *before* `initialized`:
+
+```
+…
+  ProcessSolutionAwaiters (posted by GetWorkspaceFolder):
+    → phase = Initializing → fall-through; awaiter parked
+…
+  (eventually `initialized` arrives → graduation fires →
+   ProcessSolutionAwaiters reposted → load starts → awaiter satisfied)
+```
+
+The handler waits, but is never cancelled, never gets `None`.
+
+### 8.7 Why this is correct (defense-in-depth)
+
+- **Type-level enforcement (L1).**  `workspaceLoadStarted` accepts source
+  phase `Configured` only.  Reaching `Configured` requires going through
+  `tryGraduateInitializing`, which checks `InitializedReceived ∧
+  PendingOperations = []`.  The bug class is statically impossible.
+
+- **Protocol-level enforcement (L2).**  Even if L1 had a hole, the
+  blocking `handleInitialized` ensures that the `Initializing` window is
+  invisible to the client: by the time the request scheduler dispatches
+  the *next* request after `handleInitialized`, the workspace has
+  graduated.
+
+- **No CTS cancellation during init.**  `enterDrainingMode` is only
+  called from the `Ready/Loading` branch of
+  `DrainIfPendingOperationsReady`.  The `Initializing` branch is
+  non-destructive: pending ops are applied inline; awaiters remain
+  parked.
+
+- **Reconfiguration semantics preserved.**  Genuine reconfigurations
+  after `Ready` go through the destructive `Ready/Loading` drain branch,
+  exactly as before.  The post-drain rebuild transitions
+  `Uninitialized → Initializing → Configured` in one step (graduation
+  succeeds immediately because `InitializedReceived = true` and pending
+  ops were applied by the rebuild fold).
+
+- **Shutdown safety.**  `WorkspaceConfiguredWaiters` is flushed in
+  `ClientShutdown`, so handlers blocked on
+  `WaitForWorkspaceConfigured()` during shutdown unblock and return
+  cleanly.
+
+### 8.8 Open design decisions
+
+These are deliberately left for resolution at implementation time.
+
+1. **Should `handleInitialize` also block?**  L1 alone makes
+   `handleInitialize` blocking unnecessary (its wsUpdate will be applied
+   regardless before any subsequent request retires).  But waiting on
+   "wsUpdate applied to state" (a single mailbox round-trip, not full
+   graduation) would let `handleInitialize` guarantee folder-list
+   visibility before the client moves on.  Marginal benefit; default
+   choice: do not block.
+
+2. **Naming.** `DrainIfPendingOperationsReady` becomes a misnomer when
+   one branch applies inline rather than draining.  Options:
+   - Keep the name, branch internally (smallest diff).
+   - Rename to `ApplyPendingOperationsIfReady`.
+   - Split into two events (`ApplyPendingOperationsInline` for
+     `Initializing` and `BeginReconfigurationDrain` for
+     `Ready`/`Loading`); cleanest separation, more wiring.
+
+   Default choice: keep the name, branch internally.
+
+3. **`InitializedReceived` lifecycle.**  Stays sticky across
+   reconfigurations (no need to reset), so the post-drain
+   `Uninitialized → Initializing → Configured` rebuild graduates
+   immediately.  Reset to `false` on `ClientShutdown` for cleanliness.
+
+4. **Scheduler audit needed.**  Confirm that
+   `processRequestQueue` (in `Runtime/RequestScheduling.fs`, line ~256)
+   does not activate ReadOnly requests concurrently with a still-running
+   ReadWrite handler.  If it does, ReadOnly requests can slip past a
+   blocked `handleInitialized`, and L2's protocol guarantee weakens —
+   though L1 still saves us in that case (awaiters park in
+   `Initializing`).  Audit deferred to implementation.
+
+5. **`Initializing` in `assertServerStateInvariants`.**  Invariant B's
+   `phaseExpectsTimer` set must include `Initializing` (the timer is
+   created in `ClientInitialize`, which now flips to `Initializing`).
+
+### 8.9 Debug invariants
+
+- **Invariant B (updated).** `PeriodicTickTimer` is `Some` for every
+  phase in `{ Initializing, Configured, Loading, Ready, Reconfiguring }`
+  (extended to include `Initializing`).
+
+- **Invariant C — Load gate.**  `workspaceLoadStarted` is only ever
+  invoked from a `Configured` phase whose graduation observed
+  `InitializedReceived = true ∧ PendingOperations = []`.  Enforced
+  structurally (only `tryGraduateInitializing` produces `Configured`)
+  *and* by the precondition pattern in `workspaceLoadStarted`.
+
+- **Invariant D — Initialization order.**  If
+  `state.InitializedReceived = true` then
+  `state.Workspace.Phase ∉ { Uninitialized }`.  Catches the
+  (impossible-by-construction) case where `ClientInitialized` somehow
+  fires before `ClientInitialize`.
+
+- **Invariant E — Waiter discipline.**
+  `state.WorkspaceConfiguredWaiters` is non-empty only when
+  `state.Workspace.Phase ∈ { Uninitialized, Initializing }`.  Waiters
+  are flushed on `Initializing → Configured` and on `* → ShuttingDown`.
+
+### 8.10 Files to change
+
+- `src/CSharpLanguageServer/Lsp/Workspace.fs`:
+  - `LspWorkspacePhase`: add `Initializing`.
+  - Add `workspaceInitializeStarted` (Uninit → Initializing).
+  - Change `workspaceConfigured` source phase to `Initializing`.
+  - `LspWorkspaceUpdate`: add `InitializedReceived: bool` +
+    `WithInitializedReceived()`.
+
+- `src/CSharpLanguageServer/Handlers/LifeCycle.fs`:
+  - `handleInitialized`: emit `.WithInitializedReceived()` unconditionally.
+  - `handleInitialized`: insert `do! context.WaitForWorkspaceConfigured()`
+    before returning.
+
+- `src/CSharpLanguageServer/Runtime/ServerStateLoop.fs`:
+  - Add `ClientInitialized` and `WaitForWorkspaceConfigured` events.
+  - Add `InitializedReceived: bool` and
+    `WorkspaceConfiguredWaiters: AsyncReplyChannel<unit> list` to
+    `ServerState`.
+  - Add `tryGraduateInitializing` helper (with waiter flush).
+  - Hoist `applyPendingOperation` to module scope.
+  - `ApplyWorkspaceUpdate`: post `ClientInitialized` for the new flag;
+    remove early-phase inline `solutionPathOverride` handling
+    (`solutionPathChangedConfig` / `fromSolutionPathChange` /
+    `newWorkspace`).
+  - `ClientInitialize`: switch to `workspaceInitializeStarted` + try
+    graduation.
+  - Add `ClientInitialized` handler.
+  - Add `WaitForWorkspaceConfigured` handler (immediate reply for
+    `Configured`/`Loading`/`Ready`/`ShuttingDown`; park otherwise).
+  - `DrainIfPendingOperationsReady`: phase-branch into Initializing
+    (non-destructive) / Ready+Loading (destructive) / other (noop).
+  - `ProcessSolutionAwaiters`: keep `Configured`-fires-load and
+    `Ready`-replies-immediately branches; fall through in `Initializing`.
+  - `RequestQueueDrained.Reconfiguring`: chain
+    `workspaceInitializeStarted >> workspaceConfigured` for rebuild.
+  - `ClientShutdown`: flush `WorkspaceConfiguredWaiters`; reset
+    `InitializedReceived`.
+  - `assertServerStateInvariants`: extend Invariant B's timer set with
+    `Initializing`; add Invariants C, D, E.
+
+- `src/CSharpLanguageServer/Runtime/RequestScheduling.fs`:
+  - `RequestContext`: add `WaitForWorkspaceConfigured() : Async<unit>`.
+  - Audit `processRequestQueue`'s `workspacePhase` switch (line ~256) to
+    confirm `Initializing` is treated equivalently to `Configured` for
+    request activation purposes (per §8.8.4).
+
+No changes in any handler module other than `LifeCycle.fs`.
+
+### 8.11 Test coverage
+
+State-loop unit tests (new):
+
+- **Graduation ordering — `initialized` last.**  Drive
+  `Uninitialized → Initializing` (via `ClientInitialize`); apply a
+  pending folder reconfig; assert phase is still `Initializing` and any
+  awaiter registered now is parked.  Fire `ClientInitialized`; assert
+  `Initializing → Configured` happens and the awaiter triggers
+  `workspaceLoadStarted`.
+
+- **Graduation ordering — pending op last.**  Fire `ClientInitialize`
+  then `ClientInitialized` (without applying pending ops); assert phase
+  remains `Initializing`.  Then trigger drain; assert graduation fires.
+
+- **Blocking handler — happy path.**  Mock the framework: invoke
+  `handleInitialized`; assert it does not return until the state loop
+  reaches `Configured`.
+
+- **Blocking handler — shutdown unblocks.**  Invoke `handleInitialized`,
+  then immediately drive `ClientShutdown`; assert handler returns
+  (via the waiter flush).
+
+- **Misbehaving client — early request.**  Drive `ClientInitialize`,
+  then issue a `GetWorkspaceFolder(uri, withSolutionReady = true)`
+  *before* `ClientInitialized`; assert awaiter parks; fire
+  `ClientInitialized`; assert awaiter is satisfied with `Some wf`.
+
+- **Reconfiguration regression.**  Drive the loop to `Ready`; trigger
+  a runtime folder reconfig; assert destructive drain →
+  `Uninitialized → Initializing → Configured` rebuild path runs and
+  graduates immediately (because `InitializedReceived = true`).
+
+Existing handler integration tests (`testHoverWorks`,
+`testDefinitionWorks`, etc.) resolve as a side-effect.
