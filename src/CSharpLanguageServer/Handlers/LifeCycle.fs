@@ -99,7 +99,7 @@ module LifeCycle =
 
             let wsUpdate =
                 LspWorkspaceUpdate.Empty
-                    .WithPhaseTransition(LspWorkspacePhase.Configured)
+                    .WithInitializeRequested()
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
                     .WithFolderReconfiguration(workspaceFolders)
@@ -170,9 +170,7 @@ module LifeCycle =
 
     let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
         let wsUpdate =
-            LspWorkspaceUpdate.Empty
-                .WithClientCapabilityChange(emptyClientCapabilities)
-                .WithPhaseTransition(LspWorkspacePhase.ShuttingDown)
+            LspWorkspaceUpdate.Empty.WithClientCapabilityChange(emptyClientCapabilities).WithShutdownRequested()
 
         return Ok(), wsUpdate
     }

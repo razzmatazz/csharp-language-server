@@ -79,6 +79,7 @@ let private makeTestRequest ordinal name mode phase =
       RpcOrdinal = ordinal
       Registered = DateTime.UtcNow
       ActivationRC = rc
+      CancellationTokenSource = None
       RunningSince = (if phase = Running then Some DateTime.UtcNow else None)
       WorkspaceUpdate = LspWorkspaceUpdate.Empty }
 
@@ -139,7 +140,7 @@ let ``registerRequest adds a Pending request to the queue`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
     Assert.AreEqual(1, queue.Requests.Count)
 
@@ -156,8 +157,8 @@ let ``registerRequest preserves existing requests`` () =
 
     let queue =
         RequestQueue.Empty
-        |> registerRequest 1L "textDocument/hover" ReadOnly rc1
-        |> registerRequest 2L "textDocument/rename" ReadWrite rc2
+        |> registerRequest 1L "textDocument/hover" ReadOnly None rc1
+        |> registerRequest 2L "textDocument/rename" ReadWrite None rc2
 
     Assert.AreEqual(2, queue.Requests.Count)
     Assert.IsTrue(queue.Requests.ContainsKey(1L))
@@ -172,16 +173,15 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
-    let wsUpdate =
-        LspWorkspaceUpdate.Empty.WithPhaseTransition(LspWorkspacePhase.Configured)
+    let wsUpdate = LspWorkspaceUpdate.Empty.WithInitializeRequested()
 
     let updated = queue |> finishRequest 1L wsUpdate
 
     let req = updated.Requests.[1L]
     Assert.AreEqual(Finished, req.Phase)
-    Assert.AreEqual(Some LspWorkspacePhase.Configured, req.WorkspaceUpdate.PhaseTransition)
+    Assert.AreEqual(true, req.WorkspaceUpdate.InitializeRequested)
 
 // ---------------------------------------------------------------------------
 // processRequestQueue — Retired cases
@@ -312,7 +312,7 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
@@ -324,12 +324,52 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
         Assert.IsTrue(activatedRequest.RunningSince.IsSome)
     | other -> Assert.Fail($"Expected Activated but got {other}")
 
+// ---------------------------------------------------------------------------
+// retireNextFinishedRequest — ReadOnlyBackground drain-mode behaviour
+// ---------------------------------------------------------------------------
+
+[<Test>]
+let ``retireNextFinishedRequest blocks on running ReadOnlyBackground below drain watermark`` () =
+    // During DrainingUpTo mode a running background request at or below the
+    // watermark must stop the retirement walk. The workspace cannot be torn
+    // down while it still holds live workspace references.
+    let queue =
+        { RequestQueue.Empty with
+            Mode = DrainingUpTo 2L
+            Requests =
+                Map.ofList
+                    [ (1L, makeTestRequest 1L "bg" ReadOnlyBackground Running)
+                      (2L, makeTestRequest 2L "normal" ReadOnly Finished) ] }
+
+    let (retired, _) = retireNextFinishedRequest defaultSettings queue
+
+    Assert.IsTrue(retired.IsNone, "Running ReadOnlyBackground below watermark should block drain")
+
+[<Test>]
+let ``retireNextFinishedRequest skips running ReadOnlyBackground in Dispatching mode`` () =
+    // In normal Dispatching mode a running background request is skipped over
+    // so it never holds up retirement of later requests.
+    let queue =
+        { RequestQueue.Empty with
+            Mode = Dispatching
+            WatermarkRpcOrdinal = 2L
+            Requests =
+                Map.ofList
+                    [ (1L, makeTestRequest 1L "bg" ReadOnlyBackground Running)
+                      (2L, makeTestRequest 2L "normal" ReadOnly Finished) ] }
+
+    let (retired, _) = retireNextFinishedRequest defaultSettings queue
+
+    match retired with
+    | Some r -> Assert.AreEqual("normal", r.Name)
+    | None -> Assert.Fail("Expected 'normal' to be retired; background request should have been skipped")
+
 [<Test>]
 let ``processRequestQueue activates a pending ReadWrite request when queue is idle`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
@@ -361,8 +401,8 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
 
     let queue =
         RequestQueue.Empty
-        |> registerRequest 1L "textDocument/completion" ReadOnly rc1
-        |> registerRequest 3L "textDocument/hover" ReadOnly rc3
+        |> registerRequest 1L "textDocument/completion" ReadOnly None rc1
+        |> registerRequest 3L "textDocument/hover" ReadOnly None rc3
 
     // Simulate ordinal 1 already running — ordinal 3 should still wait because
     // ordinal 2 is missing.
@@ -390,7 +430,7 @@ let ``processRequestQueue does not activate ReadWrite request when there is a ga
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite rc
+        RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 

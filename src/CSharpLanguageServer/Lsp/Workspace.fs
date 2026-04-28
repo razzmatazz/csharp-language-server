@@ -15,8 +15,9 @@ open CSharpLanguageServer.Types
 type LspWorkspacePhase =
     | Uninitialized
     | Configured
-    | Loading of CancellationTokenSource
+    | Loading of cts: CancellationTokenSource
     | Ready
+    | Reconfiguring
     | ShuttingDown
 
 type LspWorkspace =
@@ -36,7 +37,8 @@ type LspWorkspace =
           Generation = Guid.NewGuid() }
 
 type LspWorkspaceUpdate =
-    { PhaseTransition: LspWorkspacePhase option
+    { InitializeRequested: bool
+      ShutdownRequested: bool
       ClientCapabilityChange: ClientCapabilities option
       ConfigurationChange: CSharpConfiguration option
       TraceLevelChange: TraceValues option
@@ -45,7 +47,8 @@ type LspWorkspaceUpdate =
       FolderUpdates: Map<string, LspWorkspaceFolderUpdateFn list> }
 
     static member Empty =
-        { PhaseTransition = None
+        { InitializeRequested = false
+          ShutdownRequested = false
           ClientCapabilityChange = None
           ConfigurationChange = None
           TraceLevelChange = None
@@ -53,9 +56,10 @@ type LspWorkspaceUpdate =
           ReloadRequested = []
           FolderUpdates = Map.empty }
 
-    member this.WithPhaseTransition(phase) =
-        { this with
-            PhaseTransition = Some phase }
+    member this.WithInitializeRequested() =
+        { this with InitializeRequested = true }
+
+    member this.WithShutdownRequested() = { this with ShutdownRequested = true }
 
     member this.WithClientCapabilityChange(capabilities) =
         { this with
@@ -223,7 +227,46 @@ let workspaceLoadCompleted
 
     | _ -> failwithf "Cannot complete load for a workspace that is in phase '%s'" (string (workspace.Phase.GetType()))
 
+let workspaceConfigured (workspace: LspWorkspace) : LspWorkspace =
+    match workspace.Phase with
+    | LspWorkspacePhase.Uninitialized ->
+        { workspace with
+            Phase = LspWorkspacePhase.Configured }
+    | _ -> failwithf "workspaceConfigured: expected Uninitialized but got '%A'" workspace.Phase
+
+let private cancelLoadCts (workspace: LspWorkspace) =
+    match workspace.Phase with
+    | LspWorkspacePhase.Loading cts -> cts.Cancel()
+    | _ -> ()
+
+/// Transitions the workspace to `Reconfiguring` in preparation for a drain-then-rebuild
+/// cycle triggered by a pending configuration change (e.g. `solutionPathOverride`,
+/// folder replacement, or a file-change reload).
+///
+/// Valid source phases: `Ready` or `Loading`.
+/// If the source phase is `Loading`, the in-flight load CTS is cancelled immediately so
+/// the load task does not race against the pending workspace teardown.
+let workspaceReconfiguring (workspace: LspWorkspace) : LspWorkspace =
+    match workspace.Phase with
+    | LspWorkspacePhase.Ready
+    | LspWorkspacePhase.Loading _ ->
+        cancelLoadCts workspace
+
+        { workspace with
+            Phase = LspWorkspacePhase.Reconfiguring }
+    | _ -> failwithf "workspaceReconfiguring: expected Ready or Loading but got '%A'" workspace.Phase
+
+let workspaceShuttingDown (workspace: LspWorkspace) : LspWorkspace =
+    match workspace.Phase with
+    | LspWorkspacePhase.ShuttingDown -> failwithf "workspaceShuttingDown: workspace is already ShuttingDown"
+    | _ ->
+        cancelLoadCts workspace
+
+        { workspace with
+            Phase = LspWorkspacePhase.ShuttingDown }
+
 let workspaceShutdown (workspace: LspWorkspace) : LspWorkspace =
+    cancelLoadCts workspace
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
     { workspace with
