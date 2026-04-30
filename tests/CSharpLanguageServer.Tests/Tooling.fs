@@ -678,10 +678,14 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
                     match debugInfo with
                     | Some info ->
-                        Console.Error.WriteLine("[$/csharp/debugInfo{0}] {1}", attemptSuffix, serialize info |> string)
-                    | None -> Console.Error.WriteLine("[$/csharp/debugInfo{0}] returned None", attemptSuffix)
+                        TestContext.Out.WriteLine(
+                            "[$/csharp/debugInfo{0}] {1}",
+                            attemptSuffix,
+                            serialize info |> string
+                        )
+                    | None -> TestContext.Out.WriteLine("[$/csharp/debugInfo{0}] returned None", attemptSuffix)
                 with ex ->
-                    Console.Error.WriteLine("[$/csharp/debugInfo{0}] request failed: {1}", attemptSuffix, string ex)
+                    TestContext.Out.WriteLine("[$/csharp/debugInfo{0}] request failed: {1}", attemptSuffix, string ex)
 
             if solutionLoaded then
                 logMessage "Dispose" "sending ServerStopRequest.."
