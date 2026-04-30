@@ -118,4 +118,16 @@ type DebugWorkspaceInfo =
     { phase: string
       folders: DebugWorkspaceFolderInfo list }
 
-type DebugInfo = { workspace: DebugWorkspaceInfo }
+type DebugRequestInfo =
+    { ordinal: int64
+      name: string
+      mode: string
+      phase: string }
+
+type DebugRequestQueueInfo =
+    { mode: string
+      requests: DebugRequestInfo list }
+
+type DebugInfo =
+    { workspace: DebugWorkspaceInfo
+      requestQueue: DebugRequestQueueInfo }

@@ -30,7 +30,7 @@ type ServerEvent =
     | GetWorkspace of AsyncReplyChannel<LspWorkspace>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
-    | GetDebugInfo of AsyncReplyChannel<CSharpConfiguration * LspWorkspace>
+    | GetDebugInfo of AsyncReplyChannel<DebugInfo option>
     | LeaveRequestContext of int64 * LspWorkspaceUpdate
     | PeriodicTimerTick
     | ApplyWorkspaceUpdate of LspWorkspaceUpdate
@@ -90,6 +90,67 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
         state.ClientCapabilities,
         state.ShutdownReceived
     )
+
+let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
+    let solutionState =
+        match wf.Solution with
+        | Uninitialized -> "Uninitialized"
+        | Loading _ -> "Loading"
+        | Ready _ -> "Ready"
+        | Defunct _ -> "Defunct"
+
+    { uri = wf.Uri
+      name = wf.Name
+      solutionState = solutionState }
+
+let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
+    let mode =
+        match r.Mode with
+        | ReadOnly -> "ReadOnly"
+        | ReadWrite -> "ReadWrite"
+        | ReadOnlyBackground -> "ReadOnlyBackground"
+
+    let phase =
+        match r.Phase with
+        | Pending -> "Pending"
+        | Running -> "Running"
+        | Finished -> "Finished"
+
+    { ordinal = ordinal
+      name = r.Name
+      mode = mode
+      phase = phase }
+
+let private assembleDebugInfo (state: ServerState) : DebugInfo option =
+    let debugMode =
+        state.Config.debug |> Option.bind _.debugMode |> Option.defaultValue false
+
+    if not debugMode then
+        None
+    else
+        let workspacePhase =
+            match state.Workspace.ReloadPending with
+            | Some _ -> "ReloadPending"
+            | None ->
+                match state.RequestQueue.Mode with
+                | Dispatching -> "Dispatching"
+                | DrainingUpTo ord -> $"DrainingUpTo({ord})"
+
+        let queueMode =
+            match state.RequestQueue.Mode with
+            | Dispatching -> "Dispatching"
+            | DrainingUpTo ord -> $"DrainingUpTo({ord})"
+
+        Some
+            { workspace =
+                { phase = workspacePhase
+                  folders = state.Workspace.Folders |> List.map toDebugWorkspaceFolderInfo }
+              requestQueue =
+                { mode = queueMode
+                  requests =
+                    state.RequestQueue.Requests
+                    |> Map.toList
+                    |> List.map (fun (ord, r) -> toDebugRequestInfo ord r) } }
 
 let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
@@ -177,7 +238,8 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | GetDebugInfo replyChannel ->
-        replyChannel.Reply(state.Config, state.Workspace)
+        let debugInfo = state |> assembleDebugInfo
+        replyChannel.Reply(debugInfo)
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->

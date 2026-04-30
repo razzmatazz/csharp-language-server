@@ -223,8 +223,8 @@ let configureRpcTransport
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
         |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
         |> Map.add "$/csharp/debugInfo" (fun _jsonRpcCtx -> async {
-            let! config, ws = stateActor.PostAndAsyncReply(GetDebugInfo)
-            return Debug.handle config ws |> serializeNullable |> Ok
+            let! info = stateActor.PostAndAsyncReply(GetDebugInfo)
+            return Debug.handle info |> serializeNullable |> Ok
         })
 
     let notificationHandlers: JsonRpcNotificationHandlerMap =
