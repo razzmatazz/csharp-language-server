@@ -1,5 +1,9 @@
 # TODO
 
+## Consider https://github.com/anthropics/claude-code/issues/52693 and https://github.com/anthropics/claude-code/issues/32595 and https://github.com/anthropics/claude-code/issues/44113
+
+## check issues related to csharp-ls: https://github.com/search?q=csharp-ls&type=issues
+
 ## Bump Microsoft.Build.Locator version
 
 ## Test performance improvements
