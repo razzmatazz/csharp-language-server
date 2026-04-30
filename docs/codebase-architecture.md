@@ -145,26 +145,20 @@ call: a finished request is always replayed before any new request is activated.
 
 ### 3.6 Server State Loop (`Runtime/ServerStateLoop.fs`)
 
-Also defines the `ServerEvent` discriminated union.
+Also defines the `ServerEvent` discriminated union, `WorkspacePendingOperation`, and helper
+`applyPendingOperation`.
 
 A `MailboxProcessor<ServerEvent>` maintaining `ServerState` (config, workspace, client
-capabilities, trace level, request queue, push-diagnostics state, shutdown flag, and
-solution-ready awaiters). Processes events including:
+capabilities, trace level, request queue, push-diagnostics state, shutdown flag,
+solution-ready awaiters, and a pending-operation queue).
 
-- `ServerStarted` / `ClientInitialize` / `ClientShutdown`
-- `ClientCapabilityChange`
-- `TraceLevelChange` / `SettingsChange`
-- `WorkspaceReloadRequested`
-- `WorkspaceFolderSolutionChange` / `WorkspaceFolderUpdates` / `WorkspaceConfigurationChanged`
-- `EnterRequestContext` / `LeaveRequestContext` / `ProcessRequestQueue` / `RequestQueueDrained`
-- `ApplyWorkspaceUpdate`
-- `PushDiagnosticsBacklogUpdate` / `PushDiagnosticsProcessPendingDocuments` / `PushDiagnosticsDocumentDiagnosticsResolution`
-- `GetWorkspaceFolder` / `GetWorkspaceFolderUriList` / `ProcessSolutionAwaiters`
-- `PeriodicTimerTick`
-
-**`ServerState` record fields:** `Config`, `LspClient`, `ClientCapabilities`, `TraceLevel`,
-`Workspace`, `RequestQueue`, `PushDiagnostics`, `PeriodicTickTimer`, `ShutdownReceived`,
-`SolutionReadyAwaiters`.
+**Pending-operation model:** Workspace-disrupting operations (`PendingReload`,
+`PendingFolderReplacement`, `PendingSolutionPathChange`) are accumulated in
+`ServerState.PendingOperations` rather than applied immediately. `ApplyWorkspaceUpdate`
+appends new operations inline and posts `DrainIfPendingOperationsReady`; `PeriodicTimerTick`
+also posts `DrainIfPendingOperationsReady` each tick. That event checks whether any operation
+is ready and calls `enterDrainingMode` if so. `RequestQueueDrained` folds the full list
+via `applyPendingOperation` into a single teardown-and-rebuild.
 
 ### 3.7 Diagnostics Pipeline
 
@@ -184,58 +178,27 @@ by most-recently-touched) and `CurrentDocTask` (at most one in-flight resolution
 `pushDiagnosticsBacklogUpdate` rebuilds the backlog from all open documents across workspace
 folders. `processPendingPushDiagnostics` pops the next URI, resolves diagnostics via
 `doc.GetSemanticModelAsync()` → `Analyzers.getDocumentDiagnosticsWithAnalyzers`, and posts the result.
-
-**Internal flow of `processPendingPushDiagnostics`:**
-
-1. Checks `CurrentDocTask` — if one is already in flight, returns immediately.
-2. Pops the next URI from `DocumentBacklog`.
-3. Looks up the workspace folder via `workspaceFolder docUri` and the document via
-   `workspaceFolderDocument AnyDocument docUri`.
-4. Two code paths:
-   - **Normal `.cs` documents:** Obtains `doc: Microsoft.CodeAnalysis.Document` from the
-     workspace. The containing `Project` is accessible via `doc.Project`. Runs in an
-     `async { }` CE via `Async.StartChild`. Obtains `CancellationToken` via
-     `let! ct = Async.CancellationToken`. When `config.analyzersEnabled = true`, calls
-     `Analyzers.getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel`; otherwise
-     falls back to `semanticModel.GetDiagnostics(ct)`.
-   - **Razor `.cshtml` documents:** Falls through when `docForUri = None`, uses
-     `solutionGetRazorDocumentForPath` to get the compilation and syntax tree, then calls
-     `compilation.GetSemanticModel cshtmlTree` directly. Uses compiler diagnostics only
-     (no analyzer support for Razor files yet).
-5. Results are mapped via `Diagnostic.fromRoslynDiagnostic` and posted.
+Razor `.cshtml` files use a separate path via `solutionGetRazorDocumentForPath` with
+compiler-only diagnostics (no analyzer support for Razor yet).
 
 **Test access:** Push diagnostics are observable via `client.GetState().PushDiagnostics`,
-which returns `Map<string, int option * Diagnostic[]>` keyed by document URI (the
-`int option` is the document version).
+which returns `Map<string, int option * Diagnostic[]>` keyed by document URI.
 
 #### Pull Diagnostics (`Handlers/Diagnostic.fs`)
 
 Handles `textDocument/diagnostic` (per-document) and `workspace/diagnostic` (all projects).
 Both paths include **compiler and analyzer diagnostics** via `Roslyn/Analyzers.fs`.
 
-**Document pull (`handle`):** Receives `DocumentDiagnosticParams`, resolves the workspace
-folder and semantic model via `workspaceFolderDocumentSemanticModel`. Also looks up the
-document via `workspaceFolderDocument` to obtain `doc.Project` (needed for analyzer
-references). Filters through `diagnosticIsToBeListed` (suppresses `CS8019` on `.cshtml`).
-When `config.analyzersEnabled = true`, calls
-`Analyzers.getDocumentDiagnosticsWithAnalyzers project semanticModel`; otherwise falls
-back to `semanticModel.GetDiagnostics(ct)`.
+**Document pull (`handle`):** Resolves the workspace folder and semantic model, calls
+`Analyzers.getDocumentDiagnosticsWithAnalyzers` when analyzers are enabled, otherwise falls
+back to `semanticModel.GetDiagnostics`. Suppresses `CS8019` on `.cshtml` files.
 
-**Workspace pull (`getWorkspaceDiagnosticReports`):** Takes `config`, a `knownResultIds`
-map (for unchanged-report optimization), and the list of workspace folders. For each project:
-- Builds `resultId = "{project.Version}/{analyzersEnabled}"` so toggling `analyzersEnabled`
-  invalidates any cached "unchanged" result the client holds
-- Checks if the client already holds results for this `resultId` → emits `Unchanged`
-- Otherwise calls `project.GetCompilationAsync(ct)`; when `config.analyzersEnabled = true`
-  uses `Analyzers.getCompilationDiagnosticsWithAnalyzers project compilation`, otherwise
-  `compilation.GetDiagnostics()`; groups diagnostics by document URI and emits `Full` reports
-- Results flow through a bounded `Channel<WorkspaceDiagnosticsReportsChannelItem>(256)` with
-  one `Async.Start` per project writing to the channel and the main consumer yielding from
-  it as `AsyncSeq`
-
-The `handleWorkspaceDiagnostic` function supports two modes based on `PartialResultToken`:
-- `None` → collects all reports into a single `WorkspaceDiagnosticReport`
-- `Some token` → streams each report via `$/progress` notifications, returns empty report
+**Workspace pull (`getWorkspaceDiagnosticReports`):** Iterates projects, uses a
+`resultId = "{project.Version}/{analyzersEnabled}"` cache key so toggling
+`analyzersEnabled` invalidates any "unchanged" result the client holds. Results stream
+through a bounded channel (one `Async.Start` per project) yielded as `AsyncSeq`.
+Supports both `PartialResultToken`-based streaming (`$/progress`) and a single batched
+response.
 
 #### Analyzer Helpers (`Roslyn/Analyzers.fs`)
 
@@ -291,11 +254,10 @@ let resolve (context: RequestContext) (p: ResolveParams)
 ```
 
 **Key types:**
-- `RequestContext` — a class providing access to `LspClient`, `Config` (`CSharpConfiguration`), `ClientCapabilities`, `ShutdownReceived`, `GetWorkspaceFolder`, `GetWorkspaceFolderReadySolution`, and `GetWorkspaceFolderList`
+- `RequestContext` — provides handlers access to `LspClient`, `Config`, `ClientCapabilities`, `GetWorkspaceFolder`, `GetWorkspaceFolderReadySolution`, etc.
 - `RequestMode` — `ReadOnly` | `ReadWrite` | `ReadOnlyBackground`; controls concurrent scheduling
-- `LspWorkspaceUpdate` — returned alongside the `LspResult` from every handler; carries workspace mutations to apply when the request retires (e.g. document changes, reload requests, settings changes)
-- `LspResult<'T>` — from Ionide; carries either `Ok` or a JSON-RPC error
-- Handler return type: `Async<LspResult<'T> * LspWorkspaceUpdate>` — a tuple of the LSP result and any workspace side-effects
+- `LspWorkspaceUpdate` — carries workspace side-effects (document changes, reload requests, config changes, folder reconfiguration) to be applied when the request retires
+- Handler return type: `Async<LspResult<'T> * LspWorkspaceUpdate>`
 
 ---
 
@@ -359,15 +321,39 @@ These are sent to the client during `handleInitialized` via `client/registerCapa
 
 ---
 
-## 7. Test Infrastructure
+## 7. Debug Introspection Endpoint (`$/csharp/debugState`)
 
-### 7.1 Test Framework
+A `ReadOnly` request handler in `Handlers/Debug.fs` that returns a snapshot of current
+workspace state. Only registered when the server is started with `--debug`
+(`config.debug.debugMode = Some true`); absent otherwise so production servers are
+unaffected.
+
+The `$/` prefix follows the LSP convention for implementation-specific methods — unrecognised
+by clients, they receive a standard `MethodNotFound` (-32601).
+
+Response type (`Types.fs`): `DebugStateResponse option` — `None` when not in debug mode,
+otherwise a record containing a `workspaceFolders` list. Each entry carries `uri`, `name`,
+`solutionPathOverride`, `solutionState` (`"Uninitialized"` / `"Loading"` / `"Ready"` /
+`"Defunct"`), `loadedSolutionPath` (Roslyn `Solution.FilePath` when `Ready`), and
+`openDocumentUris`.
+
+The handler uses `GetWorkspaceFolderList(withSolutionReady = false)` so it never blocks on
+solution loading and is safe to call from a polling loop.
+
+In tests, activate with `ExtraArgs = ["--debug"]` and call `client.GetDebugState()`
+(`Tooling.fs`) which wraps the raw request and throws if the server returns `None`.
+
+---
+
+## 8. Test Infrastructure
+
+### 8.1 Test Framework
 
 - **NUnit** with `[<Parallelizable(ParallelScope.All)>]` — all tests run in parallel
 - **net10.0** target, references main server project directly
 - `Tooling.fs` is the test harness, compiled before all test files
 
-### 7.2 Integration Test Architecture: Out-of-Process via stdio
+### 8.2 Integration Test Architecture: Out-of-Process via stdio
 
 Tests do **not** use in-process hosting. Instead:
 
@@ -386,7 +372,7 @@ Tests do **not** use in-process hosting. Instead:
    disabled by default in tests so per-server CPU cost is low enough to run one process
    per logical core safely
 
-### 7.3 Key Test Classes
+### 8.3 Key Test Classes
 
 #### `LspTestClient` (primary test API)
 
@@ -413,7 +399,7 @@ file.Save()                                   // sends textDocument/didSave
 // Dispose sends textDocument/didClose
 ```
 
-### 7.4 Test Harness API (`Tooling.fs`)
+### 8.4 Test Harness API (`Tooling.fs`)
 
 #### Client Activation Functions
 
@@ -486,7 +472,7 @@ let analyzerPullDiagProfile =
   a `WorkspaceDiagnosticReport`
 - `waitUntilOrTimeout` — polls a predicate with 50ms intervals, fails after timeout
 
-### 7.5 Fixtures
+### 8.5 Fixtures
 
 #### Temp-dir Preparation
 
@@ -542,7 +528,7 @@ Fixtures using this pattern:
 | `testDiagnosticsWork` | Project with deliberate errors for diagnostic tests |
 | `testReferenceWorksDotnet8` | Project pinned to .NET 8 for reference/Go-to-def tests |
 
-### 7.6 Test File Conventions
+### 8.6 Test File Conventions
 
 - **Module-level `[<Test>]` let bindings** — all test files use top-level module functions,
   not `[<TestFixture>]` class style:
@@ -559,7 +545,7 @@ Fixtures using this pattern:
 - **Naming:** file name matches module suffix (e.g. `AnalyzerTests.fs` →
   `module CSharpLanguageServer.Tests.AnalyzerTests`)
 
-### 7.7 Typical Test Pattern
+### 8.7 Typical Test Pattern
 
 ```fsharp
 [<Test>]
@@ -574,7 +560,7 @@ let testSomething () =
     // Dispose: didClose → shutdown → kill process → delete temp dir
 ```
 
-### 7.8 Other Test Categories
+### 8.8 Other Test Categories
 
 | Category | File | How it works |
 |----------|------|-------------|
@@ -590,7 +576,7 @@ let testSomething () =
 
 ---
 
-## 8. Adding a New LSP Feature — Checklist
+## 9. Adding a New LSP Feature — Checklist
 
 1. **Create handler file** `Handlers/NewFeature.fs` following the handler module pattern
    (export `provider`, `registration`, `handle`)

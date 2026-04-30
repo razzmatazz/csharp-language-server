@@ -17,6 +17,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Runtime.JsonRpc
+open CSharpLanguageServer.Types
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
     jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
@@ -114,7 +115,7 @@ let defaultClientProfile =
       SolutionLoadDelay = None
       AnalyzersEnabled = None // defaults to false; only set to Some true in analyzer-specific tests
       ExtraEnv = Map.empty
-      ExtraArgs = [] }
+      ExtraArgs = [ "--debug" ] }
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)
@@ -896,6 +897,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists containsPred
 
+    member self.GetDebugState() : DebugStateResponse =
+        match self.Request<JObject, DebugStateResponse option>("$/csharp/debugState", JObject()) with
+        | Some s -> s
+        | None -> failwith "$/csharp/debugState returned None — start the server with --debug"
+
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
         sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
         |> Async.RunSynchronously
@@ -1023,7 +1029,7 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
     if stopwatch.Elapsed >= timeout then
         Assert.Fail(failureMessage)
 
-let getWorkspaceDiagnosticsForUri (client: LspTestClient) uri =
+let getWorkspaceDiagnosticsForUri (client: LspTestClient) (uri: DocumentUri) : Diagnostic list =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
           PartialResultToken = None

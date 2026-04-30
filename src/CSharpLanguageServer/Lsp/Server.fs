@@ -101,6 +101,7 @@ let getServerCapabilities (config: CSharpConfiguration) (lspClient: InitializePa
         Workspace = Workspace.provider lspClient.Capabilities }
 
 let configureRpcTransport
+    (config: CSharpConfiguration)
     (stateActor: MailboxProcessor<ServerEvent>)
     (rpcTransport: MailboxProcessor<JsonRpcTransportEvent>)
     =
@@ -221,6 +222,10 @@ let configureRpcTransport
         |> Map.add "codeLens/resolve" (callHandler ReadOnly CodeLens.resolve)
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
         |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
+        |> (if config.debug |> Option.bind _.debugMode |> Option.defaultValue false then
+                Map.add "$/csharp/debugState" (callHandler ReadOnly Debug.handle)
+            else
+                id)
 
     let notificationHandlers: JsonRpcNotificationHandlerMap =
         Map.empty
@@ -261,7 +266,7 @@ let startCore (config: CSharpConfiguration) (rpcLogCallback: (JsonRpcLogEntry ->
                 new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
             stateActor.Post(ServerStarted lspClient)
-            configureRpcTransport stateActor rpcTransport)
+            configureRpcTransport config stateActor rpcTransport)
 
     rpcTransport.PostAndAsyncReply(AwaitShutdown) |> Async.RunSynchronously
 
