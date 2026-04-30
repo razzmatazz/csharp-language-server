@@ -35,7 +35,7 @@ type ServerEvent =
     | GetWorkspace of AsyncReplyChannel<LspWorkspace>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
-    | GetDebugInfo of AsyncReplyChannel<CSharpConfiguration * LspWorkspace>
+    | GetDebugInfo of AsyncReplyChannel<CSharpConfiguration * LspWorkspace * RequestQueue>
     | LeaveRequestContext of int64 * LspWorkspaceUpdate
     | PeriodicTimerTick
     | ApplyWorkspaceUpdate of LspWorkspaceUpdate
@@ -189,7 +189,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | GetDebugInfo replyChannel ->
-        replyChannel.Reply(state.Config, state.Workspace)
+        replyChannel.Reply(state.Config, state.Workspace, state.RequestQueue)
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->
