@@ -13,7 +13,7 @@ open CSharpLanguageServer.Tests.Tooling
 // and analyzers explicitly turned on.
 let private analyzerClientProfile =
     { defaultClientProfile with
-        AnalyzersEnabled = Some true
+        ServerConfig = { defaultClientProfile.ServerConfig with analyzersEnabled = Some true }
         ClientCapabilities =
             { defaultClientCapabilities with
                 TextDocument =
@@ -77,7 +77,7 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
     // Use a push-diagnostics profile (no Diagnostic capability) with analyzers on.
     let pushAnalyzerProfile =
         { defaultClientProfile with
-            AnalyzersEnabled = Some true }
+            ServerConfig = { defaultClientProfile.ServerConfig with analyzersEnabled = Some true } }
 
     use client =
         activateFixtureExt "projectWithEditorConfigAnalyzers" pushAnalyzerProfile prebuildProject id

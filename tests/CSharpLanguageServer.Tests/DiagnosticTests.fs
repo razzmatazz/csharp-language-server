@@ -6,6 +6,7 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 
 // This test documents a race: workspace/diagnostic is called while the solution is still
@@ -17,7 +18,9 @@ open CSharpLanguageServer.Tests.Tooling
 let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     let profile =
         { defaultClientProfile with
-            SolutionLoadDelay = Some 3000 }
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    debug = Some { defaultClientProfile.ServerConfig.debug.Value with solutionLoadDelay = Some 3000 } } }
 
     use client = activateFixtureExt "testDiagnosticsWork" profile emptyFixturePatch id
 
@@ -624,7 +627,7 @@ let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
     // report, not be absent.
     let profile =
         { defaultClientProfile with
-            AnalyzersEnabled = Some true }
+            ServerConfig = { defaultClientProfile.ServerConfig with analyzersEnabled = Some true } }
 
     use client =
         activateFixtureExt "projectWithEditorConfigAnalyzers" profile emptyFixturePatch id
@@ -706,7 +709,7 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
     // must cause a full re-scan; every URI from previousResultIds must appear in $/progress.
     let profile =
         { defaultClientProfile with
-            AnalyzersEnabled = Some true }
+            ServerConfig = { defaultClientProfile.ServerConfig with analyzersEnabled = Some true } }
 
     use client =
         activateFixtureExt "projectWithEditorConfigAnalyzers" profile emptyFixturePatch id

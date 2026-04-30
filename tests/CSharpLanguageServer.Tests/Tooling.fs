@@ -33,9 +33,7 @@ let emptyClientCapabilities: ClientCapabilities =
 type LspClientProfile =
     { LoggingEnabled: bool
       ClientCapabilities: ClientCapabilities
-      SolutionLoadDelay: int option
-      AnalyzersEnabled: bool option
-      DebugModeEnabled: bool
+      ServerConfig: CSharpConfiguration
       ExtraEnv: Map<string, string>
       ExtraArgs: string list }
 
@@ -113,9 +111,10 @@ let defaultClientCapabilities =
 let defaultClientProfile =
     { LoggingEnabled = false
       ClientCapabilities = defaultClientCapabilities
-      SolutionLoadDelay = None
-      AnalyzersEnabled = None // defaults to false; only set to Some true in analyzer-specific tests
-      DebugModeEnabled = true
+      ServerConfig =
+        { CSharpConfiguration.Default with
+            useMetadataUris = Some true
+            debug = Some { CSharpDebugConfiguration.Default with debugMode = Some true } }
       ExtraEnv = Map.empty
       ExtraArgs = [] }
 
@@ -180,9 +179,7 @@ let initialClientState =
     { ClientProfile =
         { LoggingEnabled = false
           ClientCapabilities = emptyClientCapabilities
-          SolutionLoadDelay = None
-          AnalyzersEnabled = None
-          DebugModeEnabled = true
+          ServerConfig = CSharpConfiguration.Default
           ExtraEnv = Map.empty
           ExtraArgs = [] }
       LoggingEnabled = false
@@ -207,22 +204,7 @@ type LspClientEvent =
 let buildConfigurationResponse (paramsToken: JToken option) (clientProfile: LspClientProfile) : JToken =
     let getSectionConfiguration (section: string) : Option<JToken> =
         match section with
-        | "csharp" ->
-            let debugObj =
-                match clientProfile.SolutionLoadDelay, clientProfile.DebugModeEnabled with
-                | None, false -> None
-                | loadDelay, debugMode ->
-                    Some
-                        {| solutionLoadDelay = loadDelay
-                           debugMode = if debugMode then Some true else None |}
-
-            let analyzersEnabled = clientProfile.AnalyzersEnabled |> Option.defaultValue false
-
-            {| metadataUris = true
-               analyzersEnabled = analyzersEnabled
-               debug = debugObj |}
-            |> serialize
-            |> Some
+        | "csharp" -> clientProfile.ServerConfig |> serialize |> Some
         | _ -> None
 
     paramsToken
@@ -680,7 +662,10 @@ type LspTestClient(clientProfile: LspClientProfile) =
             let testFailed =
                 TestContext.CurrentContext.Result.Outcome.Status = NUnit.Framework.Interfaces.TestStatus.Failed
 
-            if solutionLoaded && testFailed && clientProfile.DebugModeEnabled then
+            let debugModeEnabled =
+                clientProfile.ServerConfig.debug |> Option.bind _.debugMode |> Option.defaultValue false
+
+            if solutionLoaded && testFailed && debugModeEnabled then
                 // CurrentRepeatCount is 0-based; include it when > 0 so retried tests are
                 // clearly labelled (attempt 2, attempt 3, …) without cluttering the common case.
                 let attemptSuffix =
@@ -940,7 +925,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member self.GetDebugState() : DebugInfo =
         match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
         | Some s -> s
-        | None -> failwith "$/csharp/debugInfo returned None — set DebugModeEnabled = true in the client profile"
+        | None -> failwith "$/csharp/debugInfo returned None — set ServerConfig.debug.debugMode = Some true in the client profile"
 
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
         sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
