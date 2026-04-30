@@ -11,12 +11,12 @@ open CSharpLanguageServer.Types
 [<RequireQualifiedAccess>]
 module Debug =
     let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
-        let solutionState, _solutionFilePath =
+        let solutionState =
             match wf.Solution with
-            | Uninitialized -> "Uninitialized", None
-            | Loading -> "Loading", None
-            | Loaded(_, solution) -> "Loaded", Some solution.FilePath
-            | Defunct _ -> "Defunct", None
+            | Uninitialized -> "Uninitialized"
+            | Loading -> "Loading"
+            | Loaded _ -> "Loaded"
+            | Defunct _ -> "Defunct"
 
         { uri = wf.Uri
           name = wf.Name
@@ -30,5 +30,5 @@ module Debug =
         else
             Some
                 { workspace =
-                    { phase = "(None)"
+                    { phase = ws.Phase |> string
                       folders = ws.Folders |> List.map toDebugWorkspaceFolderInfo } }
