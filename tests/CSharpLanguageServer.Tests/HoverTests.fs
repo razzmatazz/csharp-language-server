@@ -8,7 +8,7 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
-let testHoverWorks () =
+let testHoverWorksInCSharpFile () =
     use client = activateFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 

@@ -657,15 +657,15 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     interface IDisposable with
         member this.Dispose() =
-            // On test failure, dump server debug state before tearing down the process
-            // so the workspace phase, folder states etc. are visible in the test output.
-            let testFailed =
-                TestContext.CurrentContext.Result.Outcome.Status = NUnit.Framework.Interfaces.TestStatus.Failed
-
+            // Dump server debug state before tearing down the process so the workspace
+            // phase, folder states etc. are visible in the test output.
+            // Note: we cannot check TestContext.CurrentContext.Result.Outcome.Status here
+            // because Dispose() runs while the exception is still unwinding — NUnit records
+            // the failure only after Dispose returns, so the status is not yet "Failed".
             let debugModeEnabled =
                 clientProfile.ServerConfig.debug |> Option.bind _.debugMode |> Option.defaultValue false
 
-            if solutionLoaded && testFailed && debugModeEnabled then
+            if debugModeEnabled then
                 // CurrentRepeatCount is 0-based; include it when > 0 so retried tests are
                 // clearly labelled (attempt 2, attempt 3, …) without cluttering the common case.
                 let attemptSuffix =
