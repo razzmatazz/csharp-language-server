@@ -35,6 +35,7 @@ type LspClientProfile =
       ClientCapabilities: ClientCapabilities
       SolutionLoadDelay: int option
       AnalyzersEnabled: bool option
+      DebugModeEnabled: bool
       ExtraEnv: Map<string, string>
       ExtraArgs: string list }
 
@@ -114,6 +115,7 @@ let defaultClientProfile =
       ClientCapabilities = defaultClientCapabilities
       SolutionLoadDelay = None
       AnalyzersEnabled = None // defaults to false; only set to Some true in analyzer-specific tests
+      DebugModeEnabled = true
       ExtraEnv = Map.empty
       ExtraArgs = [] }
 
@@ -180,6 +182,7 @@ let initialClientState =
           ClientCapabilities = emptyClientCapabilities
           SolutionLoadDelay = None
           AnalyzersEnabled = None
+          DebugModeEnabled = true
           ExtraEnv = Map.empty
           ExtraArgs = [] }
       LoggingEnabled = false
@@ -206,9 +209,12 @@ let buildConfigurationResponse (paramsToken: JToken option) (clientProfile: LspC
         match section with
         | "csharp" ->
             let debugObj =
-                match clientProfile.SolutionLoadDelay with
-                | Some ms -> Some {| solutionLoadDelay = ms |}
-                | None -> None
+                match clientProfile.SolutionLoadDelay, clientProfile.DebugModeEnabled with
+                | None, false -> None
+                | loadDelay, debugMode ->
+                    Some
+                        {| solutionLoadDelay = loadDelay
+                           debugMode = if debugMode then Some true else None |}
 
             let analyzersEnabled = clientProfile.AnalyzersEnabled |> Option.defaultValue false
 
@@ -668,7 +674,30 @@ type LspTestClient(clientProfile: LspClientProfile) =
         client.Post(EmitLogMessage(DateTime.Now, sprintf "ClientActorController.%s" m, msg))
 
     interface IDisposable with
-        member __.Dispose() =
+        member this.Dispose() =
+            // On test failure, dump server debug state before tearing down the process
+            // so the workspace phase, folder states etc. are visible in the test output.
+            let testFailed =
+                TestContext.CurrentContext.Result.Outcome.Status = NUnit.Framework.Interfaces.TestStatus.Failed
+
+            if solutionLoaded && testFailed && clientProfile.DebugModeEnabled then
+                // CurrentRepeatCount is 0-based; include it when > 0 so retried tests are
+                // clearly labelled (attempt 2, attempt 3, …) without cluttering the common case.
+                let attemptSuffix =
+                    let n = TestContext.CurrentContext.CurrentRepeatCount
+                    if n = 0 then "" else sprintf " attempt %d" (n + 1)
+
+                try
+                    let debugInfo =
+                        this.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject())
+
+                    match debugInfo with
+                    | Some info ->
+                        Console.Error.WriteLine("[$/csharp/debugInfo{0}] {1}", attemptSuffix, serialize info |> string)
+                    | None -> Console.Error.WriteLine("[$/csharp/debugInfo{0}] returned None", attemptSuffix)
+                with ex ->
+                    Console.Error.WriteLine("[$/csharp/debugInfo{0}] request failed: {1}", attemptSuffix, string ex)
+
             if solutionLoaded then
                 logMessage "Dispose" "sending ServerStopRequest.."
                 client.PostAndReply(fun rc -> ServerStopRequest rc)
@@ -911,7 +940,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member self.GetDebugState() : DebugInfo =
         match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
         | Some s -> s
-        | None -> failwith "$/csharp/debugInfo returned None — start the server with --debug"
+        | None -> failwith "$/csharp/debugInfo returned None — set DebugModeEnabled = true in the client profile"
 
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
         sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
