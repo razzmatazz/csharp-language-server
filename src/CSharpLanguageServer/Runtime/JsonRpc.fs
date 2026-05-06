@@ -41,6 +41,12 @@ type TransportPhase =
     | ShuttingDown // Shutdown received, handler cancellations fired, waiting for RunningInboundRequests to drain
     | Stopped // all handlers drained, ShutdownWaiters fired
 
+type PendingCall =
+    { Method: string
+      Timeout: TimeSpan option // None ⇒ infinite-wait, no deadline tracked
+      Deadline: DateTimeOffset option // Some only when Timeout is Some
+      ReplyChannel: AsyncReplyChannel<Result<JToken, JToken>> }
+
 type JsonRpcTransportState =
     {
         StdIn: Stream option
@@ -53,7 +59,7 @@ type JsonRpcTransportState =
         NextOutboundRequestId: int
         NextInboundRequestOrdinal: int64
         /// Outbound calls awaiting a response, keyed by the request ID we assigned.
-        PendingOutboundCalls: Map<int, AsyncReplyChannel<Result<JToken, JToken>>>
+        PendingOutboundCalls: Map<int, PendingCall>
         /// Inbound requests currently being handled, keyed by wire ID (string representation).
         RunningInboundRequests: Map<string, JsonRpcRequestContext>
         /// Channels waiting to be notified when the transport shuts down.
@@ -61,6 +67,11 @@ type JsonRpcTransportState =
         /// Optional callback invoked with each raw RPC log entry.
         RpcLogEntryCallback: (JsonRpcLogEntry -> unit) option
         Phase: TransportPhase
+        /// Single shared wakeup timer, created lazily on first armed deadline, reused via Change().
+        Timer: System.Threading.Timer option
+        /// Recently timed-out call IDs kept for 60 s so late responses can be distinguished
+        /// from genuine unknown-ID protocol violations.
+        RecentlyTimedOutCalls: Map<int, DateTimeOffset>
     }
 
 let emptyTransportState =
@@ -77,6 +88,8 @@ let emptyTransportState =
       RunningInboundRequests = Map.empty
       ShutdownWaiters = []
       RpcLogEntryCallback = None
+      Timer = None
+      RecentlyTimedOutCalls = Map.empty
       Phase = Active }
 
 type JsonRpcTransportEvent =
@@ -85,7 +98,11 @@ type JsonRpcTransportEvent =
     | InboundMessage of Result<JObject option, Exception>
     | MessageWriteComplete of success: bool * message: OutboundMessage
     | SendNotification of method: string * methodParams: JToken * AsyncReplyChannel<unit>
-    | SendCall of method: string * methodParams: JToken * AsyncReplyChannel<Result<JToken, JToken>>
+    | SendCall of
+        method: string *
+        methodParams: JToken *
+        callTimeout: TimeSpan option *
+        AsyncReplyChannel<Result<JToken, JToken>>
     | HandlerCompleted of wireIdKey: string * result: Result<JToken, JToken>
     | HandlerFailed of wireIdKey: string * exn
     | HandlerCancelled of wireIdKey: string
@@ -93,6 +110,7 @@ type JsonRpcTransportEvent =
     | NotificationHandlerFailed of method: string * exn
     | AwaitShutdown of AsyncReplyChannel<unit>
     | WriteRpcLogEntry of JsonRpcLogEntry
+    | CheckTimeouts
 
 let readBytes (stream: Stream) (buffer: byte[]) (count: int) = async {
     let rec loop pos remaining = async {
@@ -247,13 +265,46 @@ let makeError (code: int) (message: string) =
 let failPendingOutboundCalls postEvent (state: JsonRpcTransportState) =
     let shutdownErr = makeError -32099 "Transport shut down" :> JToken
 
-    for KeyValue(id, replyChannel) in state.PendingOutboundCalls do
+    for KeyValue(id, pendingCall) in state.PendingOutboundCalls do
         let rpcLogEntry =
             RpcWarn(sprintf "failPendingOutboundCalls: failing pending outbound call id=%d on shutdown" id)
 
         postEvent (WriteRpcLogEntry rpcLogEntry)
 
-        replyChannel.Reply(Error shutdownErr)
+        pendingCall.ReplyChannel.Reply(Error shutdownErr)
+
+/// Arm (or rearm) the single shared timer to fire at the earliest pending deadline.
+/// Disarms the timer when no timed calls remain. Creates the timer lazily on first use;
+/// reuses it via Change() on every subsequent reschedule — no per-call allocation.
+/// Returns the (possibly updated) state with the Timer field set.
+let rescheduleTimer (state: JsonRpcTransportState) (postEvent: JsonRpcTransportEvent -> unit) =
+    let nextDeadline =
+        state.PendingOutboundCalls
+        |> Map.values
+        |> Seq.choose (fun p -> p.Deadline)
+        |> Seq.sort
+        |> Seq.tryHead
+
+    match nextDeadline, state.Timer with
+    | None, Some t ->
+        // No timed calls remain — disarm but keep the Timer instance for future reuse.
+        t.Change(Threading.Timeout.Infinite, Threading.Timeout.Infinite) |> ignore
+        state
+    | None, None -> state
+    | Some deadline, existing ->
+        let delayMs = max 0 (int (deadline - DateTimeOffset.UtcNow).TotalMilliseconds)
+
+        match existing with
+        | Some t ->
+            // Reuse: Change atomically cancels the prior fire and arms the new deadline.
+            t.Change(delayMs, Threading.Timeout.Infinite) |> ignore
+            state
+        | None ->
+            // First-ever arming: create the timer with a stable callback.
+            // The callback is never replaced — every reschedule is just Change().
+            let cb = Threading.TimerCallback(fun _ -> postEvent CheckTimeouts)
+            let t = new Threading.Timer(cb, null, delayMs, Threading.Timeout.Infinite)
+            { state with Timer = Some t }
 
 let makeErrorResponse (id: JToken) (error: JToken) =
     JObject(JProperty("jsonrpc", "2.0"), JProperty("id", id), JProperty("error", error))
@@ -374,30 +425,45 @@ let handleInboundNotification state postEvent (m: string) (msg: JObject) =
             NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
 
 /// Resolve a pending outbound call using an inbound response (no method, id present).
-/// Logs and ignores responses for unknown ids.
+/// Three cases: normal resolution, late response after timeout (RpcWarn), genuine unknown ID (RpcError).
 let handleInboundResponse state postEvent (responseId: JToken) (msg: JObject) =
     let idVal = int responseId
 
     match state.PendingOutboundCalls |> Map.tryFind idVal with
-    | Some replyChannel ->
+    | Some pending ->
         match msg.SelectToken("error") |> Option.ofObj with
-        | Some err -> replyChannel.Reply(Error err)
+        | Some err -> pending.ReplyChannel.Reply(Error err)
         | None ->
             let result =
                 msg.SelectToken("result")
                 |> Option.ofObj
                 |> Option.defaultWith (fun () -> JValue.CreateNull() :> JToken)
 
-            replyChannel.Reply(Ok result)
+            pending.ReplyChannel.Reply(Ok result)
 
-        { state with
-            PendingOutboundCalls = state.PendingOutboundCalls |> Map.remove idVal }
+        let state =
+            { state with
+                PendingOutboundCalls = state.PendingOutboundCalls |> Map.remove idVal }
+
+        rescheduleTimer state postEvent
+
     | None ->
-        postEvent (
-            WriteRpcLogEntry(
-                RpcError(sprintf "handleInboundMessage: received response for unknown outbound call id %d" idVal)
+        if state.RecentlyTimedOutCalls |> Map.containsKey idVal then
+            postEvent (
+                WriteRpcLogEntry(
+                    RpcWarn(
+                        sprintf
+                            "handleInboundResponse: late response for call id=%d — already timed out; response discarded"
+                            idVal
+                    )
+                )
             )
-        )
+        else
+            postEvent (
+                WriteRpcLogEntry(
+                    RpcError(sprintf "handleInboundResponse: response for unknown call id=%d; response discarded" idVal)
+                )
+            )
 
         state
 
@@ -425,6 +491,30 @@ let handleInboundMessage state postEvent (msg: JObject) =
         | None, None ->
             postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: message has no 'method' or 'id' field"))
             state
+
+/// Common shutdown entry point for both EOF and explicit Shutdown.
+/// Fails all pending outbound calls, disposes the timer, cancels all running inbound
+/// handlers, and moves to ShuttingDown. The optional reply channel is appended to
+/// ShutdownWaiters so it is fired once all handlers have drained.
+let beginShutdown postEvent (shutdownWaiter: AsyncReplyChannel<unit> option) (state: JsonRpcTransportState) =
+    failPendingOutboundCalls postEvent state
+    state.Timer |> Option.iter _.Dispose()
+
+    for KeyValue(wireIdKey, _) in state.RunningInboundRequests do
+        postEvent (CancelRequest wireIdKey)
+
+    let shutdownWaiters =
+        match shutdownWaiter with
+        | Some rc -> rc :: state.ShutdownWaiters
+        | None -> state.ShutdownWaiters
+
+    { state with
+        StdIn = None
+        PendingRead = None
+        PendingOutboundCalls = Map.empty
+        Timer = None
+        Phase = ShuttingDown
+        ShutdownWaiters = shutdownWaiters }
 
 /// If we are draining after a Shutdown and the last handler just finished, fire all
 /// ShutdownWaiters (including the original Shutdown reply channel) and move to Stopped.
@@ -501,45 +591,16 @@ let processEvent state postEvent ev =
                 // running inbound handlers, move to ShuttingDown, then drain.
                 // Unlike explicit Shutdown there is no reply channel to push, but any
                 // existing AwaitShutdown waiters will be fired once the map empties.
-                failPendingOutboundCalls postEvent state
-
-                for KeyValue(wireIdKey, _) in state.RunningInboundRequests do
-                    postEvent (CancelRequest wireIdKey)
-
-                let state =
-                    { state with
-                        StdIn = None
-                        PendingRead = None
-                        PendingOutboundCalls = Map.empty
-                        Phase = ShuttingDown }
-
-                tryFireShutdownWaiters state
+                state |> beginShutdown postEvent None |> tryFireShutdownWaiters
         | Error ex ->
             postEvent (WriteRpcLogEntry(RpcError(sprintf "InboundMessage: read error (retrying): %s" (string ex))))
             let pendingRead = state.StdIn |> Option.map (startRead postEvent)
             { state with PendingRead = pendingRead }
 
     | Shutdown rc ->
-        // Stop accepting inbound messages and fail any pending outbound calls.
-        failPendingOutboundCalls postEvent state
-
-        // Cancel every in-flight inbound handler. Each one will eventually post
-        // HandlerCancelled/HandlerCompleted/HandlerFailed back, and tryFireShutdownWaiters
-        // will fire rc (and any AwaitShutdown waiters) once the map is empty.
-        for KeyValue(wireIdKey, _) in state.RunningInboundRequests do
-            postEvent (CancelRequest wireIdKey)
-
-        // Park rc alongside any existing AwaitShutdown waiters — all fired together on drain.
-        let state =
-            { state with
-                StdIn = None
-                PendingRead = None
-                PendingOutboundCalls = Map.empty
-                Phase = ShuttingDown
-                ShutdownWaiters = rc :: state.ShutdownWaiters }
-
-        // If there are no running handlers at all, we are already drained.
-        tryFireShutdownWaiters state
+        // Fail pending calls, cancel all running handlers, move to ShuttingDown.
+        // rc is parked in ShutdownWaiters and fired once all handlers have drained.
+        state |> beginShutdown postEvent (Some rc) |> tryFireShutdownWaiters
 
     | SendNotification(method, methodParams, rc) ->
         match state.Phase with
@@ -561,7 +622,7 @@ let processEvent state postEvent ev =
                 { Payload = msg
                   CompletionRC = Some rc }
 
-    | SendCall(method, methodParams, replyChannel) ->
+    | SendCall(method, methodParams, callTimeout, replyChannel) ->
         match state.Phase with
         | ShuttingDown
         | Stopped ->
@@ -579,12 +640,21 @@ let processEvent state postEvent ev =
                     JProperty("params", methodParams)
                 )
 
+            let pendingCall =
+                { Method = method
+                  Timeout = callTimeout
+                  Deadline = callTimeout |> Option.map (fun t -> DateTimeOffset.UtcNow + t)
+                  ReplyChannel = replyChannel }
+
             let newState =
                 { state with
                     NextOutboundRequestId = id + 1
-                    PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id replyChannel }
+                    PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id pendingCall }
 
-            enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
+            let newState =
+                enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
+
+            rescheduleTimer newState postEvent
 
     | HandlerCompleted(wireIdKey, result) ->
         let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
@@ -659,6 +729,55 @@ let processEvent state postEvent ev =
 
         state
 
+    | CheckTimeouts ->
+        match state.Phase with
+        | ShuttingDown
+        | Stopped ->
+            // Timer callback raced with shutdown disposal — ignore.
+            state
+        | Active ->
+            let now = DateTimeOffset.UtcNow
+
+            // Partition into expired (deadline passed) and still-live entries.
+            let expired, live =
+                state.PendingOutboundCalls
+                |> Map.partition (fun _ p -> p.Deadline |> Option.exists (fun d -> d <= now))
+
+            // Fail every expired call and log with method name + original timeout duration.
+            for KeyValue(id, pending) in expired do
+                let timeoutDesc =
+                    pending.Timeout |> Option.map string |> Option.defaultValue "<no timeout>"
+
+                postEvent (
+                    WriteRpcLogEntry(
+                        RpcWarn(
+                            sprintf
+                                "CheckTimeouts: call id=%d method=%s timed out after %s"
+                                id
+                                pending.Method
+                                timeoutDesc
+                        )
+                    )
+                )
+
+                pending.ReplyChannel.Reply(Error(makeError -32000 "Call timed out" :> JToken))
+
+            // Stamp expired IDs into RecentlyTimedOutCalls, then prune entries older than 60 s.
+            let ttl = TimeSpan.FromSeconds 60.0
+
+            let stamped =
+                (state.RecentlyTimedOutCalls, expired)
+                ||> Map.fold (fun acc id _ -> acc |> Map.add id now)
+
+            let pruned = stamped |> Map.filter (fun _ stamped -> now - stamped <= ttl)
+
+            let state =
+                { state with
+                    PendingOutboundCalls = live
+                    RecentlyTimedOutCalls = pruned }
+
+            rescheduleTimer state postEvent
+
     | WriteRpcLogEntry entry ->
         state.RpcLogEntryCallback |> Option.iter (fun cb -> cb entry)
         state
@@ -699,7 +818,15 @@ let sendJsonRpcNotification (server: MailboxProcessor<JsonRpcTransportEvent>) (m
     server.PostAndAsyncReply(fun rc -> SendNotification(method, methodParams, rc))
 
 let sendJsonRpcCall (transport: MailboxProcessor<JsonRpcTransportEvent>) (method: string) (methodParams: JToken) =
-    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, rc))
+    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, None, rc))
+
+let sendJsonRpcCallWithTimeout
+    (transport: MailboxProcessor<JsonRpcTransportEvent>)
+    (method: string)
+    (methodParams: JToken)
+    (callTimeout: TimeSpan option)
+    =
+    transport.PostAndAsyncReply(fun rc -> SendCall(method, methodParams, callTimeout, rc))
 
 let shutdownJsonRpcTransport (transport: MailboxProcessor<JsonRpcTransportEvent>) =
     transport.PostAndAsyncReply(Shutdown)
