@@ -750,7 +750,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         let initializeResult =
             let initResponse =
-                sendJsonRpcCall transport "initialize" (serialize initializeParams)
+                sendJsonRpcCallWithTimeout
+                    transport
+                    "initialize"
+                    (serialize initializeParams)
+                    (Some(TimeSpan.FromSeconds 15.0))
                 |> Async.RunSynchronously
 
             match initResponse with
@@ -804,7 +808,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     member __.Shutdown() =
         let transport = rpcTransport ()
-        let _ = sendJsonRpcCall transport "shutdown" (JObject()) |> Async.RunSynchronously
+
+        let _ =
+            sendJsonRpcCallWithTimeout transport "shutdown" (JObject()) (Some(TimeSpan.FromSeconds 15.0))
+            |> Async.RunSynchronously
+
         sendJsonRpcNotification transport "exit" (JObject()) |> Async.RunSynchronously
         shutdownJsonRpcTransport transport |> Async.RunSynchronously
 
@@ -902,7 +910,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         let result =
-            sendJsonRpcCall (rpcTransport ()) method (serialize request)
+            sendJsonRpcCallWithTimeout (rpcTransport ()) method (serialize request) (Some(TimeSpan.FromSeconds 15.0))
             |> Async.RunSynchronously
 
         match result with
