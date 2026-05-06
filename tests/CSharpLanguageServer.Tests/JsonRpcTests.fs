@@ -589,6 +589,341 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
+[<Test>]
+let testActorRemainsHealthyAfterTimeout () =
+    // After a timed-out call, the actor must still process a subsequent call that
+    // receives a real response — proves PendingOutboundCalls was cleaned up properly.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    // First call — will time out because no response is sent.
+    let timedOutTask =
+        sendJsonRpcCallWithTimeout server "test/hang" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        |> Async.StartAsTask
+
+    let timedOutCompleted = timedOutTask.Wait(TimeSpan.FromMilliseconds 500.0)
+    Assert.IsTrue(timedOutCompleted, "First call should have timed out")
+
+    match timedOutTask.Result with
+    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for first (timed-out) call")
+
+    // Second call — this time we feed a real response back.
+    // Wait for the outbound request to appear on stdout first.
+    let outboundMessages = waitForMessages stdout 1 3000
+    Assert.AreEqual(1, outboundMessages.Length, "Expected 1 outbound message (first call's request)")
+
+    // NOTE: the first call's outbound request is already on stdout. Send a second call
+    // and immediately respond to it.
+    let healthyTask =
+        sendJsonRpcCallWithTimeout server "test/healthy" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        |> Async.StartAsTask
+
+    // Wait for the second request to appear on stdout
+    waitUntil 3000 (fun () -> countMessages stdout >= 2) |> ignore
+    Thread.Sleep 50
+    stdout.Position <- 0L
+    let allOutbound = waitForMessages stdout 2 1000
+    Assert.AreEqual(2, allOutbound.Length, "Expected 2 outbound requests total")
+
+    let secondRequestId = int allOutbound.[1].["id"]
+
+    // Feed back a success response for the second call
+    let successResponse =
+        JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", secondRequestId),
+            JProperty("result", JObject(JProperty("alive", true)))
+        )
+
+    let responseBytes = encodeMessage (string successResponse)
+    clientToServer.Write(responseBytes, 0, responseBytes.Length)
+    clientToServer.Flush()
+
+    let healthyCompleted = healthyTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(healthyCompleted, "Second call should have received a reply")
+
+    match healthyTask.Result with
+    | Ok reply -> Assert.AreEqual(true, System.Convert.ToBoolean(reply.SelectToken("alive")))
+    | Error err -> Assert.Fail(sprintf "Expected Ok for second call but got Error: %s" (string err))
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testReplyBeforeDeadlineReturnsOk () =
+    // A call with a 5 s timeout that gets a real response in ~50 ms must return Ok,
+    // and the actor's Timer must be disarmed (no spurious CheckTimeouts side-effects).
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCallWithTimeout server "test/fast" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        |> Async.StartAsTask
+
+    // Wait for the outbound request then reply quickly
+    let outboundMessages = waitForMessages stdout 1 3000
+    let outboundId = int outboundMessages.[0].["id"]
+
+    Thread.Sleep 50 // simulate a 50 ms round trip — well before the 5 s deadline
+
+    let successResponse =
+        JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", outboundId),
+            JProperty("result", JObject(JProperty("value", 99)))
+        )
+
+    let responseBytes = encodeMessage (string successResponse)
+    clientToServer.Write(responseBytes, 0, responseBytes.Length)
+    clientToServer.Flush()
+
+    let completed = replyTask.Wait(TimeSpan.FromSeconds 3.0)
+    Assert.IsTrue(completed, "Call should resolve before the 5 s deadline")
+
+    match replyTask.Result with
+    | Ok reply -> Assert.AreEqual(99, int (reply.SelectToken("value")))
+    | Error err -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string err))
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
+    // Two calls with 200 ms / 220 ms timeouts against a peer that never replies.
+    // Both should be failed with Error(-32000); the second deadline is close enough
+    // that a single CheckTimeouts sweep should catch both.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let task1 =
+        sendJsonRpcCallWithTimeout server "test/hang1" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        |> Async.StartAsTask
+
+    let task2 =
+        sendJsonRpcCallWithTimeout server "test/hang2" (JObject()) (Some(TimeSpan.FromMilliseconds 220.0))
+        |> Async.StartAsTask
+
+    // Both must complete well within 1 s
+    let completed1 = task1.Wait(TimeSpan.FromSeconds 1.0)
+    let completed2 = task2.Wait(TimeSpan.FromSeconds 1.0)
+
+    Assert.IsTrue(completed1, "First call should have timed out within 1 s")
+    Assert.IsTrue(completed2, "Second call should have timed out within 1 s")
+
+    for task, label in [ task1, "first"; task2, "second" ] do
+        match task.Result with
+        | Error err ->
+            Assert.AreEqual(-32000, int (err.SelectToken("code")), sprintf "Expected -32000 for %s call" label)
+            Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
+        | Ok _ -> Assert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
+    // Schedule a call with a 5 s deadline, then a second call with a 200 ms deadline.
+    // The second (shorter) deadline must cause the timer to re-arm via Change() and
+    // fire at ~200 ms, not at 5 s.  We assert the 200 ms call times out within 500 ms.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    // Long-deadline call — should still be pending when the short one fires
+    let longTask =
+        sendJsonRpcCallWithTimeout server "test/long" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        |> Async.StartAsTask
+
+    // Short-deadline call — must fire at ~200 ms regardless of the 5 s timer already armed
+    let shortTask =
+        sendJsonRpcCallWithTimeout server "test/short" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        |> Async.StartAsTask
+
+    let sw = System.Diagnostics.Stopwatch.StartNew()
+    let shortCompleted = shortTask.Wait(TimeSpan.FromMilliseconds 500.0)
+    sw.Stop()
+
+    Assert.IsTrue(
+        shortCompleted,
+        sprintf "Short-deadline call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds
+    )
+
+    match shortTask.Result with
+    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for the short-deadline call")
+
+    // Long call should still be pending (not yet timed out after ~200 ms wall time)
+    Assert.IsFalse(longTask.IsCompleted, "Long-deadline call should still be pending after ~200 ms")
+
+    // Clean up — shutdown will fail the long call with -32099
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let longCompleted = longTask.Wait(TimeSpan.FromSeconds 3.0)
+    Assert.IsTrue(longCompleted, "Long-deadline call should be failed on shutdown")
+
+    match longTask.Result with
+    | Error err -> Assert.AreEqual(-32099, int (err.SelectToken("code")))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) for long-deadline call after shutdown")
+
+[<Test>]
+let testShutdownDisposesTimerAndFailsPendingTimedCall () =
+    // Start a transport with a 30 s timed call (deadline never fires during the test).
+    // Shut the transport down; the call must be failed with -32099 (not -32000),
+    // proving that shutdown wins over the timer.
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCallWithTimeout server "test/long-hang" (JObject()) (Some(TimeSpan.FromSeconds 30.0))
+        |> Async.StartAsTask
+
+    // Wait for the outbound request so we know the call is registered
+    waitForMessages stdout 1 3000 |> ignore
+
+    // Shut down — timer should be disposed; pending call failed with -32099
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let completed = replyTask.Wait(TimeSpan.FromSeconds 3.0)
+    Assert.IsTrue(completed, "Pending timed call should be unblocked by shutdown")
+
+    match replyTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Shutdown must return -32099, not the timer's -32000")
+        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) after shutdown, got Ok")
+
+[<Test>]
+let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
+    // Call with a 100 ms timeout; wait for it to expire; then feed the response back.
+    // The rpc-log callback must receive an RpcWarn("late response") and must NOT
+    // receive an RpcError for that same id.
+    let logEntries = System.Collections.Generic.List<JsonRpcLogEntry>()
+
+    let logCallback (entry: JsonRpcLogEntry) =
+        lock logEntries (fun () -> logEntries.Add(entry))
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout (Some logCallback) (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCallWithTimeout server "test/late-peer" (JObject()) (Some(TimeSpan.FromMilliseconds 100.0))
+        |> Async.StartAsTask
+
+    // Capture the outbound id before the timeout fires
+    let outboundMessages = waitForMessages stdout 1 3000
+    let outboundId = int outboundMessages.[0].["id"]
+
+    // Let the 100 ms deadline fire and the call be failed
+    let timedOut = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
+    Assert.IsTrue(timedOut, "Call should have timed out")
+
+    match replyTask.Result with
+    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Ok _ -> Assert.Fail("Expected Error(-32000)")
+
+    // Now feed back the late response (300 ms after the timeout fired)
+    Thread.Sleep 300
+
+    let lateResponse =
+        JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", outboundId),
+            JProperty("result", JObject(JProperty("late", true)))
+        )
+
+    let responseBytes = encodeMessage (string lateResponse)
+    clientToServer.Write(responseBytes, 0, responseBytes.Length)
+    clientToServer.Flush()
+
+    // Give the actor time to process the late response
+    Thread.Sleep 200
+
+    let entries = lock logEntries (fun () -> logEntries |> Seq.toList)
+    let idStr = string outboundId
+
+    let lateWarn =
+        entries
+        |> List.exists (fun e ->
+            match e with
+            | RpcWarn msg -> msg.Contains("late") && msg.Contains(idStr)
+            | _ -> false)
+
+    let spuriousError =
+        entries
+        |> List.exists (fun e ->
+            match e with
+            | RpcError msg -> msg.Contains(idStr) && msg.Contains("unknown")
+            | _ -> false)
+
+    Assert.IsTrue(lateWarn, "Expected an RpcWarn entry about a late response for the timed-out call id")
+    Assert.IsFalse(spuriousError, "Must NOT receive an RpcError for the late response (id is in RecentlyTimedOutCalls)")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testUntimedCallDoesNotTimeOut () =
+    // sendJsonRpcCall (no timeout) against a peer that never replies must NOT complete
+    // on its own — the infinite-wait behaviour must be preserved.
+    // We bound the test itself with a short Task.Wait and assert the call is still pending.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCall server "test/untimed-hang" (JObject()) |> Async.StartAsTask
+
+    // Give 500 ms — more than enough for a timer-based timeout to fire if one were armed
+    let completedEarly = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
+
+    Assert.IsFalse(completedEarly, "An untimed call against a non-responding peer must not complete on its own")
+
+    // Clean up: shut down the transport so the call is released
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    let completedAfterShutdown = replyTask.Wait(TimeSpan.FromSeconds 3.0)
+    Assert.IsTrue(completedAfterShutdown, "Untimed call should be released by shutdown")
+
+    match replyTask.Result with
+    | Error err -> Assert.AreEqual(-32099, int (err.SelectToken("code")))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) from shutdown, got Ok")
+
 /// Helper: write a framed JSON-RPC message into a writable pipe stream.
 let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: JObject) =
     let bytes = encodeMessage (string msg)
@@ -1802,3 +2137,36 @@ let testNotificationWithMissingJsonRpcFieldIsSilentlyDropped () =
 
     Assert.AreEqual(0L, stdout.Length, "Dropped notification must produce no output")
     Assert.IsFalse(handlerCalled.Value, "Handler must not be called for invalid notification")
+
+// ---- Per-call timeout tests ----
+
+[<Test>]
+let testSingleCallTimeoutWithNoResponseReturnsError () =
+    // A call made with a 200 ms timeout against a peer that never replies must
+    // return Error(-32000, "Call timed out") well before the 5 s wall-clock guard.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let sw = System.Diagnostics.Stopwatch.StartNew()
+
+    let result =
+        sendJsonRpcCallWithTimeout server "test/hang" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        |> Async.StartAsTask
+
+    // The call must complete within 500 ms of its deadline firing
+    let completed = result.Wait(TimeSpan.FromMilliseconds 500.0)
+
+    sw.Stop()
+
+    Assert.IsTrue(completed, sprintf "Call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds)
+
+    match result.Result with
+    | Error err ->
+        Assert.AreEqual(-32000, int (err.SelectToken("code")), "Expected error code -32000 (Call timed out)")
+        Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
