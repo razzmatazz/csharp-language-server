@@ -114,7 +114,10 @@ let defaultClientProfile =
       ServerConfig =
         { CSharpConfiguration.Default with
             useMetadataUris = Some true
-            debug = Some { CSharpDebugConfiguration.Default with debugMode = Some true } }
+            debug =
+                Some
+                    { CSharpDebugConfiguration.Default with
+                        debugMode = Some true } }
       ExtraEnv = Map.empty
       ExtraArgs = [] }
 
@@ -663,7 +666,9 @@ type LspTestClient(clientProfile: LspClientProfile) =
             // because Dispose() runs while the exception is still unwinding — NUnit records
             // the failure only after Dispose returns, so the status is not yet "Failed".
             let debugModeEnabled =
-                clientProfile.ServerConfig.debug |> Option.bind _.debugMode |> Option.defaultValue false
+                clientProfile.ServerConfig.debug
+                |> Option.bind _.debugMode
+                |> Option.defaultValue false
 
             if debugModeEnabled then
                 // CurrentRepeatCount is 0-based; include it when > 0 so retried tests are
@@ -929,7 +934,9 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member self.GetDebugState() : DebugInfo =
         match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
         | Some s -> s
-        | None -> failwith "$/csharp/debugInfo returned None — set ServerConfig.debug.debugMode = Some true in the client profile"
+        | None ->
+            failwith
+                "$/csharp/debugInfo returned None — set ServerConfig.debug.debugMode = Some true in the client profile"
 
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
         sendJsonRpcNotification (rpcTransport ()) method (serialize ``params``)
