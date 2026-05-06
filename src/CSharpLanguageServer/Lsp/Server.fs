@@ -121,7 +121,13 @@ let configureRpcTransport
             try
                 let! ctx =
                     stateActor.PostAndAsyncReply(fun rc ->
-                        EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
+                        EnterRequestContext(
+                            jsonRpcCtx.RequestOrdinal,
+                            jsonRpcCtx.MethodName,
+                            requestMode,
+                            jsonRpcCtx.CancellationTokenSource,
+                            rc
+                        ))
 
                 let fnParams =
                     jsonRpcCtx.Params
@@ -223,8 +229,8 @@ let configureRpcTransport
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
         |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
         |> Map.add "$/csharp/debugInfo" (fun _jsonRpcCtx -> async {
-            let! config, ws = stateActor.PostAndAsyncReply(GetDebugInfo)
-            return Debug.handle config ws |> serializeNullable |> Ok
+            let! config, ws, rq = stateActor.PostAndAsyncReply(GetDebugInfo)
+            return Debug.handle config ws rq |> serializeNullable |> Ok
         })
 
     let notificationHandlers: JsonRpcNotificationHandlerMap =

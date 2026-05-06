@@ -121,11 +121,10 @@ module TextDocumentSync =
         | Some cshtmlPath ->
             match workspaceFolderAdditionalTextDocumentForPath cshtmlPath wf with
             | Some doc ->
-                let updateWf =
-                    workspaceFolderWithAdditionalTextDocumentTextUpdated doc newSourceText
+                let updateWf = workspaceFolderAdditionalTextDocumentTextUpdated doc newSourceText
 
                 let updateWf2 =
-                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                    workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
                 [ updateWf; updateWf2 ]
 
@@ -137,7 +136,7 @@ module TextDocumentSync =
                     wfUpdates |> List.fold (|>) wf
 
                 let updateWf2 =
-                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                    workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
                 [ updateWf; updateWf2 ]
 
@@ -156,10 +155,10 @@ module TextDocumentSync =
                 // also, as a bonus we can recover from corrupted document view in case document in roslyn solution
                 // went out of sync with editor
                 let updateWf =
-                    workspaceFolderWithDocumentTextUpdated doc (p.TextDocument.Text |> SourceText.From)
+                    workspaceFolderDocumentTextUpdated doc (p.TextDocument.Text |> SourceText.From)
 
                 let updateWf2 =
-                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                    workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
                 [ updateWf; updateWf2 ]
 
@@ -175,7 +174,7 @@ module TextDocumentSync =
                 let _, wfUpdates = wf |> workspaceFolderDocumentAdd docFilePath p.TextDocument.Text
 
                 let updateWfDocOpened =
-                    workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                    workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
                 wfUpdates @ [ updateWfDocOpened ]
 
@@ -213,10 +212,10 @@ module TextDocumentSync =
                 sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
             let updateWf =
-                workspaceFolderWithAdditionalTextDocumentTextUpdated doc updatedSourceText
+                workspaceFolderAdditionalTextDocumentTextUpdated doc updatedSourceText
 
             let updateWf2 =
-                workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
             return [ updateWf; updateWf2 ]
     }
@@ -233,10 +232,10 @@ module TextDocumentSync =
             let updatedSourceText =
                 sourceText |> applyLspContentChangesOnRoslynSourceText p.ContentChanges
 
-            let updateWf = workspaceFolderWithDocumentTextUpdated doc updatedSourceText
+            let updateWf = workspaceFolderDocumentTextUpdated doc updatedSourceText
 
             let updateWf2 =
-                workspaceFolderWithDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
+                workspaceFolderDocOpened p.TextDocument.Uri p.TextDocument.Version DateTime.Now
 
             return [ updateWf; updateWf2 ]
     }
@@ -296,12 +295,11 @@ module TextDocumentSync =
             if File.Exists filename then
                 let sourceFromDisk = sourceTextFromFile filename
 
-                let updateWf =
-                    workspaceFolderWithAdditionalTextDocumentTextUpdated doc sourceFromDisk
+                let updateWf = workspaceFolderAdditionalTextDocumentTextUpdated doc sourceFromDisk
 
                 [ updateWf ]
             else
-                let updateWf = workspaceFolderWithAdditionalDocumentRemoved p.TextDocument.Uri
+                let updateWf = workspaceFolderAdditionalDocumentRemoved p.TextDocument.Uri
                 [ updateWf ]
 
         | _, _ -> []
@@ -322,10 +320,10 @@ module TextDocumentSync =
                 if File.Exists filename then
                     // reverting the file to original contents
                     let sourceFromDisk = sourceTextFromFile filename
-                    let updateWf = workspaceFolderWithDocumentTextUpdated doc sourceFromDisk
+                    let updateWf = workspaceFolderDocumentTextUpdated doc sourceFromDisk
                     [ updateWf ]
                 else
-                    let updateWf = workspaceFolderWithDocumentRemoved p.TextDocument.Uri
+                    let updateWf = workspaceFolderDocumentRemoved p.TextDocument.Uri
                     [ updateWf ]
 
             | _ -> []
@@ -348,7 +346,7 @@ module TextDocumentSync =
                     else
                         didCloseCsharpFile wf context p
 
-                let wfUpdates = wfUpdates @ [ workspaceFolderWithDocClosed p.TextDocument.Uri ]
+                let wfUpdates = wfUpdates @ [ workspaceFolderDocClosed p.TextDocument.Uri ]
 
                 let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
 
