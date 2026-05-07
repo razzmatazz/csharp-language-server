@@ -265,7 +265,7 @@ let startCore (config: CSharpConfiguration) (rpcLogCallback: (JsonRpcLogEntry ->
             let lspClient =
                 new CSharpLspClient(sendJsonRpcNotification rpcTransport, sendJsonRpcCall rpcTransport)
 
-            stateActor.Post(ServerStarted lspClient)
+            stateActor.Post(ServerStarted(lspClient, fun () -> getJsonRpcStats rpcTransport))
             configureRpcTransport config stateActor rpcTransport)
 
     rpcTransport.PostAndAsyncReply(AwaitShutdown) |> Async.RunSynchronously

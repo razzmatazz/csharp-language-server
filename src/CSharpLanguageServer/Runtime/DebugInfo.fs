@@ -8,6 +8,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Lsp.Workspace
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Runtime.JsonRpc
 
 let private logger = Logging.getLoggerByName "Runtime.DebugInfo"
 
@@ -39,9 +40,18 @@ type DebugRequestQueueInfo =
       requests: DebugRequestInfo list
       stats: DebugRequestStatsInfo list }
 
+type DebugRpcStats =
+    { phase: string
+      writeQueueLength: int
+      pendingOutboundCallCount: int
+      runningInboundRequestCount: int
+      timerArmed: bool
+      recentlyTimedOutCallCount: int }
+
 type DebugInfo =
     { workspace: DebugWorkspaceInfo
-      requestQueue: DebugRequestQueueInfo }
+      requestQueue: DebugRequestQueueInfo
+      jsonRpc: DebugRpcStats option }
 
 // Assembly
 
@@ -79,6 +89,7 @@ let assembleDebugInfo
     (config: CSharpConfiguration)
     (workspace: LspWorkspace)
     (requestQueue: RequestQueue)
+    (jsonRpcInfo: JsonRpcStats option)
     : DebugInfo option =
 
     let debugMode = config.debug |> Option.bind _.debugMode |> Option.defaultValue false
@@ -98,6 +109,16 @@ let assembleDebugInfo
             match requestQueue.Mode with
             | Dispatching -> "Dispatching"
             | DrainingUpTo ord -> $"DrainingUpTo({ord})"
+
+        let debugJsonRpcInfo: DebugRpcStats option =
+            jsonRpcInfo
+            |> Option.map (fun r ->
+                { phase = r.Phase
+                  writeQueueLength = r.WriteQueueLength
+                  pendingOutboundCallCount = r.PendingOutboundCallCount
+                  runningInboundRequestCount = r.RunningInboundRequestCount
+                  timerArmed = r.TimerArmed
+                  recentlyTimedOutCallCount = r.RecentlyTimedOutCallCount })
 
         Some
             { workspace =
@@ -120,7 +141,8 @@ let assembleDebugInfo
                                 m.TotalDuration.TotalMilliseconds / float m.Count
                             else
                                 0.0
-                          maxDurationMs = m.MaxDuration.TotalMilliseconds }) } }
+                          maxDurationMs = m.MaxDuration.TotalMilliseconds }) }
+              jsonRpc = debugJsonRpcInfo }
 
 // Formatting
 
@@ -169,3 +191,14 @@ let dumpDebugInfo (info: DebugInfo) : unit =
         logger.LogDebug("---------------------------------")
     else
         logger.LogDebug("------- No request stats  -------")
+
+    match info.jsonRpc with
+    | None -> ()
+    | Some rpc ->
+        logger.LogDebug("-------- JSON-RPC Transport ({phase}) --------", rpc.phase)
+        logger.LogDebug("  WriteQueue length     : {n}", rpc.writeQueueLength)
+        logger.LogDebug("  Outbound calls pending: {n}", rpc.pendingOutboundCallCount)
+        logger.LogDebug("  Inbound reqs running  : {n}", rpc.runningInboundRequestCount)
+        logger.LogDebug("  Timer armed           : {v}", rpc.timerArmed)
+        logger.LogDebug("  Recently timed out    : {n}", rpc.recentlyTimedOutCallCount)
+        logger.LogDebug("----------------------------------------------")

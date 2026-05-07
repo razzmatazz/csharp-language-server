@@ -16,13 +16,14 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Runtime.JsonRpc
 open CSharpLanguageServer.Runtime.DebugInfo
 open CSharpLanguageServer.Runtime.PushDiagnostics
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
 type ServerEvent =
-    | ServerStarted of ILspClient
+    | ServerStarted of ILspClient * (unit -> Async<JsonRpcStats>)
     | ClientInitialize
     | ClientShutdown
     | ClientCapabilityChange of ClientCapabilities
@@ -58,7 +59,8 @@ type ServerState =
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
       SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>>
-      LastDebugDumpTime: DateTime }
+      LastDebugDumpTime: DateTime
+      GetRpcStats: (unit -> Async<JsonRpcStats>) option }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -71,7 +73,8 @@ type ServerState =
           PeriodicTickTimer = None
           ShutdownReceived = false
           SolutionReadyAwaiters = []
-          LastDebugDumpTime = DateTime.MinValue }
+          LastDebugDumpTime = DateTime.MinValue
+          GetRpcStats = None }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let getWorkspaceFolder uri withSolutionReady =
@@ -180,7 +183,15 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | GetDebugInfo replyChannel ->
-        replyChannel.Reply(assembleDebugInfo state.Config state.Workspace state.RequestQueue)
+        let! jsonRpcStats =
+            match state.GetRpcStats with
+            | Some f -> async {
+                let! s = f ()
+                return Some s
+              }
+            | None -> async { return None }
+
+        replyChannel.Reply(assembleDebugInfo state.Config state.Workspace state.RequestQueue jsonRpcStats)
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->
@@ -264,12 +275,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Workspace = newWorkspace
                 SolutionReadyAwaiters = [] }
 
-    | ServerStarted lspClient ->
+    | ServerStarted(lspClient, getRpcStats) ->
         Logging.setLspTraceClient (Some lspClient)
 
         return
             { state with
-                LspClient = Some lspClient }
+                LspClient = Some lspClient
+                GetRpcStats = Some getRpcStats }
 
     | ClientInitialize ->
         let timer =
@@ -408,7 +420,17 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let debugInfo = assembleDebugInfo state.Config state.Workspace state.RequestQueue
+        let! jsonRpcStats =
+            match state.GetRpcStats with
+            | Some f -> async {
+                let! s = f ()
+                return Some s
+              }
+            | None -> async { return None }
+
+        let debugInfo =
+            assembleDebugInfo state.Config state.Workspace state.RequestQueue jsonRpcStats
+
         let debugDumpDeadline = state.LastDebugDumpTime + TimeSpan.FromMinutes(1.0)
 
         let updatedRequestQueue, updatedLastDebugDumpTime =

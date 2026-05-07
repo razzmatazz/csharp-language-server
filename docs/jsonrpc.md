@@ -165,6 +165,25 @@ do! awaitJsonRpcTransportShutdown transport
 
 Parks a waiter that is notified when the transport reaches the `Stopped` phase — i.e. after the shutdown sequence (triggered by either an explicit `shutdownJsonRpcTransport` call or EOF on stdin) has drained all in-flight handlers. Use this as the main wait at the end of your server's entry point.
 
+## Inspecting runtime state (`getJsonRpcStats`)
+
+```fsharp
+let! stats = getJsonRpcStats transport
+```
+
+Sends a `GetRpcStats` event to the actor and returns a `JsonRpcStats` snapshot assembled from the current state, without blocking any other processing. The record contains:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Phase` | `string` | Current `TransportPhase` as a string — `"Active"`, `"ShuttingDown"`, or `"Stopped"`. |
+| `WriteQueueLength` | `int` | Number of outbound messages queued behind the one currently being written. |
+| `PendingOutboundCallCount` | `int` | Number of `sendJsonRpcCall` calls awaiting a response from the peer. |
+| `RunningInboundRequestCount` | `int` | Number of inbound request handlers currently executing on the thread pool. |
+| `TimerArmed` | `bool` | Whether the shared deadline timer is currently armed (i.e. at least one timed outbound call is pending). |
+| `RecentlyTimedOutCallCount` | `int` | Number of call IDs in the 60-second grace window used to distinguish late responses from genuine unknown-ID protocol violations. |
+
+This is intended for diagnostics and debug dumps rather than operational control. The snapshot is consistent with the actor's state at the moment the event is processed, but may be stale by the time the caller acts on it.
+
 ## Testing
 
 Because the transport accepts arbitrary `Stream` values, it can be exercised in unit tests without spawning a process. Pass a pair of in-memory streams (e.g. `System.IO.Pipelines` or linked `MemoryStream`s) in place of stdin/stdout:

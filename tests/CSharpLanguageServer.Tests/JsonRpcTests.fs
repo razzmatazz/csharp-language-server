@@ -104,11 +104,16 @@ let testBasicMethodInvocationReturnsResponse () =
 
     let requestHandlings = Map.ofList [ "test/echo", handler ]
 
-    let stdin = makeInputStream [ string request ]
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
     let _server =
         startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
+
+    let requestBytes = encodeMessage (string request)
+    writeEnd.Write(requestBytes, 0, requestBytes.Length)
+    writeEnd.Flush()
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
@@ -118,6 +123,21 @@ let testBasicMethodInvocationReturnsResponse () =
     Assert.AreEqual("2.0", string response.["jsonrpc"])
     Assert.AreEqual(1, int response.["id"])
     Assert.AreEqual("hello", string (response.SelectToken("result.echo")))
+
+    // After the handler has completed and the response is written the transport
+    // should be quiescent: no running inbound requests and no queued writes.
+    let stats = getJsonRpcStats _server |> Async.RunSynchronously
+    Assert.AreEqual("Active", stats.Phase)
+
+    Assert.AreEqual(
+        0,
+        stats.RunningInboundRequestCount,
+        "No inbound requests should be running after handler completes"
+    )
+
+    Assert.AreEqual(0, stats.WriteQueueLength, "Write queue should be empty after response is flushed")
+
+    shutdownJsonRpcTransport _server |> Async.RunSynchronously
 
 [<Test>]
 let testHandlerReturningEmptyResultProducesResponse () =
@@ -450,21 +470,41 @@ let testWriteQueueDrainsAllResponses () =
 
     let requests =
         [ for i in 1..requestCount ->
-              let req =
-                  JObject(
-                      JProperty("jsonrpc", "2.0"),
-                      JProperty("id", i),
-                      JProperty("method", "test/seq"),
-                      JProperty("params", JObject())
-                  )
+              JObject(
+                  JProperty("jsonrpc", "2.0"),
+                  JProperty("id", i),
+                  JProperty("method", "test/seq"),
+                  JProperty("params", JObject())
+              ) ]
 
-              string req ]
-
-    let stdin = makeInputStream requests
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
-    let _server =
+    let server =
         startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
+
+    // Write all requests into the pipe at once so the transport sees them back-to-back.
+    for req in requests do
+        let bytes = encodeMessage (string req)
+        writeEnd.Write(bytes, 0, bytes.Length)
+
+    writeEnd.Flush()
+
+    // Snapshot stats while responses are still being written — the write queue should
+    // be non-empty at some point while 10 responses are being serialised sequentially.
+    // We poll until we catch at least one moment where the queue is non-empty, which
+    // confirms the write-queue path is exercised.  (If the machine is very fast the
+    // queue may drain before we sample, so we only assert the post-drain state.)
+    let mutable midFlightStats = getJsonRpcStats server |> Async.RunSynchronously
+    let deadline = DateTime.UtcNow.AddSeconds(5.0)
+
+    while midFlightStats.Phase = "Active"
+          && midFlightStats.WriteQueueLength = 0
+          && midFlightStats.RunningInboundRequestCount = 0
+          && DateTime.UtcNow < deadline do
+        Thread.Sleep 5
+        midFlightStats <- getJsonRpcStats server |> Async.RunSynchronously
 
     let responses = waitForMessages stdout requestCount 10000
 
@@ -478,6 +518,15 @@ let testWriteQueueDrainsAllResponses () =
 
     for i in 1..requestCount do
         Assert.IsTrue(receivedIds.Contains(i), sprintf "Missing response for id %d" i)
+
+    // After all responses are flushed the transport should be fully quiescent.
+    let finalStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Active", finalStats.Phase)
+    Assert.AreEqual(0, finalStats.RunningInboundRequestCount, "No handlers should still be running")
+    Assert.AreEqual(0, finalStats.WriteQueueLength, "Write queue should be empty after all responses are sent")
+    Assert.AreEqual(0, finalStats.PendingOutboundCallCount, "No pending outbound calls expected")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 // ---- SendNotification tests ----
 
@@ -565,6 +614,13 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     let outboundId = int outbound.["id"]
 
+    // While the call is still in flight, stats must show exactly one pending outbound
+    // call and no timer (sendJsonRpcCall carries no timeout).
+    let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Active", pendingStats.Phase)
+    Assert.AreEqual(1, pendingStats.PendingOutboundCallCount, "One outbound call should be pending")
+    Assert.AreEqual(false, pendingStats.TimerArmed, "Timer must not be armed for an untimed call")
+
     // Now simulate the client sending a response back through stdin
     let clientResponse =
         JObject(
@@ -587,7 +643,20 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
         Assert.AreEqual("config2", string reply.[1])
     | Error err -> Assert.Fail(sprintf "Expected Ok response but got Error: %s" (string err))
 
+    // Pending call resolved — count must drop back to zero before we shut down.
+    let resolvedStats = getJsonRpcStats server |> Async.RunSynchronously
+
+    Assert.AreEqual(
+        0,
+        resolvedStats.PendingOutboundCallCount,
+        "Pending call count should be zero after response received"
+    )
+
     shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+    // Transport must be in the Stopped phase after a clean shutdown.
+    let stoppedStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Stopped", stoppedStats.Phase)
 
 [<Test>]
 let testActorRemainsHealthyAfterTimeout () =
@@ -721,6 +790,13 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
         sendJsonRpcCallWithTimeout server "test/hang2" (JObject()) (Some(TimeSpan.FromMilliseconds 220.0))
         |> Async.StartAsTask
 
+    // While both calls are still pending the stats must show two pending outbound calls
+    // and the shared timer armed for the earlier of the two deadlines.
+    waitForMessages stdout 2 3000 |> ignore // ensure both requests hit the wire first
+    let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual(2, pendingStats.PendingOutboundCallCount, "Both outbound calls should be pending")
+    Assert.AreEqual(true, pendingStats.TimerArmed, "Timer must be armed when timed calls are pending")
+
     // Both must complete well within 1 s
     let completed1 = task1.Wait(TimeSpan.FromSeconds 1.0)
     let completed2 = task2.Wait(TimeSpan.FromSeconds 1.0)
@@ -734,6 +810,14 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
             Assert.AreEqual(-32000, int (err.SelectToken("code")), sprintf "Expected -32000 for %s call" label)
             Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
         | Ok _ -> Assert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
+
+    // After both timeouts fire: no pending calls, timer disarmed, and both IDs stamped
+    // into RecentlyTimedOutCalls so that late responses can be distinguished from
+    // genuine unknown-id violations.
+    let afterStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual(0, afterStats.PendingOutboundCallCount, "All pending calls should be gone after timeout")
+    Assert.AreEqual(false, afterStats.TimerArmed, "Timer should be disarmed once no timed calls remain")
+    Assert.AreEqual(2, afterStats.RecentlyTimedOutCallCount, "Both timed-out IDs should be in RecentlyTimedOutCalls")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -1090,11 +1174,27 @@ let testShutdownDrainsAllConcurrentHandlers () =
         "Shutdown should not complete while handlers are running"
     )
 
+    // During the drain the transport must report ShuttingDown and all three handlers
+    // still occupying RunningInboundRequests.
+    let drainingStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("ShuttingDown", drainingStats.Phase)
+
+    Assert.AreEqual(
+        count,
+        drainingStats.RunningInboundRequestCount,
+        "All handlers should be listed as running during drain"
+    )
+
     mayFinishTcs.SetResult(())
 
     let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
     Assert.IsTrue(completed, "Shutdown should complete after all handlers finish")
     Assert.AreEqual(count, finishedCount.Value, "All handlers should have finished")
+
+    // Once fully stopped, the phase must flip to Stopped and the map be empty.
+    let stoppedStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Stopped", stoppedStats.Phase)
+    Assert.AreEqual(0, stoppedStats.RunningInboundRequestCount, "No handlers should remain after shutdown completes")
 
 // ---- Late sendJsonRpc* guard tests ----
 
@@ -2168,5 +2268,133 @@ let testSingleCallTimeoutWithNoResponseReturnsError () =
         Assert.AreEqual(-32000, int (err.SelectToken("code")), "Expected error code -32000 (Call timed out)")
         Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
     | Ok _ -> Assert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+// ---- getJsonRpcStats tests ----
+
+[<Test>]
+let testGetRpcStatsIdleTransportIsActiveWithEmptyCounters () =
+    // A freshly started transport with no messages in flight must report Active phase
+    // and zero counts across all counters.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
+    use stdout = new MemoryStream()
+
+    let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let stats = getJsonRpcStats server |> Async.RunSynchronously
+
+    Assert.AreEqual("Active", stats.Phase)
+    Assert.AreEqual(0, stats.WriteQueueLength, "Idle transport should have empty write queue")
+    Assert.AreEqual(0, stats.PendingOutboundCallCount, "Idle transport should have no pending outbound calls")
+    Assert.AreEqual(0, stats.RunningInboundRequestCount, "Idle transport should have no running inbound requests")
+    Assert.AreEqual(false, stats.TimerArmed, "Timer should not be armed when there are no timed calls")
+    Assert.AreEqual(0, stats.RecentlyTimedOutCallCount, "No recently timed-out calls on a fresh transport")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testGetRpcStatsRunningHandlerIsVisible () =
+    // While a slow inbound handler is executing, RunningInboundRequestCount must be 1.
+    // Once it completes and the response is flushed, the count must drop back to 0.
+    use handlerStarted = new ManualResetEventSlim(false)
+    use handlerMayFinish = new ManualResetEventSlim(false)
+
+    let handler _ctx = async {
+        handlerStarted.Set()
+        // Use AwaitWaitHandle so the thread-pool thread is released while waiting,
+        // leaving the pool free for the actor mailbox and getJsonRpcStats to run.
+        do! Async.AwaitWaitHandle(handlerMayFinish.WaitHandle) |> Async.Ignore
+        return Ok(JValue.CreateNull() :> JToken)
+    }
+
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.ofList [ "test/slow", handler ], Map.empty)
+
+    writeMessageToPipe
+        clientToServer
+        (JObject(
+            JProperty("jsonrpc", "2.0"),
+            JProperty("id", 1),
+            JProperty("method", "test/slow"),
+            JProperty("params", JObject())
+        ))
+
+    Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+
+    let duringStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Active", duringStats.Phase)
+    Assert.AreEqual(1, duringStats.RunningInboundRequestCount, "Exactly one handler should be running")
+    Assert.AreEqual(0, duringStats.PendingOutboundCallCount)
+
+    // Unblock the handler, then wait for its response to appear in stdout before
+    // checking the counters — this ensures HandlerCompleted has been processed.
+    handlerMayFinish.Set()
+    let gotResponse = waitForMessages stdout 1 5000
+    Assert.AreEqual(1, gotResponse.Length, "Handler should have produced a response")
+    Thread.Sleep 50 // let the actor process HandlerCompleted
+
+    let afterStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual(0, afterStats.RunningInboundRequestCount, "Running count should be zero after handler finishes")
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
+
+[<Test>]
+let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
+    // Issuing a timed outbound call must arm the timer (TimerArmed = true).
+    // Receiving the response before the deadline must disarm it (TimerArmed = false).
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new MemoryStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCallWithTimeout server "test/timed" (JObject()) (Some(TimeSpan.FromSeconds 30.0))
+        |> Async.StartAsTask
+
+    // Wait for the outbound request so the call is registered in PendingOutboundCalls.
+    let outbound = waitForMessages stdout 1 3000
+    Assert.AreEqual(1, outbound.Length)
+
+    let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual(1, pendingStats.PendingOutboundCallCount, "One timed call should be pending")
+    Assert.AreEqual(true, pendingStats.TimerArmed, "Timer must be armed for a timed call")
+
+    // Feed back a success response — the call resolves and the timer should be disarmed.
+    let outboundId = int outbound.[0].["id"]
+
+    let response =
+        JObject(JProperty("jsonrpc", "2.0"), JProperty("id", outboundId), JProperty("result", JValue("ok")))
+
+    writeMessageToPipe clientToServer response
+
+    let completed = replyTask.Wait(TimeSpan.FromSeconds 5.0)
+    Assert.IsTrue(completed, "Call should have resolved")
+
+    match replyTask.Result with
+    | Ok v -> Assert.AreEqual("ok", string v)
+    | Error e -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string e))
+
+    // Give the actor a beat to process the response and reschedule the timer.
+    Thread.Sleep 50
+
+    let resolvedStats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual(0, resolvedStats.PendingOutboundCallCount, "Call should be gone from PendingOutboundCalls")
+    Assert.AreEqual(false, resolvedStats.TimerArmed, "Timer must be disarmed after all timed calls resolve")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously

@@ -17,6 +17,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Runtime.JsonRpc
+open CSharpLanguageServer.Runtime.DebugInfo
 open CSharpLanguageServer.Types
 
 let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =

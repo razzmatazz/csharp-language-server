@@ -17,6 +17,15 @@ type JsonRpcLogEntry =
     | RpcWarn of string
     | RpcDebug of string
 
+/// A point-in-time snapshot of transport internals, assembled on demand.
+type JsonRpcStats =
+    { Phase: string
+      WriteQueueLength: int
+      PendingOutboundCallCount: int
+      RunningInboundRequestCount: int
+      TimerArmed: bool
+      RecentlyTimedOutCallCount: int }
+
 type JsonRpcRequestContext =
     { MethodName: string
       RequestOrdinal: int64
@@ -111,6 +120,7 @@ type JsonRpcTransportEvent =
     | AwaitShutdown of AsyncReplyChannel<unit>
     | WriteRpcLogEntry of JsonRpcLogEntry
     | CheckTimeouts
+    | GetRpcStats of AsyncReplyChannel<JsonRpcStats>
 
 let readBytes (stream: Stream) (buffer: byte[]) (count: int) = async {
     let rec loop pos remaining = async {
@@ -274,9 +284,10 @@ let failPendingOutboundCalls postEvent (state: JsonRpcTransportState) =
         pendingCall.ReplyChannel.Reply(Error shutdownErr)
 
 /// Arm (or rearm) the single shared timer to fire at the earliest pending deadline.
-/// Disarms the timer when no timed calls remain. Creates the timer lazily on first use;
-/// reuses it via Change() on every subsequent reschedule — no per-call allocation.
-/// Returns the (possibly updated) state with the Timer field set.
+/// Disposes and clears the timer when no timed calls remain, so that Timer = None
+/// reliably means "not armed". Creates the timer lazily on first use; reuses it via
+/// Change() when rescheduling between live calls — no per-call allocation in steady state.
+/// Returns the (possibly updated) state with the Timer field set or cleared.
 let rescheduleTimer (state: JsonRpcTransportState) (postEvent: JsonRpcTransportEvent -> unit) =
     let nextDeadline =
         state.PendingOutboundCalls
@@ -287,9 +298,9 @@ let rescheduleTimer (state: JsonRpcTransportState) (postEvent: JsonRpcTransportE
 
     match nextDeadline, state.Timer with
     | None, Some t ->
-        // No timed calls remain — disarm but keep the Timer instance for future reuse.
-        t.Change(Threading.Timeout.Infinite, Threading.Timeout.Infinite) |> ignore
-        state
+        // No timed calls remain — dispose the timer so Option.isSome correctly reflects armed state.
+        t.Dispose()
+        { state with Timer = None }
     | None, None -> state
     | Some deadline, existing ->
         let delayMs = max 0 (int (deadline - DateTimeOffset.UtcNow).TotalMilliseconds)
@@ -778,6 +789,25 @@ let processEvent state postEvent ev =
 
             rescheduleTimer state postEvent
 
+    | GetRpcStats replyChannel ->
+        let phaseStr =
+            match state.Phase with
+            | Active -> "Active"
+            | ShuttingDown -> "ShuttingDown"
+            | Stopped -> "Stopped"
+
+        replyChannel.Reply(
+            { Phase = phaseStr
+              WriteQueueLength = state.WriteQueue.Length
+              PendingOutboundCallCount = state.PendingOutboundCalls.Count
+              RunningInboundRequestCount = state.RunningInboundRequests.Count
+              TimerArmed = state.Timer |> Option.isSome
+              RecentlyTimedOutCallCount = state.RecentlyTimedOutCalls.Count }
+            : JsonRpcStats
+        )
+
+        state
+
     | WriteRpcLogEntry entry ->
         state.RpcLogEntryCallback |> Option.iter (fun cb -> cb entry)
         state
@@ -833,3 +863,6 @@ let shutdownJsonRpcTransport (transport: MailboxProcessor<JsonRpcTransportEvent>
 
 let awaitJsonRpcTransportShutdown (transport: MailboxProcessor<JsonRpcTransportEvent>) =
     transport.PostAndAsyncReply(AwaitShutdown)
+
+let getJsonRpcStats (transport: MailboxProcessor<JsonRpcTransportEvent>) =
+    transport.PostAndAsyncReply(GetRpcStats)

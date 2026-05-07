@@ -25,6 +25,14 @@ a server process, filter by category:
 dotnet test --filter "FullyQualifiedName~RequestScheduling|FullyQualifiedName~JsonRpc|FullyQualifiedName~ProgressReporter"
 ```
 
+## Test Guidelines
+
+Inside `async {}` handler lambdas passed to the transport or scheduler, never use
+blocking calls (`mre.Wait()`, `Async.RunSynchronously`, `task.Result`, `Thread.Sleep`).
+They starve the thread pool and deadlock the `MailboxProcessor` event loop.
+Use async equivalents (`Async.AwaitWaitHandle`, `let!`, `Async.AwaitTask`, `Async.Sleep`) instead.
+This restriction does not apply to the test body itself, which runs on a dedicated thread.
+
 ## Code Style
 
 - **Language is F#**, not C#. File order in `.fsproj` matters — new files must be inserted at the correct position.
