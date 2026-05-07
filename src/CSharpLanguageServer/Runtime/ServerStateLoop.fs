@@ -16,6 +16,7 @@ open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 open CSharpLanguageServer.Lsp
 open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Runtime.DebugInfo
 open CSharpLanguageServer.Runtime.PushDiagnostics
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
@@ -56,7 +57,8 @@ type ServerState =
       PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
-      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>> }
+      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>>
+      LastDebugDumpTime: DateTime }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -68,7 +70,8 @@ type ServerState =
           PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
           ShutdownReceived = false
-          SolutionReadyAwaiters = [] }
+          SolutionReadyAwaiters = []
+          LastDebugDumpTime = DateTime.MinValue }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let getWorkspaceFolder uri withSolutionReady =
@@ -90,67 +93,6 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
         state.ClientCapabilities,
         state.ShutdownReceived
     )
-
-let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
-    let solutionState =
-        match wf.Solution with
-        | Uninitialized -> "Uninitialized"
-        | Loading _ -> "Loading"
-        | Ready _ -> "Ready"
-        | Defunct _ -> "Defunct"
-
-    { uri = wf.Uri
-      name = wf.Name
-      solutionState = solutionState }
-
-let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
-    let mode =
-        match r.Mode with
-        | ReadOnly -> "ReadOnly"
-        | ReadWrite -> "ReadWrite"
-        | ReadOnlyBackground -> "ReadOnlyBackground"
-
-    let phase =
-        match r.Phase with
-        | Pending -> "Pending"
-        | Running -> "Running"
-        | Finished -> "Finished"
-
-    { ordinal = ordinal
-      name = r.Name
-      mode = mode
-      phase = phase }
-
-let private assembleDebugInfo (state: ServerState) : DebugInfo option =
-    let debugMode =
-        state.Config.debug |> Option.bind _.debugMode |> Option.defaultValue false
-
-    if not debugMode then
-        None
-    else
-        let workspacePhase =
-            match state.Workspace.ReloadPending with
-            | Some _ -> "ReloadPending"
-            | None ->
-                match state.RequestQueue.Mode with
-                | Dispatching -> "Dispatching"
-                | DrainingUpTo ord -> $"DrainingUpTo({ord})"
-
-        let queueMode =
-            match state.RequestQueue.Mode with
-            | Dispatching -> "Dispatching"
-            | DrainingUpTo ord -> $"DrainingUpTo({ord})"
-
-        Some
-            { workspace =
-                { phase = workspacePhase
-                  folders = state.Workspace.Folders |> List.map toDebugWorkspaceFolderInfo }
-              requestQueue =
-                { mode = queueMode
-                  requests =
-                    state.RequestQueue.Requests
-                    |> Map.toList
-                    |> List.map (fun (ord, r) -> toDebugRequestInfo ord r) } }
 
 let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEvent>) ev : Async<ServerState> = async {
     match ev with
@@ -238,8 +180,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | GetDebugInfo replyChannel ->
-        let debugInfo = state |> assembleDebugInfo
-        replyChannel.Reply(debugInfo)
+        replyChannel.Reply(assembleDebugInfo state.Config state.Workspace state.RequestQueue)
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->
@@ -467,14 +408,23 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
     | PeriodicTimerTick ->
         postServerEvent PushDiagnosticsProcessPendingDocuments
 
-        let debugMode =
-            state.Config.debug |> Option.bind _.debugMode |> Option.defaultValue false
+        let debugInfo = assembleDebugInfo state.Config state.Workspace state.RequestQueue
+        let debugDumpDeadline = state.LastDebugDumpTime + TimeSpan.FromMinutes(1.0)
 
-        let updatedRequestQueue = dumpAndResetRequestStats debugMode state.RequestQueue
+        let updatedRequestQueue, updatedLastDebugDumpTime =
+            match debugInfo with
+            | Some info when debugDumpDeadline < DateTime.Now ->
+                dumpDebugInfo info
+
+                { state.RequestQueue with
+                    Stats = Map.empty },
+                DateTime.Now
+            | _ -> state.RequestQueue, state.LastDebugDumpTime
 
         let state =
             { state with
-                RequestQueue = updatedRequestQueue }
+                RequestQueue = updatedRequestQueue
+                LastDebugDumpTime = updatedLastDebugDumpTime }
 
         let solutionReloadDeadline =
             state.Workspace.ReloadPending |> Option.defaultValue (DateTime.UtcNow.AddDays 1)

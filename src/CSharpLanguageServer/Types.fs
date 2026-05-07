@@ -108,26 +108,3 @@ let emptyClientCapabilities: ClientCapabilities =
       Window = None
       General = None
       Experimental = None }
-
-type DebugWorkspaceFolderInfo =
-    { uri: string
-      name: string
-      solutionState: string }
-
-type DebugWorkspaceInfo =
-    { phase: string
-      folders: DebugWorkspaceFolderInfo list }
-
-type DebugRequestInfo =
-    { ordinal: int64
-      name: string
-      mode: string
-      phase: string }
-
-type DebugRequestQueueInfo =
-    { mode: string
-      requests: DebugRequestInfo list }
-
-type DebugInfo =
-    { workspace: DebugWorkspaceInfo
-      requestQueue: DebugRequestQueueInfo }

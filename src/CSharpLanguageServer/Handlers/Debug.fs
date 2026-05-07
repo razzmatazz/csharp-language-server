@@ -1,6 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
-open CSharpLanguageServer.Types
+open CSharpLanguageServer.Runtime.DebugInfo
 
 /// The `$/csharp/debugInfo` endpoint bypasses the normal request-scheduling
 /// pipeline entirely. `Server.fs` posts a `GetDebugInfo` event directly to the

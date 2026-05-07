@@ -151,15 +151,13 @@ type RequestQueue =
         WatermarkRpcOrdinal: int64
         Requests: Map<int64, RequestInfo>
         Stats: Map<string, RequestMetrics>
-        LastStatsDumpTime: DateTime
     }
 
     static member Empty =
         { Mode = Dispatching
           WatermarkRpcOrdinal = 0L
           Requests = Map.empty
-          Stats = Map.empty
-          LastStatsDumpTime = DateTime.MinValue }
+          Stats = Map.empty }
 
 let updateRequestStats requestQueue (request: RequestInfo) (stats: RequestMetrics option) : RequestMetrics option =
     let requestExecutionDuration: TimeSpan =
@@ -245,32 +243,6 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
 
     formatInColumns (headerRow :: dataRows)
 
-let dumpAndResetRequestStats (debugMode: bool) (requestQueue: RequestQueue) : RequestQueue =
-    let statsDumpDeadline = requestQueue.LastStatsDumpTime + TimeSpan.FromMinutes(1.0)
-
-    if debugMode && statsDumpDeadline < DateTime.Now then
-        let modeLabel =
-            match requestQueue.Mode with
-            | Dispatching -> "Dispatching"
-            | DrainingUpTo ord -> $"DrainingUpTo({ord})"
-
-        if not (Map.isEmpty requestQueue.Requests) then
-            logger.LogDebug("------ Current Requests ({mode}) ------", modeLabel)
-            logger.LogDebug("{requests}", (requestQueue |> formatCurrentRequests))
-            logger.LogDebug("---------------------------------------")
-
-        if not (Map.isEmpty requestQueue.Stats) then
-            logger.LogDebug("--------- Request Stats ---------")
-            logger.LogDebug("{stats}", (requestQueue |> formatRequestQueueStats))
-            logger.LogDebug("---------------------------------")
-        else
-            logger.LogDebug("------- No request stats  -------")
-
-        { requestQueue with
-            Stats = Map.empty
-            LastStatsDumpTime = DateTime.Now }
-    else
-        requestQueue
 
 let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
     let newRequest =
