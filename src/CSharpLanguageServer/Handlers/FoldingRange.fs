@@ -198,7 +198,7 @@ module FoldingRange =
                 |> Option.bind _.LineFoldingOnly
                 |> Option.defaultValue false
 
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docMaybe =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)

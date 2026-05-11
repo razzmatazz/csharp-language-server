@@ -48,7 +48,7 @@ module References =
         : Async<LspResult<Location[] option> * LspWorkspaceUpdate> =
         async {
             let! ct = Async.CancellationToken
-            let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
+            let! wf, solution = p.TextDocument.Uri |> context.LoadWorkspaceFolder
 
             match wf, solution with
             | Some wf, Some solution ->

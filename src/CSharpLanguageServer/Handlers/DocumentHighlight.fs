@@ -82,7 +82,7 @@ module DocumentHighlight =
         (p: DocumentHighlightParams)
         : Async<LspResult<DocumentHighlight[] option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty

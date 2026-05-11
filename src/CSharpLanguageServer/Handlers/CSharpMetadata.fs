@@ -17,7 +17,7 @@ module CSharpMetadata =
         async {
             let! ct = Async.CancellationToken
 
-            let! wf, sln = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
+            let! wf, sln = p.TextDocument.Uri |> context.LoadWorkspaceFolder
 
             match wf, sln with
             | Some wf, Some solution ->

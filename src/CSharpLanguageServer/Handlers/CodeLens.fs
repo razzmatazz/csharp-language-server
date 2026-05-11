@@ -122,7 +122,7 @@ module CodeLens =
         (p: CodeLensParams)
         : Async<LspResult<CodeLens[] option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docForUri =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
@@ -164,7 +164,7 @@ module CodeLens =
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
-        let! wf, solution = lensData.DocumentUri |> context.GetWorkspaceFolderReadySolution
+        let! wf, solution = lensData.DocumentUri |> context.LoadWorkspaceFolder
 
         match wf, solution with
         | Some wf, Some solution ->

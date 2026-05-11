@@ -324,7 +324,7 @@ module DocumentSymbol =
                 |> Option.bind _.HierarchicalDocumentSymbolSupport
                 |> Option.defaultValue false
 
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docForUri =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)

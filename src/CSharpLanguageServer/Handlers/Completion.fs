@@ -240,7 +240,7 @@ module Completion =
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
 
         async {
-            let! wf, solution = p.TextDocument.Uri |> context.GetWorkspaceFolderReadySolution
+            let! wf, solution = p.TextDocument.Uri |> context.LoadWorkspaceFolder
 
             match wf, solution with
             | None, _
@@ -336,7 +336,7 @@ module Completion =
         (context: RequestContext)
         : Async<option<Microsoft.CodeAnalysis.Completion.CompletionList * Document>> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docForUri =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)

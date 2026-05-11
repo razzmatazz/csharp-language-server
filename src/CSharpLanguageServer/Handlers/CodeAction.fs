@@ -353,7 +353,7 @@ module CodeAction =
         (p: CodeActionParams)
         : Async<LspResult<TextDocumentCodeActionResult option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docForUri =
                 wf |> Option.bind (workspaceFolderDocument AnyDocument p.TextDocument.Uri)
@@ -421,7 +421,7 @@ module CodeAction =
         let resolutionData =
             p.Data |> Option.map deserialize<CSharpCodeActionResolutionData>
 
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(resolutionData.Value.TextDocumentUri)
+        let! wf, _ = context.LoadWorkspaceFolder(resolutionData.Value.TextDocumentUri)
 
         let docForUri =
             wf
