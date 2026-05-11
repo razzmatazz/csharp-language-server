@@ -58,7 +58,6 @@ type ServerState =
       PushDiagnostics: PushDiagnosticsState
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
-      SolutionReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>>
       LastDebugDumpTime: DateTime
       GetRpcStats: (unit -> Async<JsonRpcStats>) option }
 
@@ -72,7 +71,6 @@ type ServerState =
           PushDiagnostics = PushDiagnosticsState.Empty
           PeriodicTickTimer = None
           ShutdownReceived = false
-          SolutionReadyAwaiters = []
           LastDebugDumpTime = DateTime.MinValue
           GetRpcStats = None }
 
@@ -172,11 +170,13 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 postServerEvent ProcessSolutionAwaiters
 
                 let awaiter = (string uri, replyChannel)
-                let newAwaiters = awaiter :: state.SolutionReadyAwaiters
+                let newAwaiters = awaiter :: state.Workspace.ReadyAwaiters
 
-                return
-                    { state with
-                        SolutionReadyAwaiters = newAwaiters }
+                let newWorkspace =
+                    { state.Workspace with
+                        ReadyAwaiters = newAwaiters }
+
+                return { state with Workspace = newWorkspace }
 
     | GetWorkspaceFolderUriList replyChannel ->
         replyChannel.Reply(state.Workspace.Folders |> List.map _.Uri)
@@ -262,18 +262,15 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Waiting -> return state
 
     | WorkspaceFolderConfigurationChanged workspaceFolders ->
-        for (_, rc) in state.SolutionReadyAwaiters do
-            rc.Reply(None)
-
-        let _ = workspaceTeardown state.Workspace
-
-        let newWorkspace =
-            workspaceFrom workspaceFolders |> workspaceSolutionPathOverride state.Config
+        let updatedWorkspace =
+            state.Workspace
+            |> workspaceTeardown
+            |> workspaceFoldersReplaced workspaceFolders
+            |> workspaceSolutionPathOverride state.Config
 
         return
             { state with
-                Workspace = newWorkspace
-                SolutionReadyAwaiters = [] }
+                Workspace = updatedWorkspace }
 
     | ServerStarted(lspClient, getRpcStats) ->
         Logging.setLspTraceClient (Some lspClient)
@@ -303,11 +300,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | Some timer -> timer.Dispose()
         | None -> ()
 
-        let _ = workspaceTeardown state.Workspace
+        let updatedWorkspace = workspaceTeardown state.Workspace
 
         return
             { state with
                 LspClient = None
+                Workspace = updatedWorkspace
                 PeriodicTickTimer = None
                 ShutdownReceived = true }
 
@@ -406,9 +404,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        for (_, rc) in state.SolutionReadyAwaiters do
-            rc.Reply(None)
-
         let tornDownWorkspace = workspaceTeardown state.Workspace
 
         postServerEvent ProcessRequestQueue
@@ -416,7 +411,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return
             { state with
                 Workspace = tornDownWorkspace
-                SolutionReadyAwaiters = []
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
@@ -467,50 +461,17 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | false -> return state
 
     | ProcessSolutionAwaiters ->
-        let mutable newState = state
+        let onWorkspaceSolutionLoad changes =
+            postServerEvent (WorkspaceFolderSolutionChanged changes)
 
-        //
-        // initiate solution load for all wfs where wf.Solution is Uninitialized
-        //
-        let newWorkspace =
-            let onWorkspaceSolutionLoad changes =
-                postServerEvent (WorkspaceFolderSolutionChanged changes)
-
+        let updatedWorkspace =
             state.Workspace
-            |> workspaceInitializeUninitializedFolders
-                state.LspClient.Value
-                state.ClientCapabilities
-                onWorkspaceSolutionLoad
+            |> workspaceLoadingStarted state.LspClient.Value state.ClientCapabilities onWorkspaceSolutionLoad
+            |> workspaceReadyAwaitersProcessed
 
-        newState <-
-            { newState with
-                Workspace = newWorkspace }
-
-        //
-        // satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
-        //
-        let mutable awaitersToKeep = []
-
-        for awaiter in newState.SolutionReadyAwaiters do
-            let (awaiterWfUri, awaiterRC) = awaiter
-
-            let wf = newState.Workspace |> workspaceFolder awaiterWfUri
-
-            match wf with
-            | None -> awaiterRC.Reply(None)
-
-            | Some wf ->
-                match wf.Solution with
-                | Loaded _ -> awaiterRC.Reply(Some wf)
-                | Defunct _ -> awaiterRC.Reply(None)
-                | Uninitialized
-                | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
-
-        newState <-
-            { newState with
-                SolutionReadyAwaiters = awaitersToKeep }
-
-        return newState
+        return
+            { state with
+                Workspace = updatedWorkspace }
 }
 
 let serverEventLoop initialState (inbox: MailboxProcessor<ServerEvent>) =

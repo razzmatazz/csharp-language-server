@@ -45,12 +45,14 @@ type LspWorkspacePhase =
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list
       Phase: LspWorkspacePhase
-      ReloadPending: DateTime option }
+      ReloadPending: DateTime option
+      ReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>> }
 
     static member Empty =
         { Folders = []
           Phase = LspWorkspacePhase.Uninitialized
-          ReloadPending = None }
+          ReloadPending = None
+          ReadyAwaiters = [] }
 
 type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
@@ -121,9 +123,9 @@ let workspaceSolutionPathOverride (config: CSharpConfiguration) (workspace: LspW
 
     { workspace with Folders = folders }
 
-let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
+let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace: LspWorkspace) =
     if workspaceFolders.Length = 0 then
-        failwith "workspaceFrom: at least 1 workspace folder must be provided!"
+        failwith "workspaceFoldersReplaced: at least 1 workspace folder must be provided!"
 
     let folders =
         workspaceFolders
@@ -133,8 +135,7 @@ let workspaceFrom (workspaceFolders: WorkspaceFolder list) =
                 Name = f.Name })
         |> List.ofSeq
 
-    { LspWorkspace.Empty with
-        Folders = folders }
+    { workspace with Folders = folders }
 
 let workspaceFolder (uri: string) (workspace: LspWorkspace) =
     let workspaceFolderMatchesUri wf =
@@ -175,7 +176,7 @@ type WorkspaceFolderSolutionChange = (string * Guid * LspWorkspaceFolderSolution
 /// `onSolutionChange` is called (on the async load's continuation thread) once each folder's
 /// load settles — it receives the list of `(uri, generation, newSolution)` tuples so the
 /// caller can dispatch a single `WorkspaceFolderSolutionChange` event per folder.
-let workspaceInitializeUninitializedFolders
+let workspaceLoadingStarted
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
     (onSolutionChange: WorkspaceFolderSolutionChange -> unit)
@@ -197,8 +198,33 @@ let workspaceInitializeUninitializedFolders
             ws |> workspaceFolderUpdated updatedWf)
         workspace
 
+/// Satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
+let workspaceReadyAwaitersProcessed (workspace: LspWorkspace) : LspWorkspace =
+    let mutable awaitersToKeep = []
+
+    for awaiter in workspace.ReadyAwaiters do
+        let awaiterWfUri, awaiterRC = awaiter
+
+        let wf = workspace |> workspaceFolder awaiterWfUri
+
+        match wf with
+        | None -> awaiterRC.Reply(None)
+
+        | Some wf ->
+            match wf.Solution with
+            | Loaded _ -> awaiterRC.Reply(Some wf)
+            | Defunct _ -> awaiterRC.Reply(None)
+            | Uninitialized
+            | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
+
+    { workspace with
+        ReadyAwaiters = awaitersToKeep }
+
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
+
+    for (_, rc) in workspace.ReadyAwaiters do
+        rc.Reply(None)
 
     { workspace with
         Folders = tornDownFolders
