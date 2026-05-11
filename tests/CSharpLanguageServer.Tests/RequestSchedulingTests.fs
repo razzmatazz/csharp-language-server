@@ -123,7 +123,6 @@ let private makeTestServerRequestContext (mode: RequestMode) =
         mode,
         new NoOpLspClient() :> ILspClient,
         CSharpConfiguration.Default,
-        (fun () -> failwith "not implemented"),
         (fun _uri _withSolutionReady -> async.Return None),
         (fun () -> async.Return []),
         emptyClientCapabilities,

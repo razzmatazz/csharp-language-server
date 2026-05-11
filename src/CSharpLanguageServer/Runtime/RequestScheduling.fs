@@ -31,7 +31,6 @@ type RequestContext
         requestMode: RequestMode,
         lspClient: ILspClient,
         config: CSharpConfiguration,
-        getWorkspaceSnapshot: unit -> Async<LspWorkspace>,
         getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
         getWorkspaceFolderUriList: unit -> Async<string list>,
         clientCapabilities: ClientCapabilities,
@@ -41,8 +40,6 @@ type RequestContext
     member _.Config = config
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
-
-    member _.GetWorkspaceFolder(uri) = getWorkspaceFolder
 
     member _.GetWorkspaceFolderReadySolution(uri) = async {
         let! wf = getWorkspaceFolder uri true
@@ -54,8 +51,6 @@ type RequestContext
             | Loaded(_, solution) -> return Some wf, Some solution
             | _ -> return Some wf, None
     }
-
-    member _.GetWorkspaceSnapshot() = getWorkspaceSnapshot ()
 
     member _.GetWorkspaceFolderList(withSolutionReady: bool) = async {
         let! wfUris = getWorkspaceFolderUriList ()
