@@ -20,9 +20,16 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full wa
 - Test infrastructure (`LspTestClient`, `LspDocumentHandle`, fixtures)
 - Checklist for adding a new LSP feature
 
+## Iteration Style
+
+Don't over-think syntax or minor details upfront — make structural changes then let
+`dotnet build` / `dotnet test` drive the fixes.
+
 ## Code Style & Commit Conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
+
+Commit messages should be a short single-line summary — no bullet lists of individual changes.
 
 ## Key Docs
 
