@@ -28,6 +28,9 @@ let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
 let testServerRegistersCapabilitiesWithTheClient () =
     use client = activateFixture "genericProject"
 
+    let! debugInfo0 = client.GetDebugInfo()
+    Assert.AreEqual("Configured", debugInfo0.workspace.phase)
+
     let serverInfo = client.GetState().ServerInfo.Value
     Assert.AreEqual("csharp-ls", serverInfo.Name)
 

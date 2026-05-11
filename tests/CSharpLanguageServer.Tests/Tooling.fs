@@ -943,7 +943,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists containsPred
 
-    member self.GetDebugState() : DebugInfo =
+    member self.GetDebugInfo() : DebugInfo =
         match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
         | Some s -> s
         | None ->
