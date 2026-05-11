@@ -25,6 +25,18 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full wa
 Don't over-think syntax or minor details upfront — make structural changes then let
 `dotnet build` / `dotnet test` drive the fixes.
 
+### Debugging server-side data flow from tests
+
+To trace values inside the server process during a test:
+
+1. Add `eprintfn "[DEBUG ...]"` calls at the points of interest in the server source.
+2. In the test, swap `activateFixture` for `activateFixtureWithLoggingEnabled` — this
+   causes the test harness to forward the server's stderr to `Console.Error`, so the
+   `eprintfn` output appears in the test run's "Standard Error Messages" section.
+3. Run `dotnet test --filter FullyQualifiedName~<TestName>` and read the interleaved
+   timeline to understand ordering and values.
+4. Remove the `eprintfn` calls and revert to `activateFixture` once the issue is understood.
+
 ## Code Style & Commit Conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
