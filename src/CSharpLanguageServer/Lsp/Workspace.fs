@@ -45,12 +45,14 @@ type LspWorkspacePhase =
 type LspWorkspace =
     { Folders: LspWorkspaceFolder list
       Phase: LspWorkspacePhase
+      LoadingCts: System.Threading.CancellationTokenSource option
       ReloadPending: DateTime option
       ReadyAwaiters: list<string * AsyncReplyChannel<LspWorkspaceFolder option>> }
 
     static member Empty =
         { Folders = []
           Phase = LspWorkspacePhase.Uninitialized
+          LoadingCts = None
           ReloadPending = None
           ReadyAwaiters = [] }
 
@@ -135,7 +137,9 @@ let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace
                 Name = f.Name })
         |> List.ofSeq
 
-    { workspace with Folders = folders }
+    { workspace with
+        Folders = folders
+        Phase = LspWorkspacePhase.Configured }
 
 let workspaceFolder (uri: string) (workspace: LspWorkspace) =
     let workspaceFolderMatchesUri wf =
@@ -173,9 +177,8 @@ type WorkspaceFolderSolutionChange = (string * Guid * LspWorkspaceFolderSolution
 
 /// For every workspace folder whose solution is still `Uninitialized`, kick off an async
 /// solution load and return the workspace with those folders updated to `Loading`.
-/// `onSolutionChange` is called (on the async load's continuation thread) once each folder's
-/// load settles — it receives the list of `(uri, generation, newSolution)` tuples so the
-/// caller can dispatch a single `WorkspaceFolderSolutionChange` event per folder.
+/// All folder loads run concurrently via Async.Parallel. `onSolutionChange` is called once,
+/// after the last folder settles, with all `(uri, generation, newSolution)` tuples together.
 let workspaceLoadingStarted
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
@@ -185,18 +188,36 @@ let workspaceLoadingStarted
     let uninitializedFolders =
         workspace.Folders |> List.filter _.Solution.IsUninitialized
 
-    uninitializedFolders
-    |> List.fold
-        (fun ws wf ->
-            let onCompletion newSolution =
-                onSolutionChange [ wf.Uri, wf.Generation, newSolution ]
+    match uninitializedFolders with
+    | [] -> workspace
+    | uninitializedFolders ->
+        let folderLoads =
+            uninitializedFolders
+            |> List.map (fun wf ->
+                let loadingAsync = workspaceFolderSolutionLoad lspClient clientCapabilities wf
 
-            let updatedWf =
-                wf
-                |> workspaceFolderSolutionInitialized lspClient clientCapabilities onCompletion
+                { wf with Solution = Loading },
+                async {
+                    let! result = loadingAsync
+                    return wf.Uri, wf.Generation, result
+                })
 
-            ws |> workspaceFolderUpdated updatedWf)
-        workspace
+        let updatedWorkspace =
+            folderLoads
+            |> List.fold (fun ws (updatedWf, _) -> ws |> workspaceFolderUpdated updatedWf) workspace
+
+        let cts = new System.Threading.CancellationTokenSource()
+
+        let aggregatingAsync = async {
+            let! results = folderLoads |> List.map snd |> Async.Parallel
+            onSolutionChange (results |> Array.toList)
+        }
+
+        Async.Start(aggregatingAsync, cancellationToken = cts.Token)
+
+        { updatedWorkspace with
+            Phase = LspWorkspacePhase.Loading
+            LoadingCts = Some cts }
 
 /// Satisfy and release awaiters immediately where uri resolves to wf.Solution that is Loaded or Defunct
 let workspaceReadyAwaitersProcessed (workspace: LspWorkspace) : LspWorkspace =
@@ -215,10 +236,29 @@ let workspaceReadyAwaitersProcessed (workspace: LspWorkspace) : LspWorkspace =
             | Loaded _ -> awaiterRC.Reply(Some wf)
             | Defunct _ -> awaiterRC.Reply(None)
             | Uninitialized
-            | Loading _ -> awaitersToKeep <- awaiter :: awaitersToKeep
+            | Loading -> awaitersToKeep <- awaiter :: awaitersToKeep
 
     { workspace with
         ReadyAwaiters = awaitersToKeep }
+
+/// Apply a batch of folder-solution results to the workspace: patch each folder's Solution
+/// (discarding stale generations), flush ReadyAwaiters, and advance Phase to Ready.
+let workspaceFolderSolutionChangesApplied
+    (changes: WorkspaceFolderSolutionChange)
+    (workspace: LspWorkspace)
+    : LspWorkspace =
+
+    let applyChange ws (uri, generation, newSolution) =
+        match ws |> workspaceFolder uri with
+        | None -> ws
+        | Some wf ->
+            if wf.Generation <> generation then
+                // Stale event from a cancelled/superseded load — discard silently.
+                ws
+            else
+                ws |> workspaceFolderUpdated { wf with Solution = newSolution }
+
+    changes |> List.fold applyChange workspace
 
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
@@ -226,6 +266,13 @@ let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     for (_, rc) in workspace.ReadyAwaiters do
         rc.Reply(None)
 
+    match workspace.LoadingCts with
+    | Some cts ->
+        cts.Cancel()
+        cts.Dispose()
+    | None -> ()
+
     { workspace with
         Folders = tornDownFolders
+        LoadingCts = None
         ReloadPending = None }

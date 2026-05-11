@@ -330,22 +330,14 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 Config = newConfig }
 
     | WorkspaceFolderSolutionChanged changes ->
-        let newWorkspace =
-            changes
-            |> List.fold
-                (fun ws (uri, generation, newSolution) ->
-                    match ws |> workspaceFolder uri with
-                    | None -> ws
-                    | Some wf ->
-                        if wf.Generation <> generation then
-                            // Stale event from a cancelled/superseded load — discard silently.
-                            ws
-                        else
-                            ws |> workspaceFolderUpdated { wf with Solution = newSolution })
-                state.Workspace
+        let updatedWorkspace =
+            state.Workspace
+            |> workspaceFolderSolutionChangesApplied changes
+            |> workspaceReadyAwaitersProcessed
 
-        do postServerEvent ProcessSolutionAwaiters
-        return { state with Workspace = newWorkspace }
+        return
+            { state with
+                Workspace = updatedWorkspace }
 
     | WorkspaceFolderUpdates(wfUri, wfUpdates) ->
         let wf = state.Workspace |> workspaceFolder wfUri
