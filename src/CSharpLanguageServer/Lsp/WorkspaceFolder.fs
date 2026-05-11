@@ -669,7 +669,20 @@ let workspaceFolderDocTouched (uri: string) (timestamp: DateTime) (wf: LspWorksp
                 OpenDocs = wf.OpenDocs |> Map.add uri updated
                 PushDiagnosticsBacklogUpdatePending = true }
 
-let workspaceFolderSolutionLoad (lspClient: ILspClient) (clientCapabilities: ClientCapabilities) wf = async {
+let workspaceFolderSolutionLoad
+    (lspClient: ILspClient)
+    (clientCapabilities: ClientCapabilities)
+    (config: CSharpConfiguration)
+    wf
+    = async {
+    let solutionLoadDelayMs = config.debug |> Option.bind _.solutionLoadDelay
+
+    match solutionLoadDelayMs with
+    | Some delayMs ->
+        logger.LogDebug("workspaceFolderSolutionLoad: solutionLoadDelay={delay}ms, sleeping..", delayMs)
+        do! Async.Sleep delayMs
+    | None -> ()
+
     let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
     let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value

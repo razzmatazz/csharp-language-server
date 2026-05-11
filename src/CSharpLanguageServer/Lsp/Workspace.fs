@@ -182,6 +182,7 @@ type WorkspaceFolderSolutionChange = (string * Guid * LspWorkspaceFolderSolution
 let workspaceLoadingStarted
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
+    (config: CSharpConfiguration)
     (onSolutionChange: WorkspaceFolderSolutionChange -> unit)
     (workspace: LspWorkspace)
     : LspWorkspace =
@@ -194,7 +195,7 @@ let workspaceLoadingStarted
         let folderLoads =
             uninitializedFolders
             |> List.map (fun wf ->
-                let loadingAsync = workspaceFolderSolutionLoad lspClient clientCapabilities wf
+                let loadingAsync = workspaceFolderSolutionLoad lspClient clientCapabilities config wf
 
                 { wf with Solution = Loading },
                 async {

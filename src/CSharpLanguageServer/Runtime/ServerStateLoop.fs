@@ -444,7 +444,7 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         let updatedWorkspace =
             state.Workspace
-            |> workspaceLoadingStarted state.LspClient.Value state.ClientCapabilities onWorkspaceSolutionLoad
+            |> workspaceLoadingStarted state.LspClient.Value state.ClientCapabilities state.Config onWorkspaceSolutionLoad
             |> workspaceReadyAwaitersProcessed
 
         return

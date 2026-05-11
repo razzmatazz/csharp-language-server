@@ -1,5 +1,7 @@
 module CSharpLanguageServer.Tests.InitializationTests
 
+open System
+
 open NUnit.Framework
 
 open Ionide.LanguageServerProtocol.Types
@@ -309,6 +311,53 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
             configurationSupported
             actualFlag
     )
+
+[<Test>]
+[<Ignore("Phase transitions (Loading, Ready) not yet fully wired up — test intentionally left failing until implementation is complete")>]
+let testWorkspacePhaseTransitionConfiguredLoadingReady () =
+    // Use solutionLoadDelay to hold the server in the Loading phase long enough
+    // to assert on it without a race. The delay is 5 s — well above any scheduling
+    // jitter, and well below the 15 s request timeout used everywhere else.
+    let loadDelayMs = 5000
+
+    let profileWithDelay =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    debug =
+                        Some
+                            { debugMode = Some true
+                              solutionLoadDelay = Some loadDelayMs } } }
+
+    use client = activateFixtureExt "genericProject" profileWithDelay emptyFixturePatch id
+
+    // ── Configured ──────────────────────────────────────────────────────────────
+    // GetDebugInfo posts to the same state-actor mailbox as all workspace events,
+    // so by the time it replies, initialize/initialized side-effects (including the
+    // workspace/configuration round-trip that delivers solutionLoadDelay) have
+    // already been applied.
+    let debugInfo0 = client.GetDebugInfo()
+    Assert.AreEqual("Configured", debugInfo0.workspace.phase, "phase after initialize/initialized")
+
+    // ── Loading ──────────────────────────────────────────────────────────────────
+    // Opening a document is the trigger that kicks off solution loading
+    // (textDocument/didOpen → LoadWorkspaceFolder → ProcessSolutionAwaiters →
+    // workspaceLoadingStarted).  With solutionLoadDelay the load task sleeps before
+    // touching Roslyn, so the workspace stays in Loading while we poll.
+    use _doc = client.Open "Project/Class.cs"
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () ->
+            let info = client.GetDebugInfo()
+            info.workspace.phase = "Loading")
+        "workspace never reached Loading phase after textDocument/didOpen"
+
+    // ── Ready ────────────────────────────────────────────────────────────────────
+    // TODO: Ready phase transition is not yet implemented on the server side.
+    //       Once WorkspaceFolderSolutionChanged advances Phase to Ready,
+    //       remove this Assert.Fail and replace it with a real poll + assertion.
+    Assert.Fail("Ready phase not yet implemented — remove this once the Configured→Loading→Ready transition is wired up")
 
 [<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
