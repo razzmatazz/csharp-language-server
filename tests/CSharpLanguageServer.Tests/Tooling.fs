@@ -408,6 +408,17 @@ let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) ms
             let extraArgStr = clientProfile.ExtraArgs |> String.concat " "
             processStartInfo.Arguments <- processStartInfo.Arguments + " " + extraArgStr
 
+        // Mirror debugMode=true into the server CLI so the server boots with
+        // debugMode already set, rather than waiting for workspace/configuration
+        // to deliver it (which races with early GetDebugInfo calls).
+        let debugModeInProfile =
+            clientProfile.ServerConfig.debug
+            |> Option.bind _.debugMode
+            |> Option.defaultValue false
+
+        if debugModeInProfile then
+            processStartInfo.Arguments <- processStartInfo.Arguments + " --debug"
+
         let p = new Process()
         p.StartInfo <- processStartInfo
 
