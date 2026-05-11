@@ -195,7 +195,8 @@ let workspaceLoadingStarted
         let folderLoads =
             uninitializedFolders
             |> List.map (fun wf ->
-                let loadingAsync = workspaceFolderSolutionLoad lspClient clientCapabilities config wf
+                let loadingAsync =
+                    workspaceFolderSolutionLoad lspClient clientCapabilities config wf
 
                 { wf with Solution = Loading },
                 async {

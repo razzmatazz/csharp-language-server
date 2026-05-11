@@ -674,42 +674,44 @@ let workspaceFolderSolutionLoad
     (clientCapabilities: ClientCapabilities)
     (config: CSharpConfiguration)
     wf
-    = async {
-    let solutionLoadDelayMs = config.debug |> Option.bind _.solutionLoadDelay
+    =
+    async {
+        let solutionLoadDelayMs = config.debug |> Option.bind _.solutionLoadDelay
 
-    match solutionLoadDelayMs with
-    | Some delayMs ->
-        logger.LogDebug("workspaceFolderSolutionLoad: solutionLoadDelay={delay}ms, sleeping..", delayMs)
-        do! Async.Sleep delayMs
-    | None -> ()
+        match solutionLoadDelayMs with
+        | Some delayMs ->
+            logger.LogDebug("workspaceFolderSolutionLoad: solutionLoadDelay={delay}ms, sleeping..", delayMs)
+            do! Async.Sleep delayMs
+        | None -> ()
 
-    let progressReporter = ProgressReporter(lspClient, clientCapabilities)
+        let progressReporter = ProgressReporter(lspClient, clientCapabilities)
 
-    let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
+        let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
 
-    let beginMessageSolutionPath =
-        wf.SolutionPathOverride
-        |> Option.map Path.GetFileName
-        |> Option.map (sprintf ", solution \"%s\"")
-        |> Option.defaultValue ""
+        let beginMessageSolutionPath =
+            wf.SolutionPathOverride
+            |> Option.map Path.GetFileName
+            |> Option.map (sprintf ", solution \"%s\"")
+            |> Option.defaultValue ""
 
-    let beginMessage =
-        sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
+        let beginMessage =
+            sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
 
-    do! progressReporter.Begin(beginMessage)
+        do! progressReporter.Begin(beginMessage)
 
-    let! newSolution = solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
+        let! newSolution =
+            solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
 
-    let endMessage =
-        sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
+        let endMessage =
+            sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
 
-    do! progressReporter.End(endMessage)
+        do! progressReporter.End(endMessage)
 
-    return
-        match newSolution with
-        | Some(workspace, solution) -> Loaded(workspace, solution)
-        | None -> Defunct(sprintf "Solution could not be loaded on path \"%s\"" wfRootDir)
-}
+        return
+            match newSolution with
+            | Some(workspace, solution) -> Loaded(workspace, solution)
+            | None -> Defunct(sprintf "Solution could not be loaded on path \"%s\"" wfRootDir)
+    }
 
 let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     match wf.Solution with

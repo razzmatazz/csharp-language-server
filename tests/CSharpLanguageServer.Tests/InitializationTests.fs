@@ -329,7 +329,8 @@ let testWorkspacePhaseTransitionConfiguredLoadingReady () =
                             { debugMode = Some true
                               solutionLoadDelay = Some loadDelayMs } } }
 
-    use client = activateFixtureExt "genericProject" profileWithDelay emptyFixturePatch id
+    use client =
+        activateFixtureExt "genericProject" profileWithDelay emptyFixturePatch id
 
     // ── Configured ──────────────────────────────────────────────────────────────
     // GetDebugInfo posts to the same state-actor mailbox as all workspace events,
@@ -357,7 +358,9 @@ let testWorkspacePhaseTransitionConfiguredLoadingReady () =
     // TODO: Ready phase transition is not yet implemented on the server side.
     //       Once WorkspaceFolderSolutionChanged advances Phase to Ready,
     //       remove this Assert.Fail and replace it with a real poll + assertion.
-    Assert.Fail("Ready phase not yet implemented — remove this once the Configured→Loading→Ready transition is wired up")
+    Assert.Fail(
+        "Ready phase not yet implemented — remove this once the Configured→Loading→Ready transition is wired up"
+    )
 
 [<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
