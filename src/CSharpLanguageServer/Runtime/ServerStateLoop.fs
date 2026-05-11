@@ -29,7 +29,6 @@ type ServerEvent =
     | ClientCapabilityChange of ClientCapabilities
     | PushDiagnosticsBacklogUpdate
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
-    | GetWorkspace of AsyncReplyChannel<LspWorkspace>
     | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
     | GetDebugInfo of AsyncReplyChannel<DebugInfo option>
@@ -81,14 +80,10 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
     let getWorkspaceFolderList () =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderUriList rc)
 
-    let getWorkspaceSnapshot () =
-        inbox.PostAndAsyncReply(fun rc -> GetWorkspace rc)
-
     RequestContext(
         requestMode,
         state.LspClient.Value,
         state.Config,
-        getWorkspaceSnapshot,
         getWorkspaceFolder,
         getWorkspaceFolderList,
         state.ClientCapabilities,
@@ -149,10 +144,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return
             { state with
                 RequestQueue = newRequestQueue }
-
-    | GetWorkspace replyChannel ->
-        replyChannel.Reply(state.Workspace)
-        return state
 
     | GetWorkspaceFolder(uri, withSolutionReady, replyChannel) ->
         match state.Workspace |> workspaceFolder uri with
