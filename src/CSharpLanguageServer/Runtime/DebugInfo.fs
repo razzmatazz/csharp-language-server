@@ -56,16 +56,9 @@ type DebugInfo =
 // Assembly
 
 let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
-    let solutionState =
-        match wf.Solution with
-        | Uninitialized -> "Uninitialized"
-        | Loading _ -> "Loading"
-        | Loaded _ -> "Loaded"
-        | Defunct _ -> "Defunct"
-
     { uri = wf.Uri
       name = wf.Name
-      solutionState = solutionState }
+      solutionState = wf.Solution.GetType().Name }
 
 let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
     { ordinal = ordinal
