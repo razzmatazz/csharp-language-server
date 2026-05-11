@@ -78,7 +78,7 @@ module Diagnostic =
                   Items = [||]
                   RelatedDocuments = None }
 
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return emptyReport |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
@@ -318,7 +318,7 @@ module Diagnostic =
 
             match p.PartialResultToken with
             | None ->
-                let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
+                let! workspaceFolders = context.GetWorkspaceFolderList()
 
                 let! diagnosticReports =
                     getWorkspaceDiagnosticReports context.Config knownResultIds workspaceFolders
@@ -349,7 +349,7 @@ module Diagnostic =
                     do! context.LspClient.Progress(progressParams)
                 }
 
-                let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = true)
+                let! workspaceFolders = context.GetWorkspaceFolderList()
 
                 do!
                     AsyncSeq.ofSeq (Seq.initInfinite id)

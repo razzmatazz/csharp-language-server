@@ -179,7 +179,7 @@ module TextDocumentSync =
                 wfUpdates @ [ updateWfDocOpened ]
 
     let didOpen (context: RequestContext) (p: DidOpenTextDocumentParams) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {
-        let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+        let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
         match wf with
         | None -> return Ok(), LspWorkspaceUpdate.Empty
@@ -245,7 +245,7 @@ module TextDocumentSync =
         (p: DidChangeTextDocumentParams)
         : Async<LspResult<unit> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return Ok(), LspWorkspaceUpdate.Empty
@@ -335,7 +335,7 @@ module TextDocumentSync =
         (p: DidCloseTextDocumentParams)
         : Async<LspResult<unit> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return Ok(), LspWorkspaceUpdate.Empty

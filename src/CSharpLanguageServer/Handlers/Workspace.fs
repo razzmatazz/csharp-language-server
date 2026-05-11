@@ -139,7 +139,7 @@ module Workspace =
             let mutable currentWfByUri: Map<string, LspWorkspaceFolder> = Map.empty
 
             for change in p.Changes do
-                let! wf, _ = context.GetWorkspaceFolderReadySolution(change.Uri)
+                let! wf, _ = context.LoadWorkspaceFolder(change.Uri)
 
                 match wf, Path.GetExtension(change.Uri) with
                 | Some wf, ".csproj" ->
@@ -235,11 +235,11 @@ module Workspace =
             let wfNotInRemovedList (wf: WorkspaceFolder) : bool =
                 p.Event.Removed |> Seq.exists (fun r -> r.Uri = wf.Uri) |> not
 
-            let! workspaceFolders = context.GetWorkspaceFolderList(withSolutionReady = false)
+            let! nameUriList = context.GetWorkspaceFolderNameUriList()
 
             let updatedWorkspaceFolders =
-                workspaceFolders
-                |> Seq.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
+                nameUriList
+                |> Seq.map (fun (name, uri) -> { Name = name; Uri = uri })
                 |> Seq.filter wfNotInRemovedList
                 |> Seq.append p.Event.Added
                 |> List.ofSeq

@@ -52,7 +52,7 @@ module TypeHierarchy =
         (p: TypeHierarchyPrepareParams)
         : Async<LspResult<TypeHierarchyItem[] option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
@@ -82,7 +82,7 @@ module TypeHierarchy =
         (p: TypeHierarchySupertypesParams)
         : Async<LspResult<TypeHierarchyItem[] option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.Item.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.Item.Uri)
 
             match wf with
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
@@ -135,7 +135,7 @@ module TypeHierarchy =
         : Async<LspResult<TypeHierarchyItem[] option> * LspWorkspaceUpdate> =
         async {
             let! ct = Async.CancellationToken
-            let! wf, solution = p.Item.Uri |> context.GetWorkspaceFolderReadySolution
+            let! wf, solution = p.Item.Uri |> context.LoadWorkspaceFolder
 
             match wf, solution with
             | Some wf, Some solution ->

@@ -54,7 +54,7 @@ module CallHierarchy =
         (p: CallHierarchyPrepareParams)
         : Async<LspResult<CallHierarchyItem[] option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
@@ -101,7 +101,7 @@ module CallHierarchy =
                     { From = CallHierarchyItem.fromSymbolAndLocation info.CallingSymbol loc
                       FromRanges = fromRanges })
 
-            let! wf, solution = p.Item.Uri |> context.GetWorkspaceFolderReadySolution
+            let! wf, solution = p.Item.Uri |> context.LoadWorkspaceFolder
 
             match wf, solution with
             | Some wf, Some solution ->

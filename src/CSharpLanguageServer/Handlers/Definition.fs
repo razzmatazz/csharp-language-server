@@ -42,7 +42,7 @@ module Definition =
         (p: DefinitionParams)
         : Async<LspResult<U2<Definition, DefinitionLink array> option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             match wf with
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty

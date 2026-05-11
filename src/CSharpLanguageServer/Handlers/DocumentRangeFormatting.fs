@@ -48,7 +48,7 @@ module DocumentRangeFormatting =
         async {
             let lspFormattingOptions = p.Options |> context.Config.GetEffectiveFormattingOptions
 
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docForUri =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)

@@ -118,7 +118,7 @@ module SemanticTokens =
         (range: Range option)
         : AsyncLspResult<SemanticTokens option> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(uri)
+            let! wf, _ = context.LoadWorkspaceFolder(uri)
 
             let docMaybe = wf |> Option.bind (workspaceFolderDocument AnyDocument uri)
 

@@ -29,8 +29,8 @@ type ServerEvent =
     | ClientCapabilityChange of ClientCapabilities
     | PushDiagnosticsBacklogUpdate
     | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
-    | GetWorkspaceFolder of DocumentUri * withSolutionReady: bool * AsyncReplyChannel<LspWorkspaceFolder option>
-    | GetWorkspaceFolderUriList of AsyncReplyChannel<string list>
+    | LoadWorkspaceFolder of DocumentUri * AsyncReplyChannel<LspWorkspaceFolder option>
+    | GetWorkspaceFolderNameUriList of AsyncReplyChannel<(string * string) list>
     | GetDebugInfo of AsyncReplyChannel<DebugInfo option>
     | LeaveRequestContext of int64 * LspWorkspaceUpdate
     | PeriodicTimerTick
@@ -74,18 +74,18 @@ type ServerState =
           GetRpcStats = None }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
-    let getWorkspaceFolder uri withSolutionReady =
-        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolder(uri, withSolutionReady, rc))
+    let loadWorkspaceFolder uri =
+        inbox.PostAndAsyncReply(fun rc -> LoadWorkspaceFolder(uri, rc))
 
     let getWorkspaceFolderList () =
-        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderUriList rc)
+        inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderNameUriList rc)
 
     RequestContext(
         requestMode,
         state.LspClient.Value,
         state.Config,
-        getWorkspaceFolder,
         getWorkspaceFolderList,
+        loadWorkspaceFolder,
         state.ClientCapabilities,
         state.ShutdownReceived
     )
@@ -145,32 +145,27 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 RequestQueue = newRequestQueue }
 
-    | GetWorkspaceFolder(uri, withSolutionReady, replyChannel) ->
+    | LoadWorkspaceFolder(uri, replyChannel) ->
         match state.Workspace |> workspaceFolder uri with
         | None ->
             replyChannel.Reply None
             return state
 
         | Some wf ->
-            match withSolutionReady with
-            | false ->
-                replyChannel.Reply(Some wf)
-                return state
+            postServerEvent ProcessSolutionAwaiters
 
-            | true ->
-                postServerEvent ProcessSolutionAwaiters
+            let awaiter = (string uri, replyChannel)
+            let newAwaiters = awaiter :: state.Workspace.ReadyAwaiters
 
-                let awaiter = (string uri, replyChannel)
-                let newAwaiters = awaiter :: state.Workspace.ReadyAwaiters
+            let newWorkspace =
+                { state.Workspace with
+                    ReadyAwaiters = newAwaiters }
 
-                let newWorkspace =
-                    { state.Workspace with
-                        ReadyAwaiters = newAwaiters }
+            return { state with Workspace = newWorkspace }
 
-                return { state with Workspace = newWorkspace }
-
-    | GetWorkspaceFolderUriList replyChannel ->
-        replyChannel.Reply(state.Workspace.Folders |> List.map _.Uri)
+    | GetWorkspaceFolderNameUriList replyChannel ->
+        let wfNameUriList = state.Workspace.Folders |> List.map (fun wf -> wf.Name, wf.Uri)
+        replyChannel.Reply(wfNameUriList)
         return state
 
     | GetDebugInfo replyChannel ->

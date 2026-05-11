@@ -93,7 +93,7 @@ module SignatureHelp =
         (p: SignatureHelpParams)
         : Async<LspResult<SignatureHelp option> * LspWorkspaceUpdate> =
         async {
-            let! wf, _ = context.GetWorkspaceFolderReadySolution(p.TextDocument.Uri)
+            let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
 
             let docMaybe =
                 wf |> Option.bind (workspaceFolderDocument UserDocument p.TextDocument.Uri)

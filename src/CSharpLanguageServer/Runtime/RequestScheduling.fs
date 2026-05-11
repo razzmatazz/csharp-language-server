@@ -31,8 +31,8 @@ type RequestContext
         requestMode: RequestMode,
         lspClient: ILspClient,
         config: CSharpConfiguration,
-        getWorkspaceFolder: DocumentUri -> bool -> Async<LspWorkspaceFolder option>,
-        getWorkspaceFolderUriList: unit -> Async<string list>,
+        getWorkspaceFolderList: unit -> Async<(string * string) list>,
+        loadWorkspaceFolder: DocumentUri -> Async<LspWorkspaceFolder option>,
         clientCapabilities: ClientCapabilities,
         shutdownReceived: bool
     ) =
@@ -41,8 +41,21 @@ type RequestContext
     member _.ClientCapabilities = clientCapabilities
     member _.ShutdownReceived = shutdownReceived
 
-    member _.GetWorkspaceFolderReadySolution(uri) = async {
-        let! wf = getWorkspaceFolder uri true
+    member _.GetWorkspaceFolderNameUriList = getWorkspaceFolderList
+
+    member _.GetWorkspaceFolderList() = async {
+        let! nameUriList = getWorkspaceFolderList ()
+
+        let! folders =
+            nameUriList
+            |> List.map (fun (_, uri) -> loadWorkspaceFolder uri)
+            |> Async.Sequential
+
+        return folders |> Array.choose id |> Array.toList
+    }
+
+    member _.LoadWorkspaceFolder(uri) = async {
+        let! wf = loadWorkspaceFolder uri
 
         match wf with
         | None -> return None, None
@@ -50,20 +63,6 @@ type RequestContext
             match wf.Solution with
             | Loaded(_, solution) -> return Some wf, Some solution
             | _ -> return Some wf, None
-    }
-
-    member _.GetWorkspaceFolderList(withSolutionReady: bool) = async {
-        let! wfUris = getWorkspaceFolderUriList ()
-        let mutable wfs = []
-
-        for uri in wfUris do
-            let! wf = getWorkspaceFolder uri withSolutionReady
-
-            match wf with
-            | None -> failwithf "no LspWorkspaceFolder resolved for URI \"%s\"!" uri
-            | Some wf -> wfs <- wf :: wfs
-
-        return wfs
     }
 
 type RequestInfo =
