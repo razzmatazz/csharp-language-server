@@ -58,7 +58,7 @@ type DebugInfo =
 let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
     { uri = wf.Uri
       name = wf.Name
-      solutionState = wf.Solution.GetType().Name }
+      solutionState = sprintf "%A" wf.Solution }
 
 let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
     { ordinal = ordinal

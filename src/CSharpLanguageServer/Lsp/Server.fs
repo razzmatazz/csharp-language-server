@@ -222,10 +222,9 @@ let configureRpcTransport
         |> Map.add "codeLens/resolve" (callHandler ReadOnly CodeLens.resolve)
         |> Map.add "textDocument/inlayHint" (callHandler ReadOnly InlayHint.handle)
         |> Map.add "textDocument/foldingRange" (callHandler ReadOnly FoldingRange.handle)
-        |> Map.add "$/csharp/debugInfo" (fun _jsonRpcCtx -> async {
-            let! info = stateActor.PostAndAsyncReply(GetDebugInfo)
-            return Debug.handle info |> serializeNullable |> Ok
-        })
+        |> Map.add
+            "$/csharp/debugInfo"
+            (callHandler OutOfBand (Debug.handle (fun () -> stateActor.PostAndAsyncReply(GetDebugInfo))))
 
     let notificationHandlers: JsonRpcNotificationHandlerMap =
         Map.empty
