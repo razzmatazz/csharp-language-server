@@ -313,7 +313,6 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
     )
 
 [<Test>]
-[<Ignore("Phase transitions (Loading, Ready) not yet fully wired up — test intentionally left failing until implementation is complete")>]
 let testWorkspacePhaseTransitionConfiguredLoadingReady () =
     // Use solutionLoadDelay to hold the server in the Loading phase long enough
     // to assert on it without a race. The delay is 5 s — well above any scheduling
@@ -355,12 +354,18 @@ let testWorkspacePhaseTransitionConfiguredLoadingReady () =
         "workspace never reached Loading phase after textDocument/didOpen"
 
     // ── Ready ────────────────────────────────────────────────────────────────────
-    // TODO: Ready phase transition is not yet implemented on the server side.
-    //       Once WorkspaceFolderSolutionChanged advances Phase to Ready,
-    //       remove this Assert.Fail and replace it with a real poll + assertion.
-    Assert.Fail(
-        "Ready phase not yet implemented — remove this once the Configured→Loading→Ready transition is wired up"
-    )
+    // After solutionLoadDelay expires and the solution finishes loading,
+    // the workspace phase should advance to Ready.  We wait up to 15 s —
+    // well above the 5 s delay and any Roslyn startup overhead.
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 15.0)
+        (fun () ->
+            let info = client.GetDebugInfo()
+            info.workspace.phase = "Ready")
+        "workspace never reached Ready phase after solution load completed"
+
+    let debugInfoReady = client.GetDebugInfo()
+    Assert.AreEqual("Ready", debugInfoReady.workspace.phase, "phase after solution load")
 
 [<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =

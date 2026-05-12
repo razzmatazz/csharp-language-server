@@ -173,7 +173,7 @@ let workspacePDBacklogUpdatePendingReset (ws: LspWorkspace) : LspWorkspace * boo
 
     newWS, havePDBacklogUpdatePending
 
-type WorkspaceFolderSolutionChange = (string * Guid * LspWorkspaceFolderSolution) list
+type WorkspaceFolderSolutionLoadResult = (string * Guid * LspWorkspaceFolderSolution) list
 
 /// For every workspace folder whose solution is still `Uninitialized`, kick off an async
 /// solution load and return the workspace with those folders updated to `Loading`.
@@ -183,7 +183,7 @@ let workspaceLoadingStarted
     (lspClient: ILspClient)
     (clientCapabilities: ClientCapabilities)
     (config: CSharpConfiguration)
-    (onSolutionChange: WorkspaceFolderSolutionChange -> unit)
+    (onSolutionChange: WorkspaceFolderSolutionLoadResult -> unit)
     (workspace: LspWorkspace)
     : LspWorkspace =
     let uninitializedFolders =
@@ -244,9 +244,9 @@ let workspaceReadyAwaitersProcessed (workspace: LspWorkspace) : LspWorkspace =
         ReadyAwaiters = awaitersToKeep }
 
 /// Apply a batch of folder-solution results to the workspace: patch each folder's Solution
-/// (discarding stale generations), flush ReadyAwaiters, and advance Phase to Ready.
-let workspaceFolderSolutionChangesApplied
-    (changes: WorkspaceFolderSolutionChange)
+/// (discarding stale generations), and advance Phase to Ready.
+let workspaceSolutionLoadCompleted
+    (changes: WorkspaceFolderSolutionLoadResult)
     (workspace: LspWorkspace)
     : LspWorkspace =
 
@@ -260,7 +260,13 @@ let workspaceFolderSolutionChangesApplied
             else
                 ws |> workspaceFolderUpdated { wf with Solution = newSolution }
 
-    changes |> List.fold applyChange workspace
+    let updatedWs = changes |> List.fold applyChange workspace
+
+    let updatedWs =
+        { updatedWs with
+            Phase = LspWorkspacePhase.Ready }
+
+    updatedWs
 
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
