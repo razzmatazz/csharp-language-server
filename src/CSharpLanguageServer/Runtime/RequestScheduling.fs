@@ -16,10 +16,33 @@ open CSharpLanguageServer.Logging
 
 let logger = Logging.getLoggerByName "Runtime.RequestScheduling"
 
+/// Scheduling mode for an LSP request, controlling concurrency and retirement
+/// ordering in the request queue.
 type RequestMode =
+    /// Read-only access to the workspace. Multiple ReadOnly requests may run
+    /// concurrently with each other, but not while a ReadWrite request is
+    /// running, and not past the next pending ReadWrite request in ordinal
+    /// order.  ReadOnly requests may emit LspWorkspaceUpdate changes, which are
+    /// applied when the request is retired.
     | ReadOnly
+    /// Exclusive write access to the workspace.  A ReadWrite request can only
+    /// start when no other non-background request is currently running.
+    /// ReadWrite requests are retired strictly in ordinal order.
     | ReadWrite
+    /// Long-running read-only requests (e.g. workspace/diagnostics) that never
+    /// emit state changes.  ReadOnlyBackground requests are skipped over in the
+    /// retirement walk, so they never block retirement of later requests, and
+    /// are excluded from the drain predicate so they never prevent a workspace
+    /// reload.
     | ReadOnlyBackground
+    /// Out-of-band requests (e.g. $/csharp/debugInfo) that must respond
+    /// immediately regardless of queue state.  They register in the queue to
+    /// fill the ordinal sequence and keep the watermark advancing, but are
+    /// never gated by any scheduling rule — they activate immediately regardless
+    /// of what else is running.  Like ReadOnlyBackground they never emit
+    /// LspWorkspaceUpdate changes, are skipped over in the retirement walk, and
+    /// are excluded from the drain predicate.
+    | OutOfBand
 
 type RequestPhase =
     | Pending
@@ -215,6 +238,7 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
         | ReadOnly -> "RO"
         | ReadWrite -> "RW"
         | ReadOnlyBackground -> "ROBg"
+        | OutOfBand -> "OOB"
 
     let formatDuration (request: RequestInfo) =
         let elapsed =
@@ -298,6 +322,7 @@ let retireNextFinishedRequest
             match request.Phase, request.Mode with
             | Finished, _ -> Some(ordinal, request)
             | _, ReadOnlyBackground -> findRetirable rest
+            | _, OutOfBand -> findRetirable rest
             | _ -> None
 
     let debugMode = config.debug |> Option.bind _.debugMode |> Option.defaultValue false
@@ -369,7 +394,7 @@ let isDrained (requestQueue: RequestQueue) : bool =
     | Dispatching -> false
     | DrainingUpTo maxOrd ->
         requestQueue.Requests
-        |> Map.exists (fun ord r -> ord <= maxOrd && r.Mode <> ReadOnlyBackground)
+        |> Map.exists (fun ord r -> ord <= maxOrd && r.Mode <> ReadOnlyBackground && r.Mode <> OutOfBand)
         |> not
 
 /// Returns the sorted list of pending requests eligible for activation,
@@ -382,7 +407,9 @@ let eligiblePendingRequests (requestQueue: RequestQueue) : (int64 * RequestInfo)
         |> List.sortBy fst
 
     match requestQueue.Mode with
-    | DrainingUpTo maxOrd -> allPending |> List.filter (fun (ord, _) -> ord <= maxOrd)
+    | DrainingUpTo maxOrd ->
+        // OutOfBand requests are never gated — include them regardless of ordinal.
+        allPending |> List.filter (fun (ord, r) -> ord <= maxOrd || r.Mode = OutOfBand)
     | Dispatching -> allPending
 
 /// Determines whether a pending request can be activated given the current
@@ -392,42 +419,43 @@ let canActivateRequest
     (pendingRequests: (int64 * RequestInfo) list)
     (requestRpcOrdinal: int64, request: RequestInfo)
     : bool =
-    // Never activate a request past the watermark — there are gaps (missing
-    // ordinals) before it that could later be filled by ReadWrite requests.
-    if requestRpcOrdinal > requestQueue.WatermarkRpcOrdinal then
-        false
-    else
+    let pastWatermark = requestRpcOrdinal > requestQueue.WatermarkRpcOrdinal
 
-        match request.Mode with
-        | ReadWrite ->
-            // A write request can only start when there are no other non-background
-            // running requests. ReadOnlyBackground requests never emit events and
-            // must not block write requests (or workspace reloads).
+    match request.Mode, pastWatermark with
+    // Out-of-band requests activate immediately — never gated by watermark or
+    // any concurrency rule.
+    | OutOfBand, _ -> true
+
+    // No request may activate past the watermark; there could be gaps ahead
+    // that will be filled by ReadWrite requests.
+    | _, true -> false
+
+    | ReadWrite, false ->
+        // A write request can only start when no other non-background request
+        // is currently running.
+        requestQueue.Requests
+        |> Map.exists (fun _ r -> r.Phase = Running && r.Mode <> ReadOnlyBackground && r.Mode <> OutOfBand)
+        |> not
+
+    | (ReadOnly | ReadOnlyBackground), false ->
+        // A read-only request may run concurrently with other reads, but:
+        //   - not while a write request is running
+        //   - not past the next pending write request in ordinal order
+        let hasRunningWrite =
             requestQueue.Requests
-            |> Map.exists (fun _ r -> r.Phase = Running && r.Mode <> ReadOnlyBackground)
-            |> not
+            |> Map.exists (fun _ r -> r.Phase = Running && r.Mode = ReadWrite)
 
-        | ReadOnly
-        | ReadOnlyBackground ->
-            // A read-only request can start concurrently with other read-only
-            // requests, but:
-            //   - not while a write request is running
-            //   - not past the next pending write request
-            let hasRunningWrite =
-                requestQueue.Requests
-                |> Map.exists (fun _ r -> r.Phase = Running && r.Mode = ReadWrite)
+        if hasRunningWrite then
+            false
+        else
+            let firstPendingWriteOrdinal =
+                pendingRequests
+                |> List.tryFind (fun (_, r) -> r.Mode = ReadWrite)
+                |> Option.map fst
 
-            if hasRunningWrite then
-                false
-            else
-                let firstPendingWriteOrdinal =
-                    pendingRequests
-                    |> List.tryFind (fun (_, r) -> r.Mode = ReadWrite)
-                    |> Option.map fst
-
-                match firstPendingWriteOrdinal with
-                | Some writeOrd -> requestRpcOrdinal < writeOrd
-                | None -> true
+            match firstPendingWriteOrdinal with
+            | Some writeOrd -> requestRpcOrdinal < writeOrd
+            | None -> true
 
 type ProcessRequestQueueResult =
     | Waiting

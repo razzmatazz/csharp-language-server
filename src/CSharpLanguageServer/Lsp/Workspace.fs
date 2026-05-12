@@ -265,7 +265,7 @@ let workspaceFolderSolutionChangesApplied
 let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     let tornDownFolders = workspace.Folders |> List.map workspaceFolderTeardown
 
-    for (_, rc) in workspace.ReadyAwaiters do
+    for _, rc in workspace.ReadyAwaiters do
         rc.Reply(None)
 
     match workspace.LoadingCts with

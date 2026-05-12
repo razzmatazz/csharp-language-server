@@ -1,11 +1,25 @@
 namespace CSharpLanguageServer.Handlers
 
-open CSharpLanguageServer.Runtime.DebugInfo
+open Newtonsoft.Json.Linq
 
-/// The `$/csharp/debugInfo` endpoint bypasses the normal request-scheduling
-/// pipeline entirely. `Server.fs` posts a `GetDebugInfo` event directly to the
-/// state actor, which assembles and replies with `DebugInfo option` (None when
-/// debugMode is off). `Debug.handle` passes the result through.
+open Ionide.LanguageServerProtocol.JsonRpc
+
+open CSharpLanguageServer.Runtime.DebugInfo
+open CSharpLanguageServer.Runtime.RequestScheduling
+open CSharpLanguageServer.Lsp.Workspace
+open CSharpLanguageServer.Types
+
+/// The `$/csharp/debugInfo` endpoint runs as an `OutOfBand` request so it is
+/// never
+/// gated by any scheduling rule.
 [<RequireQualifiedAccess>]
 module Debug =
-    let handle (info: DebugInfo option) : DebugInfo option = info
+    let handle
+        (getDebugInfo: unit -> Async<DebugInfo option>)
+        (_ctx: RequestContext)
+        (_params: JObject)
+        : Async<LspResult<DebugInfo option> * LspWorkspaceUpdate> =
+        async {
+            let! info = getDebugInfo ()
+            return Ok info, LspWorkspaceUpdate.Empty
+        }
