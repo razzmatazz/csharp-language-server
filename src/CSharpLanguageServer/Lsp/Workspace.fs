@@ -281,6 +281,7 @@ let workspaceTeardown (workspace: LspWorkspace) : LspWorkspace =
     | None -> ()
 
     { workspace with
+        Phase = LspWorkspacePhase.ShuttingDown
         Folders = tornDownFolders
         LoadingCts = None
         ReloadPending = None }

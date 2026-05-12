@@ -83,6 +83,39 @@ type ICSharpLspClient =
     // But ClientCapabilities is a complex type, write it again will be a huge work.
     abstract member Capabilities: ClientCapabilities option with get, set
 
+/// An ILspClient whose every method raises immediately. Used as a stand-in
+/// when the client connection has already been torn down (e.g. after the LSP
+/// "shutdown" request is processed). Only OutOfBand request handlers — which
+/// never call back into the client — may safely receive this value.
+type DisconnectedLspClient() =
+    let die () : _ =
+        failwith "LspClient is not available after shutdown"
+
+    interface System.IDisposable with
+        member _.Dispose() = ()
+
+    interface ILspClient with
+        member _.WindowShowMessage(_) = die ()
+        member _.WindowLogMessage(_) = die ()
+        member _.TelemetryEvent(_) = die ()
+        member _.TextDocumentPublishDiagnostics(_) = die ()
+        member _.LogTrace(_) = die ()
+        member _.CancelRequest(_) = die ()
+        member _.Progress(_) = die ()
+        member _.WorkspaceWorkspaceFolders() = die ()
+        member _.WorkspaceConfiguration(_) = die ()
+        member _.WindowWorkDoneProgressCreate(_) = die ()
+        member _.WorkspaceSemanticTokensRefresh() = die ()
+        member _.WindowShowDocument(_) = die ()
+        member _.WorkspaceInlineValueRefresh() = die ()
+        member _.WorkspaceInlayHintRefresh() = die ()
+        member _.ClientRegisterCapability(_) = die ()
+        member _.ClientUnregisterCapability(_) = die ()
+        member _.WindowShowMessageRequest(_) = die ()
+        member _.WorkspaceApplyEdit(_) = die ()
+        member _.WorkspaceCodeLensRefresh() = die ()
+        member _.WorkspaceDiagnosticRefresh() = die ()
+
 let csharpDocumentFilter: TextDocumentFilter =
     { Language = Some "csharp"
       Scheme = Some "file"

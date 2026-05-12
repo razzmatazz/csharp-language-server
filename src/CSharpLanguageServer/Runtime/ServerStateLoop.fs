@@ -80,9 +80,18 @@ let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent
     let getWorkspaceFolderList () =
         inbox.PostAndAsyncReply(fun rc -> GetWorkspaceFolderNameUriList rc)
 
+    let lspClient =
+        match state.LspClient with
+        | Some c -> c
+        | None ->
+            // LspClient is None after ClientShutdown. Only OutOfBand requests
+            // (e.g. $/csharp/debugInfo) may activate at that point; they never
+            // use the client, so this is safe. Anything else is a bug.
+            new DisconnectedLspClient()
+
     RequestContext(
         requestMode,
-        state.LspClient.Value,
+        lspClient,
         state.Config,
         getWorkspaceFolderList,
         loadWorkspaceFolder,
