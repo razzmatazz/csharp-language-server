@@ -23,7 +23,7 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full wa
 ## Iteration Style
 
 Don't over-think syntax or minor details upfront — make structural changes then let
-`dotnet build` / `dotnet test` drive the fixes.
+`dotnet test` drive the fixes.
 
 ### Debugging server-side data flow from tests
 

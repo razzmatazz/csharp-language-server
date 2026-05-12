@@ -42,7 +42,7 @@ type ServerEvent =
     | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
     | WorkspaceFolderConfigurationChanged of WorkspaceFolder list
-    | WorkspaceFolderSolutionChanged of WorkspaceFolderSolutionChange
+    | WorkspaceSolutionLoadCompleted of WorkspaceFolderSolutionLoadResult
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | WorkspaceReloadRequested of TimeSpan
     | ProcessSolutionAwaiters
@@ -315,10 +315,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ClientCapabilities = cc
                 Config = newConfig }
 
-    | WorkspaceFolderSolutionChanged changes ->
+    | WorkspaceSolutionLoadCompleted changes ->
         let updatedWorkspace =
             state.Workspace
-            |> workspaceFolderSolutionChangesApplied changes
+            |> workspaceSolutionLoadCompleted changes
             |> workspaceReadyAwaitersProcessed
 
         return
@@ -439,16 +439,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         | false -> return state
 
     | ProcessSolutionAwaiters ->
-        let onWorkspaceSolutionLoad changes =
-            postServerEvent (WorkspaceFolderSolutionChanged changes)
-
         let updatedWorkspace =
             state.Workspace
-            |> workspaceLoadingStarted
-                state.LspClient.Value
-                state.ClientCapabilities
-                state.Config
-                onWorkspaceSolutionLoad
+            |> workspaceLoadingStarted state.LspClient.Value state.ClientCapabilities state.Config (fun changes ->
+                postServerEvent (WorkspaceSolutionLoadCompleted changes))
             |> workspaceReadyAwaitersProcessed
 
         return
