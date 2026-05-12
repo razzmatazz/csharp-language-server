@@ -845,6 +845,22 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
             Thread.Sleep(25)
 
+    /// Send only the LSP "shutdown" request and wait for its response.
+    /// Use this together with SendExit when you need to observe the server
+    /// state (e.g. workspace phase) between "shutdown" and "exit".
+    member __.SendShutdown() =
+        let transport = rpcTransport ()
+
+        sendJsonRpcCallWithTimeout transport "shutdown" (JObject()) (Some(TimeSpan.FromSeconds 15.0))
+        |> Async.RunSynchronously
+        |> ignore
+
+    /// Send only the LSP "exit" notification (no response expected).
+    /// Must be called after SendShutdown.
+    member __.SendExit() =
+        sendJsonRpcNotification (rpcTransport ()) "exit" (JObject())
+        |> Async.RunSynchronously
+
     member __.Shutdown() =
         let transport = rpcTransport ()
 

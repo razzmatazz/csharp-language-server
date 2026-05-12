@@ -313,10 +313,18 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
     )
 
 [<Test>]
-let testWorkspacePhaseTransitionConfiguredLoadingReady () =
-    // Use solutionLoadDelay to hold the server in the Loading phase long enough
-    // to assert on it without a race. The delay is 5 s — well above any scheduling
-    // jitter, and well below the 15 s request timeout used everywhere else.
+let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
+    // Drives the full Configured → Loading → Ready → ShuttingDown chain in one pass.
+    //
+    // solutionLoadDelay holds the server in Loading long enough to assert on it
+    // without a race (5 s — well above any scheduling jitter, well below the 15 s
+    // request timeout used everywhere else).
+    //
+    // To observe ShuttingDown we send "shutdown" and "exit" as separate steps with
+    // a GetDebugInfo call in between, rather than using client.Shutdown() which
+    // sends both back-to-back.  "shutdown" is ReadWrite, so the server drains the
+    // queue, calls workspaceTeardown (Phase → ShuttingDown), then replies — the
+    // phase is already ShuttingDown by the time SendShutdown returns.
     let loadDelayMs = 5000
 
     let profileWithDelay =
@@ -366,6 +374,14 @@ let testWorkspacePhaseTransitionConfiguredLoadingReady () =
 
     let debugInfoReady = client.GetDebugInfo()
     Assert.AreEqual("Ready", debugInfoReady.workspace.phase, "phase after solution load")
+
+    // ── ShuttingDown ─────────────────────────────────────────────────────────────
+    client.SendShutdown()
+
+    let debugInfoShuttingDown = client.GetDebugInfo()
+    Assert.AreEqual("ShuttingDown", debugInfoShuttingDown.workspace.phase, "phase after shutdown")
+
+    client.SendExit()
 
 [<Test>]
 let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
