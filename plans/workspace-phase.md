@@ -395,6 +395,43 @@ the existing code:
   For now only `workspace/diagnostic` matters and it already reads
   `Async.CancellationToken`.
 
+## Implementation notes (post-merge)
+
+### `solutionPathOverride` via `workspace/configuration` does not stamp the initial load
+
+During implementation the integration test revealed that setting
+`solutionPathOverride` through the `workspace/configuration` pull (i.e.
+`ServerConfig.solutionPathOverride` supplied via the test-harness
+`LspClientProfile`) **does not affect which solution is loaded on first
+startup**.
+
+The reason is ordering:
+
+1. `handleInitialize` emits `WithFolderReconfiguration(folders)` in its
+   `wsUpdate`.  This is processed by `ApplyWorkspaceUpdate`, which enters
+   drain mode and queues `PendingReconfiguration.FolderReconfiguration`.
+2. `handleInitialized` later pulls config via `workspace/configuration` and
+   emits `WithConfigurationChange(newConfig)` — but by the time
+   `RequestQueueDrained` runs for the first time (triggered by step 1),
+   `handleInitialized` may not have finished yet, so `state.Config` still
+   has the old value with no path override.  Even if the config arrives in
+   time, the drain from step 1 also activates `textDocument/didOpen` (sent
+   concurrently by the test) before `RequestQueueDrained` fires, so
+   `workspaceLoadingStarted` runs with `SolutionPathOverride = None` and
+   falls back to auto-discovery.
+
+**The `--solution <path>` CLI flag is immune to this race** because it
+populates `state.Config.solutionPathOverride` before the server processes
+any LSP messages.  Tests that need a specific solution for the initial load
+must use `ExtraArgs = [ "--solution <relative-path>" ]` in their
+`LspClientProfile`, not `ServerConfig.solutionPathOverride`.
+
+The `solutionPathOverride` config field *does* work correctly for
+**reconfiguration** (the second-and-subsequent loads), because the fold in
+`RequestQueueDrained` runs after all in-flight ReadWrite requests
+(including `workspace/didChangeConfiguration`) have retired and
+`state.Config` is already up to date.
+
 ## File Summary
 
 | Action | File |

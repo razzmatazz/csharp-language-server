@@ -15,27 +15,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, build/test commands, c
 
 See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full walkthrough of:
 - Source layout (`src/CSharpLanguageServer/`, `tests/`)
-- LSP message handling, request scheduling (`ReadOnly` / `ReadWrite` / `ReadOnlyBackground`)
+- LSP message handling, request scheduling
 - Handler module pattern (`provider`, `registration`, `handle`)
 - Test infrastructure (`LspTestClient`, `LspDocumentHandle`, fixtures)
 - Checklist for adding a new LSP feature
 
-## Iteration Style
-
-Don't over-think syntax or minor details upfront — make structural changes then let
-`dotnet test` drive the fixes.
-
-### Debugging server-side data flow from tests
+## Debugging server-side data flow from tests
 
 To trace values inside the server process during a test:
 
 1. Add `eprintfn "[DEBUG ...]"` calls at the points of interest in the server source.
-2. In the test, swap `activateFixture` for `activateFixtureWithLoggingEnabled` — this
+2. In the test, swap `activateFixture` for `activateFixtureWithLoggingEnabled` (or pass
+   `{ defaultClientProfile with LoggingEnabled = true }` to `activateFixtureExt`) — this
    causes the test harness to forward the server's stderr to `Console.Error`, so the
    `eprintfn` output appears in the test run's "Standard Error Messages" section.
 3. Run `dotnet test --filter FullyQualifiedName~<TestName>` and read the interleaved
    timeline to understand ordering and values.
 4. Remove the `eprintfn` calls and revert to `activateFixture` once the issue is understood.
+
+## Iteration Style
+
+DON'T OVER-THINK SYNTAX OR MINOR DETAILS UPFRONT — make structural changes then let
+`dotnet test` drive the fixes.
 
 ## Code Style & Commit Conventions
 

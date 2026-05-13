@@ -121,7 +121,13 @@ let configureRpcTransport
             try
                 let! ctx =
                     stateActor.PostAndAsyncReply(fun rc ->
-                        EnterRequestContext(jsonRpcCtx.RequestOrdinal, jsonRpcCtx.MethodName, requestMode, rc))
+                        EnterRequestContext(
+                            jsonRpcCtx.RequestOrdinal,
+                            jsonRpcCtx.MethodName,
+                            requestMode,
+                            jsonRpcCtx.CancellationTokenSource,
+                            rc
+                        ))
 
                 let fnParams =
                     jsonRpcCtx.Params

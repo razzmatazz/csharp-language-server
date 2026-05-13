@@ -165,7 +165,7 @@ module LifeCycle =
 
             logger.LogInformation("initialize: initial csharp config: {config}", initialConfig |> string)
 
-            return Ok(), wsUpdate
+            return Ok(), wsUpdate.WithInitializedGate()
         }
 
     let handleShutdown (context: RequestContext) (_: unit) : Async<LspResult<unit> * LspWorkspaceUpdate> = async {

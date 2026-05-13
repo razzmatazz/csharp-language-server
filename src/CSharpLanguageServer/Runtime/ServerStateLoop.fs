@@ -22,13 +22,24 @@ open CSharpLanguageServer.Runtime.PushDiagnostics
 
 let logger = Logging.getLoggerByName "Runtime.ServerStateLoop"
 
+[<RequireQualifiedAccess>]
+type PendingReconfiguration =
+    | FolderReconfiguration of Ionide.LanguageServerProtocol.Types.WorkspaceFolder list
+    | ConfigurationChange of CSharpConfiguration
+    | WorkspaceReload of deadline: DateTime
+
 type ServerEvent =
     | ServerStarted of ILspClient * (unit -> Async<JsonRpcStats>)
     | ClientInitialize
     | ClientShutdown
     | ClientCapabilityChange of ClientCapabilities
     | PushDiagnosticsBacklogUpdate
-    | EnterRequestContext of int64 * string * RequestMode * AsyncReplyChannel<RequestContext>
+    | EnterRequestContext of
+        int64 *
+        string *
+        RequestMode *
+        System.Threading.CancellationTokenSource option *
+        AsyncReplyChannel<RequestContext>
     | LoadWorkspaceFolder of DocumentUri * AsyncReplyChannel<LspWorkspaceFolder option>
     | GetWorkspaceFolderNameUriList of AsyncReplyChannel<(string * string) list>
     | GetDebugInfo of AsyncReplyChannel<DebugInfo option>
@@ -41,7 +52,6 @@ type ServerEvent =
     | PushDiagnosticsProcessPendingDocuments
     | ConfigurationChange of CSharpConfiguration
     | TraceLevelChange of TraceValues
-    | WorkspaceFolderConfigurationChanged of WorkspaceFolder list
     | WorkspaceSolutionLoadCompleted of WorkspaceFolderSolutionLoadResult
     | WorkspaceFolderUpdates of string * LspWorkspaceFolderUpdateFn list
     | WorkspaceReloadRequested of TimeSpan
@@ -58,7 +68,8 @@ type ServerState =
       PeriodicTickTimer: Threading.Timer option
       ShutdownReceived: bool
       LastDebugDumpTime: DateTime
-      GetRpcStats: (unit -> Async<JsonRpcStats>) option }
+      GetRpcStats: (unit -> Async<JsonRpcStats>) option
+      PendingReconfigurations: PendingReconfiguration list }
 
     static member Empty =
         { Config = CSharpConfiguration.Default
@@ -71,7 +82,8 @@ type ServerState =
           PeriodicTickTimer = None
           ShutdownReceived = false
           LastDebugDumpTime = DateTime.MinValue
-          GetRpcStats = None }
+          GetRpcStats = None
+          PendingReconfigurations = [] }
 
 let makeRequestContext (state: ServerState) (inbox: MailboxProcessor<ServerEvent>) (requestMode: RequestMode) =
     let loadWorkspaceFolder uri =
@@ -143,12 +155,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             { state with
                 TraceLevel = newTraceLevel }
 
-    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, replyChannel) ->
+    | EnterRequestContext(requestRpcOrdinal, requestName, requestMode, cts, replyChannel) ->
         postServerEvent ProcessRequestQueue
 
         let newRequestQueue =
             state.RequestQueue
-            |> registerRequest requestRpcOrdinal requestName requestMode replyChannel
+            |> registerRequest requestRpcOrdinal requestName requestMode cts replyChannel
 
         return
             { state with
@@ -214,9 +226,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.TraceLevelChange
         |> Option.iter (fun level -> do postServerEvent (TraceLevelChange level))
 
-        wsUpdate.FolderReconfiguration
-        |> Option.iter (fun folders -> do postServerEvent (WorkspaceFolderConfigurationChanged folders))
-
         wsUpdate.ReloadRequested
         |> List.iter (fun delay -> do postServerEvent (WorkspaceReloadRequested delay))
 
@@ -226,7 +235,62 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         do postServerEvent PushDiagnosticsBacklogUpdate
 
-        return state
+        let mutable pendingReconfigs = state.PendingReconfigurations
+        let mutable requestQueue = state.RequestQueue
+        let mutable workspace = state.Workspace
+
+        // Accumulate reconfigurations.  While Uninitialized there is no loaded solution
+        // to protect, so we never enter drain mode — we just queue the changes.
+        // For all other phases the existing drain/reconfiguring machinery applies.
+        let accumulate reconfig =
+            pendingReconfigs <- pendingReconfigs @ [ reconfig ]
+
+            if workspace.Phase <> LspWorkspacePhase.Uninitialized then
+                match enterDrainingMode requestQueue with
+                | Some updatedQueue ->
+                    requestQueue <- updatedQueue
+                    workspace <- workspaceSetPhaseReconfiguring workspace
+                    postServerEvent ProcessRequestQueue
+                | None -> ()
+
+        wsUpdate.ConfigurationChange
+        |> Option.iter (fun cfg -> accumulate (PendingReconfiguration.ConfigurationChange cfg))
+
+        wsUpdate.FolderReconfiguration
+        |> Option.iter (fun folders -> accumulate (PendingReconfiguration.FolderReconfiguration folders))
+
+        // handleInitialized has completed: apply all accumulated reconfigurations
+        // directly without a drain — nothing is reading an uninitialised workspace.
+        // Use the latest config from the pending list rather than state.Config:
+        // the ConfigurationChange event posted above is still queued behind this
+        // message, so state.Config has not been updated yet.
+        if wsUpdate.InitializedGateEmitted then
+            let latestConfig =
+                pendingReconfigs
+                |> List.choose (fun r ->
+                    match r with
+                    | PendingReconfiguration.ConfigurationChange cfg -> Some cfg
+                    | _ -> None)
+                |> List.tryLast
+                |> Option.defaultValue state.Config
+
+            let applyOne (ws: LspWorkspace) reconfig =
+                match reconfig with
+                | PendingReconfiguration.FolderReconfiguration folders ->
+                    ws
+                    |> workspaceFoldersReplaced folders
+                    |> workspaceSolutionPathOverride latestConfig
+                | PendingReconfiguration.ConfigurationChange _ -> workspaceSolutionPathOverride latestConfig ws
+                | PendingReconfiguration.WorkspaceReload _ -> workspaceTeardown ws
+
+            workspace <- pendingReconfigs |> List.fold applyOne workspace
+            pendingReconfigs <- []
+
+        return
+            { state with
+                PendingReconfigurations = pendingReconfigs
+                RequestQueue = requestQueue
+                Workspace = workspace }
 
     | ProcessRequestQueue ->
         let result =
@@ -255,17 +319,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             return state
 
         | Waiting -> return state
-
-    | WorkspaceFolderConfigurationChanged workspaceFolders ->
-        let updatedWorkspace =
-            state.Workspace
-            |> workspaceTeardown
-            |> workspaceFoldersReplaced workspaceFolders
-            |> workspaceSolutionPathOverride state.Config
-
-        return
-            { state with
-                Workspace = updatedWorkspace }
 
     | ServerStarted(lspClient, getRpcStats) ->
         Logging.setLspTraceClient (Some lspClient)
@@ -391,13 +444,28 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return { state with PushDiagnostics = newPD }
 
     | RequestQueueDrained ->
-        let tornDownWorkspace = workspaceTeardown state.Workspace
+        let applyOne (ws: LspWorkspace) reconfig =
+            match reconfig with
+            | PendingReconfiguration.FolderReconfiguration folders ->
+                ws
+                |> workspaceTeardown
+                |> workspaceFoldersReplaced folders
+                |> workspaceSolutionPathOverride state.Config
+            | PendingReconfiguration.ConfigurationChange _ ->
+                // state.Config was already updated by the ConfigurationChange event
+                // posted from ApplyWorkspaceUpdate; re-stamp the path override now.
+                workspaceSolutionPathOverride state.Config ws
+            | PendingReconfiguration.WorkspaceReload _ -> workspaceTeardown ws
+
+        let finalWorkspace =
+            state.PendingReconfigurations |> List.fold applyOne state.Workspace
 
         postServerEvent ProcessRequestQueue
 
         return
             { state with
-                Workspace = tornDownWorkspace
+                Workspace = finalWorkspace
+                PendingReconfigurations = []
                 RequestQueue = state.RequestQueue |> enterDispatchingMode }
 
     | PeriodicTimerTick ->
@@ -442,6 +510,10 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
                 return
                     { state with
+                        Workspace = workspaceSetPhaseReconfiguring state.Workspace
+                        PendingReconfigurations =
+                            state.PendingReconfigurations
+                            @ [ PendingReconfiguration.WorkspaceReload(DateTime.UtcNow) ]
                         RequestQueue = updatedRequestQueue }
             | None -> return state
 
