@@ -234,10 +234,25 @@ module Diagnostic =
                         // for documents that become clean after a config change (e.g. toggling
                         // analyzersEnabled off removes analyzer diagnostics from project2 but
                         // the server previously emitted nothing for it, leaving the old count).
+                        //
+                        // Restrict to URIs that actually belong to this project.  Without this
+                        // restriction every project emits empty full reports for URIs owned by
+                        // other projects (because those URIs have no diagnostics in this
+                        // project), which overwrites their resultId with the wrong project's
+                        // resultId.  On the next poll the client sends those mismatched
+                        // resultIds, so the owning project sees them as stale and re-emits
+                        // real diagnostics — producing the 0 → N → 0 cycle.
+                        let projectDocumentUris =
+                            project.Documents
+                            |> Seq.choose (fun d -> d.FilePath |> Option.ofObj)
+                            |> Seq.map pathToUri
+                            |> Set.ofSeq
+
                         let clientKnownUrisForProject =
                             knownResultIds
                             |> Map.toSeq
                             |> Seq.map fst
+                            |> Seq.filter (fun uri -> projectDocumentUris.Contains uri)
                             |> Seq.filter (fun uri -> not (diagnosticsByDocument.ContainsKey uri))
 
                         for uri in clientKnownUrisForProject do

@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.DiagnosticTests
 
+open System
 open System.Threading
 
 open NUnit.Framework
@@ -707,6 +708,100 @@ let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
                 )
             | U2.C1 _ -> ()
     | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+
+[<Test>]
+let testWorkspaceDiagnosticsSecondPollIsUnchangedInMultiProjectSolution () =
+    // Regression for the cross-project resultId poisoning bug.
+    //
+    // Scenario (two projects in one solution):
+    //   ProjectA owns ClassA.cs and has a compiler error.
+    //   ProjectB owns ClassB.cs and is clean.
+    //
+    // Bug (before fix): on poll 1 the server emits
+    //   - ClassA.cs → full { resultId = A, items = [error] }   (ProjectA)
+    //   - ClassB.cs → full { resultId = B, items = [] }        (ProjectB)
+    //
+    // On poll 2 the client sends previousResultIds = [ClassA.cs→A, ClassB.cs→B].
+    // While processing ProjectB, clientKnownUrisForProject iterated ALL of
+    // knownResultIds (not just ProjectB's files), found ClassA.cs had no diagnostics
+    // in ProjectB, and emitted:
+    //   - ClassA.cs → full { resultId = B, items = [] }   ← wrong project's resultId!
+    //
+    // The client now holds ClassA.cs→B.  On poll 3, ProjectA sees B ≠ A (stale) and
+    // re-emits the real error → cycling indefinitely (0 → N → 0 in VS Code).
+    //
+    // Fix: clientKnownUrisForProject is now restricted to URIs that belong to the
+    // project being processed, so ProjectB never touches ClassA.cs.
+    use client = activateFixture "multiProjectDiagnosticCycle"
+
+    // Open ClassA.cs to trigger solution loading.
+    use _classFile = client.Open("ProjectA/ClassA.cs")
+
+    // Non-streaming poll 1: wait until the solution is loaded and ProjectA's errors are
+    // reported.  ProjectB has no diagnostics and no prior resultId, so only ClassA.cs
+    // appears in the result.
+    let mutable previousResultIds: PreviousResultId array = Array.empty
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 30.0)
+        (fun () ->
+            let p: WorkspaceDiagnosticParams =
+                { WorkDoneToken = None
+                  PartialResultToken = None
+                  Identifier = None
+                  PreviousResultIds = Array.empty }
+
+            let response: WorkspaceDiagnosticReport option =
+                client.Request("workspace/diagnostic", p)
+
+            let stubs =
+                match response with
+                | Some report ->
+                    report.Items
+                    |> Array.choose (fun item ->
+                        match item with
+                        | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
+                        | U2.C2 _ -> None)
+                | None -> Array.empty
+
+            if stubs.Length >= 1 then
+                previousResultIds <- stubs
+                true
+            else
+                false)
+        "timed out waiting for at least ClassA.cs to appear in workspace/diagnostic"
+
+    Assert.IsTrue(previousResultIds.Length >= 1, "expected at least one resultId stub from warmup poll")
+
+    // Non-streaming poll 2: send back the resultIds from poll 1.
+    //
+    // Before the fix, ProjectB's pass saw ClassA.cs in previousResultIds, found it had no
+    // diagnostics in ProjectB, and emitted a full { items=[] } for it with ProjectB's
+    // resultId — overwriting the correct ProjectA resultId.  The server should instead
+    // return Unchanged for ClassA.cs (same resultId → nothing changed).
+    let secondParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = previousResultIds }
+
+    let secondReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", secondParams)
+
+    match secondReport with
+    | Some report ->
+        for item in report.Items do
+            match item with
+            | U2.C2 unchanged -> Assert.AreEqual("unchanged", unchanged.Kind)
+            | U2.C1 full ->
+                Assert.Fail(
+                    sprintf
+                        "expected Unchanged on second poll for %s but got a full report — \
+                         ProjectB's pass must not emit a full report for a URI it doesn't own \
+                         (cross-project resultId poisoning, the 0→N→0 cycling bug)"
+                        full.Uri
+                )
+    | None -> Assert.Fail("expected Some from second workspace/diagnostic")
 
 [<Test>]
 let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesClean () =
