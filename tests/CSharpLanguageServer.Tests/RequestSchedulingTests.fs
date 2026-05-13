@@ -80,7 +80,8 @@ let private makeTestRequest ordinal name mode phase =
       Registered = DateTime.UtcNow
       ActivationRC = rc
       RunningSince = (if phase = Running then Some DateTime.UtcNow else None)
-      WorkspaceUpdate = LspWorkspaceUpdate.Empty }
+      WorkspaceUpdate = LspWorkspaceUpdate.Empty
+      Cts = None }
 
 let private defaultSettings: CSharpConfiguration = CSharpConfiguration.Default
 
@@ -138,7 +139,7 @@ let ``registerRequest adds a Pending request to the queue`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
     Assert.AreEqual(1, queue.Requests.Count)
 
@@ -155,8 +156,8 @@ let ``registerRequest preserves existing requests`` () =
 
     let queue =
         RequestQueue.Empty
-        |> registerRequest 1L "textDocument/hover" ReadOnly rc1
-        |> registerRequest 2L "textDocument/rename" ReadWrite rc2
+        |> registerRequest 1L "textDocument/hover" ReadOnly None rc1
+        |> registerRequest 2L "textDocument/rename" ReadWrite None rc2
 
     Assert.AreEqual(2, queue.Requests.Count)
     Assert.IsTrue(queue.Requests.ContainsKey(1L))
@@ -171,7 +172,7 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
     let wsUpdate = LspWorkspaceUpdate.Empty.WithClientInitialize()
     let updated = queue |> finishRequest 1L wsUpdate
@@ -238,6 +239,80 @@ let ``processRequestQueue returns Retired skipping running ReadOnlyBackground`` 
 // ---------------------------------------------------------------------------
 // enterDrainingMode / enterDispatchingMode
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// enterDrainingMode — cancellation behaviour
+// ---------------------------------------------------------------------------
+
+[<Test>]
+let ``enterDrainingMode cancels all running requests that have a CTS`` () =
+    let cts1 = new System.Threading.CancellationTokenSource()
+    let cts2 = new System.Threading.CancellationTokenSource()
+
+    let queue =
+        { RequestQueue.Empty with
+            Requests =
+                Map.ofList
+                    [ (1L,
+                       { makeTestRequest 1L "a" ReadWrite Running with
+                           Cts = Some cts1 })
+                      (2L,
+                       { makeTestRequest 2L "b" ReadOnlyBackground Running with
+                           Cts = Some cts2 }) ] }
+
+    let result = enterDrainingMode queue
+
+    Assert.IsTrue(result.IsSome)
+    Assert.IsTrue(cts1.IsCancellationRequested, "ReadWrite running request should be cancelled")
+    Assert.IsTrue(cts2.IsCancellationRequested, "ReadOnlyBackground running request should be cancelled")
+
+[<Test>]
+let ``enterDrainingMode does not cancel pending or finished requests`` () =
+    let ctsPending = new System.Threading.CancellationTokenSource()
+    let ctsFinished = new System.Threading.CancellationTokenSource()
+
+    let queue =
+        { RequestQueue.Empty with
+            Requests =
+                Map.ofList
+                    [ (1L,
+                       { makeTestRequest 1L "a" ReadOnly Pending with
+                           Cts = Some ctsPending })
+                      (2L,
+                       { makeTestRequest 2L "b" ReadOnly Finished with
+                           Cts = Some ctsFinished }) ] }
+
+    let _ = enterDrainingMode queue
+
+    Assert.IsFalse(ctsPending.IsCancellationRequested, "Pending request should not be cancelled")
+    Assert.IsFalse(ctsFinished.IsCancellationRequested, "Finished request should not be cancelled")
+
+[<Test>]
+let ``enterDrainingMode tolerates running requests with no CTS`` () =
+    let queue =
+        { RequestQueue.Empty with
+            Requests = Map.ofList [ (1L, makeTestRequest 1L "a" ReadWrite Running) ] }
+
+    // Should not throw even though Cts = None
+    Assert.DoesNotThrow(fun () -> enterDrainingMode queue |> ignore)
+
+[<Test>]
+let ``enterDrainingMode does not cancel when already draining`` () =
+    let cts = new System.Threading.CancellationTokenSource()
+
+    let queue =
+        { RequestQueue.Empty with
+            Mode = DrainingUpTo 1L
+            Requests =
+                Map.ofList
+                    [ (1L,
+                       { makeTestRequest 1L "a" ReadWrite Running with
+                           Cts = Some cts }) ] }
+
+    let result = enterDrainingMode queue
+
+    Assert.IsTrue(result.IsNone, "Should return None when already draining")
+    Assert.IsFalse(cts.IsCancellationRequested, "Should not cancel when already draining")
 
 [<Test>]
 let ``enterDrainingMode sets DrainingUpTo with max ordinal`` () =
@@ -309,7 +384,7 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
@@ -326,7 +401,7 @@ let ``processRequestQueue activates a pending ReadWrite request when queue is id
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite rc
+        RequestQueue.Empty |> registerRequest 1L "textDocument/rename" ReadWrite None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
@@ -358,8 +433,8 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
 
     let queue =
         RequestQueue.Empty
-        |> registerRequest 1L "textDocument/completion" ReadOnly rc1
-        |> registerRequest 3L "textDocument/hover" ReadOnly rc3
+        |> registerRequest 1L "textDocument/completion" ReadOnly None rc1
+        |> registerRequest 3L "textDocument/hover" ReadOnly None rc3
 
     // Simulate ordinal 1 already running — ordinal 3 should still wait because
     // ordinal 2 is missing.
@@ -387,7 +462,7 @@ let ``processRequestQueue does not activate ReadWrite request when there is a ga
     let rc = makeDummyReplyChannel ignore
 
     let queue =
-        RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite rc
+        RequestQueue.Empty |> registerRequest 2L "textDocument/rename" ReadWrite None rc
 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 

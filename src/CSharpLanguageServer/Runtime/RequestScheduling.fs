@@ -96,7 +96,8 @@ type RequestInfo =
       Registered: DateTime
       ActivationRC: AsyncReplyChannel<RequestContext>
       RunningSince: option<DateTime>
-      WorkspaceUpdate: LspWorkspaceUpdate }
+      WorkspaceUpdate: LspWorkspaceUpdate
+      Cts: System.Threading.CancellationTokenSource option } // borrowed from JSON-RPC layer; scheduler must NOT dispose it
 
 type RequestMetrics =
     { Count: int
@@ -262,7 +263,14 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
     formatInColumns (headerRow :: dataRows)
 
 
-let registerRequest requestRpcOrdinal requestName requestMode activationReplyChannel (requestQueue: RequestQueue) =
+let registerRequest
+    requestRpcOrdinal
+    requestName
+    requestMode
+    (cts: System.Threading.CancellationTokenSource option)
+    activationReplyChannel
+    (requestQueue: RequestQueue)
+    =
     let newRequest =
         { Phase = Pending
           Name = requestName
@@ -271,7 +279,8 @@ let registerRequest requestRpcOrdinal requestName requestMode activationReplyCha
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
           RunningSince = None
-          WorkspaceUpdate = LspWorkspaceUpdate.Empty }
+          WorkspaceUpdate = LspWorkspaceUpdate.Empty
+          Cts = cts }
 
     let newRequests = requestQueue.Requests |> Map.add requestRpcOrdinal newRequest
 
@@ -344,7 +353,8 @@ let retireNextFinishedRequest
 
         (Some request, updatedQueue)
 
-/// Enters `DrainingUpTo` mode if not already draining. Returns `Some` with
+/// Enters `DrainingUpTo` mode if not already draining, and cancels all
+/// currently running requests so they finish quickly. Returns `Some` with
 /// the updated queue, or `None` if already in draining mode.
 let enterDrainingMode (requestQueue: RequestQueue) : RequestQueue option =
     match requestQueue.Mode with
@@ -355,6 +365,16 @@ let enterDrainingMode (requestQueue: RequestQueue) : RequestQueue option =
                 0L
             else
                 requestQueue.Requests |> Map.keys |> Seq.max
+
+        requestQueue.Requests
+        |> Map.iter (fun _ req ->
+            if req.Phase = Running then
+                req.Cts
+                |> Option.iter (fun cts ->
+                    try
+                        cts.Cancel()
+                    with _ ->
+                        ()))
 
         Some
             { requestQueue with

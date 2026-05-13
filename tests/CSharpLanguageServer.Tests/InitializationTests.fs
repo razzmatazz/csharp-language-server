@@ -30,8 +30,13 @@ let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
 let testServerRegistersCapabilitiesWithTheClient () =
     use client = activateFixture "genericProject"
 
-    let! debugInfo0 = client.GetDebugInfo()
-    Assert.AreEqual("Configured", debugInfo0.workspace.phase)
+    // Phase reaches Configured after the initialized handler completes and the
+    // InitializedGate fires.  Wait for it rather than asserting immediately, since
+    // GetDebugInfo can race with the initialized handler still running.
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
+        "workspace never reached Configured after initialized"
 
     let serverInfo = client.GetState().ServerInfo.Value
     Assert.AreEqual("csharp-ls", serverInfo.Name)
@@ -340,12 +345,14 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
         activateFixtureExt "genericProject" profileWithDelay emptyFixturePatch id
 
     // ── Configured ──────────────────────────────────────────────────────────────
-    // GetDebugInfo posts to the same state-actor mailbox as all workspace events,
-    // so by the time it replies, initialize/initialized side-effects (including the
-    // workspace/configuration round-trip that delivers solutionLoadDelay) have
-    // already been applied.
-    let debugInfo0 = client.GetDebugInfo()
-    Assert.AreEqual("Configured", debugInfo0.workspace.phase, "phase after initialize/initialized")
+    // Phase reaches Configured after initialized completes and the InitializedGate
+    // fires (including the workspace/configuration round-trip delivering
+    // solutionLoadDelay).  Opening a document then advances it to Loading; with
+    // solutionLoadDelay we can catch it in Configured first.
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
+        "workspace never reached Configured after initialized"
 
     // ── Loading ──────────────────────────────────────────────────────────────────
     // Opening a document is the trigger that kicks off solution loading

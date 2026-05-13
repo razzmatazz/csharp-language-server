@@ -17,7 +17,10 @@ let private logger = Logging.getLoggerByName "Runtime.DebugInfo"
 type DebugWorkspaceFolderInfo =
     { uri: string
       name: string
-      solutionState: string }
+      solutionState: string
+      solutionPathOverride: string option
+      generation: string
+      pushDiagnosticsBacklogUpdatePending: bool }
 
 type DebugWorkspaceInfo =
     { phase: string
@@ -58,7 +61,10 @@ type DebugInfo =
 let private toDebugWorkspaceFolderInfo (wf: LspWorkspaceFolder) : DebugWorkspaceFolderInfo =
     { uri = wf.Uri
       name = wf.Name
-      solutionState = sprintf "%A" wf.Solution }
+      solutionState = sprintf "%A" wf.Solution
+      solutionPathOverride = wf.SolutionPathOverride
+      generation = string wf.Generation
+      pushDiagnosticsBacklogUpdatePending = wf.PushDiagnosticsBacklogUpdatePending }
 
 let private toDebugRequestInfo (ordinal: int64) (r: RequestInfo) : DebugRequestInfo =
     { ordinal = ordinal
@@ -149,7 +155,17 @@ let dumpDebugInfo (info: DebugInfo) : unit =
 
     if not (List.isEmpty info.workspace.folders) then
         for f in info.workspace.folders do
-            logger.LogDebug("  {uri} [{name}]: {state}", f.uri, f.name, f.solutionState)
+            let pathOverride = f.solutionPathOverride |> Option.defaultValue "(none)"
+
+            logger.LogDebug(
+                "  {uri} [{name}]: {state} override={pathOverride} gen={generation} pdPending={pdPending}",
+                f.uri,
+                f.name,
+                f.solutionState,
+                pathOverride,
+                f.generation,
+                f.pushDiagnosticsBacklogUpdatePending
+            )
 
     logger.LogDebug("---------------------------------")
 

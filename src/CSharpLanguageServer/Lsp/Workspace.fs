@@ -59,6 +59,7 @@ type LspWorkspace =
 type LspWorkspaceUpdate =
     { ClientInitializeEmitted: bool
       ClientShutdownEmitted: bool
+      InitializedGateEmitted: bool
       ClientCapabilityChange: ClientCapabilities option
       ConfigurationChange: CSharpConfiguration option
       TraceLevelChange: TraceValues option
@@ -69,6 +70,7 @@ type LspWorkspaceUpdate =
     static member Empty =
         { ClientInitializeEmitted = false
           ClientShutdownEmitted = false
+          InitializedGateEmitted = false
           ClientCapabilityChange = None
           ConfigurationChange = None
           TraceLevelChange = None
@@ -79,6 +81,10 @@ type LspWorkspaceUpdate =
     member this.WithClientInitialize() =
         { this with
             ClientInitializeEmitted = true }
+
+    member this.WithInitializedGate() =
+        { this with
+            InitializedGateEmitted = true }
 
     member this.WithClientShutdown() =
         { this with
@@ -124,6 +130,10 @@ let workspaceSolutionPathOverride (config: CSharpConfiguration) (workspace: LspW
         | _ -> workspace.Folders
 
     { workspace with Folders = folders }
+
+let workspaceSetPhaseReconfiguring (workspace: LspWorkspace) =
+    { workspace with
+        Phase = LspWorkspacePhase.Reconfiguring }
 
 let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace: LspWorkspace) =
     if workspaceFolders.Length = 0 then
