@@ -1,6 +1,7 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
+open System.Collections.Immutable
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.FindSymbols
@@ -58,8 +59,26 @@ module References =
                 | Some(symbol, _, _) ->
                     let wfPathToUri path = workspaceFolderPathToUri path wf
 
+                    // SymbolFinder.FindReferencesAsync(symbol, solution) does not search
+                    // SourceGeneratedDocuments (Roslyn bug #63375). The document-set
+                    // overload restricts the search to only the given set, so we must
+                    // include all regular documents too — not just the generated ones.
+                    let! sourceGenDocArrays =
+                        solution.Projects
+                        |> Seq.map (fun p -> p.GetSourceGeneratedDocumentsAsync(ct).AsTask() |> Async.AwaitTask)
+                        |> Async.Parallel
+
+                    let allDocs =
+                        let regularDocs = solution.Projects |> Seq.collect _.Documents |> Seq.cast<Document>
+
+                        sourceGenDocArrays
+                        |> Seq.concat
+                        |> Seq.cast<Document>
+                        |> Seq.append regularDocs
+                        |> ImmutableHashSet.CreateRange
+
                     let! refs =
-                        SymbolFinder.FindReferencesAsync(symbol, solution, cancellationToken = ct)
+                        SymbolFinder.FindReferencesAsync(symbol, solution, allDocs, ct)
                         |> Async.AwaitTask
 
                     let locationsFromReferencedSym (r: ReferencedSymbol) =
