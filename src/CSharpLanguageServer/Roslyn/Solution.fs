@@ -382,32 +382,39 @@ let solutionGetRazorDocumentForPath
         | Some project ->
             let projectBaseDir = Path.GetDirectoryName project.FilePath
 
-            let! compilation = project.GetCompilationAsync() |> Async.AwaitTask
-
-            let mutable cshtmlTree: SyntaxTree option = None
-
+            // SDK 10.0.300+: Razor is an IIncrementalGenerator; generated files live in
+            // SourceGeneratedDocuments, not in compilation.SyntaxTrees.
+            // MSBuildWorkspace populates project.AnalyzerConfigDocuments from the
+            // EditorConfigFiles MSBuild items produced by GenerateMSBuildEditorConfigFile
+            // during its own design-time build, so the generator already has all the
+            // build_property.* options it needs — no manual injection required.
+            //
+            // The Razor generator derives HintNames from the base64-decoded TargetPath in
+            // the editorconfig, replacing BOTH directory separators AND dots with '_', e.g.:
+            //   Views/Test/ViewFileWithErrors.cshtml → Views_Test_ViewFileWithErrors_cshtml.g.cs
             let cshtmlPathTranslated =
                 Path.GetRelativePath(projectBaseDir, cshtmlPath)
                 |> _.Replace(".", "_")
+                |> _.Replace(Path.DirectorySeparatorChar, '_')
                 |> (fun s -> s + ".g.cs")
 
-            // TODO: drop this later, this is for compat with .NET SDK < "10.201"
-            let altCshtmlPathTranslated =
-                cshtmlPathTranslated |> _.Replace(Path.DirectorySeparatorChar, '_')
+            let! ct = Async.CancellationToken
 
-            for tree in compilation.SyntaxTrees do
-                let path = tree.FilePath
+            let! generatedDocs = project.GetSourceGeneratedDocumentsAsync(ct).AsTask() |> Async.AwaitTask
 
-                if path.StartsWith projectBaseDir then
-                    let relativePath = Path.GetRelativePath(projectBaseDir, path)
+            let razorGenDoc =
+                generatedDocs |> Seq.tryFind (fun d -> d.HintName.EndsWith cshtmlPathTranslated)
 
-                    if
-                        relativePath.EndsWith cshtmlPathTranslated
-                        || relativePath.EndsWith altCshtmlPathTranslated
-                    then
-                        cshtmlTree <- Some tree
+            match razorGenDoc with
+            | None -> return None
+            | Some doc ->
+                let! tree = doc.GetSyntaxTreeAsync(ct) |> Async.AwaitTask
 
-            return cshtmlTree |> Option.map (fun cst -> (project, compilation, cst))
+                match tree |> Option.ofObj with
+                | None -> return None
+                | Some tree ->
+                    let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
+                    return compilation |> Option.ofObj |> Option.map (fun c -> (project, c, tree))
     }
 
 let solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos = async {
