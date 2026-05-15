@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
 open StreamJsonRpc
 open Microsoft.Extensions.Logging
+open System.Text.Json
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
@@ -131,7 +132,8 @@ let configureRpcTransport
 
                 let fnParams =
                     jsonRpcCtx.Params
-                    |> Option.defaultWith (fun _ -> Newtonsoft.Json.Linq.JValue.CreateNull())
+                    |> Option.defaultWith (fun _ -> nullJe)
+                    |> jeToJToken
                     |> sanitize
                     |> deserialize
 
@@ -151,8 +153,8 @@ let configureRpcTransport
 
     let unwrapResult result =
         match result with
-        | Ok value -> value |> serializeNullable |> Ok
-        | Error error -> error |> serialize |> Error
+        | Ok value -> value |> serializeNullable |> jtokenToJe |> Ok
+        | Error error -> error |> serialize |> jtokenToJe |> Error
 
     let callHandler requestMode fn : JsonRpcCallHandler =
         wrapHandler unwrapResult requestMode id fn

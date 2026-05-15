@@ -34,8 +34,10 @@ let transport =
         let callHandlers =
             Map.ofList [
                 "myMethod", (fun ctx -> async {
-                    // ctx.Params contains the request params as JToken option
-                    return Ok (JValue("hello") :> JToken)
+                    // ctx.Params contains the request params as JsonElement option
+                    let node = System.Text.Json.Nodes.JsonObject()
+                    node["result"] <- System.Text.Json.Nodes.JsonValue.Create("hello")
+                    return Ok (System.Text.Json.JsonSerializer.SerializeToElement(node))
                 })
             ]
 
@@ -53,7 +55,19 @@ let transport =
 
 The `configure` callback receives the transport actor before any messages are processed, so it is safe to capture it (e.g. to call `sendJsonRpcNotification` or `sendJsonRpcCall` from within handlers).
 
-The `rpcLogCallback` is invoked on every `JsonRpcLogEntry` — reads, writes, errors, warnings, and debug messages. Pass `None` to disable logging. You can combine multiple callbacks by composing them into one:
+The `rpcLogCallback` is invoked on every `JsonRpcLogEntry` — reads, writes, errors, warnings, and debug messages. Pass `None` to disable logging.
+
+The DU cases are:
+
+| Case | Payload | When emitted |
+|---|---|---|
+| `RpcRead` | `string` — raw JSON text of the inbound message | Every successfully parsed inbound message |
+| `RpcWrite` | `string` — raw JSON text of the outbound message | Every message written to stdout |
+| `RpcError` | `string` — human-readable description | Protocol violations, handler exceptions, unknown response IDs |
+| `RpcWarn` | `string` — human-readable description | Late responses after timeout, dropped post-shutdown sends |
+| `RpcDebug` | `string` — human-readable description | Verbose diagnostic events |
+
+You can combine multiple callbacks by composing them into one:
 
 ```fsharp
 let combined =
@@ -75,19 +89,28 @@ This applies to both a missing `jsonrpc` field and a wrong value (e.g. `"1.0"`).
 
 ## Receiving requests
 
-Register an async function of type `JsonRpcCallHandler` per method name. The function receives a `JsonRpcRequestContext` and must return `Async<Result<JToken, JToken>>` — `Ok` for a successful response, `Error` for a JSON-RPC error object.
+Register an async function of type `JsonRpcCallHandler` per method name. The function receives a `JsonRpcRequestContext` and must return `Async<Result<JsonElement, JsonElement>>` — `Ok` for a successful response, `Error` for a JSON-RPC error object.
 
 The context includes a `RequestOrdinal` — a monotonically increasing `int64` assigned to each inbound message (both requests and notifications) in the order it was received. This can be used for logging or to reason about ordering.
 
-```fsharp
-let handler : JsonRpcCallHandler = fun ctx -> async {
-    let paramValue =
-        ctx.Params
-        |> Option.map (fun p -> p.ToObject<MyParams>())
+`ctx.Params` and `ctx.WireId` are `System.Text.Json.JsonElement option`. Use standard `JsonElement` navigation methods — `.GetProperty(...)`, `.TryGetProperty(...)`, `.GetString()`, `.GetInt32()`, etc. — to inspect them.
 
-    match paramValue with
-    | Some p -> return Ok (serialize (doSomething p))
-    | None   -> return Error (makeError -32602 "Invalid params")
+```fsharp
+open System.Text.Json
+open System.Text.Json.Nodes
+
+let handler : JsonRpcCallHandler = fun ctx -> async {
+    match ctx.Params with
+    | Some p ->
+        let name = p.GetProperty("name").GetString()
+        let result = JsonObject()
+        result["greeting"] <- JsonValue.Create($"hello {name}")
+        return Ok (JsonSerializer.SerializeToElement(result))
+    | None ->
+        let err = JsonObject()
+        err["code"] <- JsonValue.Create(-32602)
+        err["message"] <- JsonValue.Create("Invalid params")
+        return Error (JsonSerializer.SerializeToElement(err))
 }
 ```
 
@@ -101,7 +124,7 @@ Register an async function of type `JsonRpcNotificationHandler` per method name.
 
 ```fsharp
 let handler : JsonRpcNotificationHandler = fun ctx -> async {
-    doSomethingWith ctx.Params
+    ctx.Params |> Option.iter (fun p -> doSomethingWith p)
 }
 ```
 
@@ -112,22 +135,28 @@ If a notification handler throws an unhandled exception, a `RpcError` log entry 
 ## Sending notifications
 
 ```fsharp
-do! sendJsonRpcNotification transport "window/showMessage" (serialize payload)
+let body = JsonObject()
+body["message"] <- JsonValue.Create("hello")
+do! sendJsonRpcNotification transport "window/showMessage" (JsonSerializer.SerializeToElement(body))
 ```
+
+The params argument is `JsonElement`. Build it with `System.Text.Json.Nodes.JsonObject` / `JsonValue`, or use `JsonSerializer.SerializeToElement` to convert any serialisable value.
 
 Returns `Async<unit>` that completes once the message has been written and flushed to the output stream (not just enqueued).
 
 ## Sending requests (outbound calls)
 
 ```fsharp
-let! result = sendJsonRpcCall transport "client/registerCapability" (serialize payload)
+let! result =
+    sendJsonRpcCall transport "client/registerCapability"
+        (JsonSerializer.SerializeToElement(payload))
 
 match result with
-| Ok value  -> // use value : JToken
-| Error err -> // handle err : JToken
+| Ok value  -> // value : JsonElement — use .GetProperty(...), .GetString(), etc.
+| Error err -> // err   : JsonElement — e.g. err.GetProperty("code").GetInt32()
 ```
 
-Returns `Async<Result<JToken, JToken>>` that completes when the peer's response arrives.
+The params argument is `JsonElement`. Returns `Async<Result<JsonElement, JsonElement>>` that completes when the peer's response arrives.
 
 ## Shutdown sequence
 

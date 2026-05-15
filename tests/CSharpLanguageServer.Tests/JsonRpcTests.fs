@@ -3,13 +3,11 @@ module CSharpLanguageServer.Tests.JsonRpcTests
 open System
 open System.IO
 open System.Text
+open System.Text.Json
 open System.Threading
 
-open Microsoft.Extensions.Logging
 open NUnit.Framework
-open Newtonsoft.Json.Linq
 
-open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Runtime.JsonRpc
 
 /// Helper: encode a JSON-RPC message with Content-Length framing into bytes.
@@ -76,10 +74,13 @@ let private waitForMessages (stdout: MemoryStream) (n: int) (timeoutMs: int) =
     stdout.Position <- 0L
 
     [ for _ in 1..n do
-          let msg = readMessage stdout |> Async.RunSynchronously
+          let msgBytes = readMessage stdout |> Async.RunSynchronously
 
-          if msg.IsSome then
-              yield msg.Value ]
+          match msgBytes with
+          | None -> ()
+          | Some msgBytes ->
+              use doc = JsonDocument.Parse(ReadOnlyMemory<byte>(msgBytes))
+              yield doc.RootElement.Clone() ]
 
 /// Helper: wait for the output stream to contain a complete response (with timeout).
 let private waitForResponse (stdout: MemoryStream) (timeoutMs: int) = async {
@@ -87,20 +88,26 @@ let private waitForResponse (stdout: MemoryStream) (timeoutMs: int) = async {
     // Give a bit more time for the full response to be written
     do! Async.Sleep 100
     stdout.Position <- 0L
-    return! readMessage stdout
+    let! msgBytes = readMessage stdout
+
+    match msgBytes with
+    | None -> return None
+    | Some msgBytes ->
+        use doc = JsonDocument.Parse(ReadOnlyMemory<byte>(msgBytes))
+        return Some(doc.RootElement.Clone())
 }
 
 [<Test>]
 let testBasicMethodInvocationReturnsResponse () =
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/echo"),
-            JProperty("params", JObject(JProperty("message", "hello")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/echo"
+               ``params`` = {| message = "hello" |} |}
         )
 
-    let handler _ctx = async { return Ok(JObject(JProperty("echo", "hello")) :> JToken) }
+    let handler _ctx = async { return Ok(JsonSerializer.SerializeToElement({| echo = "hello" |})) }
 
     let requestHandlings = Map.ofList [ "test/echo", handler ]
 
@@ -111,7 +118,7 @@ let testBasicMethodInvocationReturnsResponse () =
     let _server =
         startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
-    let requestBytes = encodeMessage (string request)
+    let requestBytes = encodeMessage request
     writeEnd.Write(requestBytes, 0, requestBytes.Length)
     writeEnd.Flush()
 
@@ -120,9 +127,9 @@ let testBasicMethodInvocationReturnsResponse () =
     Assert.IsTrue(responseOpt.IsSome, "Expected a response but got None")
 
     let response = responseOpt.Value
-    Assert.AreEqual("2.0", string response.["jsonrpc"])
-    Assert.AreEqual(1, int response.["id"])
-    Assert.AreEqual("hello", string (response.SelectToken("result.echo")))
+    Assert.AreEqual("2.0", response.GetProperty("jsonrpc").GetString())
+    Assert.AreEqual(1, response.GetProperty("id").GetInt32())
+    Assert.AreEqual("hello", response.GetProperty("result").GetProperty("echo").GetString())
 
     // After the handler has completed and the response is written the transport
     // should be quiescent: no running inbound requests and no queued writes.
@@ -142,18 +149,18 @@ let testBasicMethodInvocationReturnsResponse () =
 [<Test>]
 let testHandlerReturningEmptyResultProducesResponse () =
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 2),
-            JProperty("method", "test/silent"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 2
+               ``method`` = "test/silent"
+               ``params`` = {| |} |}
         )
 
-    let handler _ctx = async { return Ok(JObject() :> JToken) }
+    let handler _ctx = async { return Ok(JsonSerializer.SerializeToElement({| |})) }
 
     let requestHandlings = Map.ofList [ "test/silent", handler ]
 
-    let stdin = makeInputStream [ string request ]
+    let stdin = makeInputStream [ request ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -161,20 +168,20 @@ let testHandlerReturningEmptyResultProducesResponse () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
     Assert.IsTrue(responseOpt.IsSome, "Expected a response")
-    Assert.AreEqual(2, int responseOpt.Value.["id"])
+    Assert.AreEqual(2, responseOpt.Value.GetProperty("id").GetInt32())
 
 [<Test>]
 let testUnregisteredMethodReturnsMethodNotFoundError () =
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 3),
-            JProperty("method", "test/unknown"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 3
+               ``method`` = "test/unknown"
+               ``params`` = {| |} |}
         )
 
     // No handlers registered for "test/unknown"
-    let stdin = makeInputStream [ string request ]
+    let stdin = makeInputStream [ request ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -185,36 +192,36 @@ let testUnregisteredMethodReturnsMethodNotFoundError () =
     Assert.IsTrue(responseOpt.IsSome, "Expected an error response")
 
     let response = responseOpt.Value
-    Assert.AreEqual(3, int response.["id"])
-    Assert.AreEqual(-32601, int (response.SelectToken("error.code")))
-    Assert.IsTrue((string (response.SelectToken("error.message"))).Contains("Method not found"))
+    Assert.AreEqual(3, response.GetProperty("id").GetInt32())
+    Assert.AreEqual(-32601, response.GetProperty("error").GetProperty("code").GetInt32())
+    Assert.IsTrue(response.GetProperty("error").GetProperty("message").GetString().Contains("Method not found"))
 
 [<Test>]
 let testMultipleRequestsAreHandledSequentially () =
     let handler ctx = async {
-        let id = int ctx.WireId.Value
-        return Ok(JObject(JProperty("doubled", id * 2)) :> JToken)
+        let id = ctx.WireId.Value.GetInt32()
+        return Ok(JsonSerializer.SerializeToElement({| doubled = id * 2 |}))
     }
 
     let requestHandlings = Map.ofList [ "test/double", handler ]
 
     let request1 =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 10),
-            JProperty("method", "test/double"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 10
+               ``method`` = "test/double"
+               ``params`` = {| |} |}
         )
 
     let request2 =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 20),
-            JProperty("method", "test/double"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 20
+               ``method`` = "test/double"
+               ``params`` = {| |} |}
         )
 
-    let stdin = makeInputStream [ string request1; string request2 ]
+    let stdin = makeInputStream [ request1; request2 ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -224,27 +231,27 @@ let testMultipleRequestsAreHandledSequentially () =
 
     Assert.AreEqual(2, responses.Length, "Expected 2 responses")
 
-    Assert.AreEqual(10, int responses.[0].["id"])
-    Assert.AreEqual(20, int (responses.[0].SelectToken("result.doubled")))
+    Assert.AreEqual(10, responses.[0].GetProperty("id").GetInt32())
+    Assert.AreEqual(20, responses.[0].GetProperty("result").GetProperty("doubled").GetInt32())
 
-    Assert.AreEqual(20, int responses.[1].["id"])
-    Assert.AreEqual(40, int (responses.[1].SelectToken("result.doubled")))
+    Assert.AreEqual(20, responses.[1].GetProperty("id").GetInt32())
+    Assert.AreEqual(40, responses.[1].GetProperty("result").GetProperty("doubled").GetInt32())
 
 [<Test>]
 let testContentLengthFramingIsCorrect () =
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 42),
-            JProperty("method", "test/ping"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 42
+               ``method`` = "test/ping"
+               ``params`` = {| |} |}
         )
 
-    let handler _ctx = async { return Ok(JValue("pong") :> JToken) }
+    let handler _ctx = async { return Ok(JsonSerializer.SerializeToElement("pong")) }
 
     let requestHandlings = Map.ofList [ "test/ping", handler ]
 
-    let stdin = makeInputStream [ string request ]
+    let stdin = makeInputStream [ request ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -271,18 +278,18 @@ let testContentLengthFramingIsCorrect () =
     Assert.AreEqual(clValue, bodyBytes.Length, "Content-Length should match actual body byte length")
 
     // Verify body parses as valid JSON with expected content
-    let parsed = JObject.Parse(bodyString)
-    Assert.AreEqual(42, int parsed.["id"])
-    Assert.AreEqual("pong", string parsed.["result"])
+    let parsed = JsonDocument.Parse(bodyString).RootElement
+    Assert.AreEqual(42, parsed.GetProperty("id").GetInt32())
+    Assert.AreEqual("pong", parsed.GetProperty("result").GetString())
 
 [<Test>]
 let testMessageWithIdButNoMethodIsTreatedAsResponseAndDroppedIfUnmatched () =
     // A message with "id" but no "method" is now classified as a response to an
     // outbound request. Since there are no outstanding outbound requests, it is
     // silently logged and dropped (no output).
-    let malformed = JObject(JProperty("jsonrpc", "2.0"), JProperty("id", 99))
+    let malformed = JsonSerializer.Serialize({| jsonrpc = "2.0"; id = 99 |})
 
-    let stdin = makeInputStream [ string malformed ]
+    let stdin = makeInputStream [ malformed ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -294,9 +301,9 @@ let testMessageWithIdButNoMethodIsTreatedAsResponseAndDroppedIfUnmatched () =
 [<Test>]
 let testMessageWithNoMethodOrIdIsIgnored () =
     // A message with neither "method" nor "id" — not a valid request or notification
-    let malformed = JObject(JProperty("jsonrpc", "2.0"))
+    let malformed = JsonSerializer.Serialize({| jsonrpc = "2.0" |})
 
-    let stdin = makeInputStream [ string malformed ]
+    let stdin = makeInputStream [ malformed ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -313,10 +320,10 @@ let testNotificationIsDispatchedToHandler () =
     let receivedMethod = ref ""
 
     let notification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "test/notify"),
-            JProperty("params", JObject(JProperty("data", "abc")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "test/notify"
+               ``params`` = {| data = "abc" |} |}
         )
     // No "id" — this is a notification
 
@@ -327,7 +334,7 @@ let testNotificationIsDispatchedToHandler () =
 
     let notificationHandlings = Map.ofList [ "test/notify", handler ]
 
-    let stdin = makeInputStream [ string notification ]
+    let stdin = makeInputStream [ notification ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -345,17 +352,19 @@ let testNotificationHandlerReceivesCorrectParams () =
     let capturedParams = ref ""
 
     let notification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "test/log"),
-            JProperty("params", JObject(JProperty("level", "info"), JProperty("message", "hello world")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "test/log"
+               ``params`` =
+                {| level = "info"
+                   message = "hello world" |} |}
         )
 
-    let handler ctx = async { capturedParams.Value <- string (ctx.Params.Value.SelectToken("message")) }
+    let handler ctx = async { capturedParams.Value <- ctx.Params.Value.GetProperty("message").GetString() }
 
     let notificationHandlings = Map.ofList [ "test/log", handler ]
 
-    let stdin = makeInputStream [ string notification ]
+    let stdin = makeInputStream [ notification ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -368,9 +377,13 @@ let testNotificationHandlerReceivesCorrectParams () =
 [<Test>]
 let testUnregisteredNotificationDoesNotCrash () =
     let notification =
-        JObject(JProperty("jsonrpc", "2.0"), JProperty("method", "test/unknown_notif"), JProperty("params", JObject()))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "test/unknown_notif"
+               ``params`` = {| |} |}
+        )
 
-    let stdin = makeInputStream [ string notification ]
+    let stdin = makeInputStream [ notification ]
     let stdout = new MemoryStream()
 
     // No notification handlers registered
@@ -385,17 +398,21 @@ let testMixedRequestsAndNotificationsWork () =
     let notificationReceived = ref false
 
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/echo"),
-            JProperty("params", JObject(JProperty("value", "hi")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/echo"
+               ``params`` = {| value = "hi" |} |}
         )
 
     let notification =
-        JObject(JProperty("jsonrpc", "2.0"), JProperty("method", "test/ping"), JProperty("params", JObject()))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "test/ping"
+               ``params`` = {| |} |}
+        )
 
-    let requestHandler _ctx = async { return Ok(JValue("ok") :> JToken) }
+    let requestHandler _ctx = async { return Ok(JsonSerializer.SerializeToElement("ok")) }
 
     let notificationHandler _ctx = async { notificationReceived.Value <- true }
 
@@ -403,7 +420,7 @@ let testMixedRequestsAndNotificationsWork () =
     let notificationHandlings = Map.ofList [ "test/ping", notificationHandler ]
 
     // Send request first, then notification
-    let stdin = makeInputStream [ string request; string notification ]
+    let stdin = makeInputStream [ request; notification ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -412,8 +429,8 @@ let testMixedRequestsAndNotificationsWork () =
     // Wait for the request response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
     Assert.IsTrue(responseOpt.IsSome, "Expected a response for the request")
-    Assert.AreEqual(1, int responseOpt.Value.["id"])
-    Assert.AreEqual("ok", string responseOpt.Value.["result"])
+    Assert.AreEqual(1, responseOpt.Value.GetProperty("id").GetInt32())
+    Assert.AreEqual("ok", responseOpt.Value.GetProperty("result").GetString())
 
     // Wait for the notification to be processed
     waitUntil 5000 (fun () -> notificationReceived.Value) |> ignore
@@ -427,16 +444,16 @@ let testNotificationWithIdIsRoutedAsRequest () =
     let requestHandlerCalled = ref false
 
     let msg =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 5),
-            JProperty("method", "test/ambiguous"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 5
+               ``method`` = "test/ambiguous"
+               ``params`` = {| |} |}
         )
 
     let requestHandler _ctx = async {
         requestHandlerCalled.Value <- true
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     let notificationHandler _ctx = async { notificationHandlerCalled.Value <- true }
@@ -444,7 +461,7 @@ let testNotificationWithIdIsRoutedAsRequest () =
     let requestHandlings = Map.ofList [ "test/ambiguous", requestHandler ]
     let notificationHandlings = Map.ofList [ "test/ambiguous", notificationHandler ]
 
-    let stdin = makeInputStream [ string msg ]
+    let stdin = makeInputStream [ msg ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -462,19 +479,19 @@ let testWriteQueueDrainsAllResponses () =
     let requestCount = 10
 
     let handler ctx = async {
-        let id = int ctx.WireId.Value
-        return Ok(JObject(JProperty("seq", id)) :> JToken)
+        let id = ctx.WireId.Value.GetInt32()
+        return Ok(JsonSerializer.SerializeToElement({| seq = id |}))
     }
 
     let requestHandlings = Map.ofList [ "test/seq", handler ]
 
     let requests =
         [ for i in 1..requestCount ->
-              JObject(
-                  JProperty("jsonrpc", "2.0"),
-                  JProperty("id", i),
-                  JProperty("method", "test/seq"),
-                  JProperty("params", JObject())
+              JsonSerializer.Serialize(
+                  {| jsonrpc = "2.0"
+                     id = i
+                     ``method`` = "test/seq"
+                     ``params`` = {| |} |}
               ) ]
 
     let writeEnd, stdin = makeOpenStdin ()
@@ -486,7 +503,7 @@ let testWriteQueueDrainsAllResponses () =
 
     // Write all requests into the pipe at once so the transport sees them back-to-back.
     for req in requests do
-        let bytes = encodeMessage (string req)
+        let bytes = encodeMessage req
         writeEnd.Write(bytes, 0, bytes.Length)
 
     writeEnd.Flush()
@@ -514,7 +531,8 @@ let testWriteQueueDrainsAllResponses () =
         sprintf "Expected %d responses but got %d" requestCount responses.Length
     )
 
-    let receivedIds = responses |> List.map (fun r -> int r.["id"]) |> Set.ofList
+    let receivedIds =
+        responses |> List.map (fun r -> r.GetProperty("id").GetInt32()) |> Set.ofList
 
     for i in 1..requestCount do
         Assert.IsTrue(receivedIds.Contains(i), sprintf "Missing response for id %d" i)
@@ -532,14 +550,21 @@ let testWriteQueueDrainsAllResponses () =
 
 [<Test>]
 let testSendNotificationWritesProperJsonRpcNotification () =
-    // Start server with no inbound messages (empty stdin that immediately EOFs)
-    let stdin = makeInputStream []
+    // Use an open pipe so stdin never hits EOF and the transport doesn't shut down
+    // before the notification is enqueued.  An empty MemoryStream would EOF
+    // immediately and — under a loaded test runner — the transport could enter
+    // ShuttingDown before SendNotification is processed, causing a silent drop.
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
-    let body = JObject(JProperty("message", "hello from server"))
+    let body = JsonSerializer.SerializeToElement({| message = "hello from server" |})
 
+    // sendJsonRpcNotification only completes after MessageWriteComplete fires,
+    // which is after the bytes have been flushed to stdout.  No polling needed —
+    // we can rewind and read directly.
     sendJsonRpcNotification server "window/logMessage" body
     |> Async.RunSynchronously
 
@@ -548,10 +573,10 @@ let testSendNotificationWritesProperJsonRpcNotification () =
     Assert.IsTrue(responseOpt.IsSome, "Expected a notification to be written to stdout")
 
     let msg = responseOpt.Value
-    Assert.AreEqual("2.0", string msg.["jsonrpc"])
-    Assert.AreEqual("window/logMessage", string msg.["method"])
-    Assert.AreEqual("hello from server", string (msg.SelectToken("params.message")))
-    Assert.IsNull(msg.["id"], "Notification should not have an 'id' field")
+    Assert.AreEqual("2.0", msg.GetProperty("jsonrpc").GetString())
+    Assert.AreEqual("window/logMessage", msg.GetProperty("method").GetString())
+    Assert.AreEqual("hello from server", msg.GetProperty("params").GetProperty("message").GetString())
+    Assert.IsFalse(msg.TryGetProperty("id") |> fst, "Notification should not have an 'id' field")
 
 [<Test>]
 let testSendMultipleNotificationsAllWritten () =
@@ -565,7 +590,7 @@ let testSendMultipleNotificationsAllWritten () =
     let notifCount = 5
 
     for i in 1..notifCount do
-        let body = JObject(JProperty("index", i))
+        let body = JsonSerializer.SerializeToElement({| index = i |})
 
         sendJsonRpcNotification server "test/notif" body |> Async.RunSynchronously
 
@@ -596,7 +621,7 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
     let server =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
-    let body = JObject(JProperty("items", JArray("a", "b")))
+    let body = JsonSerializer.SerializeToElement({| items = [| "a"; "b" |] |})
 
     // Post request asynchronously and capture the reply future
     let replyTask =
@@ -608,11 +633,11 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
     Assert.AreEqual(1, outboundMessages.Length, "Expected an outbound request on stdout")
 
     let outbound = outboundMessages.[0]
-    Assert.AreEqual("2.0", string outbound.["jsonrpc"])
-    Assert.AreEqual("workspace/configuration", string outbound.["method"])
-    Assert.IsNotNull(outbound.["id"], "Request should have an 'id' field")
+    Assert.AreEqual("2.0", outbound.GetProperty("jsonrpc").GetString())
+    Assert.AreEqual("workspace/configuration", outbound.GetProperty("method").GetString())
+    Assert.IsTrue(outbound.TryGetProperty("id") |> fst, "Request should have an 'id' field")
 
-    let outboundId = int outbound.["id"]
+    let outboundId = outbound.GetProperty("id").GetInt32()
 
     // While the call is still in flight, stats must show exactly one pending outbound
     // call and no timer (sendJsonRpcCall carries no timeout).
@@ -623,13 +648,13 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     // Now simulate the client sending a response back through stdin
     let clientResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty("result", JArray("config1", "config2"))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               result = [| "config1"; "config2" |] |}
         )
 
-    let responseBytes = encodeMessage (string clientResponse)
+    let responseBytes = encodeMessage clientResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -639,8 +664,9 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     match replyTask.Result with
     | Ok reply ->
-        Assert.AreEqual("config1", string reply.[0])
-        Assert.AreEqual("config2", string reply.[1])
+        let arr = reply.EnumerateArray() |> Seq.toArray
+        Assert.AreEqual("config1", arr.[0].GetString())
+        Assert.AreEqual("config2", arr.[1].GetString())
     | Error err -> Assert.Fail(sprintf "Expected Ok response but got Error: %s" (string err))
 
     // Pending call resolved — count must drop back to zero before we shut down.
@@ -675,14 +701,18 @@ let testActorRemainsHealthyAfterTimeout () =
 
     // First call — will time out because no response is sent.
     let timedOutTask =
-        sendJsonRpcCallWithTimeout server "test/hang" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/hang"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 200.0))
         |> Async.StartAsTask
 
     let timedOutCompleted = timedOutTask.Wait(TimeSpan.FromMilliseconds 500.0)
     Assert.IsTrue(timedOutCompleted, "First call should have timed out")
 
     match timedOutTask.Result with
-    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Error err -> Assert.AreEqual(-32000, err.GetProperty("code").GetInt32())
     | Ok _ -> Assert.Fail("Expected Error(-32000) for first (timed-out) call")
 
     // Second call — this time we feed a real response back.
@@ -693,7 +723,11 @@ let testActorRemainsHealthyAfterTimeout () =
     // NOTE: the first call's outbound request is already on stdout. Send a second call
     // and immediately respond to it.
     let healthyTask =
-        sendJsonRpcCallWithTimeout server "test/healthy" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/healthy"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromSeconds 5.0))
         |> Async.StartAsTask
 
     // Wait for the second request to appear on stdout
@@ -703,17 +737,17 @@ let testActorRemainsHealthyAfterTimeout () =
     let allOutbound = waitForMessages stdout 2 1000
     Assert.AreEqual(2, allOutbound.Length, "Expected 2 outbound requests total")
 
-    let secondRequestId = int allOutbound.[1].["id"]
+    let secondRequestId = allOutbound.[1].GetProperty("id").GetInt32()
 
     // Feed back a success response for the second call
     let successResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", secondRequestId),
-            JProperty("result", JObject(JProperty("alive", true)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = secondRequestId
+               result = {| alive = true |} |}
         )
 
-    let responseBytes = encodeMessage (string successResponse)
+    let responseBytes = encodeMessage successResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -721,7 +755,7 @@ let testActorRemainsHealthyAfterTimeout () =
     Assert.IsTrue(healthyCompleted, "Second call should have received a reply")
 
     match healthyTask.Result with
-    | Ok reply -> Assert.AreEqual(true, System.Convert.ToBoolean(reply.SelectToken("alive")))
+    | Ok reply -> Assert.AreEqual(true, reply.GetProperty("alive").GetBoolean())
     | Error err -> Assert.Fail(sprintf "Expected Ok for second call but got Error: %s" (string err))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -742,23 +776,27 @@ let testReplyBeforeDeadlineReturnsOk () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCallWithTimeout server "test/fast" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/fast"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromSeconds 5.0))
         |> Async.StartAsTask
 
     // Wait for the outbound request then reply quickly
     let outboundMessages = waitForMessages stdout 1 3000
-    let outboundId = int outboundMessages.[0].["id"]
+    let outboundId = outboundMessages.[0].GetProperty("id").GetInt32()
 
     Thread.Sleep 50 // simulate a 50 ms round trip — well before the 5 s deadline
 
     let successResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty("result", JObject(JProperty("value", 99)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               result = {| value = 99 |} |}
         )
 
-    let responseBytes = encodeMessage (string successResponse)
+    let responseBytes = encodeMessage successResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -766,7 +804,7 @@ let testReplyBeforeDeadlineReturnsOk () =
     Assert.IsTrue(completed, "Call should resolve before the 5 s deadline")
 
     match replyTask.Result with
-    | Ok reply -> Assert.AreEqual(99, int (reply.SelectToken("value")))
+    | Ok reply -> Assert.AreEqual(99, reply.GetProperty("value").GetInt32())
     | Error err -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string err))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -783,11 +821,19 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let task1 =
-        sendJsonRpcCallWithTimeout server "test/hang1" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/hang1"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 200.0))
         |> Async.StartAsTask
 
     let task2 =
-        sendJsonRpcCallWithTimeout server "test/hang2" (JObject()) (Some(TimeSpan.FromMilliseconds 220.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/hang2"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 220.0))
         |> Async.StartAsTask
 
     // While both calls are still pending the stats must show two pending outbound calls
@@ -807,8 +853,9 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
     for task, label in [ task1, "first"; task2, "second" ] do
         match task.Result with
         | Error err ->
-            Assert.AreEqual(-32000, int (err.SelectToken("code")), sprintf "Expected -32000 for %s call" label)
-            Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
+            Assert.AreEqual(-32000, err.GetProperty("code").GetInt32(), sprintf "Expected -32000 for %s call" label)
+
+            Assert.AreEqual("Call timed out", err.GetProperty("message").GetString())
         | Ok _ -> Assert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
 
     // After both timeouts fire: no pending calls, timer disarmed, and both IDs stamped
@@ -834,12 +881,20 @@ let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
 
     // Long-deadline call — should still be pending when the short one fires
     let longTask =
-        sendJsonRpcCallWithTimeout server "test/long" (JObject()) (Some(TimeSpan.FromSeconds 5.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/long"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromSeconds 5.0))
         |> Async.StartAsTask
 
     // Short-deadline call — must fire at ~200 ms regardless of the 5 s timer already armed
     let shortTask =
-        sendJsonRpcCallWithTimeout server "test/short" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/short"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 200.0))
         |> Async.StartAsTask
 
     let sw = System.Diagnostics.Stopwatch.StartNew()
@@ -852,7 +907,7 @@ let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
     )
 
     match shortTask.Result with
-    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Error err -> Assert.AreEqual(-32000, err.GetProperty("code").GetInt32())
     | Ok _ -> Assert.Fail("Expected Error(-32000) for the short-deadline call")
 
     // Long call should still be pending (not yet timed out after ~200 ms wall time)
@@ -865,7 +920,7 @@ let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
     Assert.IsTrue(longCompleted, "Long-deadline call should be failed on shutdown")
 
     match longTask.Result with
-    | Error err -> Assert.AreEqual(-32099, int (err.SelectToken("code")))
+    | Error err -> Assert.AreEqual(-32099, err.GetProperty("code").GetInt32())
     | Ok _ -> Assert.Fail("Expected Error(-32099) for long-deadline call after shutdown")
 
 [<Test>]
@@ -885,7 +940,11 @@ let testShutdownDisposesTimerAndFailsPendingTimedCall () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCallWithTimeout server "test/long-hang" (JObject()) (Some(TimeSpan.FromSeconds 30.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/long-hang"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromSeconds 30.0))
         |> Async.StartAsTask
 
     // Wait for the outbound request so we know the call is registered
@@ -899,8 +958,13 @@ let testShutdownDisposesTimerAndFailsPendingTimedCall () =
 
     match replyTask.Result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Shutdown must return -32099, not the timer's -32000")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(
+            -32099,
+            err.GetProperty("code").GetInt32(),
+            "Shutdown must return -32099, not the timer's -32000"
+        )
+
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error(-32099) after shutdown, got Ok")
 
 [<Test>]
@@ -925,32 +989,36 @@ let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
         startJsonRpcTransport serverStdin stdout (Some logCallback) (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCallWithTimeout server "test/late-peer" (JObject()) (Some(TimeSpan.FromMilliseconds 100.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/late-peer"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 100.0))
         |> Async.StartAsTask
 
     // Capture the outbound id before the timeout fires
     let outboundMessages = waitForMessages stdout 1 3000
-    let outboundId = int outboundMessages.[0].["id"]
+    let outboundId = outboundMessages.[0].GetProperty("id").GetInt32()
 
     // Let the 100 ms deadline fire and the call be failed
     let timedOut = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
     Assert.IsTrue(timedOut, "Call should have timed out")
 
     match replyTask.Result with
-    | Error err -> Assert.AreEqual(-32000, int (err.SelectToken("code")))
+    | Error err -> Assert.AreEqual(-32000, err.GetProperty("code").GetInt32())
     | Ok _ -> Assert.Fail("Expected Error(-32000)")
 
     // Now feed back the late response (300 ms after the timeout fired)
     Thread.Sleep 300
 
     let lateResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty("result", JObject(JProperty("late", true)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               result = {| late = true |} |}
         )
 
-    let responseBytes = encodeMessage (string lateResponse)
+    let responseBytes = encodeMessage lateResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -991,7 +1059,8 @@ let testUntimedCallDoesNotTimeOut () =
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCall server "test/untimed-hang" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/untimed-hang" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Give 500 ms — more than enough for a timer-based timeout to fire if one were armed
     let completedEarly = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
@@ -1005,12 +1074,12 @@ let testUntimedCallDoesNotTimeOut () =
     Assert.IsTrue(completedAfterShutdown, "Untimed call should be released by shutdown")
 
     match replyTask.Result with
-    | Error err -> Assert.AreEqual(-32099, int (err.SelectToken("code")))
+    | Error err -> Assert.AreEqual(-32099, err.GetProperty("code").GetInt32())
     | Ok _ -> Assert.Fail("Expected Error(-32099) from shutdown, got Ok")
 
 /// Helper: write a framed JSON-RPC message into a writable pipe stream.
-let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: JObject) =
-    let bytes = encodeMessage (string msg)
+let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: string) =
+    let bytes = encodeMessage msg
     pipe.Write(bytes, 0, bytes.Length)
     pipe.Flush()
 
@@ -1028,7 +1097,7 @@ let testShutdownWaitsForRunningHandlerToFinish () =
         handlerStarted.Set()
         handlerMayFinish.Wait() |> ignore
         handlerFinished.Value <- true
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1044,11 +1113,11 @@ let testShutdownWaitsForRunningHandlerToFinish () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -1080,7 +1149,7 @@ let testShutdownCancelsRunningHandlerAndThenReturns () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 60_000 // would block forever without cancellation
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1096,11 +1165,11 @@ let testShutdownCancelsRunningHandlerAndThenReturns () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/inf"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/inf"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -1113,7 +1182,7 @@ let testShutdownCancelsRunningHandlerAndThenReturns () =
     // The response on the wire should be the -32800 cancellation error
     let msgs = waitForMessages stdout 1 1000
     Assert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
-    Assert.AreEqual(-32800, int (msgs.[0].SelectToken("error.code")))
+    Assert.AreEqual(-32800, msgs.[0].GetProperty("error").GetProperty("code").GetInt32())
 
 [<Test>]
 let testShutdownWithNoRunningHandlersReturnsImmediately () =
@@ -1141,7 +1210,7 @@ let testShutdownDrainsAllConcurrentHandlers () =
         allStarted.Signal() |> ignore
         do! mayFinishTcs.Task |> Async.AwaitTask
         System.Threading.Interlocked.Increment(finishedCount) |> ignore
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1158,11 +1227,11 @@ let testShutdownDrainsAllConcurrentHandlers () =
     for i in 1..count do
         writeMessageToPipe
             clientToServer
-            (JObject(
-                JProperty("jsonrpc", "2.0"),
-                JProperty("id", i),
-                JProperty("method", "test/h"),
-                JProperty("params", JObject())
+            (JsonSerializer.Serialize(
+                {| jsonrpc = "2.0"
+                   id = i
+                   ``method`` = "test/h"
+                   ``params`` = {| |} |}
             ))
 
     Assert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
@@ -1212,7 +1281,7 @@ let testSendNotificationAfterShutdownIsDropped () =
     let bytesBeforeSend = stdout.Length
 
     // This must return and must not block or raise
-    sendJsonRpcNotification server "window/logMessage" (JObject(JProperty("message", "late")))
+    sendJsonRpcNotification server "window/logMessage" (JsonSerializer.SerializeToElement({| message = "late" |}))
     |> Async.RunSynchronously
 
     Assert.AreEqual(bytesBeforeSend, stdout.Length, "No bytes should be written for a post-shutdown notification")
@@ -1228,13 +1297,13 @@ let testSendCallAfterShutdownReturnsError () =
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
     let result =
-        sendJsonRpcCall server "workspace/configuration" (JObject())
+        sendJsonRpcCall server "workspace/configuration" (JsonSerializer.SerializeToElement({| |}))
         |> Async.RunSynchronously
 
     match result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error -32099 for post-shutdown sendJsonRpcCall, got Ok")
 
 [<Test>]
@@ -1251,7 +1320,7 @@ let testSendCallDuringShutdownDrainReturnsError () =
         handlerStarted.Set()
         // Await the TCS — this yields the thread so F# async cancellation can fire.
         do! mayFinishTcs.Task |> Async.AwaitTask
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1267,11 +1336,11 @@ let testSendCallDuringShutdownDrainReturnsError () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -1285,7 +1354,7 @@ let testSendCallDuringShutdownDrainReturnsError () =
 
     // This call arrives while the drain is in progress; it must return Error immediately
     let lateCallTask =
-        sendJsonRpcCall server "workspace/configuration" (JObject())
+        sendJsonRpcCall server "workspace/configuration" (JsonSerializer.SerializeToElement({| |}))
         |> Async.StartAsTask
 
     let lateCompleted = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
@@ -1293,8 +1362,8 @@ let testSendCallDuringShutdownDrainReturnsError () =
 
     match lateCallTask.Result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error -32099 for call made during shutdown drain")
 
     // Unblock the handler so the drain completes and shutdown returns
@@ -1321,7 +1390,8 @@ let testShutdownFailsPendingOutboundCall () =
 
     // Fire an outbound call and leave it hanging (no response sent)
     let replyTask =
-        sendJsonRpcCall server "test/hanging" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/hanging" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Wait for the request to appear on stdout so we know it was sent
     waitForMessages stdout 1 5000 |> ignore
@@ -1334,8 +1404,8 @@ let testShutdownFailsPendingOutboundCall () =
 
     match replyTask.Result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
@@ -1354,10 +1424,12 @@ let testShutdownFailsMultiplePendingOutboundCalls () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let reply1Task =
-        sendJsonRpcCall server "test/hang1" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/hang1" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     let reply2Task =
-        sendJsonRpcCall server "test/hang2" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/hang2" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Wait for both requests to be written before shutting down
     waitForMessages stdout 2 5000 |> ignore
@@ -1373,8 +1445,8 @@ let testShutdownFailsMultiplePendingOutboundCalls () =
     for replyTask in [ reply1Task; reply2Task ] do
         match replyTask.Result with
         | Error err ->
-            Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-            Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+            Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+            Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
         | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
@@ -1393,7 +1465,8 @@ let testEofFailsPendingOutboundCall () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCall server "test/hanging" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/hanging" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Wait for the request to be written
     waitForMessages stdout 1 5000 |> ignore
@@ -1406,8 +1479,8 @@ let testEofFailsPendingOutboundCall () =
 
     match replyTask.Result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
@@ -1419,7 +1492,7 @@ let testEofCancelsRunningHandler () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 60_000 // would block forever without cancellation
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1435,11 +1508,11 @@ let testEofCancelsRunningHandler () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -1450,8 +1523,8 @@ let testEofCancelsRunningHandler () =
     // The handler should be cancelled and the -32800 response written
     let msgs = waitForMessages stdout 1 5000
     Assert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
-    Assert.AreEqual(1, int msgs.[0].["id"])
-    Assert.AreEqual(-32800, int (msgs.[0].SelectToken("error.code")))
+    Assert.AreEqual(1, msgs.[0].GetProperty("id").GetInt32())
+    Assert.AreEqual(-32800, msgs.[0].GetProperty("error").GetProperty("code").GetInt32())
 
 [<Test>]
 let testEofLateCallReturnsError () =
@@ -1463,7 +1536,7 @@ let testEofLateCallReturnsError () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! mayFinishTcs.Task |> Async.AwaitTask
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1479,11 +1552,11 @@ let testEofLateCallReturnsError () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -1494,7 +1567,7 @@ let testEofLateCallReturnsError () =
 
     // A call made now must be rejected immediately
     let lateCallTask =
-        sendJsonRpcCall server "workspace/configuration" (JObject())
+        sendJsonRpcCall server "workspace/configuration" (JsonSerializer.SerializeToElement({| |}))
         |> Async.StartAsTask
 
     let completed = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
@@ -1502,8 +1575,8 @@ let testEofLateCallReturnsError () =
 
     match lateCallTask.Result with
     | Error err ->
-        Assert.AreEqual(-32099, int (err.SelectToken("code")), "Expected error code -32099")
-        Assert.AreEqual("Transport shut down", string (err.SelectToken("message")))
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error -32099 for call made after EOF")
 
     // Unblock the handler so the drain completes cleanly
@@ -1522,7 +1595,7 @@ let testEofDrainsAllConcurrentHandlers () =
         allStarted.Signal() |> ignore
         do! mayFinishTcs.Task |> Async.AwaitTask
         System.Threading.Interlocked.Increment(finishedCount) |> ignore
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -1539,11 +1612,11 @@ let testEofDrainsAllConcurrentHandlers () =
     for i in 1..count do
         writeMessageToPipe
             clientToServer
-            (JObject(
-                JProperty("jsonrpc", "2.0"),
-                JProperty("id", i),
-                JProperty("method", "test/h"),
-                JProperty("params", JObject())
+            (JsonSerializer.Serialize(
+                {| jsonrpc = "2.0"
+                   id = i
+                   ``method`` = "test/h"
+                   ``params`` = {| |} |}
             ))
 
     Assert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
@@ -1582,21 +1655,22 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCall server "test/will-respond" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/will-respond" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Wait for the outbound request, capture its id
     let outboundMessages = waitForMessages stdout 1 5000
-    let outboundId = int outboundMessages.[0].["id"]
+    let outboundId = outboundMessages.[0].GetProperty("id").GetInt32()
 
     // Send a successful response back — call is now resolved
     let successResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty("result", JObject(JProperty("value", 42)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               result = {| value = 42 |} |}
         )
 
-    let responseBytes = encodeMessage (string successResponse)
+    let responseBytes = encodeMessage successResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -1604,7 +1678,7 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
     Assert.IsTrue(resolvedBeforeShutdown, "Call should have resolved before shutdown")
 
     match replyTask.Result with
-    | Ok reply -> Assert.AreEqual(42, int (reply.SelectToken("value")))
+    | Ok reply -> Assert.AreEqual(42, reply.GetProperty("value").GetInt32())
     | Error _ -> Assert.Fail("Expected Ok response, not an error")
 
     // Now shut down — the already-resolved call must not be touched
@@ -1612,7 +1686,8 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
 
     // Result must still be Ok with the original value
     match replyTask.Result with
-    | Ok reply -> Assert.AreEqual(42, int (reply.SelectToken("value")), "Result should be unchanged after shutdown")
+    | Ok reply ->
+        Assert.AreEqual(42, reply.GetProperty("value").GetInt32(), "Result should be unchanged after shutdown")
     | Error _ -> Assert.Fail("Shutdown should not have overwritten an already-resolved Ok result")
 
 [<Test>]
@@ -1625,9 +1700,13 @@ let testSendRequestAssignsIncrementingIds () =
     let server = startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     // Fire two requests (we won't resolve them — just check the outbound IDs)
-    let _reply1 = sendJsonRpcCall server "test/req1" (JObject()) |> Async.StartAsTask
+    let _reply1 =
+        sendJsonRpcCall server "test/req1" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
-    let _reply2 = sendJsonRpcCall server "test/req2" (JObject()) |> Async.StartAsTask
+    let _reply2 =
+        sendJsonRpcCall server "test/req2" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     let requests = waitForMessages stdout 2 5000
 
@@ -1638,8 +1717,8 @@ let testSendRequestAssignsIncrementingIds () =
     let req1 = requests.[0]
     let req2 = requests.[1]
 
-    let id1 = int req1.["id"]
-    let id2 = int req2.["id"]
+    let id1 = req1.GetProperty("id").GetInt32()
+    let id2 = req2.GetProperty("id").GetInt32()
 
     Assert.AreEqual(id1 + 1, id2, "Outbound request IDs should be sequential")
 
@@ -1647,9 +1726,13 @@ let testSendRequestAssignsIncrementingIds () =
 let testInboundResponseForUnknownIdIsHandledGracefully () =
     // Send a response with an id that doesn't match any outstanding request
     let unknownResponse =
-        JObject(JProperty("jsonrpc", "2.0"), JProperty("id", 9999), JProperty("result", "orphan"))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 9999
+               result = "orphan" |}
+        )
 
-    let stdin = makeInputStream [ string unknownResponse ]
+    let stdin = makeInputStream [ unknownResponse ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -1673,24 +1756,24 @@ let testSendCallReturnsErrorOnMethodNotFound () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCall server "test/unknown" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/unknown" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     // Wait for the outbound request
     let outboundMessages = waitForMessages stdout 1 5000
-    let outboundId = int outboundMessages.[0].["id"]
+    let outboundId = outboundMessages.[0].GetProperty("id").GetInt32()
 
     // Simulate client responding with MethodNotFound error
     let errorResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty(
-                "error",
-                JObject(JProperty("code", -32601), JProperty("message", "Method not found: 'test/unknown'"))
-            )
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               error =
+                {| code = -32601
+                   message = "Method not found: 'test/unknown'" |} |}
         )
 
-    let responseBytes = encodeMessage (string errorResponse)
+    let responseBytes = encodeMessage errorResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -1699,8 +1782,8 @@ let testSendCallReturnsErrorOnMethodNotFound () =
 
     match replyTask.Result with
     | Error err ->
-        Assert.AreEqual(-32601, int (err.SelectToken("code")))
-        Assert.IsTrue((string (err.SelectToken("message"))).Contains("Method not found"))
+        Assert.AreEqual(-32601, err.GetProperty("code").GetInt32())
+        Assert.IsTrue(err.GetProperty("message").GetString().Contains("Method not found"))
     | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -1719,27 +1802,26 @@ let testSendCallReturnsErrorWithData () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCall server "test/failing" (JObject()) |> Async.StartAsTask
+        sendJsonRpcCall server "test/failing" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     let outboundMessages = waitForMessages stdout 1 5000
-    let outboundId = int outboundMessages.[0].["id"]
+    let outboundId = outboundMessages.[0].GetProperty("id").GetInt32()
 
     // Simulate client responding with an error that includes data
     let errorResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", outboundId),
-            JProperty(
-                "error",
-                JObject(
-                    JProperty("code", -32603),
-                    JProperty("message", "Internal error"),
-                    JProperty("data", JObject(JProperty("details", "something went wrong"), JProperty("retry", false)))
-                )
-            )
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               error =
+                {| code = -32603
+                   message = "Internal error"
+                   data =
+                    {| details = "something went wrong"
+                       retry = false |} |} |}
         )
 
-    let responseBytes = encodeMessage (string errorResponse)
+    let responseBytes = encodeMessage errorResponse
     clientToServer.Write(responseBytes, 0, responseBytes.Length)
     clientToServer.Flush()
 
@@ -1748,10 +1830,10 @@ let testSendCallReturnsErrorWithData () =
 
     match replyTask.Result with
     | Error err ->
-        Assert.AreEqual(-32603, int (err.SelectToken("code")))
-        Assert.AreEqual("Internal error", string (err.SelectToken("message")))
-        Assert.AreEqual("something went wrong", string (err.SelectToken("data.details")))
-        Assert.AreEqual(false, System.Convert.ToBoolean(err.SelectToken("data.retry")))
+        Assert.AreEqual(-32603, err.GetProperty("code").GetInt32())
+        Assert.AreEqual("Internal error", err.GetProperty("message").GetString())
+        Assert.AreEqual("something went wrong", err.GetProperty("data").GetProperty("details").GetString())
+        Assert.AreEqual(false, err.GetProperty("data").GetProperty("retry").GetBoolean())
     | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -1770,34 +1852,40 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
     let server =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
-    let reply1Task = sendJsonRpcCall server "test/ok" (JObject()) |> Async.StartAsTask
+    let reply1Task =
+        sendJsonRpcCall server "test/ok" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
-    let reply2Task = sendJsonRpcCall server "test/fail" (JObject()) |> Async.StartAsTask
+    let reply2Task =
+        sendJsonRpcCall server "test/fail" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
 
     let outboundMessages = waitForMessages stdout 2 5000
     Assert.AreEqual(2, outboundMessages.Length, "Expected 2 outbound requests")
 
-    let id1 = int outboundMessages.[0].["id"]
-    let id2 = int outboundMessages.[1].["id"]
+    let id1 = outboundMessages.[0].GetProperty("id").GetInt32()
+    let id2 = outboundMessages.[1].GetProperty("id").GetInt32()
 
     // Send success for first, error for second
     let successResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", id1),
-            JProperty("result", JObject(JProperty("status", "ok")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = id1
+               result = {| status = "ok" |} |}
         )
 
     let errorResponse =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", id2),
-            JProperty("error", JObject(JProperty("code", -32600), JProperty("message", "Invalid request")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = id2
+               error =
+                {| code = -32600
+                   message = "Invalid request" |} |}
         )
 
     // Send both responses
     for resp in [ successResponse; errorResponse ] do
-        let bytes = encodeMessage (string resp)
+        let bytes = encodeMessage resp
         clientToServer.Write(bytes, 0, bytes.Length)
 
     clientToServer.Flush()
@@ -1807,13 +1895,13 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
     Assert.IsTrue(completed1 && completed2, "Both calls should have received replies")
 
     match reply1Task.Result with
-    | Ok reply -> Assert.AreEqual("ok", string (reply.SelectToken("status")))
+    | Ok reply -> Assert.AreEqual("ok", reply.GetProperty("status").GetString())
     | Error _ -> Assert.Fail("Expected Ok for first call")
 
     match reply2Task.Result with
     | Error err ->
-        Assert.AreEqual(-32600, int (err.SelectToken("code")))
-        Assert.AreEqual("Invalid request", string (err.SelectToken("message")))
+        Assert.AreEqual(-32600, err.GetProperty("code").GetInt32())
+        Assert.AreEqual("Invalid request", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error for second call")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -1821,26 +1909,32 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
 [<Test>]
 let testMixedInboundRequestsAndOutboundNotifications () =
     // Server handles an inbound request while also sending outbound notifications
-    let handler _ctx = async { return Ok(JValue("handled") :> JToken) }
+    let handler _ctx = async { return Ok(JsonSerializer.SerializeToElement("handled")) }
 
     let inboundRequest =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/handle"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/handle"
+               ``params`` = {| |} |}
         )
 
     let requestHandlings = Map.ofList [ "test/handle", handler ]
 
-    let stdin = makeInputStream [ string inboundRequest ]
+    let writeEnd, stdin = makeOpenStdin ()
+    use writeEnd = writeEnd
     let stdout = new MemoryStream()
 
     let server =
         startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
+    // Write the inbound request into the open pipe
+    let requestBytes = encodeMessage inboundRequest
+    writeEnd.Write(requestBytes, 0, requestBytes.Length)
+    writeEnd.Flush()
+
     // Also send a notification from the server side
-    let notifBody = JObject(JProperty("kind", "info"))
+    let notifBody = JsonSerializer.SerializeToElement({| kind = "info" |})
 
     sendJsonRpcNotification server "window/logMessage" notifBody
     |> Async.RunSynchronously
@@ -1850,17 +1944,19 @@ let testMixedInboundRequestsAndOutboundNotifications () =
 
     Assert.AreEqual(2, allMsgs.Length, "Expected 2 messages on stdout (1 response + 1 notification)")
 
-    let responses = allMsgs |> List.filter (fun m -> m.["result"] <> null)
-    let notifications = allMsgs |> List.filter (fun m -> m.["method"] <> null)
+    let responses = allMsgs |> List.filter (fun m -> m.TryGetProperty("result") |> fst)
+
+    let notifications =
+        allMsgs |> List.filter (fun m -> m.TryGetProperty("method") |> fst)
 
     Assert.AreEqual(1, responses.Length, "Expected 1 response")
     Assert.AreEqual(1, notifications.Length, "Expected 1 notification")
 
-    Assert.AreEqual(1, int responses.[0].["id"])
-    Assert.AreEqual("handled", string responses.[0].["result"])
+    Assert.AreEqual(1, responses.[0].GetProperty("id").GetInt32())
+    Assert.AreEqual("handled", responses.[0].GetProperty("result").GetString())
 
-    Assert.AreEqual("window/logMessage", string notifications.[0].["method"])
-    Assert.AreEqual("info", string (notifications.[0].SelectToken("params.kind")))
+    Assert.AreEqual("window/logMessage", notifications.[0].GetProperty("method").GetString())
+    Assert.AreEqual("info", notifications.[0].GetProperty("params").GetProperty("kind").GetString())
 
 // ---- $/cancelRequest tests ----
 
@@ -1874,7 +1970,7 @@ let testCancelRequestCancelsRunningHandler () =
         // Simulate a long-running operation that respects cancellation
         do! Async.Sleep 30000
         // Should not reach here if cancelled
-        return Ok(JValue("should-not-see") :> JToken)
+        return Ok(JsonSerializer.SerializeToElement("should-not-see"))
     }
 
     let requestHandlings = Map.ofList [ "test/slow", handler ]
@@ -1892,11 +1988,11 @@ let testCancelRequestCancelsRunningHandler () =
 
     // Send the slow request
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         )
 
     writeMessageToPipe clientToServer request
@@ -1906,10 +2002,10 @@ let testCancelRequestCancelsRunningHandler () =
 
     // Send $/cancelRequest
     let cancelNotification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "$/cancelRequest"),
-            JProperty("params", JObject(JProperty("id", 1)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "$/cancelRequest"
+               ``params`` = {| id = 1 |} |}
         )
 
     writeMessageToPipe clientToServer cancelNotification
@@ -1920,11 +2016,20 @@ let testCancelRequestCancelsRunningHandler () =
     Assert.IsTrue(responseOpt.IsSome, "Expected a cancellation error response")
 
     let response = responseOpt.Value
-    Assert.AreEqual(1, int response.["id"])
-    Assert.AreEqual(-32800, int (response.SelectToken("error.code")), "Expected RequestCancelled error code (-32800)")
+    Assert.AreEqual(1, response.GetProperty("id").GetInt32())
+
+    Assert.AreEqual(
+        -32800,
+        response.GetProperty("error").GetProperty("code").GetInt32(),
+        "Expected RequestCancelled error code (-32800)"
+    )
 
     Assert.IsTrue(
-        (string (response.SelectToken("error.message"))).Contains("cancel", StringComparison.OrdinalIgnoreCase)
+        response
+            .GetProperty("error")
+            .GetProperty("message")
+            .GetString()
+            .Contains("cancel", StringComparison.OrdinalIgnoreCase)
     )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -1944,10 +2049,10 @@ let testCancelRequestForUnknownIdIsIgnored () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let cancelNotification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "$/cancelRequest"),
-            JProperty("params", JObject(JProperty("id", 999)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "$/cancelRequest"
+               ``params`` = {| id = 999 |} |}
         )
 
     writeMessageToPipe clientToServer cancelNotification
@@ -1960,7 +2065,7 @@ let testCancelRequestForUnknownIdIsIgnored () =
 [<Test>]
 let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
     // Send a request, wait for it to complete, then send $/cancelRequest for same ID
-    let handler _ctx = async { return Ok(JValue("done") :> JToken) }
+    let handler _ctx = async { return Ok(JsonSerializer.SerializeToElement("done")) }
 
     let requestHandlings = Map.ofList [ "test/fast", handler ]
 
@@ -1977,11 +2082,11 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
 
     // Send the request
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 42),
-            JProperty("method", "test/fast"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 42
+               ``method`` = "test/fast"
+               ``params`` = {| |} |}
         )
 
     writeMessageToPipe clientToServer request
@@ -1989,15 +2094,15 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
     // Wait for the response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
     Assert.IsTrue(responseOpt.IsSome, "Expected a response")
-    Assert.AreEqual(42, int responseOpt.Value.["id"])
-    Assert.AreEqual("done", string responseOpt.Value.["result"])
+    Assert.AreEqual(42, responseOpt.Value.GetProperty("id").GetInt32())
+    Assert.AreEqual("done", responseOpt.Value.GetProperty("result").GetString())
 
     // Now send $/cancelRequest for the same ID — should be silently ignored
     let cancelNotification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "$/cancelRequest"),
-            JProperty("params", JObject(JProperty("id", 42)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "$/cancelRequest"
+               ``params`` = {| id = 42 |} |}
         )
 
     writeMessageToPipe clientToServer cancelNotification
@@ -2025,15 +2130,18 @@ let testHandlerObservesCancellationToken () =
     use handlerStarted = new ManualResetEventSlim(false)
     use tokenWasCancelled = new ManualResetEventSlim(false)
 
-    let handler (_ctx: JsonRpcRequestContext) : Async<Result<JToken, JToken>> = async {
-        let! ct = Async.CancellationToken
-        ct.Register(fun () -> tokenWasCancelled.Set()) |> ignore
-        handlerStarted.Set()
+    let handler
+        (_ctx: JsonRpcRequestContext)
+        : Async<Result<System.Text.Json.JsonElement, System.Text.Json.JsonElement>> =
+        async {
+            let! ct = Async.CancellationToken
+            ct.Register(fun () -> tokenWasCancelled.Set()) |> ignore
+            handlerStarted.Set()
 
-        // Block until cancelled
-        do! Async.Sleep 30000
-        return Ok(JValue.CreateNull() :> JToken)
-    }
+            // Block until cancelled
+            do! Async.Sleep 30000
+            return Ok(JsonSerializer.SerializeToElement(null: obj))
+        }
 
     let requestHandlings = Map.ofList [ "test/cancellable", handler ]
 
@@ -2050,11 +2158,11 @@ let testHandlerObservesCancellationToken () =
 
     // Send the request
     let request =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 7),
-            JProperty("method", "test/cancellable"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 7
+               ``method`` = "test/cancellable"
+               ``params`` = {| |} |}
         )
 
     writeMessageToPipe clientToServer request
@@ -2063,10 +2171,10 @@ let testHandlerObservesCancellationToken () =
 
     // Cancel
     let cancelNotification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "$/cancelRequest"),
-            JProperty("params", JObject(JProperty("id", 7)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "$/cancelRequest"
+               ``params`` = {| id = 7 |} |}
         )
 
     writeMessageToPipe clientToServer cancelNotification
@@ -2075,7 +2183,7 @@ let testHandlerObservesCancellationToken () =
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
     Assert.IsTrue(responseOpt.IsSome, "Expected a cancellation error response")
-    Assert.AreEqual(-32800, int (responseOpt.Value.SelectToken("error.code")))
+    Assert.AreEqual(-32800, responseOpt.Value.GetProperty("error").GetProperty("code").GetInt32())
 
     // Verify the handler's CancellationToken was actually cancelled
     Assert.IsTrue(tokenWasCancelled.Wait(2000), "Handler's CancellationToken should have been cancelled")
@@ -2090,10 +2198,10 @@ let testOtherRequestsStillWorkAfterCancellation () =
     let slowHandler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 30000
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
-    let fastHandler _ctx = async { return Ok(JValue("ok") :> JToken) }
+    let fastHandler _ctx = async { return Ok(JsonSerializer.SerializeToElement("ok")) }
 
     let requestHandlings =
         Map.ofList [ "test/slow", slowHandler; "test/fast", fastHandler ]
@@ -2111,11 +2219,11 @@ let testOtherRequestsStillWorkAfterCancellation () =
 
     // Send a slow request (will be cancelled)
     let slowRequest =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         )
 
     writeMessageToPipe clientToServer slowRequest
@@ -2124,10 +2232,10 @@ let testOtherRequestsStillWorkAfterCancellation () =
 
     // Cancel the slow request
     let cancelNotification =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("method", "$/cancelRequest"),
-            JProperty("params", JObject(JProperty("id", 1)))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               ``method`` = "$/cancelRequest"
+               ``params`` = {| id = 1 |} |}
         )
 
     writeMessageToPipe clientToServer cancelNotification
@@ -2135,15 +2243,15 @@ let testOtherRequestsStillWorkAfterCancellation () =
     // Wait for the cancellation response
     let cancelResponse = waitForResponse stdout 5000 |> Async.RunSynchronously
     Assert.IsTrue(cancelResponse.IsSome, "Expected cancellation response")
-    Assert.AreEqual(-32800, int (cancelResponse.Value.SelectToken("error.code")))
+    Assert.AreEqual(-32800, cancelResponse.Value.GetProperty("error").GetProperty("code").GetInt32())
 
     // Now send a fast request — should complete normally
     let fastRequest =
-        JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 2),
-            JProperty("method", "test/fast"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 2
+               ``method`` = "test/fast"
+               ``params`` = {| |} |}
         )
 
     // Reset stdout position tracking — need to read from current position
@@ -2158,10 +2266,11 @@ let testOtherRequestsStillWorkAfterCancellation () =
 
     // Find the fast response (id=2)
     let fastResponse =
-        allMessages |> List.tryFind (fun m -> m.["id"] <> null && int m.["id"] = 2)
+        allMessages
+        |> List.tryFind (fun m -> m.TryGetProperty("id") |> fst && m.GetProperty("id").GetInt32() = 2)
 
     Assert.IsTrue(fastResponse.IsSome, "Expected a response for the fast request (id=2)")
-    Assert.AreEqual("ok", string fastResponse.Value.["result"])
+    Assert.AreEqual("ok", fastResponse.Value.GetProperty("result").GetString())
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2172,10 +2281,14 @@ let testRequestWithMissingJsonRpcFieldReturnsInvalidRequest () =
     // A request without "jsonrpc": "2.0" must be rejected with -32600 Invalid Request.
     // The id is recoverable so must be echoed in the error response.
     let request =
-        JObject(JProperty("id", 1), JProperty("method", "test/echo"), JProperty("params", JObject()))
+        JsonSerializer.Serialize(
+            {| id = 1
+               ``method`` = "test/echo"
+               ``params`` = {| |} |}
+        )
     // Deliberately no "jsonrpc" field
 
-    let stdin = makeInputStream [ string request ]
+    let stdin = makeInputStream [ request ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -2186,21 +2299,26 @@ let testRequestWithMissingJsonRpcFieldReturnsInvalidRequest () =
     Assert.IsTrue(responseOpt.IsSome, "Expected an error response for missing jsonrpc field")
 
     let response = responseOpt.Value
-    Assert.AreEqual(1, int response.["id"], "Error response must echo the request id")
-    Assert.AreEqual(-32600, int (response.SelectToken("error.code")), "Expected -32600 Invalid Request")
+    Assert.AreEqual(1, response.GetProperty("id").GetInt32(), "Error response must echo the request id")
+
+    Assert.AreEqual(
+        -32600,
+        response.GetProperty("error").GetProperty("code").GetInt32(),
+        "Expected -32600 Invalid Request"
+    )
 
 [<Test>]
 let testRequestWithWrongJsonRpcVersionReturnsInvalidRequest () =
     // A request with "jsonrpc": "1.0" (wrong version) must be rejected with -32600.
     let request =
-        JObject(
-            JProperty("jsonrpc", "1.0"),
-            JProperty("id", 2),
-            JProperty("method", "test/echo"),
-            JProperty("params", JObject())
+        JsonSerializer.Serialize(
+            {| jsonrpc = "1.0"
+               id = 2
+               ``method`` = "test/echo"
+               ``params`` = {| |} |}
         )
 
-    let stdin = makeInputStream [ string request ]
+    let stdin = makeInputStream [ request ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -2211,8 +2329,13 @@ let testRequestWithWrongJsonRpcVersionReturnsInvalidRequest () =
     Assert.IsTrue(responseOpt.IsSome, "Expected an error response for wrong jsonrpc version")
 
     let response = responseOpt.Value
-    Assert.AreEqual(2, int response.["id"], "Error response must echo the request id")
-    Assert.AreEqual(-32600, int (response.SelectToken("error.code")), "Expected -32600 Invalid Request")
+    Assert.AreEqual(2, response.GetProperty("id").GetInt32(), "Error response must echo the request id")
+
+    Assert.AreEqual(
+        -32600,
+        response.GetProperty("error").GetProperty("code").GetInt32(),
+        "Expected -32600 Invalid Request"
+    )
 
 [<Test>]
 let testNotificationWithMissingJsonRpcFieldIsSilentlyDropped () =
@@ -2222,12 +2345,15 @@ let testNotificationWithMissingJsonRpcFieldIsSilentlyDropped () =
     let handlerCalled = ref false
 
     let notification =
-        JObject(JProperty("method", "test/notify"), JProperty("params", JObject()))
+        JsonSerializer.Serialize(
+            {| ``method`` = "test/notify"
+               ``params`` = {| |} |}
+        )
     // Deliberately no "jsonrpc" field
 
     let handler _ctx = async { handlerCalled.Value <- true }
 
-    let stdin = makeInputStream [ string notification ]
+    let stdin = makeInputStream [ notification ]
     let stdout = new MemoryStream()
 
     let _server =
@@ -2253,7 +2379,11 @@ let testSingleCallTimeoutWithNoResponseReturnsError () =
     let sw = System.Diagnostics.Stopwatch.StartNew()
 
     let result =
-        sendJsonRpcCallWithTimeout server "test/hang" (JObject()) (Some(TimeSpan.FromMilliseconds 200.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/hang"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromMilliseconds 200.0))
         |> Async.StartAsTask
 
     // The call must complete within 500 ms of its deadline firing
@@ -2265,8 +2395,9 @@ let testSingleCallTimeoutWithNoResponseReturnsError () =
 
     match result.Result with
     | Error err ->
-        Assert.AreEqual(-32000, int (err.SelectToken("code")), "Expected error code -32000 (Call timed out)")
-        Assert.AreEqual("Call timed out", string (err.SelectToken("message")))
+        Assert.AreEqual(-32000, err.GetProperty("code").GetInt32(), "Expected error code -32000 (Call timed out)")
+
+        Assert.AreEqual("Call timed out", err.GetProperty("message").GetString())
     | Ok _ -> Assert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -2306,7 +2437,7 @@ let testGetRpcStatsRunningHandlerIsVisible () =
         // Use AwaitWaitHandle so the thread-pool thread is released while waiting,
         // leaving the pool free for the actor mailbox and getJsonRpcStats to run.
         do! Async.AwaitWaitHandle(handlerMayFinish.WaitHandle) |> Async.Ignore
-        return Ok(JValue.CreateNull() :> JToken)
+        return Ok(JsonSerializer.SerializeToElement(null: obj))
     }
 
     use clientToServer =
@@ -2322,11 +2453,11 @@ let testGetRpcStatsRunningHandlerIsVisible () =
 
     writeMessageToPipe
         clientToServer
-        (JObject(
-            JProperty("jsonrpc", "2.0"),
-            JProperty("id", 1),
-            JProperty("method", "test/slow"),
-            JProperty("params", JObject())
+        (JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = 1
+               ``method`` = "test/slow"
+               ``params`` = {| |} |}
         ))
 
     Assert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
@@ -2364,7 +2495,11 @@ let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
         startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
 
     let replyTask =
-        sendJsonRpcCallWithTimeout server "test/timed" (JObject()) (Some(TimeSpan.FromSeconds 30.0))
+        sendJsonRpcCallWithTimeout
+            server
+            "test/timed"
+            (JsonSerializer.SerializeToElement({| |}))
+            (Some(TimeSpan.FromSeconds 30.0))
         |> Async.StartAsTask
 
     // Wait for the outbound request so the call is registered in PendingOutboundCalls.
@@ -2376,10 +2511,14 @@ let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
     Assert.AreEqual(true, pendingStats.TimerArmed, "Timer must be armed for a timed call")
 
     // Feed back a success response — the call resolves and the timer should be disarmed.
-    let outboundId = int outbound.[0].["id"]
+    let outboundId = outbound.[0].GetProperty("id").GetInt32()
 
     let response =
-        JObject(JProperty("jsonrpc", "2.0"), JProperty("id", outboundId), JProperty("result", JValue("ok")))
+        JsonSerializer.Serialize(
+            {| jsonrpc = "2.0"
+               id = outboundId
+               result = "ok" |}
+        )
 
     writeMessageToPipe clientToServer response
 
@@ -2387,7 +2526,7 @@ let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
     Assert.IsTrue(completed, "Call should have resolved")
 
     match replyTask.Result with
-    | Ok v -> Assert.AreEqual("ok", string v)
+    | Ok v -> Assert.AreEqual("ok", v.GetString())
     | Error e -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string e))
 
     // Give the actor a beat to process the response and reschedule the timer.
