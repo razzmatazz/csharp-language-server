@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Fix `textDocument/implementation` returning no results for class symbols; derived classes are now returned via `FindDerivedClassesAsync` in addition to interface implementors
   - By @dee-rv in https://github.com/razzmatazz/csharp-language-server/pull/360
+* Fix Razor go-to-references and source-file lookup broken by .NET SDK 10.0.300; fix analyzer tests broken by same SDK update
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/363
 
 ## [0.24.0] - 2026-04-16 / Ignalina
 * Fix pull diagnostics with VS Code: stop `workspace/diagnostic` busy loop, clear stale diagnostics after `analyzersEnabled` toggle, re-fetch config on `workspace/didChangeConfiguration`
