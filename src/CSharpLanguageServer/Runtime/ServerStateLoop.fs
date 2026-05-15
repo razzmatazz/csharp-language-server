@@ -254,7 +254,29 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 | None -> ()
 
         wsUpdate.ConfigurationChange
-        |> Option.iter (fun cfg -> accumulate (PendingReconfiguration.ConfigurationChange cfg))
+        |> Option.iter (fun cfg ->
+            accumulate (PendingReconfiguration.ConfigurationChange cfg)
+
+            // If solutionPathOverride changed while a solution is already loaded,
+            // synthesise a FolderReconfiguration so that RequestQueueDrained tears
+            // down the old solution and starts a fresh load with the new path.
+            // A ConfigurationChange alone only stamps the override onto the folders
+            // but never triggers teardown+reload.
+            // state.Config is still the old config here (ConfigurationChange is a
+            // separate server event posted above and processed later), so the
+            // comparison correctly detects a genuine change.
+            // Skip this when Uninitialized: the InitializedGate path folds the
+            // ConfigurationChange together with the already-queued FolderReconfiguration
+            // from handleInitialize in one shot, so a second FolderReconfiguration
+            // would cause workspaceFoldersReplaced to run twice.
+            if
+                cfg.solutionPathOverride <> state.Config.solutionPathOverride
+                && workspace.Phase <> LspWorkspacePhase.Uninitialized
+            then
+                let currentFolders =
+                    workspace.Folders |> List.map (fun wf -> { Name = wf.Name; Uri = wf.Uri })
+
+                accumulate (PendingReconfiguration.FolderReconfiguration currentFolders))
 
         wsUpdate.FolderReconfiguration
         |> Option.iter (fun folders -> accumulate (PendingReconfiguration.FolderReconfiguration folders))

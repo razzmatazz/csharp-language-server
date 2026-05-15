@@ -64,3 +64,53 @@ let testReadyToReconfiguringToConfiguredPhaseTransition () =
 
     let diagsA1 = getWorkspaceDiagnosticsForUri client projectAUri
     Assert.AreEqual(0, diagsA1.Length)
+
+[<Test>]
+[<Retry(3)>]
+let testDidChangeConfigurationAloneTriggersSolutionReload () =
+    // Regression test: workspace/didChangeConfiguration with a changed
+    // solutionPathOverride must reload the solution WITHOUT requiring a
+    // subsequent workspace/didChangeWorkspaceFolders notification.
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    solutionPathOverride = Some "SolutionA.sln" } }
+
+    use client = activateFixtureExt "twoSolutions" profile emptyFixturePatch id
+
+    let projectAUri = "ProjectA/SomeClass.cs" |> fileUriForProjectDir client.SolutionDir
+    let projectBUri = "ProjectB/SomeClass.cs" |> fileUriForProjectDir client.SolutionDir
+
+    // Load SolutionA and wait for Ready
+    use _docA = client.Open "ProjectA/SomeClass.cs"
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 30.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Ready")
+        "workspace never reached Ready (SolutionA)"
+
+    // SolutionA has a "hello_A" diagnostic
+    let diagsA0 = getWorkspaceDiagnosticsForUri client projectAUri
+    Assert.IsTrue(diagsA0 |> List.exists (fun d -> d.Message.Contains "hello_A"))
+
+    // Switch to SolutionB via didChangeConfiguration ONLY — no didChangeWorkspaceFolders
+    client.Notify(
+        "workspace/didChangeConfiguration",
+        {| settings = {| csharp = {| solutionPathOverride = "SolutionB.sln" |} |} |}
+    )
+
+    // Load SolutionB and wait for Ready
+    use _docB = client.Open "ProjectB/SomeClass.cs"
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 60.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Ready")
+        "workspace never reached Ready (SolutionB) after didChangeConfiguration alone"
+
+    // SolutionB has a "42_B" diagnostic; ProjectA has none
+    let diagsB = getWorkspaceDiagnosticsForUri client projectBUri
+    Assert.IsTrue(diagsB |> List.exists (fun d -> d.Message.Contains "42_B"))
+
+    let diagsA1 = getWorkspaceDiagnosticsForUri client projectAUri
+    Assert.AreEqual(0, diagsA1.Length)
