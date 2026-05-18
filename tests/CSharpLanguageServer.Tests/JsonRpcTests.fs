@@ -327,7 +327,7 @@ let testNotificationIsDispatchedToHandler () =
         )
     // No "id" — this is a notification
 
-    let handler ctx = async {
+    let handler (ctx: JsonRpcRequestContext) = async {
         received.Value <- true
         receivedMethod.Value <- ctx.MethodName
     }

@@ -4,6 +4,7 @@
 module CSharpLanguageServer.Runtime.JsonRpc
 
 open System
+open System.Buffers
 open System.IO
 open System.Text
 open System.Text.Json
@@ -27,9 +28,10 @@ type JsonRpcStats =
       RecentlyTimedOutCallCount: int }
 
 type JsonRpcRequestContext =
-    { MethodName: string
+    { Payload: JsonDocument
       RequestOrdinal: int64
       WireId: JsonElement option
+      MethodName: string
       Params: JsonElement option
       CancellationTokenSource: CancellationTokenSource option }
 
@@ -51,7 +53,7 @@ type TransportPhase =
     | Stopped // all handlers drained, ShutdownWaiters fired
 
 type PendingCall =
-    { Method: string
+    { MethodName: string
       Timeout: TimeSpan option // None ⇒ infinite-wait, no deadline tracked
       Deadline: DateTimeOffset option // Some only when Timeout is Some
       ReplyChannel: AsyncReplyChannel<Result<JsonElement, JsonElement>> }
@@ -69,7 +71,7 @@ type JsonRpcTransportState =
         NextInboundRequestOrdinal: int64
         /// Outbound calls awaiting a response, keyed by the request ID we assigned.
         PendingOutboundCalls: Map<int, PendingCall>
-        /// Inbound requests currently being handled, keyed by wire ID (string representation).
+        /// Inbound requests currently being handled, keyed by wire ID (json string representation).
         RunningInboundRequests: Map<string, JsonRpcRequestContext>
         /// Channels waiting to be notified when the transport shuts down.
         ShutdownWaiters: AsyncReplyChannel<unit> list
@@ -104,11 +106,11 @@ let emptyTransportState =
 type JsonRpcTransportEvent =
     | Start of Stream * Stream * Map<string, JsonRpcCallHandler> * Map<string, JsonRpcNotificationHandler>
     | Shutdown of AsyncReplyChannel<unit>
-    | InboundMessage of Result<byte[] option, Exception>
+    | InboundMessage of Result<JsonDocument option, Exception> // JsonDocument should be disposed by the handler
     | MessageWriteComplete of success: bool * message: OutboundMessage
     | SendNotification of method: string * methodParams: JsonElement * AsyncReplyChannel<unit>
     | SendCall of
-        method: string *
+        methodName: string *
         methodParams: JsonElement *
         callTimeout: TimeSpan option *
         AsyncReplyChannel<Result<JsonElement, JsonElement>>
@@ -221,7 +223,14 @@ let startInboundMessageRead postEvent (stdin: Stream) =
     let readOp = async {
         try
             let! msg = readMessage stdin
-            postEvent (InboundMessage(Ok msg))
+
+            let doc =
+                msg |> Option.map (fun msg -> JsonDocument.Parse(ReadOnlyMemory<byte>(msg)))
+
+            doc
+            |> Option.iter (fun doc -> postEvent (WriteRpcLogEntry(RpcRead doc.RootElement)))
+
+            postEvent (InboundMessage(Ok doc))
         with ex ->
             postEvent (InboundMessage(Error ex))
     }
@@ -231,22 +240,22 @@ let startInboundMessageRead postEvent (stdin: Stream) =
 
 let writeMessage postEvent (stdout: Stream) msg = async {
     try
-        let msgPayloadJson = msg.Payload.RootElement.ToString()
-        let responseBytes = Encoding.UTF8.GetBytes(msgPayloadJson)
+        let jsonBuffer = ArrayBufferWriter<byte>()
 
-        let header =
-            sprintf "Content-Length: %d\r\n\r\n" responseBytes.Length
+        do
+            use jsonWriter = new Utf8JsonWriter(jsonBuffer)
+            msg.Payload.WriteTo(jsonWriter)
+            jsonWriter.Flush()
+
+        let jsonRpcHeader =
+            sprintf "Content-Length: %d\r\n\r\n" jsonBuffer.WrittenCount
             |> Encoding.ASCII.GetBytes
 
-        do! stdout.WriteAsync(header, 0, header.Length) |> Async.AwaitTask
-        do! stdout.WriteAsync(responseBytes, 0, responseBytes.Length) |> Async.AwaitTask
+        do! stdout.WriteAsync(jsonRpcHeader, 0, jsonRpcHeader.Length) |> Async.AwaitTask
+        do! stdout.WriteAsync(jsonBuffer.WrittenMemory) |> _.AsTask() |> Async.AwaitTask
         do! stdout.FlushAsync() |> Async.AwaitTask
 
-        let msgPayloadJsonElement =
-            use doc = JsonSerializer.SerializeToDocument(msg.Payload)
-            doc.RootElement.Clone()
-
-        postEvent (WriteRpcLogEntry(RpcWrite msgPayloadJsonElement))
+        postEvent (WriteRpcLogEntry(RpcWrite msg.Payload.RootElement))
         postEvent (MessageWriteComplete(true, msg))
     with ex ->
         postEvent (WriteRpcLogEntry(RpcError(sprintf "startWrite: write error: %s" (string ex))))
@@ -270,6 +279,16 @@ let enqueueOutboundMessage postEvent (state: JsonRpcTransportState) (msg: Outbou
     | _, _ ->
         { state with
             WriteQueue = state.WriteQueue @ [ msg ] }
+
+/// Write JSON directly into an ArrayBufferWriter via Utf8JsonWriter, then parse the
+/// resulting bytes into a JsonDocument in a single pass — no intermediate JsonObject,
+/// JsonNode.Parse, or SerializeToDocument round-trip.
+let buildPayload (write: Utf8JsonWriter -> unit) : JsonDocument =
+    let buf = ArrayBufferWriter<byte>()
+    use w = new Utf8JsonWriter(buf)
+    write w
+    w.Flush()
+    JsonDocument.Parse(buf.WrittenMemory)
 
 let makeError (code: int) (message: string) : JsonElement =
     let node = JsonObject()
@@ -324,12 +343,15 @@ let rescheduleTimer (state: JsonRpcTransportState) (postEvent: JsonRpcTransportE
             let t = new Threading.Timer(cb, null, delayMs, Threading.Timeout.Infinite)
             { state with Timer = Some t }
 
-let makeErrorResponse (id: JsonElement) (error: JsonElement) : JsonNode =
-    let obj = JsonObject()
-    obj["jsonrpc"] <- JsonValue.Create("2.0")
-    obj["id"] <- JsonNode.Parse(id.GetRawText())
-    obj["error"] <- JsonNode.Parse(error.GetRawText())
-    obj :> JsonNode
+let makeErrorPayload (id: JsonElement) (error: JsonElement) : JsonDocument =
+    buildPayload (fun w ->
+        w.WriteStartObject()
+        w.WriteString("jsonrpc", "2.0")
+        w.WritePropertyName("id")
+        id.WriteTo(w)
+        w.WritePropertyName("error")
+        error.WriteTo(w)
+        w.WriteEndObject())
 
 /// Start an inbound request handler asynchronously with a CancellationTokenSource.
 /// The handler runs on the thread pool; on completion/failure/cancellation, an event
@@ -368,111 +390,144 @@ let startNotificationHandler postEvent (handler: JsonRpcNotificationHandler) (co
 
 /// Reject a message that lacks a valid "jsonrpc": "2.0" field.
 /// If an id is present, send -32600 Invalid Request; otherwise drop silently.
-let handleInvalidVersion state postEvent (id: JsonElement option) =
-    match id with
-    | Some requestId ->
-        let errorResponse =
-            makeErrorResponse requestId (makeError -32600 "Invalid Request: jsonrpc must be \"2.0\"")
-            |> JsonSerializer.SerializeToDocument
+let handleInvalidVersionPayload state postEvent (payload: JsonDocument) =
+    let id =
+        match payload.RootElement.TryGetProperty("id") with
+        | true, v -> Some v
+        | _ -> None
 
-        enqueueOutboundMessage
-            postEvent
+    let newState =
+        match id with
+        | Some requestId ->
+            let errorResponse =
+                makeErrorPayload requestId (makeError -32600 "Invalid Request: jsonrpc must be \"2.0\"")
+
+            enqueueOutboundMessage
+                postEvent
+                state
+                { Payload = errorResponse
+                  CompletionRC = None }
+
+        | None ->
+            postEvent (
+                WriteRpcLogEntry(
+                    RpcError "handleInboundMessage: dropping message with missing or invalid jsonrpc field"
+                )
+            )
+
             state
-            { Payload = errorResponse
-              CompletionRC = None }
-    | None ->
-        postEvent (
-            WriteRpcLogEntry(RpcError "handleInboundMessage: dropping message with missing or invalid jsonrpc field")
-        )
 
-        state
+    payload.Dispose()
+    newState
 
 /// Dispatch an inbound request (method + id present) to a registered call handler.
 /// Sends -32601 Method Not Found if no handler is registered.
-let handleInboundRequest state postEvent (m: string) (requestId: JsonElement) (msgParams: JsonElement option) =
-    let wireIdKey = requestId.GetRawText()
+let handleInboundRequest state postEvent (methodName: string) (payload: JsonDocument) =
+    let requestWireId = payload.RootElement.GetProperty("id")
 
-    match state.CallHandlers |> Map.tryFind m with
+    match state.CallHandlers |> Map.tryFind methodName with
     | Some handler ->
         let cts = new CancellationTokenSource()
 
+        let paramsEl =
+            match payload.RootElement.TryGetProperty("params") with
+            | true, v -> Some v
+            | _ -> None
+
         let context =
-            { MethodName = m
+            { Payload = payload
               RequestOrdinal = state.NextInboundRequestOrdinal
-              WireId = Some requestId
-              Params = msgParams
+              WireId = Some requestWireId
+              MethodName = methodName
+              Params = paramsEl
               CancellationTokenSource = Some cts }
 
         do startCallHandler postEvent handler context
 
         { state with
             NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
-            RunningInboundRequests = state.RunningInboundRequests |> Map.add wireIdKey context }
+            RunningInboundRequests = state.RunningInboundRequests |> Map.add (requestWireId.GetRawText()) context }
+
     | None ->
         let errorResponse =
-            makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
-            |> JsonSerializer.SerializeToDocument
+            makeErrorPayload requestWireId (makeError -32601 (sprintf "Method not found: '%s'" methodName))
 
-        enqueueOutboundMessage
-            postEvent
-            state
-            { Payload = errorResponse
-              CompletionRC = None }
+        let newState =
+            enqueueOutboundMessage
+                postEvent
+                state
+                { Payload = errorResponse
+                  CompletionRC = None }
+
+        payload.Dispose()
+        newState
 
 /// Dispatch an inbound notification (method present, no id) to a registered notification handler.
 /// $/cancelRequest is handled specially. No response is ever sent.
-let handleInboundNotification state postEvent (m: string) (msg: JsonElement) =
-    if m = "$/cancelRequest" then
-        let idParam =
-            match msg.TryGetProperty("params") with
+let handleInboundNotification state postEvent (methodName: string) (payload: JsonDocument) =
+    if methodName = "$/cancelRequest" then
+        let idJson: string option =
+            match payload.RootElement.TryGetProperty("params") with
             | true, paramsEl ->
                 match paramsEl.TryGetProperty("id") with
                 | true, idEl -> Some(idEl.GetRawText())
                 | _ -> None
             | _ -> None
 
-        match idParam with
+        match idJson with
         | Some cancelId -> postEvent (CancelRequest cancelId)
         | None -> postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: $/cancelRequest missing 'id' parameter"))
 
+        payload.Dispose()
         state
     else
+        let payloadC = payload.RootElement |> JsonSerializer.SerializeToDocument
+
+        let paramsEl =
+            match payloadC.RootElement.TryGetProperty("params") with
+            | true, p -> Some p
+            | _ -> None
+
         let context =
-            { MethodName = m
+            { Payload = payloadC
               RequestOrdinal = state.NextInboundRequestOrdinal
               WireId = None
-              Params =
-                match msg.TryGetProperty("params") with
-                | true, p -> Some p
-                | _ -> None
+              MethodName = methodName
+              Params = paramsEl
               CancellationTokenSource = None }
 
-        match state.NotificationHandlers |> Map.tryFind m with
+        match state.NotificationHandlers |> Map.tryFind methodName with
         | Some handler -> do startNotificationHandler postEvent handler context
         | None ->
             postEvent (
-                WriteRpcLogEntry(RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" m))
+                WriteRpcLogEntry(
+                    RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" methodName)
+                )
             )
+
+        payload.Dispose()
 
         { state with
             NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
 
 /// Resolve a pending outbound call using an inbound response (no method, id present).
 /// Three cases: normal resolution, late response after timeout (RpcWarn), genuine unknown ID (RpcError).
-let handleInboundResponse state postEvent (responseId: JsonElement) (msg: JsonElement) =
-    let idVal = responseId.GetInt32()
+let handleInboundResponse state postEvent (payload: JsonDocument) =
+    let idVal = payload.RootElement.GetProperty("id").GetInt32()
 
     match state.PendingOutboundCalls |> Map.tryFind idVal with
     | Some pending ->
-        match msg.TryGetProperty("error") with
-        | true, err -> pending.ReplyChannel.Reply(Error err)
+        match payload.RootElement.TryGetProperty("error") with
+        | true, err -> pending.ReplyChannel.Reply(Error(err.Clone()))
         | _ ->
             let result =
-                match msg.TryGetProperty("result") with
-                | true, r -> r
-                | _ -> JsonDocument.Parse("null").RootElement
+                match payload.RootElement.TryGetProperty("result") with
+                | true, r -> r.Clone()
+                | _ -> JsonDocument.Parse("null").RootElement.Clone()
 
             pending.ReplyChannel.Reply(Ok result)
+
+        payload.Dispose()
 
         let state =
             { state with
@@ -481,6 +536,8 @@ let handleInboundResponse state postEvent (responseId: JsonElement) (msg: JsonEl
         rescheduleTimer state postEvent
 
     | None ->
+        payload.Dispose()
+
         if state.RecentlyTimedOutCalls |> Map.containsKey idVal then
             postEvent (
                 WriteRpcLogEntry(
@@ -502,40 +559,31 @@ let handleInboundResponse state postEvent (responseId: JsonElement) (msg: JsonEl
 
 /// Top-level inbound message router. Validates the jsonrpc version field, then
 /// classifies the message and delegates to the appropriate handler.
-let handleInboundMessage state postEvent (msgDoc: JsonDocument) =
-    let msg = msgDoc.RootElement.Clone()
-
+let handleInboundMessagePayload state postEvent (payload: JsonDocument) =
     let jsonrpc =
-        match msg.TryGetProperty("jsonrpc") with
+        match payload.RootElement.TryGetProperty("jsonrpc") with
         | true, v -> v.GetString() |> Some
         | _ -> None
 
-    let id =
-        match msg.TryGetProperty("id") with
-        | true, v -> Some v
-        | _ -> None
-
-    if jsonrpc <> Some "2.0" then
-        handleInvalidVersion state postEvent id
-    else
-
-        let method =
-            match msg.TryGetProperty("method") with
+    match jsonrpc with
+    | Some "2.0" ->
+        let methodName: string option =
+            match payload.RootElement.TryGetProperty("method") with
             | true, v -> v.GetString() |> Some
             | _ -> None
 
-        let msgParams =
-            match msg.TryGetProperty("params") with
-            | true, v -> Some v
-            | _ -> None
+        let haveId = payload.RootElement.TryGetProperty("id") |> fst
 
-        match method, id with
-        | Some m, Some requestId -> handleInboundRequest state postEvent m requestId msgParams
-        | Some m, None -> handleInboundNotification state postEvent m msg
-        | None, Some responseId -> handleInboundResponse state postEvent responseId msg
-        | None, None ->
+        match methodName, haveId with
+        | Some m, true -> handleInboundRequest state postEvent m payload
+        | Some m, false -> handleInboundNotification state postEvent m payload
+        | None, true -> handleInboundResponse state postEvent payload
+        | None, false ->
             postEvent (WriteRpcLogEntry(RpcError "handleInboundMessage: message has no 'method' or 'id' field"))
+            payload.Dispose()
             state
+
+    | _ -> handleInvalidVersionPayload state postEvent payload
 
 /// Common shutdown entry point for both EOF and explicit Shutdown.
 /// Fails all pending outbound calls, disposes the timer, cancels all running inbound
@@ -574,9 +622,10 @@ let tryFireShutdownWaiters (state: JsonRpcTransportState) =
     | _ -> state
 
 /// Shared epilogue for HandlerCompleted / HandlerFailed / HandlerCancelled.
-let completeInboundRequest postEvent (state: JsonRpcTransportState) wireIdKey (responsePayload: JsonNode option) =
+let completeInboundRequest postEvent (state: JsonRpcTransportState) wireIdKey (responsePayload: JsonDocument option) =
     let ctx = state.RunningInboundRequests |> Map.tryFind wireIdKey
     ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
+    ctx |> Option.iter _.Payload.Dispose()
 
     let newState =
         { state with
@@ -588,7 +637,7 @@ let completeInboundRequest postEvent (state: JsonRpcTransportState) wireIdKey (r
             enqueueOutboundMessage
                 postEvent
                 newState
-                { Payload = payload |> JsonSerializer.SerializeToDocument
+                { Payload = payload
                   CompletionRC = None }
         | None -> newState
 
@@ -621,13 +670,10 @@ let processEvent state postEvent ev =
 
     | InboundMessage result ->
         match result with
-        | Ok msgBytes ->
-            match msgBytes with
-            | Some msgBytes ->
-                use doc = JsonDocument.Parse(ReadOnlyMemory<byte>(msgBytes))
-
-                postEvent (WriteRpcLogEntry(RpcRead(doc.RootElement.Clone())))
-                let updatedState = handleInboundMessage state postEvent doc
+        | Ok payload ->
+            match payload with
+            | Some payload ->
+                let updatedState = handleInboundMessagePayload state postEvent payload
 
                 let pendingRead =
                     updatedState.StdIn |> Option.map (startInboundMessageRead postEvent)
@@ -641,6 +687,7 @@ let processEvent state postEvent ev =
                 // Unlike explicit Shutdown there is no reply channel to push, but any
                 // existing AwaitShutdown waiters will be fired once the map empties.
                 state |> beginShutdown postEvent None |> tryFireShutdownWaiters
+
         | Error ex ->
             postEvent (WriteRpcLogEntry(RpcError(sprintf "InboundMessage: read error (retrying): %s" (string ex))))
             let pendingRead = state.StdIn |> Option.map (startInboundMessageRead postEvent)
@@ -662,35 +709,46 @@ let processEvent state postEvent ev =
             rc.Reply()
             state
         | Active ->
-            let msg = JsonObject()
-            msg["jsonrpc"] <- JsonValue.Create("2.0")
-            msg["method"] <- JsonValue.Create(method)
-            msg["params"] <- JsonNode.Parse(methodParams.GetRawText())
+            let payload =
+                buildPayload (fun w ->
+                    w.WriteStartObject()
+                    w.WriteString("jsonrpc", "2.0")
+                    w.WriteString("method", method)
+                    w.WritePropertyName("params")
+                    methodParams.WriteTo(w)
+                    w.WriteEndObject())
 
             enqueueOutboundMessage
                 postEvent
                 state
-                { Payload = msg |> JsonSerializer.SerializeToDocument
+                { Payload = payload
                   CompletionRC = Some rc }
 
-    | SendCall(method, methodParams, callTimeout, replyChannel) ->
+    | SendCall(methodName, methodParams, callTimeout, replyChannel) ->
         match state.Phase with
         | ShuttingDown
         | Stopped ->
-            postEvent (WriteRpcLogEntry(RpcWarn(sprintf "SendCall: dropping '%s', transport is shutting down" method)))
+            postEvent (
+                WriteRpcLogEntry(RpcWarn(sprintf "SendCall: dropping '%s', transport is shutting down" methodName))
+            )
+
             replyChannel.Reply(Error(makeError -32099 "Transport shut down"))
             state
         | Active ->
             let id = state.NextOutboundRequestId
 
-            let msg = JsonObject()
-            msg["jsonrpc"] <- JsonValue.Create("2.0")
-            msg["id"] <- JsonValue.Create(id)
-            msg["method"] <- JsonValue.Create(method)
-            msg["params"] <- JsonNode.Parse(methodParams.GetRawText())
+            let payload =
+                buildPayload (fun w ->
+                    w.WriteStartObject()
+                    w.WriteString("jsonrpc", "2.0")
+                    w.WriteNumber("id", id)
+                    w.WriteString("method", methodName)
+                    w.WritePropertyName("params")
+                    methodParams.WriteTo(w)
+                    w.WriteEndObject())
 
             let pendingCall =
-                { Method = method
+                { MethodName = methodName
                   Timeout = callTimeout
                   Deadline = callTimeout |> Option.map (fun t -> DateTimeOffset.UtcNow + t)
                   ReplyChannel = replyChannel }
@@ -701,7 +759,7 @@ let processEvent state postEvent ev =
                     PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id pendingCall }
 
             let outboundMessage =
-                { Payload = msg |> JsonSerializer.SerializeToDocument
+                { Payload = payload
                   CompletionRC = None }
 
             let newState = outboundMessage |> enqueueOutboundMessage postEvent newState
@@ -716,12 +774,15 @@ let processEvent state postEvent ev =
             |> Option.map (fun ctx ->
                 match result with
                 | Ok returnValue ->
-                    let obj = JsonObject()
-                    obj["jsonrpc"] <- JsonValue.Create("2.0")
-                    obj["id"] <- JsonNode.Parse(ctx.WireId.Value.GetRawText())
-                    obj["result"] <- JsonNode.Parse(returnValue.GetRawText())
-                    obj :> JsonNode
-                | Error error -> makeErrorResponse ctx.WireId.Value error)
+                    buildPayload (fun w ->
+                        w.WriteStartObject()
+                        w.WriteString("jsonrpc", "2.0")
+                        w.WritePropertyName("id")
+                        ctx.WireId.Value.WriteTo(w)
+                        w.WritePropertyName("result")
+                        returnValue.WriteTo(w)
+                        w.WriteEndObject())
+                | Error error -> makeErrorPayload ctx.WireId.Value error)
 
         completeInboundRequest postEvent state wireIdKey responsePayload
 
@@ -735,9 +796,7 @@ let processEvent state postEvent ev =
         let responsePayload =
             ctx
             |> Option.map (fun ctx ->
-                makeErrorResponse
-                    ctx.WireId.Value
-                    (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name))))
+                makeErrorPayload ctx.WireId.Value (makeError -32603 (sprintf "Internal error: %s" (ex.GetType().Name))))
 
         completeInboundRequest postEvent state wireIdKey responsePayload
 
@@ -746,7 +805,7 @@ let processEvent state postEvent ev =
 
         let responsePayload =
             ctx
-            |> Option.map (fun ctx -> makeErrorResponse ctx.WireId.Value (makeError -32800 "Request cancelled"))
+            |> Option.map (fun ctx -> makeErrorPayload ctx.WireId.Value (makeError -32800 "Request cancelled"))
 
         completeInboundRequest postEvent state wireIdKey responsePayload
 
@@ -800,17 +859,10 @@ let processEvent state postEvent ev =
                 let timeoutDesc =
                     pending.Timeout |> Option.map string |> Option.defaultValue "<no timeout>"
 
-                postEvent (
-                    WriteRpcLogEntry(
-                        RpcWarn(
-                            sprintf
-                                "CheckTimeouts: call id=%d method=%s timed out after %s"
-                                id
-                                pending.Method
-                                timeoutDesc
-                        )
-                    )
-                )
+                let rpcWarnMessage =
+                    sprintf "CheckTimeouts: call id=%d method='%s' timed out after %s" id pending.MethodName timeoutDesc
+
+                postEvent (WriteRpcLogEntry(RpcWarn rpcWarnMessage))
 
                 pending.ReplyChannel.Reply(Error(makeError -32000 "Call timed out"))
 
