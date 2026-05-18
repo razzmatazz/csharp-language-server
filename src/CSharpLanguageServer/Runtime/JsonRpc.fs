@@ -11,8 +11,8 @@ open System.Text.Json.Nodes
 open System.Threading
 
 type JsonRpcLogEntry =
-    | RpcRead of string // json read
-    | RpcWrite of string // json written
+    | RpcRead of JsonElement
+    | RpcWrite of JsonElement
     | RpcError of string
     | RpcWarn of string
     | RpcDebug of string
@@ -42,7 +42,7 @@ type JsonRpcNotificationHandler = JsonRpcRequestContext -> Async<unit>
 type JsonRpcNotificationHandlerMap = Map<string, JsonRpcNotificationHandler>
 
 type OutboundMessage =
-    { Payload: JsonNode
+    { Payload: JsonDocument
       CompletionRC: option<AsyncReplyChannel<unit>> }
 
 type TransportPhase =
@@ -73,7 +73,7 @@ type JsonRpcTransportState =
         RunningInboundRequests: Map<string, JsonRpcRequestContext>
         /// Channels waiting to be notified when the transport shuts down.
         ShutdownWaiters: AsyncReplyChannel<unit> list
-        /// Optional callback invoked with each raw RPC log entry.
+        /// Optional callback invoked with each raw RPC log entry. Callback should .Clone() JsonElement if it needs to store it.
         RpcLogEntryCallback: (JsonRpcLogEntry -> unit) option
         Phase: TransportPhase
         /// Single shared wakeup timer, created lazily on first armed deadline, reused via Change().
@@ -231,7 +231,7 @@ let startInboundMessageRead postEvent (stdin: Stream) =
 
 let writeMessage postEvent (stdout: Stream) msg = async {
     try
-        let msgPayloadJson = msg.Payload.ToJsonString()
+        let msgPayloadJson = msg.Payload.RootElement.ToString()
         let responseBytes = Encoding.UTF8.GetBytes(msgPayloadJson)
 
         let header =
@@ -242,7 +242,11 @@ let writeMessage postEvent (stdout: Stream) msg = async {
         do! stdout.WriteAsync(responseBytes, 0, responseBytes.Length) |> Async.AwaitTask
         do! stdout.FlushAsync() |> Async.AwaitTask
 
-        postEvent (WriteRpcLogEntry(RpcWrite msgPayloadJson))
+        let msgPayloadJsonElement =
+            use doc = JsonSerializer.SerializeToDocument(msg.Payload)
+            doc.RootElement.Clone()
+
+        postEvent (WriteRpcLogEntry(RpcWrite msgPayloadJsonElement))
         postEvent (MessageWriteComplete(true, msg))
     with ex ->
         postEvent (WriteRpcLogEntry(RpcError(sprintf "startWrite: write error: %s" (string ex))))
@@ -369,6 +373,7 @@ let handleInvalidVersion state postEvent (id: JsonElement option) =
     | Some requestId ->
         let errorResponse =
             makeErrorResponse requestId (makeError -32600 "Invalid Request: jsonrpc must be \"2.0\"")
+            |> JsonSerializer.SerializeToDocument
 
         enqueueOutboundMessage
             postEvent
@@ -406,6 +411,7 @@ let handleInboundRequest state postEvent (m: string) (requestId: JsonElement) (m
     | None ->
         let errorResponse =
             makeErrorResponse requestId (makeError -32601 (sprintf "Method not found: '%s'" m))
+            |> JsonSerializer.SerializeToDocument
 
         enqueueOutboundMessage
             postEvent
@@ -582,7 +588,7 @@ let completeInboundRequest postEvent (state: JsonRpcTransportState) wireIdKey (r
             enqueueOutboundMessage
                 postEvent
                 newState
-                { Payload = payload
+                { Payload = payload |> JsonSerializer.SerializeToDocument
                   CompletionRC = None }
         | None -> newState
 
@@ -601,6 +607,7 @@ let processEvent state postEvent ev =
             PendingRead = Some readOp }
 
     | MessageWriteComplete(_success, msg) ->
+        msg.Payload.Dispose()
         msg.CompletionRC |> Option.iter _.Reply()
 
         match state.WriteQueue, state.StdOut with
@@ -619,7 +626,7 @@ let processEvent state postEvent ev =
             | Some msgBytes ->
                 use doc = JsonDocument.Parse(ReadOnlyMemory<byte>(msgBytes))
 
-                postEvent (WriteRpcLogEntry(RpcRead(doc.RootElement.GetRawText())))
+                postEvent (WriteRpcLogEntry(RpcRead(doc.RootElement.Clone())))
                 let updatedState = handleInboundMessage state postEvent doc
 
                 let pendingRead =
@@ -663,7 +670,7 @@ let processEvent state postEvent ev =
             enqueueOutboundMessage
                 postEvent
                 state
-                { Payload = msg
+                { Payload = msg |> JsonSerializer.SerializeToDocument
                   CompletionRC = Some rc }
 
     | SendCall(method, methodParams, callTimeout, replyChannel) ->
@@ -693,8 +700,11 @@ let processEvent state postEvent ev =
                     NextOutboundRequestId = id + 1
                     PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id pendingCall }
 
-            let newState =
-                enqueueOutboundMessage postEvent newState { Payload = msg; CompletionRC = None }
+            let outboundMessage =
+                { Payload = msg |> JsonSerializer.SerializeToDocument
+                  CompletionRC = None }
+
+            let newState = outboundMessage |> enqueueOutboundMessage postEvent newState
 
             rescheduleTimer newState postEvent
 

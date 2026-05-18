@@ -167,7 +167,7 @@ type RpcEndpoint =
 type RpcMessageLogEntry =
     { Source: RpcEndpoint
       TimestampMS: int
-      Message: JToken }
+      Message: JsonElement }
 
 type LspClientState =
     { ClientProfile: LspClientProfile
@@ -227,7 +227,9 @@ let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile:
 
 let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
     match entry with
-    | RpcRead jobj ->
+    | RpcRead je ->
+        let message = je.Clone()
+
         post (
             UpdateState(fun s ->
                 { s with
@@ -235,9 +237,11 @@ let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
                         s.RpcLog
                         @ [ { Source = Server
                               TimestampMS = 0
-                              Message = JToken.Parse(jobj) } ] })
+                              Message = message } ] })
         )
-    | RpcWrite jobj ->
+    | RpcWrite je ->
+        let message = je.Clone()
+
         post (
             UpdateState(fun s ->
                 { s with
@@ -245,7 +249,7 @@ let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
                         s.RpcLog
                         @ [ { Source = Client
                               TimestampMS = 0
-                              Message = JToken.Parse(jobj) } ] })
+                              Message = message } ] })
         )
     | RpcError msg -> post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "ERROR: %s" msg))
     | RpcWarn msg -> post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "WARN: %s" msg))
@@ -819,37 +823,6 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         log "OK, 'initialized' notification sent"
 
-    member __.WaitForProgressEnd(messagePred: (string -> bool)) =
-        let timeoutMS = 20 * 1000
-        let start = DateTime.Now
-
-        let progressEndMatch m =
-            let paramsValue = m.Message["params"] |> Option.ofObj |> indexJToken "value"
-
-            m.Source = Server
-            && (string m.Message.["method"]) = "$/progress"
-            && (paramsValue
-                |> indexJToken "kind"
-                |> Option.map string
-                |> Option.defaultValue "(None)") = "end"
-            && messagePred (
-                paramsValue
-                |> indexJToken "message"
-                |> Option.map string
-                |> Option.defaultValue "(None)"
-            )
-
-        let mutable haveProgressEnd = false
-
-        while (not haveProgressEnd) do
-            let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
-            haveProgressEnd <- rpcLog |> Seq.exists progressEndMatch
-
-            if (DateTime.Now - start).TotalMilliseconds > timeoutMS then
-                failwith (sprintf "WaitForProgressEnd: no $/progress[end] received in %dms" timeoutMS)
-
-            Thread.Sleep(25)
-
     /// Send only the LSP "shutdown" request and wait for its response.
     /// Use this together with SendExit when you need to observe the server
     /// state (e.g. workspace phase) between "shutdown" and "exit".
@@ -894,8 +867,8 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member __.GetProgressParams(token: ProgressToken) =
         client.PostAndReply(fun rc -> GetRpcLog rc)
         |> Seq.filter (fun m -> m.Source = Server)
-        |> Seq.filter (fun m -> (string m.Message["method"]) = "$/progress")
-        |> Seq.map (fun m -> m.Message["params"] |> deserialize<ProgressParams>)
+        |> Seq.filter (fun m -> (string ((jeToJToken m.Message)["method"])) = "$/progress")
+        |> Seq.map (fun m -> (jeToJToken m.Message)["params"] |> deserialize<ProgressParams>)
         |> Seq.filter (fun pp -> pp.Token = token)
         |> List.ofSeq
 
@@ -909,20 +882,20 @@ type LspTestClient(clientProfile: LspClientProfile) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         rpcLog
-        |> Seq.exists (fun m -> m.Source = Server && (string m.Message["method"]) = rpcMethod)
+        |> Seq.exists (fun m -> m.Source = Server && (string ((jeToJToken m.Message)["method"])) = rpcMethod)
 
     member __.ServerDidRespondTo(rpcMethod: string) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         let invocation =
             rpcLog
-            |> Seq.find (fun m -> m.Source = Client && (string m.Message["method"]) = rpcMethod)
+            |> Seq.find (fun m -> m.Source = Client && (string ((jeToJToken m.Message)["method"])) = rpcMethod)
 
         rpcLog
         |> Seq.exists (fun m ->
             m.Source = Client
-            && (m.Message.["id"] |> string) = (invocation.Message.["id"] |> string)
-            && (m.Message.["method"] |> string) = rpcMethod)
+            && ((jeToJToken m.Message).["id"] |> string) = ((jeToJToken invocation.Message)["id"] |> string)
+            && ((jeToJToken m.Message)["method"] |> string) = rpcMethod)
 
     member __.ClientDidSendNotification(rpcMethod: string) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
@@ -930,17 +903,17 @@ type LspTestClient(clientProfile: LspClientProfile) =
         rpcLog
         |> Seq.exists (fun m ->
             m.Source = Client
-            && (string m.Message["method"]) = rpcMethod
-            && m.Message["id"] |> isNull)
+            && (string ((jeToJToken m.Message)["method"])) = rpcMethod
+            && (jeToJToken m.Message)["id"] |> isNull)
 
     member __.ServerMessageLogContains(pred: string -> bool) : bool =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         let containsPred m =
-            let messageParams = m.Message["params"] |> Option.ofObj
+            let messageParams = (jeToJToken m.Message)["params"] |> Option.ofObj
 
             m.Source = Server
-            && (m.Message["method"] |> string) = "window/logMessage"
+            && ((jeToJToken m.Message)["method"] |> string) = "window/logMessage"
             && (pred (
                 messageParams
                 |> indexJToken "message"
@@ -952,10 +925,11 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
     member __.ServerProgressLogContains(pred: string -> bool) : bool =
         let containsPred m =
-            let paramsValue = m.Message["params"] |> Option.ofObj |> indexJToken "value"
+            let paramsValue =
+                (jeToJToken m.Message)["params"] |> Option.ofObj |> indexJToken "value"
 
             m.Source = Server
-            && (m.Message["method"] |> string) = "$/progress"
+            && ((jeToJToken m.Message)["method"] |> string) = "$/progress"
             && (pred (
                 paramsValue
                 |> indexJToken "message"
