@@ -272,7 +272,7 @@ let configureRpcTransport
                       )
                   )
 
-                  return Ok(nullJe)
+                  return Ok(nullJE)
               })
               "workspace/configuration",
               (fun (ctx: JsonRpcRequestContext) -> async {
@@ -306,7 +306,7 @@ let configureRpcTransport
                       )
                   )
 
-                  return Ok(nullJe)
+                  return Ok(nullJE)
               }) ]
 
     let notificationHandlers =

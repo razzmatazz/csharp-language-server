@@ -78,7 +78,7 @@ type CSharpLspClient
         sendServerRequest "client/unregisterCapability" (serialize p |> jtokenToJe)
 
     override __.WorkspaceWorkspaceFolders() : AsyncLspResult<Types.WorkspaceFolder[] option> =
-        sendServerRequest "workspace/workspaceFolders" nullJe
+        sendServerRequest "workspace/workspaceFolders" nullJE
 
     override __.WorkspaceConfiguration p : AsyncLspResult<JToken[]> =
         sendServerRequest "workspace/configuration" (serialize p |> jtokenToJe)
@@ -87,10 +87,10 @@ type CSharpLspClient
         sendServerRequest "workspace/applyEdit" (serialize p |> jtokenToJe)
 
     override __.WorkspaceSemanticTokensRefresh() =
-        sendServerRequest "workspace/semanticTokens/refresh" nullJe
+        sendServerRequest "workspace/semanticTokens/refresh" nullJE
 
     override __.WorkspaceDiagnosticRefresh() =
-        sendServerRequest "workspace/diagnostic/refresh" nullJe
+        sendServerRequest "workspace/diagnostic/refresh" nullJE
 
     override __.TextDocumentPublishDiagnostics p =
         sendServerNotification "textDocument/publishDiagnostics" (serialize p |> jtokenToJe)

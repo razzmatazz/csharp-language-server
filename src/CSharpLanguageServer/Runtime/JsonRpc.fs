@@ -131,7 +131,9 @@ type JsonRpcTransportEvent =
     | CheckTimeouts
     | GetRpcStats of AsyncReplyChannel<JsonRpcStats>
 
-let nullJe = JsonDocument.Parse("null").RootElement.Clone()
+let nullJE =
+    use nullDoc = JsonDocument.Parse("null")
+    nullDoc.RootElement.Clone()
 
 let readBytes (stream: Stream) (buffer: byte[]) (count: int) = async {
     let rec loop pos remaining = async {
@@ -403,7 +405,7 @@ let startNotificationHandler postEvent (handler: JsonRpcNotificationHandler) (co
 
     Async.StartWithContinuations(
         handlerAsync,
-        (fun () -> postEvent (HandlerTerminated(ordinal, HandlerReturnedOk nullJe))),
+        (fun () -> postEvent (HandlerTerminated(ordinal, HandlerReturnedOk nullJE))),
         (fun ex ->
             let outcome =
                 match ex with
@@ -570,7 +572,7 @@ let handleInboundResponse postEvent (payload: JsonDocument) state =
             let result =
                 match payload.RootElement.TryGetProperty("result") with
                 | true, r -> r.Clone()
-                | _ -> nullJe
+                | _ -> nullJE
 
             pending.ReplyChannel.Reply(Ok result)
 

@@ -110,6 +110,6 @@ let jtokenToJe (token: JToken) : JsonElement =
     use doc = JsonDocument.Parse(json)
     doc.RootElement.Clone()
 
-let nullJe =
+let nullJE =
     use doc = JsonDocument.Parse("null")
     doc.RootElement.Clone()
