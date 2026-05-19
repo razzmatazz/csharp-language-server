@@ -132,7 +132,7 @@ let configureRpcTransport
 
                 let fnParams =
                     jsonRpcCtx.Params
-                    |> Option.defaultWith (fun _ -> nullJE)
+                    |> Option.defaultValue nullJE
                     |> jeToJToken
                     |> sanitize
                     |> deserialize
