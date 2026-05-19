@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Switch `Runtime.JsonRpc` JSON serialization to `System.Text.Json`
 * Add workspace phase tracking and handle server runtime reconfiguration gracefully
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/362
 * Fix Razor go-to-references and source-file lookup broken by .NET SDK 10.0.300; fix analyzer tests broken by same SDK update
