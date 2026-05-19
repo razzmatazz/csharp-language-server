@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.JsonRpc
 open StreamJsonRpc
 open Microsoft.Extensions.Logging
 open System.Text.Json
+open System.Text.Json.Nodes
 open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
@@ -112,7 +113,7 @@ let configureRpcTransport
     let wrapHandler
         (unwrapResult: LspResult<_> -> 'r)
         (requestMode: RequestMode)
-        (sanitize: JToken -> JToken)
+        (sanitize: JsonElement -> JsonElement)
         fn
         jsonRpcCtx
         =
@@ -133,8 +134,8 @@ let configureRpcTransport
                 let fnParams =
                     jsonRpcCtx.Params
                     |> Option.defaultValue nullJE
-                    |> jeToJToken
                     |> sanitize
+                    |> jeToJToken
                     |> deserialize
 
                 let! result, wsUpdate' = fn ctx fnParams
@@ -161,34 +162,6 @@ let configureRpcTransport
 
     let callHandlerSanitized requestMode sanitize fn : JsonRpcCallHandler =
         wrapHandler unwrapResult requestMode sanitize fn
-
-    /// Clamp negative line/character values in a position JObject to 0.
-    /// The LSP spec says negative position values default to 0, but Position
-    /// is typed as uint32 so they overflow during deserialization.
-    let clampPositionFields (pos: JObject) =
-        for name in [ "line"; "character" ] do
-            match pos.TryGetValue(name) with
-            | true, (:? JValue as v) when v.Type = JTokenType.Integer && (v.Value :?> int64) < 0L -> v.Value <- 0
-            | _ -> ()
-
-    /// Pre-deserialization sanitizer for completionItem/resolve params.
-    /// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
-    let sanitizeCompletionItem (token: JToken) : JToken =
-        match token with
-        | :? JObject as obj ->
-            match obj.TryGetValue("textEdit") with
-            | true, (:? JObject as textEdit) ->
-                match textEdit.TryGetValue("range") with
-                | true, (:? JObject as range) ->
-                    for corner in [ "start"; "end" ] do
-                        match range.TryGetValue(corner) with
-                        | true, (:? JObject as pos) -> clampPositionFields pos
-                        | _ -> ()
-                | _ -> ()
-            | _ -> ()
-
-            obj :> JToken
-        | _ -> token
 
     let notificationHandler requestMode fn : JsonRpcNotificationHandler = wrapHandler ignore requestMode id fn
 

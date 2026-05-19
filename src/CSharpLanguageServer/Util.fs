@@ -4,6 +4,7 @@ open System
 open System.Threading.Tasks
 
 open System.Text.Json
+open System.Text.Json.Nodes
 open Newtonsoft.Json.Linq
 
 let nonNull name (value: 'T when 'T: null) : 'T =
@@ -113,3 +114,47 @@ let jtokenToJe (token: JToken) : JsonElement =
 let nullJE =
     use doc = JsonDocument.Parse("null")
     doc.RootElement.Clone()
+
+/// Clamp negative line/character values in a position JsonObject to 0.
+/// The LSP spec says negative position values default to 0, but Position
+/// is typed as uint32 so they overflow during deserialization.
+let clampPositionFields (pos: JsonObject) =
+    for name in [ "line"; "character" ] do
+        let mutable value = 0L
+
+        match pos[name] with
+        | null -> ()
+        | node when
+            node.GetValueKind() = JsonValueKind.Number
+            && node.AsValue().TryGetValue<int64>(&value)
+            && value < 0L
+            ->
+            pos[name] <- JsonValue.Create(0)
+        | _ -> ()
+
+let tryGetJsonObject (key: string) (obj: JsonObject) : JsonObject option =
+    match obj[key] with
+    | null -> None
+    | :? JsonObject as child -> Some child
+    | _ -> None
+
+/// Pre-deserialization sanitizer for completionItem/resolve params.
+/// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
+let sanitizeCompletionItem (je: JsonElement) : JsonElement =
+    if je.ValueKind <> JsonValueKind.Object then
+        je
+    else
+        let node = je.GetRawText() |> JsonNode.Parse |> nonNull "JsonNode.Parse"
+
+        match node with
+        | :? JsonObject as obj ->
+            obj
+            |> tryGetJsonObject "textEdit"
+            |> Option.bind (tryGetJsonObject "range")
+            |> Option.iter (fun range ->
+                for corner in [ "start"; "end" ] do
+                    range |> tryGetJsonObject corner |> Option.iter clampPositionFields)
+        | _ -> ()
+
+        use doc = JsonDocument.Parse(node.ToJsonString())
+        doc.RootElement.Clone()
