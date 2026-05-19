@@ -1,47 +1,5 @@
 # TODO
 
-## Track and cancel running notification handlers in `JsonRpc.fs`
-
-`handleInboundNotification` currently dispatches notification handlers without giving them a
-`CancellationTokenSource` or recording them anywhere (`CancellationTokenSource = None`, no
-entry added to `RunningInboundRequests`). This means in-flight notification handlers cannot be
-cancelled on shutdown, unlike request handlers which are tracked in `RunningInboundRequests` and
-cancelled via their `CancellationTokenSource`.
-
-### Key design constraint
-
-`RunningInboundRequests` is keyed on **wire ID string** (`requestWireId.GetRawText()`).
-Every completion path (`HandlerCompleted`, `HandlerFailed`, `HandlerCancelled`) and the
-`CancelRequest` event all look entries up by that same wire-ID key. Notifications have no
-wire ID, so they cannot share this map without rekeying it.
-
-### Options
-
-**Option A — rekey `RunningInboundRequests` on `RequestOrdinal` and add a separate map for calls.**
-`RunningInboundRequests` becomes `Map<int64, JsonRpcRequestContext>` (keyed on the already-assigned
-sequential `RequestOrdinal`). Requests and notifications are both tracked there. A new
-`RunningInboundCallsByWireId: Map<string, int64>` side-index maps wire IDs back to ordinals so
-that `CancelRequest` (which arrives with a wire ID) and the response-building lookups can still
-find the right context.
-
-**Option B — keep `RunningInboundRequests` keyed on wire ID, add `RunningInboundNotifications: Map<int64, JsonRpcRequestContext>`.**
-Notifications get their own separate map keyed on `RequestOrdinal`. The completion events for
-notifications use the ordinal as their key (the async handler would need to post e.g.
-`NotificationCompleted of int64` instead of `HandlerCompleted of string`). The shutdown drain
-gate (`tryFireShutdownWaiters`) must check both maps are empty before firing.
-
-Option B is the smaller, lower-risk change; Option A is cleaner long-term but touches more
-event-dispatch and lookup sites.
-
-### What to do
-
-- Choose an option above.
-- Give each dispatched notification its own `CancellationTokenSource`.
-- Track running notifications in the chosen map; cancel and await them during shutdown
-  alongside the existing request-cancellation logic in `beginShutdown` / `tryFireShutdownWaiters`.
-
----
-
 ## Bump Microsoft.Build.Locator version
 
 ## Test performance improvements

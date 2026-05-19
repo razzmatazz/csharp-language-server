@@ -474,58 +474,66 @@ let handleInboundRequest state postEvent (methodName: string) (payload: JsonDocu
         newState
 
 /// Dispatch an inbound notification (method present, no id) to a registered notification handler.
-/// $/cancelRequest is handled specially. No response is ever sent.
-let handleInboundNotification state postEvent (methodName: string) (payload: JsonDocument) =
+/// Handle a $/cancelRequest notification: extract the target id and post a CancelRequest event.
+let handleCancelRequest state postEvent (payload: JsonDocument) =
     let log = state.RpcLogEntryCallback |> Option.defaultValue ignore
 
-    if methodName = "$/cancelRequest" then
-        let idJson: string option =
-            match payload.RootElement.TryGetProperty("params") with
-            | true, paramsEl ->
-                match paramsEl.TryGetProperty("id") with
-                | true, idEl -> Some(idEl.GetRawText())
-                | _ -> None
+    let idJson: string option =
+        match payload.RootElement.TryGetProperty("params") with
+        | true, paramsEl ->
+            match paramsEl.TryGetProperty("id") with
+            | true, idEl -> Some(idEl.GetRawText())
             | _ -> None
+        | _ -> None
 
-        match idJson with
-        | Some cancelId -> postEvent (CancelRequest cancelId)
-        | None -> log (RpcError "handleInboundMessage: $/cancelRequest missing 'id' parameter")
+    match idJson with
+    | Some cancelId -> postEvent (CancelRequest cancelId)
+    | None -> log (RpcError "handleInboundMessage: $/cancelRequest missing 'id' parameter")
 
+    payload.Dispose()
+    state
+
+/// Handle any ordinary inbound notification by dispatching to its registered handler.
+let handleRegularNotification state postEvent (methodName: string) (payload: JsonDocument) =
+    let paramsEl =
+        match payload.RootElement.TryGetProperty("params") with
+        | true, p -> Some p
+        | _ -> None
+
+    let cts = new CancellationTokenSource()
+
+    let context =
+        { Payload = payload
+          RequestOrdinal = state.NextInboundRequestOrdinal
+          WireId = None
+          MethodName = methodName
+          Params = paramsEl
+          CancellationTokenSource = Some cts }
+
+    match state.NotificationHandlers |> Map.tryFind methodName with
+    | Some handler -> do startNotificationHandler postEvent handler context
+    | None ->
+        let log = state.RpcLogEntryCallback |> Option.defaultValue ignore
+        log (RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" methodName))
+
+        // No handler will post HandlerCompleted, so clean up immediately.
+        cts.Dispose()
         payload.Dispose()
-        state
-    else
-        let paramsEl =
-            match payload.RootElement.TryGetProperty("params") with
-            | true, p -> Some p
-            | _ -> None
 
-        let cts = new CancellationTokenSource()
+    match state.NotificationHandlers |> Map.tryFind methodName with
+    | Some _ ->
+        { state with
+            NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
+            RunningInboundHandlers = state.RunningInboundHandlers |> Map.add context.RequestOrdinal context }
+    | None ->
+        { state with
+            NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
 
-        let context =
-            { Payload = payload
-              RequestOrdinal = state.NextInboundRequestOrdinal
-              WireId = None
-              MethodName = methodName
-              Params = paramsEl
-              CancellationTokenSource = Some cts }
-
-        match state.NotificationHandlers |> Map.tryFind methodName with
-        | Some handler -> do startNotificationHandler postEvent handler context
-        | None ->
-            log (RpcError(sprintf "handleInboundMessage: no notification handler for method '%s'" methodName))
-
-            // No handler will post HandlerCompleted, so clean up immediately.
-            cts.Dispose()
-            payload.Dispose()
-
-        match state.NotificationHandlers |> Map.tryFind methodName with
-        | Some _ ->
-            { state with
-                NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1)
-                RunningInboundHandlers = state.RunningInboundHandlers |> Map.add context.RequestOrdinal context }
-        | None ->
-            { state with
-                NextInboundRequestOrdinal = state.NextInboundRequestOrdinal + (int64 1) }
+/// $/cancelRequest is handled specially. All other notifications are dispatched to registered handlers.
+let handleInboundNotification state postEvent (methodName: string) (payload: JsonDocument) =
+    match methodName with
+    | "$/cancelRequest" -> handleCancelRequest state postEvent payload
+    | _ -> handleRegularNotification state postEvent methodName payload
 
 /// Resolve a pending outbound call using an inbound response (no method, id present).
 /// Three cases: normal resolution, late response after timeout (RpcWarn), genuine unknown ID (RpcError).
@@ -656,13 +664,12 @@ let completeInboundHandler postEvent (state: JsonRpcTransportState) ordinal (res
     let log = state.RpcLogEntryCallback |> Option.defaultValue ignore
     let ctx = state.RunningInboundHandlers |> Map.tryFind ordinal
 
-    ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
-
     let newCallsByWireId =
         match ctx |> Option.bind _.WireId with
         | Some wireId -> state.RunningInboundCallsByWireId |> Map.remove (wireId.GetRawText())
         | None -> state.RunningInboundCallsByWireId
 
+    ctx |> Option.bind _.CancellationTokenSource |> Option.iter _.Dispose()
     ctx |> Option.iter _.Payload.Dispose()
 
     let newState =
