@@ -119,7 +119,7 @@ type JsonRpcTransportEvent =
     | Shutdown of AsyncReplyChannel<unit>
     | InboundMessage of Result<JsonDocument option, Exception> // JsonDocument should be disposed by the handler
     | MessageWriteComplete of success: bool * message: OutboundMessage
-    | SendNotification of method: string * methodParams: JsonElement * AsyncReplyChannel<unit>
+    | SendNotification of methodName: string * methodParams: JsonElement * AsyncReplyChannel<unit>
     | SendCall of
         methodName: string *
         methodParams: JsonElement *
@@ -673,8 +673,6 @@ let tryFireShutdownWaiters state =
             Phase = Stopped }
     | _ -> state
 
-
-
 let processEvent postEvent ev state =
     let log = state.RpcLogEntryCallback |> Option.defaultValue ignore
 
@@ -733,19 +731,20 @@ let processEvent postEvent ev state =
         // rc is parked in ShutdownWaiters and fired once all handlers have drained.
         state |> beginShutdown postEvent (Some rc) |> tryFireShutdownWaiters
 
-    | SendNotification(method, methodParams, rc) ->
+    | SendNotification(methodName, methodParams, rc) ->
         match state.Phase with
         | ShuttingDown
         | Stopped ->
-            log (RpcWarn(sprintf "SendNotification: dropping '%s', transport is shutting down" method))
+            log (RpcWarn(sprintf "SendNotification: dropping '%s', transport is shutting down" methodName))
             rc.Reply()
             state
+
         | Active ->
             let payload =
                 makePayload (fun w ->
                     w.WriteStartObject()
                     w.WriteString("jsonrpc", "2.0")
-                    w.WriteString("method", method)
+                    w.WriteString("method", methodName)
                     w.WritePropertyName("params")
                     methodParams.WriteTo(w)
                     w.WriteEndObject())
