@@ -130,24 +130,3 @@ let tryGetJsonObject (key: string) (obj: JsonObject) : JsonObject option =
     | null -> None
     | :? JsonObject as child -> Some child
     | _ -> None
-
-/// Pre-deserialization sanitizer for completionItem/resolve params.
-/// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
-let sanitizeCompletionItem (je: JsonElement) : JsonElement =
-    if je.ValueKind <> JsonValueKind.Object then
-        je
-    else
-        let node = je.GetRawText() |> JsonNode.Parse |> nonNull "JsonNode.Parse"
-
-        match node with
-        | :? JsonObject as obj ->
-            obj
-            |> tryGetJsonObject "textEdit"
-            |> Option.bind (tryGetJsonObject "range")
-            |> Option.iter (fun range ->
-                for corner in [ "start"; "end" ] do
-                    range |> tryGetJsonObject corner |> Option.iter clampPositionFields)
-        | _ -> ()
-
-        use doc = JsonDocument.Parse(node.ToJsonString())
-        doc.RootElement.Clone()

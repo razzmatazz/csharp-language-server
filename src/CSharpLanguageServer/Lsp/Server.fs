@@ -172,7 +172,9 @@ let configureRpcTransport
         |> Map.add "csharp/metadata" (callHandler ReadOnly CSharpMetadata.handle)
         |> Map.add "textDocument/codeAction" (callHandler ReadOnly CodeAction.handle)
         |> Map.add "textDocument/completion" (callHandler ReadOnly Completion.handle)
-        |> Map.add "completionItem/resolve" (callHandlerSanitized ReadOnly sanitizeCompletionItem Completion.resolve)
+        |> Map.add
+            "completionItem/resolve"
+            (callHandlerSanitized ReadOnly Completion.sanitizeCompletionItem Completion.resolve)
         |> Map.add "textDocument/definition" (callHandler ReadOnly Definition.handle)
         |> Map.add "textDocument/hover" (callHandler ReadOnly Hover.handle)
         |> Map.add "textDocument/references" (callHandler ReadOnly References.handle)

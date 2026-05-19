@@ -2,6 +2,8 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Reflection
+open System.Text.Json
+open System.Text.Json.Nodes
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
@@ -469,3 +471,25 @@ module Completion =
 
             | None -> return item |> LspResult.success, LspWorkspaceUpdate.Empty
         }
+
+    /// Pre-deserialization sanitizer for completionItem/resolve params.
+    /// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
+    let sanitizeCompletionItem (je: JsonElement) : JsonElement =
+        match je.ValueKind with
+        | JsonValueKind.Object ->
+            let node = je.GetRawText() |> JsonNode.Parse |> nonNull "JsonNode.Parse"
+
+            match node with
+            | :? JsonObject as obj ->
+                obj
+                |> tryGetJsonObject "textEdit"
+                |> Option.bind (tryGetJsonObject "range")
+                |> Option.iter (fun range ->
+                    for corner in [ "start"; "end" ] do
+                        range |> tryGetJsonObject corner |> Option.iter clampPositionFields)
+            | _ -> ()
+
+            use doc = JsonDocument.Parse(node.ToJsonString())
+            doc.RootElement.Clone()
+
+        | _ -> je
