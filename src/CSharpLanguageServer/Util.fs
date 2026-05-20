@@ -108,6 +108,14 @@ let nullJE =
     use doc = JsonDocument.Parse("null")
     doc.RootElement.Clone()
 
+let emptyObjectJE =
+    use doc = JsonDocument.Parse("{}")
+    doc.RootElement.Clone()
+
+let emptyArrayJE =
+    use doc = JsonDocument.Parse("[]")
+    doc.RootElement.Clone()
+
 /// Clamp negative line/character values in a position JsonObject to 0.
 /// The LSP spec says negative position values default to 0, but Position
 /// is typed as uint32 so they overflow during deserialization.

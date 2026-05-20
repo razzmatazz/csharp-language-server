@@ -22,8 +22,15 @@ open CSharpLanguageServer.Runtime.DebugInfo
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
-let indexJToken (name: string) (jobj: option<JToken>) : option<JToken> =
-    jobj |> Option.bind (fun p -> p[name] |> Option.ofObj)
+let indexJE (name: string) (je: option<JsonElement>) : option<JsonElement> =
+    je
+    |> Option.bind (fun p ->
+        match p.TryGetProperty(name) with
+        | true, v -> Some v
+        | _ -> None)
+
+let jeStringProp (name: string) (je: option<JsonElement>) : option<string> =
+    je |> indexJE name |> Option.map _.GetString()
 
 let emptyClientCapabilities: ClientCapabilities =
     { Workspace = None
@@ -207,7 +214,7 @@ type LspClientEvent =
     | EmitLogMessage of DateTime * string * string
     | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
 
-let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile: LspClientProfile) : JToken =
+let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile: LspClientProfile) : JsonElement =
     let getSectionConfiguration (section: string) : Option<JToken> =
         match section with
         | "csharp" -> clientProfile.ServerConfig |> serialize |> Some
@@ -222,8 +229,9 @@ let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile:
         |> Seq.choose _.Section
         |> Seq.map getSectionConfiguration
         |> List.ofSeq
-        |> serialize)
-    |> Option.defaultValue (serialize ([]: JToken list))
+        |> serialize
+        |> jtokenToJe)
+    |> Option.defaultValue emptyArrayJE
 
 let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
     match entry with
@@ -294,7 +302,7 @@ let configureRpcTransport
                       )
                   )
 
-                  return Ok(result |> jtokenToJe)
+                  return Ok(result)
               })
               "window/workDoneProgress/create",
               (fun (ctx: JsonRpcRequestContext) -> async {
@@ -345,11 +353,10 @@ let configureRpcTransport
               (fun (ctx: JsonRpcRequestContext) -> async {
                   match ctx.Params with
                   | Some p ->
-                      let p = p |> jeToJToken
-                      let value = p["value"] |> Option.ofObj
-                      let kind = value |> indexJToken "kind"
-                      let message = value |> indexJToken "message"
-                      let title = value |> indexJToken "title"
+                      let value = Some p |> indexJE "value"
+                      let kind = value |> jeStringProp "kind"
+                      let message = value |> jeStringProp "message"
+                      let title = value |> jeStringProp "title"
 
                       post (
                           EmitLogMessage(
@@ -583,9 +590,8 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
     let mutable fileContents: option<string> = None
     let mutable fileVersion: int = 1
 
-    let notify method (p: JToken) =
-        sendJsonRpcNotification rpcTransport method (jtokenToJe p)
-        |> Async.RunSynchronously
+    let notify method (p: JsonElement) =
+        sendJsonRpcNotification rpcTransport method p |> Async.RunSynchronously
 
     member __.FileName = filename
 
@@ -596,7 +602,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
             let didCloseParams: DidCloseTextDocumentParams =
                 { TextDocument = { Uri = this.Uri } }
 
-            notify "textDocument/didClose" (serialize didCloseParams)
+            notify "textDocument/didClose" (serialize didCloseParams |> jtokenToJe)
 
     member this.OpenWithText(text: string) =
         fileContents <- Some text
@@ -615,7 +621,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
 
         let didOpenParams: DidOpenTextDocumentParams = { TextDocument = textDocument }
 
-        notify "textDocument/didOpen" (serialize didOpenParams)
+        notify "textDocument/didOpen" (didOpenParams |> serialize |> jtokenToJe)
 
     member this.OpenWithTextFromDisk() =
         let fileText =
@@ -635,7 +641,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
                   Version = fileVersion }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
 
-        notify "textDocument/didChange" (serialize didChangeParams)
+        notify "textDocument/didChange" (didChangeParams |> serialize |> jtokenToJe)
 
     member this.Save() =
         let fullPath = Path.Combine(projectDir, filename)
@@ -645,7 +651,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
             { TextDocument = { Uri = this.Uri }
               Text = fileContents }
 
-        notify "textDocument/didSave" (serialize didSaveParams)
+        notify "textDocument/didSave" (didSaveParams |> serialize |> jtokenToJe)
 
     member __.GetFileContents() = fileContents.Value
 
@@ -683,6 +689,9 @@ type LspTestClient(clientProfile: LspClientProfile) =
     let rpcTransport () =
         rpcTransportOpt
         |> Option.defaultWith (fun () -> failwith "rpcTransport not yet initialised")
+
+    let notify method (p: JsonElement) =
+        sendJsonRpcNotification (rpcTransport ()) method p |> Async.RunSynchronously
 
     let logMessage m msg =
         client.Post(EmitLogMessage(DateTime.Now, sprintf "ClientActorController.%s" m, msg))
@@ -828,8 +837,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         log "OK, 'initialize' request complete"
 
-        sendJsonRpcNotification transport "initialized" (JObject() |> jtokenToJe)
-        |> Async.RunSynchronously
+        notify "initialized" emptyObjectJE
 
         log "OK, 'initialized' notification sent"
 
@@ -839,25 +847,22 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member __.SendShutdown() =
         let transport = rpcTransport ()
 
-        sendJsonRpcCallWithTimeout transport "shutdown" (JObject() |> jtokenToJe) (Some(TimeSpan.FromSeconds 15.0))
+        sendJsonRpcCallWithTimeout transport "shutdown" emptyObjectJE (Some(TimeSpan.FromSeconds 15.0))
         |> Async.RunSynchronously
         |> ignore
 
     /// Send only the LSP "exit" notification (no response expected).
     /// Must be called after SendShutdown.
-    member __.SendExit() =
-        sendJsonRpcNotification (rpcTransport ()) "exit" (JObject() |> jtokenToJe)
-        |> Async.RunSynchronously
+    member __.SendExit() = notify "exit" emptyObjectJE
 
     member __.Shutdown() =
         let transport = rpcTransport ()
 
         let _ =
-            sendJsonRpcCallWithTimeout transport "shutdown" (JObject() |> jtokenToJe) (Some(TimeSpan.FromSeconds 15.0))
+            sendJsonRpcCallWithTimeout transport "shutdown" emptyObjectJE (Some(TimeSpan.FromSeconds 15.0))
             |> Async.RunSynchronously
 
-        sendJsonRpcNotification transport "exit" (JObject() |> jtokenToJe)
-        |> Async.RunSynchronously
+        notify "exit" emptyObjectJE
 
         shutdownJsonRpcTransport transport |> Async.RunSynchronously
 
@@ -877,8 +882,13 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member __.GetProgressParams(token: ProgressToken) =
         client.PostAndReply(fun rc -> GetRpcLog rc)
         |> Seq.filter (fun m -> m.Source = Server)
-        |> Seq.filter (fun m -> (string ((jeToJToken m.Message)["method"])) = "$/progress")
-        |> Seq.map (fun m -> (jeToJToken m.Message)["params"] |> deserialize<ProgressParams>)
+        |> Seq.filter (fun m -> (Some m.Message |> jeStringProp "method") = Some "$/progress")
+        |> Seq.map (fun m ->
+            Some m.Message
+            |> indexJE "params"
+            |> Option.get
+            |> jeToJToken
+            |> deserialize<ProgressParams>)
         |> Seq.filter (fun pp -> pp.Token = token)
         |> List.ofSeq
 
@@ -892,20 +902,22 @@ type LspTestClient(clientProfile: LspClientProfile) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         rpcLog
-        |> Seq.exists (fun m -> m.Source = Server && (string ((jeToJToken m.Message)["method"])) = rpcMethod)
+        |> Seq.exists (fun m -> m.Source = Server && (Some m.Message |> jeStringProp "method") = Some rpcMethod)
 
     member __.ServerDidRespondTo(rpcMethod: string) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         let invocation =
             rpcLog
-            |> Seq.find (fun m -> m.Source = Client && (string ((jeToJToken m.Message)["method"])) = rpcMethod)
+            |> Seq.find (fun m -> m.Source = Client && (Some m.Message |> jeStringProp "method") = Some rpcMethod)
 
         rpcLog
         |> Seq.exists (fun m ->
             m.Source = Client
-            && ((jeToJToken m.Message).["id"] |> string) = ((jeToJToken invocation.Message)["id"] |> string)
-            && ((jeToJToken m.Message)["method"] |> string) = rpcMethod)
+            && (Some m.Message |> indexJE "id" |> Option.map _.GetRawText()) = (Some invocation.Message
+                                                                                |> indexJE "id"
+                                                                                |> Option.map _.GetRawText())
+            && (Some m.Message |> jeStringProp "method") = Some rpcMethod)
 
     member __.ClientDidSendNotification(rpcMethod: string) =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
@@ -913,39 +925,28 @@ type LspTestClient(clientProfile: LspClientProfile) =
         rpcLog
         |> Seq.exists (fun m ->
             m.Source = Client
-            && (string ((jeToJToken m.Message)["method"])) = rpcMethod
-            && (jeToJToken m.Message)["id"] |> isNull)
+            && (Some m.Message |> jeStringProp "method") = Some rpcMethod
+            && (Some m.Message |> indexJE "id") |> Option.isNone)
 
     member __.ServerMessageLogContains(pred: string -> bool) : bool =
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
 
         let containsPred m =
-            let messageParams = (jeToJToken m.Message)["params"] |> Option.ofObj
+            let messageParams = Some m.Message |> indexJE "params"
 
             m.Source = Server
-            && ((jeToJToken m.Message)["method"] |> string) = "window/logMessage"
-            && (pred (
-                messageParams
-                |> indexJToken "message"
-                |> Option.map string
-                |> Option.defaultValue "(None)"
-            ))
+            && (Some m.Message |> jeStringProp "method") = Some "window/logMessage"
+            && (pred (messageParams |> jeStringProp "message" |> Option.get))
 
         rpcLog |> Seq.exists containsPred
 
     member __.ServerProgressLogContains(pred: string -> bool) : bool =
         let containsPred m =
-            let paramsValue =
-                (jeToJToken m.Message)["params"] |> Option.ofObj |> indexJToken "value"
+            let paramsValue = Some m.Message |> indexJE "params" |> indexJE "value"
 
             m.Source = Server
-            && ((jeToJToken m.Message)["method"] |> string) = "$/progress"
-            && (pred (
-                paramsValue
-                |> indexJToken "message"
-                |> Option.map string
-                |> Option.defaultValue "(None)"
-            ))
+            && (Some m.Message |> jeStringProp "method") = Some "$/progress"
+            && (pred (paramsValue |> jeStringProp "message" |> Option.get))
 
         let rpcLog = client.PostAndReply(fun rc -> GetRpcLog rc)
         rpcLog |> Seq.exists containsPred
@@ -958,8 +959,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
                 "$/csharp/debugInfo returned None — set ServerConfig.debug.debugMode = Some true in the client profile"
 
     member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
-        sendJsonRpcNotification (rpcTransport ()) method (``params`` |> serialize |> jtokenToJe)
-        |> Async.RunSynchronously
+        notify method (``params`` |> serialize |> jtokenToJe)
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         let result =
