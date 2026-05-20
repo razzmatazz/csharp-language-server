@@ -368,7 +368,12 @@ let enterDrainingMode (requestQueue: RequestQueue) : RequestQueue option =
 
         requestQueue.Requests
         |> Map.iter (fun _ req ->
-            if req.Phase = Running then
+            // OutOfBand requests (e.g. $/csharp/debugInfo) are exempted from
+            // bulk cancellation for the same reason they are exempted from the
+            // drain predicate, retirement walk, and eligible-requests gate:
+            // they must complete regardless of queue/workspace state and must
+            // never be cancelled by a reconfiguration cycle.
+            if req.Phase = Running && req.Mode <> OutOfBand then
                 req.Cts
                 |> Option.iter (fun cts ->
                     try

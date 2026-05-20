@@ -52,7 +52,10 @@ let testPushDiagnosticsWork () =
     // open Class.cs file and wait for diagnostics to be pushed
     use classFile = client.Open("Project/Class.cs")
 
-    Thread.Sleep(8000)
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds(30.0))
+        (fun () -> client.GetState().PushDiagnostics |> Map.containsKey classFile.Uri)
+        "Expected push diagnostics to arrive for Project/Class.cs"
 
     let state = client.GetState()
     let diag0 = state.PushDiagnostics |> Map.tryFind classFile.Uri
@@ -83,7 +86,14 @@ let testPushDiagnosticsWork () =
     //
     classFile.Change("")
 
-    Thread.Sleep(4000)
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds(30.0))
+        (fun () ->
+            client.GetState().PushDiagnostics
+            |> Map.tryFind classFile.Uri
+            |> Option.map (fun (_, diags) -> diags.Length = 0)
+            |> Option.defaultValue false)
+        "Expected push diagnostics to clear for Project/Class.cs after Change(\"\")"
 
     let state = client.GetState()
     let version1, diagnosticList1 = state.PushDiagnostics |> Map.find classFile.Uri
@@ -217,8 +227,6 @@ let testWorkspaceDiagnosticsWork () =
 [<Test>]
 let testWorkspaceDiagnosticsWorkWithStreaming () =
     use client = activateFixture "testDiagnosticsWork"
-
-    Thread.Sleep(1000)
 
     let partialResultToken: ProgressToken = System.Guid.NewGuid() |> string |> U2.C2
 

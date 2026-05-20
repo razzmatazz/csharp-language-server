@@ -665,7 +665,15 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
+let activeClientsSemaphore =
+    // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
+    // per-test CPU cost is low enough to run one server per logical core safely.
+    let concurrency = Environment.ProcessorCount
+    new SemaphoreSlim(concurrency, concurrency)
+
 type LspTestClient(clientProfile: LspClientProfile) =
+    do activeClientsSemaphore.Wait()
+
     let client = MailboxProcessor.Start(clientEventLoop initialClientState)
 
     let mutable solutionDir: string option = None
@@ -732,6 +740,8 @@ type LspTestClient(clientProfile: LspClientProfile) =
                 logMessage "Dispose" (sprintf "Removing files on solution dir \"%s\".." solutionDir)
                 deleteDirectory solutionDir
             | _ -> ()
+
+            activeClientsSemaphore.Release() |> ignore
 
     member __.SolutionDir: string = solutionDir.Value
 
@@ -1012,26 +1022,15 @@ let runDotnetBuild (dir: string) =
     finally
         dotnetBuildSemaphore.Release() |> ignore
 
-let activeClientsSemaphore =
-    // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
-    // per-test CPU cost is low enough to run one server per logical core safely.
-    let concurrency = Environment.ProcessorCount
-    new SemaphoreSlim(concurrency, concurrency)
-
 let activateFixtureExt
     fixtureName
     clientProfile
     (patchFixtureDir: string -> unit)
     (initializeParamsUpdate: InitializeParams -> InitializeParams)
     =
-    activeClientsSemaphore.Wait()
-
-    try
-        let client = new LspTestClient(clientProfile)
-        client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
-        client
-    finally
-        activeClientsSemaphore.Release() |> ignore
+    let client = new LspTestClient(clientProfile)
+    client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
+    client
 
 let emptyFixturePatch _ = ()
 
