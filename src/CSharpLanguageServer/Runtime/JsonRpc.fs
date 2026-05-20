@@ -481,15 +481,13 @@ let handleInboundRequest postEvent (methodName: string) (payload: JsonDocument) 
         let errorResponse =
             makeErrorPayload requestWireId (makeError -32601 (sprintf "Method not found: '%s'" methodName))
 
-        let newState =
-            state
-            |> enqueueOutboundMessage
-                postEvent
-                { Payload = errorResponse
-                  CompletionRC = None }
-
         payload.Dispose()
-        newState
+
+        state
+        |> enqueueOutboundMessage
+            postEvent
+            { Payload = errorResponse
+              CompletionRC = None }
 
 /// Dispatch an inbound notification (method present, no id) to a registered notification handler.
 /// Handle a $/cancelRequest notification: extract the target id and post a CancelRequest event.
@@ -786,14 +784,12 @@ let processEvent postEvent ev state =
                     NextOutboundRequestId = id + 1
                     PendingOutboundCalls = state.PendingOutboundCalls |> Map.add id pendingCall }
 
-            let newState =
-                newState
-                |> enqueueOutboundMessage
-                    postEvent
-                    { Payload = payload
-                      CompletionRC = None }
-
-            newState |> rescheduleTimer postEvent
+            newState
+            |> enqueueOutboundMessage
+                postEvent
+                { Payload = payload
+                  CompletionRC = None }
+            |> rescheduleTimer postEvent
 
     | HandlerTerminated(ordinal, outcome) ->
         let ctx = state.RunningInboundHandlers |> Map.tryFind ordinal
