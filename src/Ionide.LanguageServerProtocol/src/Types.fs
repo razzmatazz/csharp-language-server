@@ -153,3 +153,18 @@ and LSPAnyConverter() =
   override _.ReadJson(reader, _t, _existing, _serializer) = LSPAny(JToken.ReadFrom(reader)) :> obj
 
   override _.WriteJson(writer, value, _serializer) = (value :?> LSPAny).JToken.WriteTo(writer)
+
+/// System.Text.Json converter for <see cref="LSPAny"/>.
+/// Reads any JSON value into a <see cref="System.Text.Json.JsonElement"/> and wraps it via
+/// <see cref="LSPAny.fromJsonElement"/>; writes by delegating to the underlying JsonElement.
+/// This lets <c>LSPAny</c>-typed fields round-trip through the STJ-based
+/// <c>Ionide.LanguageServerProtocol.Server.lspSerializerOptions</c> pipeline, independently of
+/// the Newtonsoft-based <see cref="LSPAnyConverter"/> used by the StreamJsonRpc wire path.
+type LSPAnyJsonConverter() =
+  inherit System.Text.Json.Serialization.JsonConverter<LSPAny>()
+
+  override _.Read(reader, _typeToConvert, _options) =
+    use doc = System.Text.Json.JsonDocument.ParseValue(&reader)
+    LSPAny.fromJsonElement (doc.RootElement.Clone())
+
+  override _.Write(writer, value, _options) = value.JsonElement.WriteTo(writer)

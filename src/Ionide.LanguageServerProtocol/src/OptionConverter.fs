@@ -1,6 +1,5 @@
 namespace Ionide.LanguageServerProtocol.JsonUtils
 
-open Newtonsoft.Json
 open Microsoft.FSharp.Reflection
 open System
 open System.Collections.Concurrent
@@ -13,22 +12,6 @@ module internal Converters =
   let inline memorise (f: 'a -> 'b) : 'a -> 'b =
     let d = ConcurrentDictionary<'a, 'b>()
     fun key -> d.GetOrAdd(key, f)
-
-  let inline memoriseByHash (f: 'a -> 'b) : 'a -> 'b =
-    let d = ConcurrentDictionary<int, 'b>()
-
-    fun key ->
-      let hash = key.GetHashCode()
-
-      match d.TryGetValue(hash) with
-      | (true, value) -> value
-      | _ ->
-        let value = f key
-
-        d.TryAdd(hash, value)
-        |> ignore
-
-        value
 
 open Converters
 
@@ -69,7 +52,7 @@ module private UnionInfo =
 
     { Cases = cases; GetTag = FSharpValue.PreComputeUnionTagReader ty }
 
-  let get: Type -> _ = memoriseByHash (create)
+  let get: Type -> _ = memorise (create)
 
 module Type =
   let numerics = [|
@@ -80,32 +63,90 @@ module Type =
   //ENHANCEMENT: other number types
   |]
 
-  let numericHashes =
-    numerics
-    |> Array.map (fun t -> t.GetHashCode())
-
-  let stringHash = typeof<string>.GetHashCode()
-  let boolHash = typeof<bool>.GetHashCode()
-
   let inline isOption (t: Type) =
     t.IsGenericType
     && t.GetGenericTypeDefinition() = typedefof<_ option>
 
-  let inline isString (t: Type) = t.GetHashCode() = stringHash
-  let inline isBool (t: Type) = t.GetHashCode() = boolHash
+  let inline isString (t: Type) = t = typeof<string>
+  let inline isBool (t: Type) = t = typeof<bool>
 
   let inline isNumeric (t: Type) =
-    let hash = t.GetHashCode()
+    numerics
+    |> Array.contains t
 
-    numericHashes
-    |> Array.contains hash
 
+// Backing converter for UnitConverterFactory.
+// Must be defined at module level — F# does not allow nested type definitions.
+// We inherit JsonConverter<obj> rather than JsonConverter<unit> to avoid FS0017:
+// when 'T = unit, F# unifies the abstract Read return type with the void-unit,
+// which the compiler rejects as a signature mismatch.
+// STJ invokes CreateConverter (below) and receives this converter; the factory's
+// CanConvert guards ensure it is only ever applied to the `unit` type.
+[<Sealed>]
+type private UnitInnerConverter() =
+  inherit System.Text.Json.Serialization.JsonConverter<obj>()
+
+  override _.Read(reader, _t, _opts) =
+    reader.Skip()
+    null // unit has no runtime representation beyond null/()
+
+  override _.Write(writer, _value, _opts) =
+    writer.WriteNullValue()
+
+  override _.CanConvert(t) = t = typeof<unit>
+
+/// STJ JsonConverterFactory for F# unit type.
+/// Reads (and discards) any JSON value — null, object, or primitive — and produces unit.
+/// Writes unit as JSON null.
+/// This is needed because STJ cannot construct Unit (it has no public parameterless constructor),
+/// but LSP notification handlers that take `unit` params still go through the generic
+/// `deserialize<unit>` path in wrapHandler.
+[<Sealed>]
+type UnitConverterFactory() =
+  inherit System.Text.Json.Serialization.JsonConverterFactory()
+
+  override _.CanConvert(t) = t = typeof<unit>
+
+  override _.CreateConverter(_t, _opts) =
+    UnitInnerConverter() :> System.Text.Json.Serialization.JsonConverter
+
+/// STJ JsonConverter for F# option types.
+/// None serializes as JSON null; Some v serializes as v.
+type FSharpOptionConverter<'T>(options: System.Text.Json.JsonSerializerOptions) =
+  inherit System.Text.Json.Serialization.JsonConverter<'T option>()
+
+  override _.Read(reader, _, opts) =
+    if reader.TokenType = System.Text.Json.JsonTokenType.Null then
+      None
+    else
+      Some(System.Text.Json.JsonSerializer.Deserialize<'T>(&reader, opts))
+
+  override _.Write(writer, value, opts) =
+    match value with
+    | None -> writer.WriteNullValue()
+    | Some v -> System.Text.Json.JsonSerializer.Serialize(writer, v, opts)
+
+/// STJ JsonConverterFactory that creates FSharpOptionConverter<'T> for any 'T option type.
+[<Sealed>]
+type FSharpOptionConverterFactory() =
+  inherit System.Text.Json.Serialization.JsonConverterFactory()
+
+  override _.CanConvert(t) = Type.isOption t
+
+  override _.CreateConverter(t, opts) =
+    let inner = t.GetGenericArguments().[0]
+    let converterType = typedefof<FSharpOptionConverter<_>>.MakeGenericType(inner)
+    Activator.CreateInstance(converterType, opts) :?> System.Text.Json.Serialization.JsonConverter
+
+/// Newtonsoft JsonConverter for F# option types.
+/// Kept for the legacy wire path (defaultJsonRpcFormatter / StreamJsonRpc), which remains
+/// Newtonsoft-based. Prefer FSharpOptionConverter (STJ) in new code.
 [<Sealed>]
 type OptionConverter() =
-  inherit JsonConverter()
+  inherit Newtonsoft.Json.JsonConverter()
 
   let getInnerType =
-    memoriseByHash (fun (t: Type) ->
+    memorise (fun (t: Type) ->
       let innerType = t.GetGenericArguments()[0]
 
       if innerType.IsValueType then
@@ -114,7 +155,7 @@ type OptionConverter() =
         innerType
     )
 
-  let canConvert = memoriseByHash (Type.isOption)
+  let canConvert = memorise (Type.isOption)
 
   override __.CanConvert(t) = canConvert t
 
@@ -133,7 +174,7 @@ type OptionConverter() =
 
   override __.ReadJson(reader, t, _existingValue, serializer) =
     match reader.TokenType with
-    | JsonToken.Null -> null // = None
+    | Newtonsoft.Json.JsonToken.Null -> null // = None
     | _ ->
       let innerType = getInnerType t
 

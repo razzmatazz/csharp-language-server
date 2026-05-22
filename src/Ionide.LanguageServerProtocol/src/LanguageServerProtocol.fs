@@ -35,11 +35,32 @@ module Server =
 
   let jsonRpcFormatter = defaultJsonRpcFormatter ()
 
-  let deserialize<'t> (value: LSPAny) = value.JToken.ToObject<'t>(jsonRpcFormatter.JsonSerializer)
+  /// STJ JsonSerializerOptions used by `serialize`/`deserialize` below.
+  /// The StreamJsonRpc wire path (`defaultJsonRpcFormatter`, `Server.start*`, and the `Client`
+  /// module) remains Newtonsoft-based and is unaffected by this — it round-trips `LSPAny` via
+  /// the Newtonsoft `LSPAnyConverter` registered on `LSPAny` itself.
+  let lspSerializerOptions =
+    let opts =
+      System.Text.Json.JsonSerializerOptions(
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+      )
 
-  let serialize<'t> (o: 't) =
-    JToken.FromObject(o, jsonRpcFormatter.JsonSerializer)
-    |> LSPAny
+    opts.Converters.Add(UnitConverterFactory())
+    opts.Converters.Add(FSharpOptionConverterFactory())
+    opts.Converters.Add(EnumMemberConverterFactory())
+    opts.Converters.Add(ErasedUnionConverterFactory())
+    opts.Converters.Add(SingleCaseUnionConverterFactory())
+    opts.Converters.Add(JTokenJsonConverterFactory())
+    opts.Converters.Add(LSPAnyJsonConverter())
+    opts
+
+  let deserialize<'t> (value: LSPAny) : 't =
+    System.Text.Json.JsonSerializer.Deserialize<'t>(value.JsonElement, lspSerializerOptions)
+
+  let serialize<'t> (o: 't) : LSPAny =
+    System.Text.Json.JsonSerializer.SerializeToElement(o, lspSerializerOptions)
+    |> LSPAny.fromJsonElement
 
   let requestHandling<'param, 'result> (run: 'param -> AsyncLspResult<'result>) : Delegate =
     let runAsTask param ct =
