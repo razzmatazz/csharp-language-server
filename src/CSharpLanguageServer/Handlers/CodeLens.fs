@@ -160,8 +160,7 @@ module CodeLens =
 
         let lensData: CodeLensData =
             p.Data
-            |> Option.map _.ToObject<CodeLensData>()
-            |> Option.bind Option.ofObj
+            |> Option.map (fun je -> deserialize<CodeLensData> je)
             |> Option.defaultValue CodeLensData.Default
 
         let! wf, solution = lensData.DocumentUri |> context.LoadWorkspaceFolder

@@ -7,7 +7,7 @@ open System.Threading
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 open Microsoft.Extensions.Logging
-open Newtonsoft.Json.Linq
+
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
@@ -400,13 +400,23 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ShutdownReceived = true }
 
     | ClientCapabilityChange cc ->
-        let experimentalCapsBoolValue boolPropName =
+        let experimentalCapsBoolValue (dotPath: string) =
+            // Navigate a dot-separated path (e.g. "csharp.metadataUris") through JsonElement
+            let rec navigate (parts: string list) (je: System.Text.Json.JsonElement) =
+                match parts with
+                | [] -> Some je
+                | head :: tail ->
+                    match je.TryGetProperty(head) with
+                    | true, child -> navigate tail child
+                    | _ -> None
+
             cc.Experimental
-            |> Option.map _.SelectToken(boolPropName)
-            |> Option.bind Option.ofObj
-            |> Option.map (fun t ->
-                let v = t :?> JValue
-                v.Value :?> bool)
+            |> Option.bind (fun je -> navigate (dotPath.Split('.') |> List.ofArray) je)
+            |> Option.bind (fun je ->
+                match je.ValueKind with
+                | System.Text.Json.JsonValueKind.True -> Some true
+                | System.Text.Json.JsonValueKind.False -> Some false
+                | _ -> None)
 
         let newConfig =
             { state.Config with

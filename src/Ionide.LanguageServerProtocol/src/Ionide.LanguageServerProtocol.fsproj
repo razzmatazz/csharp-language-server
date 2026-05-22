@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Library for implementing Language Server Protocol in F#.</Description>
+    <PackageTags>LSP, editor tooling</PackageTags>
+    <Authors>chethusk; Krzysztof-Cieslak</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/ionide/LanguageServerProtocol</PackageProjectUrl>
+    <LSPVersion>3.17.0</LSPVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FsLibLog.fs comes verbatim from
+    https://github.com/TheAngryByrd/FsLibLog/blob/f81cba440bf0476bb4e2262b57a067a0d6ab78a7/src/FsLibLog/FsLibLog.fs
+
+         Namespace changed from FsLibLog to LanguageServerProtocol.Logging per the instructions in that
+    repo.
+    -->
+    <Compile Include="FsLibLog.fs" />
+    <Compile Include="Types.fs" />
+    <Compile Include="Types.cg.fs" Watch="false" />
+    <Compile Include="JsonRpc.fs" />
+    <Compile Include="TypeDefaults.fs" />
+    <Compile Include="ClientServer.cg.fs" Watch="false" />
+    <Compile Include="Client.fs" />
+    <Compile Include="Server.fs" />
+    <Compile Include="OptionConverter.fs" />
+    <Compile Include="JsonUtils.fs" />
+    <Compile Include="LanguageServerProtocol.fs" />
+    <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+    <PackageReference Include="DotNet.ReproducibleBuilds"  PrivateAssets="All" />
+    <PackageReference Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" PrivateAssets="All" />
+    <PackageReference Include="Newtonsoft.Json" />
+    -->
+    <PackageReference Include="StreamJsonRpc" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <_MetaModelInputs
+      Include="$(MSBuildThisFileDirectory)../data/$(LSPVersion)/metaModel.json" />
+    <_GenerationInputs
+      Include="$(MSBuildThisFileDirectory)../tools/**/*.fs;$(MSBuildThisFileDirectory)../tools/**/*.fsproj" />
+    <Watch Include="@(_MetaModelInputs)" />
+    <Watch Include="@(_GenerationInputs)" />
+    <_MetaModelOutputs Include="$(MSBuildThisFileDirectory)Types.cg.fs" />
+    <_MetaModelClientServerOutputs Include="$(MSBuildThisFileDirectory)ClientServer.cg.fs" />
+
+    <Watch Remove="@(_MetaModelOutputs);@(_MetaModelClientServerOutputs)" />
+  </ItemGroup>
+
+  <Target Name="EnsureRegeneration" Condition="'$(ForceRegenerate)' == 'true'">
+    <Delete Files="@(_MetaModelOutputs)" />
+  </Target>
+
+  <Target Name="RegenerateTypes" Inputs="@(_MetaModelInputs);@(_GenerationInputs)"
+    Condition="'$(DesignTimeBuild)' != 'True'"
+    DependsOnTargets="EnsureRegeneration"
+    Outputs="@(_MetaModelOutputs); @(_MetaModelClientServerOutputs)"
+    BeforeTargets="PrepareForBuild">
+    <ItemGroup>
+      <_GeneratorProject Include="../tools/MetaModelGenerator/MetaModelGenerator.fsproj" />
+    </ItemGroup>
+
+    <!-- 
+          yes Restore has to be separate because the problem is that MSBuild has an XML file cache, 
+          so if you happen to read some content during a Restore, that content won't be re-read during a
+          subsequent Build  
+      -->
+    <MSBuild Projects="@(_GeneratorProject)" Targets="Restore">
+      <Output TaskParameter="TargetOutputs" ItemName="_GeneratorApp" />
+    </MSBuild>
+    <MSBuild Projects="@(_GeneratorProject)" Targets="Build">
+      <Output TaskParameter="TargetOutputs" ItemName="_GeneratorApp" />
+    </MSBuild>
+
+    <ItemGroup>
+      <_GenerateCommand Include="dotnet;@(_GeneratorApp)" />
+      <_GenerateCommand Include="types" />
+      <_GenerateCommand Include="--metamodelpath" />
+      <_GenerateCommand Include="%(_MetaModelInputs.FullPath)" />
+      <_GenerateCommand Include="--outputfilepath" />
+      <_GenerateCommand Include="%(_MetaModelOutputs.FullPath)" />
+    </ItemGroup>
+
+    <Exec
+      Command="@(_GenerateCommand, ' ')" />
+
+    <ItemGroup>
+      <_GenerateCommand2 Include="dotnet;@(_GeneratorApp)" />
+      <_GenerateCommand2 Include="clientserver" />
+      <_GenerateCommand2 Include="--metamodelpath" />
+      <_GenerateCommand2 Include="%(_MetaModelInputs.FullPath)" />
+      <_GenerateCommand2 Include="--outputfilepath" />
+      <_GenerateCommand2 Include="%(_MetaModelClientServerOutputs.FullPath)" />
+    </ItemGroup>
+
+    <Exec
+      Command="@(_GenerateCommand2, ' ')" />
+
+  </Target>
+</Project>

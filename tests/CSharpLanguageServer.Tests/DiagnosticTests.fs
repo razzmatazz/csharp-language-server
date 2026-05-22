@@ -302,7 +302,10 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
             // The first notification uses WorkspaceDiagnosticReport,
             // subsequent ones use WorkspaceDiagnosticReportPartialResult;
             // both have an `items` array at the top level.
-            let items = pp.Value["items"] |> Option.ofObj
+            let items =
+                match pp.Value.TryGetProperty("items") with
+                | true, v -> Some v
+                | _ -> None
 
             match items with
             | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
@@ -349,7 +352,10 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
     let progressItems2 =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items =
+                match pp.Value.TryGetProperty("items") with
+                | true, v -> Some v
+                | _ -> None
 
             match items with
             | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
@@ -470,7 +476,10 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
     let progressItems =
         client.GetProgressParams token
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items =
+                match pp.Value.TryGetProperty("items") with
+                | true, v -> Some v
+                | _ -> None
 
             match items with
             | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
@@ -875,7 +884,10 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
     let progressItems =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items =
+                match pp.Value.TryGetProperty("items") with
+                | true, v -> Some v
+                | _ -> None
 
             match items with
             | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray

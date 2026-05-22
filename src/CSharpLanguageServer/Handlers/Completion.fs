@@ -112,7 +112,7 @@ module Completion =
                    completionOptions.Object
                    emptyRoslynOptionSet
                    completionTrigger
-                   null
+                   (null: obj)
                    ct |]
 
             let result =

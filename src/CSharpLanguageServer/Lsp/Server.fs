@@ -12,7 +12,6 @@ open StreamJsonRpc
 open Microsoft.Extensions.Logging
 open System.Text.Json
 open System.Text.Json.Nodes
-open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
@@ -135,7 +134,7 @@ let configureRpcTransport
 
                 let fnParams =
                     try
-                        rawParams |> sanitize |> jeToJToken |> deserialize
+                        rawParams |> sanitize |> deserialize
                     with ex ->
                         logger.LogError(
                             ex,
@@ -154,16 +153,10 @@ let configureRpcTransport
                 stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, wsUpdate))
         }
 
-    let serializeNullable value =
-        if isNull (box value) then
-            Newtonsoft.Json.Linq.JValue.CreateNull() :> Newtonsoft.Json.Linq.JToken
-        else
-            serialize value
-
     let unwrapResult result =
         match result with
-        | Ok value -> value |> serializeNullable |> jtokenToJe |> Ok
-        | Error error -> error |> serialize |> jtokenToJe |> Error
+        | Ok value -> value |> serialize |> Ok
+        | Error error -> error |> serialize |> Error
 
     let callHandler requestMode fn : JsonRpcCallHandler =
         wrapHandler unwrapResult requestMode id fn

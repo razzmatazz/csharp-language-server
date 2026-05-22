@@ -13,7 +13,6 @@ open System.Xml.Linq
 
 open System.Text.Json
 open NUnit.Framework
-open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -215,7 +214,7 @@ type LspClientEvent =
     | GetRpcLog of AsyncReplyChannel<RpcMessageLogEntry list>
 
 let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile: LspClientProfile) : JsonElement =
-    let getSectionConfiguration (section: string) : Option<JToken> =
+    let getSectionConfiguration (section: string) : JsonElement option =
         match section with
         | "csharp" -> clientProfile.ServerConfig |> serialize |> Some
         | _ -> None
@@ -223,20 +222,20 @@ let buildConfigurationResponse (paramsToken: JsonElement option) (clientProfile:
     paramsToken
     |> Option.map (fun p ->
         p
-        |> jeToJToken
         |> deserialize<ConfigurationParams>
         |> _.Items
         |> Seq.choose _.Section
         |> Seq.map getSectionConfiguration
         |> List.ofSeq
-        |> serialize
-        |> jtokenToJe)
+        |> serialize)
     |> Option.defaultValue emptyArrayJE
 
 let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
     match entry with
     | RpcRead je ->
         let message = je.Clone()
+
+        post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "READ: %s" (string message)))
 
         post (
             UpdateState(fun s ->
@@ -249,6 +248,8 @@ let makeRpcLogCallback (post: LspClientEvent -> unit) (entry: JsonRpcLogEntry) =
         )
     | RpcWrite je ->
         let message = je.Clone()
+
+        post (EmitLogMessage(DateTime.Now, "JsonRpc", sprintf "WRITE: %s" (string message)))
 
         post (
             UpdateState(fun s ->
@@ -323,7 +324,7 @@ let configureRpcTransport
               (fun (ctx: JsonRpcRequestContext) -> async {
                   match ctx.Params with
                   | Some p ->
-                      let mp = p |> jeToJToken |> deserialize<ShowMessageParams>
+                      let mp = p |> deserialize<ShowMessageParams>
 
                       post (
                           EmitLogMessage(
@@ -338,7 +339,7 @@ let configureRpcTransport
               (fun (ctx: JsonRpcRequestContext) -> async {
                   match ctx.Params with
                   | Some p ->
-                      let mp = p |> jeToJToken |> deserialize<LogMessageParams>
+                      let mp = p |> deserialize<LogMessageParams>
 
                       post (
                           EmitLogMessage(
@@ -371,7 +372,7 @@ let configureRpcTransport
               (fun (ctx: JsonRpcRequestContext) -> async {
                   match ctx.Params with
                   | Some p ->
-                      let mp = p |> jeToJToken |> deserialize<LogTraceParams>
+                      let mp = p |> deserialize<LogTraceParams>
                       let prefix = mp.Verbose |> Option.map (sprintf "%s: ") |> Option.defaultValue ""
                       post (EmitLogMessage(DateTime.Now, "$/logTrace", sprintf "%s%s" prefix mp.Message))
                   | None -> ()
@@ -388,7 +389,7 @@ let configureRpcTransport
                           )
                       )
 
-                      let pd = p |> jeToJToken |> deserialize<PublishDiagnosticsParams>
+                      let pd = p |> deserialize<PublishDiagnosticsParams>
 
                       post (
                           UpdateState(fun s ->
@@ -602,7 +603,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
             let didCloseParams: DidCloseTextDocumentParams =
                 { TextDocument = { Uri = this.Uri } }
 
-            notify "textDocument/didClose" (serialize didCloseParams |> jtokenToJe)
+            notify "textDocument/didClose" (serialize didCloseParams)
 
     member this.OpenWithText(text: string) =
         fileContents <- Some text
@@ -621,7 +622,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
 
         let didOpenParams: DidOpenTextDocumentParams = { TextDocument = textDocument }
 
-        notify "textDocument/didOpen" (didOpenParams |> serialize |> jtokenToJe)
+        notify "textDocument/didOpen" (didOpenParams |> serialize)
 
     member this.OpenWithTextFromDisk() =
         let fileText =
@@ -641,7 +642,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
                   Version = fileVersion }
               ContentChanges = [| { Text = text } |> U2.C2 |] }
 
-        notify "textDocument/didChange" (didChangeParams |> serialize |> jtokenToJe)
+        notify "textDocument/didChange" (didChangeParams |> serialize)
 
     member this.Save() =
         let fullPath = Path.Combine(projectDir, filename)
@@ -651,7 +652,7 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
             { TextDocument = { Uri = this.Uri }
               Text = fileContents }
 
-        notify "textDocument/didSave" (didSaveParams |> serialize |> jtokenToJe)
+        notify "textDocument/didSave" (didSaveParams |> serialize)
 
     member __.GetFileContents() = fileContents.Value
 
@@ -717,7 +718,10 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
                 try
                     let debugInfo =
-                        this.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject())
+                        this.Request<System.Text.Json.JsonElement, DebugInfo option>(
+                            "$/csharp/debugInfo",
+                            emptyObjectJE
+                        )
 
                     match debugInfo with
                     | Some info ->
@@ -820,12 +824,12 @@ type LspTestClient(clientProfile: LspClientProfile) =
                 sendJsonRpcCallWithTimeout
                     transport
                     "initialize"
-                    (initializeParams |> serialize |> jtokenToJe)
+                    (initializeParams |> serialize)
                     (Some(TimeSpan.FromSeconds 15.0))
                 |> Async.RunSynchronously
 
             match initResponse with
-            | Ok result -> result |> jeToJToken |> deserialize<InitializeResult>
+            | Ok result -> result |> deserialize<InitializeResult>
             | Error error -> failwithf "initialize has failed with %s" (string error)
 
         client.Post(
@@ -883,12 +887,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
         client.PostAndReply(fun rc -> GetRpcLog rc)
         |> Seq.filter (fun m -> m.Source = Server)
         |> Seq.filter (fun m -> (Some m.Message |> jeStringProp "method") = Some "$/progress")
-        |> Seq.map (fun m ->
-            Some m.Message
-            |> indexJE "params"
-            |> Option.get
-            |> jeToJToken
-            |> deserialize<ProgressParams>)
+        |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> Option.get |> deserialize<ProgressParams>)
         |> Seq.filter (fun pp -> pp.Token = token)
         |> List.ofSeq
 
@@ -952,26 +951,21 @@ type LspTestClient(clientProfile: LspClientProfile) =
         rpcLog |> Seq.exists containsPred
 
     member self.GetDebugInfo() : DebugInfo =
-        match self.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject()) with
+        match self.Request<System.Text.Json.JsonElement, DebugInfo option>("$/csharp/debugInfo", emptyObjectJE) with
         | Some s -> s
         | None ->
             failwith
                 "$/csharp/debugInfo returned None — set ServerConfig.debug.debugMode = Some true in the client profile"
 
-    member __.Notify<'Params>(method: string, ``params``: 'Params) : unit =
-        notify method (``params`` |> serialize |> jtokenToJe)
+    member __.Notify<'Params>(method: string, ``params``: 'Params) : unit = notify method (``params`` |> serialize)
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         let result =
-            sendJsonRpcCallWithTimeout
-                (rpcTransport ())
-                method
-                (serialize request |> jtokenToJe)
-                (Some(TimeSpan.FromSeconds 15.0))
+            sendJsonRpcCallWithTimeout (rpcTransport ()) method (serialize request) (Some(TimeSpan.FromSeconds 15.0))
             |> Async.RunSynchronously
 
         match result with
-        | Ok token -> token |> jeToJToken |> deserialize<'Response>
+        | Ok token -> token |> deserialize<'Response>
         | Error err -> failwithf "request to method \"%s\" has failed with error: %s" method (string err)
 
     member __.Open(filename: string) : LspDocumentHandle =

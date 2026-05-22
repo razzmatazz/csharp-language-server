@@ -11,7 +11,9 @@
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="FSharp.Core" Version="10.0.101" />
     <PackageVersion Include="Argu" Version="6.2.5" />
+    <PackageVersion Include="Fabulous.AST" Version="[1.2.0]" />
     <PackageVersion Include="Castle.Core" Version="5.2.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
@@ -19,6 +21,7 @@
     <PackageVersion Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />
     <PackageVersion Include="Ionide.LanguageServerProtocol" Version="0.7.0" />
+    <PackageVersion Include="StreamJsonRpc" Version="2.16.36" />
     <PackageVersion Include="Microsoft.Build" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="$(MSBuildPackageVersion)" />
     <PackageVersion Include="Microsoft.Build.Locator" Version="$(MSBuildLocatorPackageVersion)" />

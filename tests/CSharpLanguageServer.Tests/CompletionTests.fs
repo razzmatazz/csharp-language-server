@@ -2,8 +2,9 @@ module CSharpLanguageServer.Tests.CompletionTests
 
 open System.Threading
 
+open System.Text.Json
+
 open NUnit.Framework
-open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -253,19 +254,45 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
         | Some(U2.C2 cl) -> cl.Items |> Seq.find (fun i -> i.Label = "MethodA")
         | _ -> failwith "expected a CompletionList"
 
-    // Serialize the item to JObject, then inject a textEdit with -1 sentinel
-    // positions — exactly what a misbehaving editor would send back.
-    let itemJson = serialize item :?> JObject
+    // Serialize the item, then inject a textEdit with -1 sentinel positions —
+    // exactly what a misbehaving editor would send back.
+    let itemJson =
+        // Build a new JsonElement that is a copy of the serialized item with
+        // the "textEdit" property overwritten with a sentinel value.
+        let itemElement = serialize item
+        let ms = new System.IO.MemoryStream()
+        use writer = new Utf8JsonWriter(ms)
+        writer.WriteStartObject()
 
-    let sentinelPosition = JObject(JProperty("line", -1), JProperty("character", -1))
+        for prop in itemElement.EnumerateObject() do
+            if prop.Name <> "textEdit" then
+                prop.WriteTo(writer)
 
-    let sentinelRange =
-        JObject(JProperty("start", sentinelPosition.DeepClone()), JProperty("end", sentinelPosition.DeepClone()))
-
-    let sentinelTextEdit =
-        JObject(JProperty("newText", ""), JProperty("range", sentinelRange))
-
-    itemJson["textEdit"] <- sentinelTextEdit
+        writer.WritePropertyName("textEdit")
+        writer.WriteStartObject()
+        writer.WritePropertyName("newText")
+        writer.WriteStringValue("")
+        writer.WritePropertyName("range")
+        writer.WriteStartObject()
+        writer.WritePropertyName("start")
+        writer.WriteStartObject()
+        writer.WritePropertyName("line")
+        writer.WriteNumberValue(-1)
+        writer.WritePropertyName("character")
+        writer.WriteNumberValue(-1)
+        writer.WriteEndObject()
+        writer.WritePropertyName("end")
+        writer.WriteStartObject()
+        writer.WritePropertyName("line")
+        writer.WriteNumberValue(-1)
+        writer.WritePropertyName("character")
+        writer.WriteNumberValue(-1)
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+        writer.Flush()
+        JsonDocument.Parse(ms.ToArray()).RootElement
 
     // This must not throw (i.e. the server must not return a -32603 error).
     let resolved: CompletionItem = client.Request("completionItem/resolve", itemJson)
