@@ -472,6 +472,23 @@ module Completion =
             | None -> return item |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
+    /// Clamp negative line/character values in a position JsonObject to 0.
+    /// The LSP spec says negative position values default to 0, but Position
+    /// is typed as uint32 so they overflow during deserialization.
+    let clampPositionFields (pos: JsonObject) =
+        for name in [ "line"; "character" ] do
+            let mutable value = 0L
+
+            match pos[name] with
+            | null -> ()
+            | node when
+                node.GetValueKind() = JsonValueKind.Number
+                && node.AsValue().TryGetValue<int64>(&value)
+                && value < 0L
+                ->
+                pos[name] <- JsonValue.Create(0)
+            | _ -> ()
+
     /// Pre-deserialization sanitizer for completionItem/resolve params.
     /// Walks textEdit.range and clamps any sentinel -1 positions to 0 in place.
     let sanitizeCompletionItem (je: JsonElement) : JsonElement =
