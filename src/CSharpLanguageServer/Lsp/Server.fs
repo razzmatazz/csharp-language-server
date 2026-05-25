@@ -131,12 +131,20 @@ let configureRpcTransport
                             rc
                         ))
 
+                let rawParams = jsonRpcCtx.Params |> Option.defaultValue nullJE |> sanitize
+
                 let fnParams =
-                    jsonRpcCtx.Params
-                    |> Option.defaultValue nullJE
-                    |> sanitize
-                    |> jeToJToken
-                    |> deserialize
+                    try
+                        rawParams |> jeToJToken |> deserialize
+                    with ex ->
+                        logger.LogError(
+                            ex,
+                            "wrapHandler: failed to deserialize params for {method}; raw JSON: {json}",
+                            jsonRpcCtx.MethodName,
+                            rawParams.GetRawText()
+                        )
+
+                        reraise ()
 
                 let! result, wsUpdate' = fn ctx fnParams
                 wsUpdate <- wsUpdate'
