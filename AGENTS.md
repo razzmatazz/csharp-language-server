@@ -22,16 +22,24 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for a full wa
 
 ## Debugging server-side data flow from tests
 
-To trace values inside the server process during a test:
+1. Swap `activateFixture` for `activateFixtureWithLoggingEnabled` in the failing test —
+   this forwards server stderr to `Console.Error`.
+2. Add `eprintfn "[DEBUG ...]"` calls at points of interest in the server source.
+3. Run `dotnet test --filter FullyQualifiedName~<TestName> --logger "console;verbosity=detailed"`
+   and read the interleaved `[+NNNms logger]` timeline.
+4. Remove the `eprintfn` calls and revert to `activateFixture` when done.
 
-1. Add `eprintfn "[DEBUG ...]"` calls at the points of interest in the server source.
-2. In the test, swap `activateFixture` for `activateFixtureWithLoggingEnabled` (or pass
-   `{ defaultClientProfile with LoggingEnabled = true }` to `activateFixtureExt`) — this
-   causes the test harness to forward the server's stderr to `Console.Error`, so the
-   `eprintfn` output appears in the test run's "Standard Error Messages" section.
-3. Run `dotnet test --filter FullyQualifiedName~<TestName>` and read the interleaved
-   timeline to understand ordering and values.
-4. Remove the `eprintfn` calls and revert to `activateFixture` once the issue is understood.
+**Read `$/csharp/debugInfo` first** — it's printed to Standard Output on every test
+dispose and often pinpoints the problem without any code changes.  Key fields:
+`workspace.phase` (`"Uninitialized"` = `initialized` never completed),
+`requestQueue.stats` (suspiciously short `avgDurationMs` on a notification = it crashed
+silently before doing any work), `workspace.folders` (empty = no solution loaded).
+
+**Silent notification failures:** notification handlers (`initialized`, `textDocument/didOpen`,
+…) throw into `Async.StartWithContinuations` in `JsonRpc.fs`, which discards the
+exception — no wire error is sent.  If the crash happens inside `deserialize` (e.g. a new
+STJ path that can't round-trip `unit` or an array-typed erased-union case), wrap it in
+`try`/`catch` + `eprintfn` + `reraise()` in `wrapHandler` (`Lsp/Server.fs`) to surface it.
 
 ## Iteration Style
 
