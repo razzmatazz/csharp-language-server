@@ -96,7 +96,6 @@ type RequestInfo =
       Registered: DateTime
       ActivationRC: AsyncReplyChannel<RequestContext>
       RunningSince: option<DateTime>
-      WorkspaceUpdate: LspWorkspaceUpdate
       Cts: System.Threading.CancellationTokenSource option } // borrowed from JSON-RPC layer; scheduler must NOT dispose it
 
 type RequestMetrics =
@@ -228,19 +227,6 @@ let formatRequestQueueStats requestQueue =
 let formatCurrentRequests (requestQueue: RequestQueue) =
     let sortedRequests = requestQueue.Requests |> Map.toList |> List.sortBy fst
 
-    let formatState =
-        function
-        | Pending -> "Pending"
-        | Running -> "Running"
-        | Finished -> "Finished"
-
-    let formatMode =
-        function
-        | ReadOnly -> "RO"
-        | ReadWrite -> "RW"
-        | ReadOnlyBackground -> "ROBg"
-        | OutOfBand -> "OOB"
-
     let formatDuration (request: RequestInfo) =
         let elapsed =
             match request.RunningSince with
@@ -256,12 +242,11 @@ let formatCurrentRequests (requestQueue: RequestQueue) =
         |> List.map (fun (ordinal, r) ->
             [ string ordinal
               $"\"{r.Name}\""
-              formatMode r.Mode
-              formatState r.Phase
+              (string r.Mode)
+              (string r.Phase)
               formatDuration r ])
 
     formatInColumns (headerRow :: dataRows)
-
 
 let registerRequest
     requestRpcOrdinal
@@ -279,7 +264,6 @@ let registerRequest
           Registered = DateTime.Now
           ActivationRC = activationReplyChannel
           RunningSince = None
-          WorkspaceUpdate = LspWorkspaceUpdate.Empty
           Cts = cts }
 
     let newRequests = requestQueue.Requests |> Map.add requestRpcOrdinal newRequest
@@ -296,13 +280,10 @@ let registerRequest
         WatermarkRpcOrdinal = advanceWatermark requestQueue.WatermarkRpcOrdinal }
 
 /// Transitions a running request to Finished
-let finishRequest requestRpcOrdinal wsUpdate (requestQueue: RequestQueue) =
+let finishRequest requestRpcOrdinal (requestQueue: RequestQueue) =
     let request = requestQueue.Requests |> Map.find requestRpcOrdinal
 
-    let finishedRequest =
-        { request with
-            Phase = Finished
-            WorkspaceUpdate = wsUpdate }
+    let finishedRequest = { request with Phase = Finished }
 
     { requestQueue with
         Requests = requestQueue.Requests |> Map.add requestRpcOrdinal finishedRequest }
@@ -404,12 +385,13 @@ let activateRequest
     let activatedRequest =
         { request with
             Phase = Running
-            RunningSince = Some DateTime.Now
-            WorkspaceUpdate = LspWorkspaceUpdate.Empty }
+            RunningSince = Some DateTime.Now }
 
-    activatedRequest,
-    { requestQueue with
-        Requests = requestQueue.Requests |> Map.add ordinal activatedRequest }
+    let updatedRequestQueue =
+        { requestQueue with
+            Requests = requestQueue.Requests |> Map.add ordinal activatedRequest }
+
+    activatedRequest, updatedRequestQueue
 
 /// Returns `true` when all non-background requests up to the drain ordinal
 /// have been retired. `ReadOnlyBackground` requests are excluded because they
