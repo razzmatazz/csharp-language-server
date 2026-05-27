@@ -45,8 +45,9 @@ type ServerEvent =
     | GetDebugInfo of AsyncReplyChannel<DebugInfo option>
     | LeaveRequestContext of int64 * LspWorkspaceUpdate
     | PeriodicTimerTick
-    | ApplyWorkspaceUpdate of LspWorkspaceUpdate
+    | ApplyRequestWorkspaceUpdate of int64 * LspWorkspaceUpdate
     | ProcessRequestQueue
+    | FinishRequest of int64
     | RequestQueueDrained
     | PushDiagnosticsDocumentDiagnosticsResolution of Result<(string * int option * Diagnostic array), Exception>
     | PushDiagnosticsProcessPendingDocuments
@@ -202,15 +203,26 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         return state
 
     | LeaveRequestContext(requestRpcOrdinal, wsUpdate) ->
-        let newRequestQueue = state.RequestQueue |> finishRequest requestRpcOrdinal wsUpdate
-
+        // The request stays Running until FinishRequest(N) fires after all
+        // WorkspaceFolderUpdates for this wsUpdate have been applied.  That keeps
+        // subsequent requests blocked by the normal Running-phase concurrency gate
+        // until the workspace is up-to-date.  ProcessRequestQueue is posted here too
+        // so the scheduler can re-evaluate immediately (e.g. for OutOfBand requests).
+        postServerEvent (ApplyRequestWorkspaceUpdate(requestRpcOrdinal, wsUpdate))
         postServerEvent ProcessRequestQueue
+
+        return state
+
+    | FinishRequest(requestRpcOrdinal) ->
+        postServerEvent ProcessRequestQueue
+
+        let newRequestQueue = state.RequestQueue |> finishRequest requestRpcOrdinal
 
         return
             { state with
                 RequestQueue = newRequestQueue }
 
-    | ApplyWorkspaceUpdate wsUpdate ->
+    | ApplyRequestWorkspaceUpdate(requestRpcOrdinal, wsUpdate) ->
         if wsUpdate.ClientInitializeEmitted then
             do postServerEvent ClientInitialize
 
@@ -232,8 +244,6 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         wsUpdate.FolderUpdates
         |> Map.toSeq
         |> Seq.iter (fun (wfUri, wfUpdates) -> do postServerEvent (WorkspaceFolderUpdates(wfUri, wfUpdates)))
-
-        do postServerEvent PushDiagnosticsBacklogUpdate
 
         let mutable pendingReconfigs = state.PendingReconfigurations
         let mutable requestQueue = state.RequestQueue
@@ -308,6 +318,15 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             workspace <- pendingReconfigs |> List.fold applyOne workspace
             pendingReconfigs <- []
 
+        // Post FinishRequest(N) after all WorkspaceFolderUpdates events for this
+        // request's wsUpdate.  Because the mailbox is FIFO, by the time FinishRequest(N)
+        // is processed all WFU events above have already been applied to the workspace,
+        // so it is safe to move request N from Running to Finished and let
+        // ProcessRequestQueue activate the next request.
+        do postServerEvent (FinishRequest requestRpcOrdinal)
+
+        do postServerEvent PushDiagnosticsBacklogUpdate
+
         return
             { state with
                 PendingReconfigurations = pendingReconfigs
@@ -320,8 +339,9 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
             |> processRequestQueue state.Config (makeRequestContext state inbox)
 
         match result with
-        | Retired(retiredRequest, newRequestQueue) ->
-            do postServerEvent (ApplyWorkspaceUpdate retiredRequest.WorkspaceUpdate)
+        | Retired(_retiredRequest, newRequestQueue) ->
+            // ApplyWorkspaceUpdate was already posted from LeaveRequestContext when
+            // this request's handler completed; nothing to replay here.
             do postServerEvent ProcessRequestQueue
 
             return

@@ -80,7 +80,6 @@ let private makeTestRequest ordinal name mode phase =
       Registered = DateTime.UtcNow
       ActivationRC = rc
       RunningSince = (if phase = Running then Some DateTime.UtcNow else None)
-      WorkspaceUpdate = LspWorkspaceUpdate.Empty
       Cts = None }
 
 let private defaultSettings: CSharpConfiguration = CSharpConfiguration.Default
@@ -174,12 +173,11 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     let queue =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
-    let wsUpdate = LspWorkspaceUpdate.Empty.WithClientInitialize()
-    let updated = queue |> finishRequest 1L wsUpdate
+    let wsUpdate = LspWorkspaceUpdate.Empty
+    let updated = queue |> finishRequest 1L
 
     let req = updated.Requests.[1L]
     Assert.AreEqual(Finished, req.Phase)
-    Assert.IsTrue(req.WorkspaceUpdate.ClientInitializeEmitted)
 
 // ---------------------------------------------------------------------------
 // processRequestQueue — Retired cases
