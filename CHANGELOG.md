@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Speed up solution load: read target frameworks from project XML directly, falling back to MSBuild `ProjectCollection` only when needed; run probes in parallel
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/369
 * Switch `Runtime.JsonRpc` JSON serialization to `System.Text.Json`
 * Add workspace phase tracking and handle server runtime reconfiguration gracefully
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/362
