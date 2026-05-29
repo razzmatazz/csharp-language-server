@@ -7,6 +7,11 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open Newtonsoft.Json.Linq
 
+let noneIfEmpty (s: string) : string option =
+    s
+    |> Option.ofObj
+    |> Option.bind (fun s -> if String.IsNullOrEmpty s then None else Some s)
+
 let nonNull name (value: 'T when 'T: null) : 'T =
     if Object.ReferenceEquals(value, null) then
         raise (new Exception(sprintf "A non-null value was expected: %s" name))

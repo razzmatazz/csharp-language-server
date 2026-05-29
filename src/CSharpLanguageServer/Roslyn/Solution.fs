@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Threading
 open System.Collections.Generic
+open System.Xml.Linq
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
@@ -79,43 +80,93 @@ let solutionLoadProjectFilenames (solutionPath: string) =
     projectFilenames |> Set.ofSeq
 
 
-let loadProjectTfms (projs: string seq) : Map<string, list<string>> =
-    let mutable projectTfms = Map.empty
+/// Try to read TargetFramework / TargetFrameworks directly from the project XML without
+/// invoking any MSBuild machinery.  Returns Some(tfms) when every value found is a plain
+/// string literal (contains no "$(" property reference), or None when a value needs full
+/// MSBuild evaluation or neither property appears in the file.
+let private tryGetTfmsFromXml (projectFilename: string) : string list option =
+    try
+        let xdoc = XDocument.Load projectFilename
+        let root = xdoc.Root |> Option.ofObj
 
-    for projectFilename in projs do
-        let projectCollection = new Microsoft.Build.Evaluation.ProjectCollection()
-        let props = new Dictionary<string, string>()
+        let tryText localName =
+            root
+            |> Option.map (fun r ->
+                let ns = r.Name.Namespace
 
-        try
-            let buildProject =
-                projectCollection.LoadProject(projectFilename, props, toolsVersion = null)
+                r.Descendants(ns + localName)
+                |> Seq.tryPick (fun el ->
+                    let v = el.Value.Trim()
+                    if String.IsNullOrEmpty v then None else Some v))
+            |> Option.flatten
 
-            let noneIfEmpty s =
-                s
-                |> Option.ofObj
-                |> Option.bind (fun s -> if String.IsNullOrEmpty s then None else Some s)
+        let isTrivial (s: string) = not (s.Contains("$("))
 
-            let targetFramework =
-                match buildProject.GetPropertyValue "TargetFramework" |> noneIfEmpty with
-                | Some tfm -> [ tfm.Trim() ]
-                | None -> []
+        match tryText "TargetFramework", tryText "TargetFrameworks" with
+        | Some tfm, _ when not (isTrivial tfm) -> None
+        | _, Some tfms when not (isTrivial tfms) -> None
+        | tfm, tfms ->
+            let single = tfm |> Option.map (fun s -> [ s.Trim() ]) |> Option.defaultValue []
 
-            let targetFrameworks =
-                match buildProject.GetPropertyValue "TargetFrameworks" |> noneIfEmpty with
-                | Some tfms -> tfms.Split ";" |> Array.map (fun s -> s.Trim()) |> List.ofArray
-                | None -> []
+            let multi =
+                tfms
+                |> Option.map (fun s -> s.Split(';') |> Array.map (fun t -> t.Trim()) |> List.ofArray)
+                |> Option.defaultValue []
 
-            projectTfms <- projectTfms |> Map.add projectFilename (targetFramework @ targetFrameworks)
+            match single @ multi with
+            | [] -> None // neither property found — need MSBuild fallback
+            | tfmList -> Some tfmList
+    with _ ->
+        None // any parse error — let ProjectCollection handle it
 
-            projectCollection.UnloadProject buildProject
-        with :? InvalidProjectFileException as ipfe ->
-            logger.LogDebug(
-                "loadProjectTfms: failed to load {projectFilename}: {ex}",
-                projectFilename,
-                ipfe.GetType() |> string
-            )
+/// Slow path: evaluate a project file with MSBuild's ProjectCollection to extract
+/// TargetFramework / TargetFrameworks.  The BuildManager singleton serialises concurrent
+/// callers internally, so this is safe to call from parallel async workflows.
+let private tryGetTfmsFromProjectCollection (projectFilename: string) : string list =
+    let projectCollection = new Microsoft.Build.Evaluation.ProjectCollection()
+    let props = new Dictionary<string, string>()
 
-    projectTfms
+    try
+        let buildProject =
+            projectCollection.LoadProject(projectFilename, props, toolsVersion = null)
+
+        let targetFramework =
+            buildProject.GetPropertyValue "TargetFramework"
+            |> noneIfEmpty
+            |> Option.map (fun tfm -> [ tfm.Trim() ])
+            |> Option.defaultValue []
+
+        let targetFrameworks =
+            buildProject.GetPropertyValue "TargetFrameworks"
+            |> noneIfEmpty
+            |> Option.map (fun tfms -> tfms.Split ";" |> Array.map _.Trim() |> List.ofArray)
+            |> Option.defaultValue []
+
+        projectCollection.UnloadProject buildProject
+        targetFramework @ targetFrameworks
+    with :? InvalidProjectFileException as ipfe ->
+        logger.LogDebug(
+            "loadProjectTfms: failed to load {projectFilename}: {ex}",
+            projectFilename,
+            ipfe.GetType() |> string
+        )
+
+        []
+
+let loadProjectTfms (projs: string seq) : Async<Map<string, list<string>>> =
+    let loadOne (projectFilename: string) : Async<string * string list> = async {
+        let tfms =
+            match tryGetTfmsFromXml projectFilename with
+            | Some tfms -> tfms
+            | None -> tryGetTfmsFromProjectCollection projectFilename
+
+        return (projectFilename, tfms)
+    }
+
+    async {
+        let! results = projs |> Seq.map loadOne |> Async.Parallel
+        return results |> Array.fold (fun m (k, v) -> m |> Map.add k v) Map.empty
+    }
 
 let frameworkIsCompatible a b =
     DefaultCompatibilityProvider.Instance.IsCompatible(a, b)
@@ -206,7 +257,7 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) : Async
 
             let projs = solutionLoadProjectFilenames solutionPath
 
-            let tfmsPerProject = loadProjectTfms projs
+            let! tfmsPerProject = loadProjectTfms projs
             let tfmToUse = workspaceTargetFramework tfmsPerProject
             let workspaceProps = resolveDefaultWorkspaceProps tfmToUse
             logger.LogInformation("Will use MSBuild props: {workspaceProps}", string workspaceProps)
@@ -244,7 +295,7 @@ let solutionTryLoadFromProjectFiles
         do! progressReport ($"Loading {projs.Length} project(s)...", 0u)
         let loadedProj = ref 0
 
-        let tfmsPerProject = loadProjectTfms projs
+        let! tfmsPerProject = loadProjectTfms projs
         let tmfToUse = workspaceTargetFramework tfmsPerProject
         let workspaceProps = resolveDefaultWorkspaceProps tmfToUse
         logger.LogInformation("Will use MSBuild props: {workspaceProps}", string workspaceProps)
