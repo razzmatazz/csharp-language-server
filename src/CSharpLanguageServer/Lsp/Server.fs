@@ -131,11 +131,11 @@ let configureRpcTransport
                             rc
                         ))
 
-                let rawParams = jsonRpcCtx.Params |> Option.defaultValue nullJE |> sanitize
+                let rawParams = jsonRpcCtx.Params |> Option.defaultValue nullJE
 
                 let fnParams =
                     try
-                        rawParams |> jeToJToken |> deserialize
+                        rawParams |> sanitize |> jeToJToken |> deserialize
                     with ex ->
                         logger.LogError(
                             ex,
