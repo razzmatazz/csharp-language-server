@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Argu" />
+
+    <PackageReference Include="Fabulous.AST" />
+  </ItemGroup>
+  <ItemGroup>
+
+    <Compile Include="PrimitiveExtensions.fs" />
+    <Compile Include="MetaModel.fs" />
+    <Compile Include="Common.fs" />
+    <Compile Include="GenerateTypes.fs" />
+    <Compile Include="GenerateClientServer.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>

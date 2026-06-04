@@ -192,11 +192,17 @@ module Workspace =
         : Async<LspResult<unit> * LspWorkspaceUpdate> =
         async {
             let pushedConfig =
-                configParams.Settings
-                |> Option.ofObj
-                |> Option.bind deserialize<DidChangeConfigurationSettingsDto option>
-                |> Option.map _.csharp
-                |> Option.bind id // flatten option option, also guards against null from Newtonsoft
+                // Settings is LSPAny (JsonElement, a struct) — check it's an object before deserializing
+                let settingsOpt =
+                    if
+                        configParams.Settings.ValueKind = System.Text.Json.JsonValueKind.Null
+                        || configParams.Settings.ValueKind = System.Text.Json.JsonValueKind.Undefined
+                    then
+                        None
+                    else
+                        deserialize<DidChangeConfigurationSettingsDto option> configParams.Settings
+
+                settingsOpt |> Option.map _.csharp |> Option.bind id // flatten option option
 
             let configurationSupported =
                 context.ClientCapabilities.Workspace
