@@ -302,10 +302,14 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
             // The first notification uses WorkspaceDiagnosticReport,
             // subsequent ones use WorkspaceDiagnosticReportPartialResult;
             // both have an `items` array at the top level.
-            let items = pp.Value["items"] |> Option.ofObj
+            let items = pp.Value.JToken["items"] |> Option.ofObj
 
             match items with
-            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | Some items ->
+                items
+                |> LSPAny.fromJToken
+                |> deserialize<WorkspaceDocumentDiagnosticReport[]>
+                |> List.ofArray
             | None -> [])
 
     Assert.IsTrue(progressItems1.Length > 0, "expected $/progress items from first streaming poll")
@@ -349,10 +353,14 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
     let progressItems2 =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items = pp.Value.JToken["items"] |> Option.ofObj
 
             match items with
-            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | Some items ->
+                items
+                |> LSPAny.fromJToken
+                |> deserialize<WorkspaceDocumentDiagnosticReport[]>
+                |> List.ofArray
             | None -> [])
 
     Assert.IsTrue(progressItems2.Length > 0, "expected $/progress items from second streaming poll")
@@ -470,10 +478,14 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
     let progressItems =
         client.GetProgressParams token
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items = pp.Value.JToken["items"] |> Option.ofObj
 
             match items with
-            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | Some items ->
+                items
+                |> LSPAny.fromJToken
+                |> deserialize<WorkspaceDocumentDiagnosticReport[]>
+                |> List.ofArray
             | None -> [])
 
     Assert.IsTrue(progressItems.Length > 0, "expected $/progress items")
@@ -875,10 +887,14 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
     let progressItems =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value["items"] |> Option.ofObj
+            let items = pp.Value.JToken["items"] |> Option.ofObj
 
             match items with
-            | Some items -> items |> deserialize<WorkspaceDocumentDiagnosticReport[]> |> List.ofArray
+            | Some items ->
+                items
+                |> LSPAny.fromJToken
+                |> deserialize<WorkspaceDocumentDiagnosticReport[]>
+                |> List.ofArray
             | None -> [])
 
     Assert.IsTrue(progressItems.Length > 0, "expected $/progress items from second streaming poll")

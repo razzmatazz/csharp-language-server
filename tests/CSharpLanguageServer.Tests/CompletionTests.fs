@@ -255,7 +255,7 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
 
     // Serialize the item to JObject, then inject a textEdit with -1 sentinel
     // positions — exactly what a misbehaving editor would send back.
-    let itemJson = serialize item :?> JObject
+    let itemJson = serialize item |> (fun a -> a.JToken) :?> JObject
 
     let sentinelPosition = JObject(JProperty("line", -1), JProperty("character", -1))
 

@@ -102,13 +102,6 @@ module Option =
         | Some v -> [ v ]
         | None -> []
 
-let jeToJToken (je: JsonElement) : JToken = JToken.Parse(je.GetRawText())
-
-let jtokenToJe (token: JToken) : JsonElement =
-    let json = token.ToString(Newtonsoft.Json.Formatting.None)
-    use doc = JsonDocument.Parse(json)
-    doc.RootElement.Clone()
-
 let nullJE =
     use doc = JsonDocument.Parse("null")
     doc.RootElement.Clone()
