@@ -35,8 +35,11 @@ module Server =
 
   let jsonRpcFormatter = defaultJsonRpcFormatter ()
 
-  let deserialize<'t> (token: JToken) = token.ToObject<'t>(jsonRpcFormatter.JsonSerializer)
-  let serialize<'t> (o: 't) = JToken.FromObject(o, jsonRpcFormatter.JsonSerializer)
+  let deserialize<'t> (value: LSPAny) = value.JToken.ToObject<'t>(jsonRpcFormatter.JsonSerializer)
+
+  let serialize<'t> (o: 't) =
+    JToken.FromObject(o, jsonRpcFormatter.JsonSerializer)
+    |> LSPAny
 
   let requestHandling<'param, 'result> (run: 'param -> AsyncLspResult<'result>) : Delegate =
     let runAsTask param ct =

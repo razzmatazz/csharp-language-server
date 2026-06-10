@@ -6438,13 +6438,6 @@ type DefinitionLink = LocationLink
 /// LSP arrays.
 /// @since 3.17.0
 type LSPArray = LSPAny[]
-/// The LSP any type.
-/// Please note that strictly speaking a property with the value `undefined`
-/// can't be converted into JSON preserving the property name. However for
-/// convenience it is allowed and assumed that all these properties are
-/// optional as well.
-/// @since 3.17.0
-type LSPAny = JToken
 /// The declaration of a symbol representation as one or many {@link Location locations}.
 type Declaration = U2<Location, Location[]>
 /// Information about where a symbol is declared.

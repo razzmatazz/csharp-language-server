@@ -42,7 +42,7 @@ type LspClient() =
 
   /// The telemetry notification is sent from the server to the client to ask the client to log
   /// a telemetry event.
-  abstract member TelemetryEvent: Newtonsoft.Json.Linq.JToken -> Async<unit>
+  abstract member TelemetryEvent: LSPAny -> Async<unit>
 
   default __.TelemetryEvent(_) = ignoreNotification
 
@@ -81,7 +81,7 @@ type LspClient() =
   /// The request can fetch n configuration settings in one roundtrip. The order of the returned configuration
   /// settings correspond to the order of the passed ConfigurationItems (e.g. the first item in the response
   /// is the result for the first configuration item in the params).
-  abstract member WorkspaceConfiguration: ConfigurationParams -> AsyncLspResult<Newtonsoft.Json.Linq.JToken[]>
+  abstract member WorkspaceConfiguration: ConfigurationParams -> AsyncLspResult<LSPAny[]>
 
   default __.WorkspaceConfiguration(_) = notImplemented
 
@@ -172,7 +172,7 @@ type LspClient() =
     member this.WindowShowMessageRequest(p: ShowMessageRequestParams) = this.WindowShowMessageRequest(p)
     member this.WindowLogMessage(p: LogMessageParams) = this.WindowLogMessage(p)
     member this.WindowShowDocument(p: ShowDocumentParams) = this.WindowShowDocument(p)
-    member this.TelemetryEvent(p: Newtonsoft.Json.Linq.JToken) = this.TelemetryEvent(p)
+    member this.TelemetryEvent(p: LSPAny) = this.TelemetryEvent(p)
     member this.ClientRegisterCapability(p: RegistrationParams) = this.ClientRegisterCapability(p)
     member this.ClientUnregisterCapability(p: UnregistrationParams) = this.ClientUnregisterCapability(p)
     member this.WorkspaceWorkspaceFolders() = this.WorkspaceWorkspaceFolders()
