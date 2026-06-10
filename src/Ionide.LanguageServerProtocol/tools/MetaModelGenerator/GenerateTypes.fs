@@ -797,11 +797,12 @@ module GenerateTypes =
             o
         }
 
-    AnonymousModule() {
-
-      abbrev
-
-    }
+    // LSPAny is defined as a proper wrapper class (with structural equality) in Types.fs.
+    // Do not emit a generated alias for it here.
+    if alias.Name = "LSPAny" then
+      AnonymousModule() { () }
+    else
+      AnonymousModule() { abbrev }
 
 
   /// Creates Open or Closed Enums based on an Enumeration
