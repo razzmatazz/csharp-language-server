@@ -46,6 +46,11 @@ STJ path that can't round-trip `unit` or an array-typed erased-union case), wrap
 DON'T OVER-THINK SYNTAX OR MINOR DETAILS UPFRONT — make structural changes then let
 `dotnet test` drive the fixes.
 
+Always run tests as `dotnet test` (or `dotnet test --filter ...`) — never `dotnet test --no-build`.
+The `--no-build` flag skips recompiling the test project, which means type errors in test
+code are silently ignored and the stale binary from a previous build is used instead.
+There is no meaningful performance win from skipping the build step.
+
 ## Code Style & Commit Conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).

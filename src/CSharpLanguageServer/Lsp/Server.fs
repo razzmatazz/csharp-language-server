@@ -135,7 +135,7 @@ let configureRpcTransport
 
                 let fnParams =
                     try
-                        rawParams |> sanitize |> jeToJToken |> deserialize
+                        rawParams |> sanitize |> LSPAny.fromJsonElement |> deserialize
                     with ex ->
                         logger.LogError(
                             ex,
@@ -154,16 +154,17 @@ let configureRpcTransport
                 stateActor.Post(LeaveRequestContext(jsonRpcCtx.RequestOrdinal, wsUpdate))
         }
 
-    let serializeNullable value =
-        if isNull (box value) then
-            Newtonsoft.Json.Linq.JValue.CreateNull() :> Newtonsoft.Json.Linq.JToken
-        else
-            serialize value
-
     let unwrapResult result =
         match result with
-        | Ok value -> value |> serializeNullable |> jtokenToJe |> Ok
-        | Error error -> error |> serialize |> jtokenToJe |> Error
+        | Ok value ->
+            let lspAny =
+                if isNull (box value) then
+                    LSPAny.fromJToken (Newtonsoft.Json.Linq.JValue.CreateNull())
+                else
+                    serialize value
+
+            lspAny.JsonElement |> Ok
+        | Error error -> error |> serialize |> (fun a -> a.JsonElement) |> Error
 
     let callHandler requestMode fn : JsonRpcCallHandler =
         wrapHandler unwrapResult requestMode id fn

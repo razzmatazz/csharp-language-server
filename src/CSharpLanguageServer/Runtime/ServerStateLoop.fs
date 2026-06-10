@@ -402,11 +402,12 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
     | ClientCapabilityChange cc ->
         let experimentalCapsBoolValue boolPropName =
             cc.Experimental
-            |> Option.map _.SelectToken(boolPropName)
-            |> Option.bind Option.ofObj
-            |> Option.map (fun t ->
-                let v = t :?> JValue
-                v.Value :?> bool)
+            |> Option.bind (fun a ->
+                a.JToken.SelectToken(boolPropName)
+                |> Option.ofObj
+                |> Option.map (fun t ->
+                    let v = t :?> JValue
+                    v.Value :?> bool))
 
         let newConfig =
             { state.Config with
