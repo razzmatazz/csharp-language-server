@@ -63,5 +63,5 @@ jobs:
         if: ${{ matrix.os != 'windows-latest' }}
         run: |
           dotnet build -c Release
-          dotnet pack -c Release -o release --no-build
+          dotnet pack -c Release -o release
         working-directory: src/CSharpLanguageServer
