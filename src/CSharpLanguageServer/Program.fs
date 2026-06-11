@@ -55,7 +55,9 @@ let entry args =
         let serverArgs = argParser.Parse args
 
         let printVersion () =
-            printfn "csharp-ls, %s" (Assembly.GetExecutingAssembly().GetName().Version |> string)
+            let asm = Assembly.GetExecutingAssembly()
+            let ver = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion
+            printfn "csharp-ls, %s" ver
 
         serverArgs.TryGetResult <@ Version @>
         |> Option.iter (fun _ ->

@@ -12,4 +12,28 @@
     <PackageReference Include="Ionide.KeepAChangelog.Tasks" PrivateAssets="All" />
   </ItemGroup>
 
+  <!-- Extract the release codename from the CHANGELOG entry matching the current $(Version).
+       Header format: ## [X.Y.Z] - YYYY-MM-DD / Codename
+       If the top entry is [Unreleased] (Version falls back to 1.0.0) or has no codename,
+       ReleaseCodename is empty and InformationalVersion is just the bare version number. -->
+  <Target Name="SetCodenameFromChangelog"
+          DependsOnTargets="SetVersionFromChangelog"
+          BeforeTargets="GetAssemblyAttributes">
+    <PropertyGroup>
+      <_ChangelogText>$([System.IO.File]::ReadAllText('$(ChangelogFile)'))</_ChangelogText>
+      <!-- Anchor the search to the exact current version so an [Unreleased] top-entry
+           (which makes Ionide.KeepAChangelog.Tasks fall back to Version=1.0.0) never
+           accidentally picks up a codename from a different release. -->
+      <_CodenameMatch>$([System.Text.RegularExpressions.Regex]::Match(
+          '$(_ChangelogText)',
+          '##\s+\[$(Version)\][^\n]*/\s*(\w+)'))</_CodenameMatch>
+      <ReleaseCodename Condition="'$(_CodenameMatch)' != ''">$([System.Text.RegularExpressions.Regex]::Match(
+          '$(_ChangelogText)',
+          '##\s+\[$(Version)\][^\n]*/\s*(\w+)').get_Groups().get_Item(1).get_Value())</ReleaseCodename>
+      <ReleaseCodename Condition="'$(ReleaseCodename)' == ''"></ReleaseCodename>
+      <InformationalVersion Condition="'$(ReleaseCodename)' != ''">$(Version) ($(ReleaseCodename))</InformationalVersion>
+      <InformationalVersion Condition="'$(ReleaseCodename)' == ''">$(Version)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
 </Project>
