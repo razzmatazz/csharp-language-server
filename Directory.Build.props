@@ -17,8 +17,7 @@
        If the top entry is [Unreleased] (Version falls back to 1.0.0) or has no codename,
        ReleaseCodename is empty and InformationalVersion is just the bare version number. -->
   <Target Name="SetCodenameFromChangelog"
-          DependsOnTargets="SetVersionFromChangelog"
-          BeforeTargets="GetAssemblyAttributes">
+          AfterTargets="SetVersionFromChangelog">
     <PropertyGroup>
       <_ChangelogText>$([System.IO.File]::ReadAllText('$(ChangelogFile)'))</_ChangelogText>
       <!-- Anchor the search to the exact current version so an [Unreleased] top-entry
