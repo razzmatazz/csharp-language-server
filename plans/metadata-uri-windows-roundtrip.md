@@ -1,251 +1,139 @@
-# Plan: Fix `csharp:` URI round-trip on Windows
+# Investigation: `csharp:` URI round-trip on Windows
 
-**Tracks:** GitHub issue #319 (sub-problem 2)
-**Affects:** `workspaceFolderParseCSharpDocumentUri`
-in `src/CSharpLanguageServer/Lsp/WorkspaceFolder.fs`
-
----
-
-## Background
-
-When `useMetadataUris` is enabled, `textDocument/definition` on an external symbol returns a
-virtual `csharp:/<projectFilePath>/decompiled/<symbolName>.cs` URI. The client then sends that
-URI back in a `csharp/metadata` request; the server must parse it to recover `projectFilePath`
-and `symbolMetadataName` to look up the right project and decompile the symbol.
-
-Two functions are involved:
-
-- **Constructor** — `workspaceFolderMetadataSymbolSourceViewUri` builds the URI from
-  `project.FilePath` and the symbol name. The same `Uri → string → Substring(8)` idiom is
-  also used in `encodeGeneratedDocumentUri` for source-generated document URIs.
-- **Parser** — `workspaceFolderParseCSharpDocumentUri` decodes it back.
+**Tracks:** GitHub issue #319 (sub-problem 2 — Windows encoding)
+**Status: NOT A BUG — see conclusion**
 
 ---
 
-## What the FSI experiments confirmed
+## What was suspected
 
-### URI construction (current code — must not change)
+thomashilke (issue #319) reported that on Windows the `:` in drive-letter paths is left
+unencoded in the `csharp:` URI, and that the server fails to find the matching project when
+`csharp/metadata` is called back with that URI.
+
+---
+
+## What the FSI experiments and CI showed
+
+### URI construction (current code)
 
 ```fsharp
 let projectFile =
-    project.FilePath            // "/Users/bob/proj/MyApp.csproj"  (macOS)
-    |> Uri                      // file:///Users/bob/proj/MyApp.csproj
-    |> string                   // "file:///Users/bob/proj/MyApp.csproj"
+    project.FilePath            // "C:\Users\...\MyApp.csproj"  (Windows)
+    |> Uri                      // file:///C:/Users/.../MyApp.csproj
+    |> string                   // "file:///C:/Users/.../MyApp.csproj"
     |> fun s -> if s.StartsWith "file:///" then s.Substring(8) else s
-                                // "Users/bob/proj/MyApp.csproj"   ← leading '/' stripped
+                                // "C:/Users/.../MyApp.csproj"  ← colon unencoded, no leading '/'
     |> _.TrimEnd('/')
 
 sprintf "csharp:/%s/decompiled/%s.cs" projectFile ...
-// macOS   → "csharp:/Users/bob/proj/MyApp.csproj/decompiled/System.String.cs"
-// Windows → "csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs"
+// → "csharp:/C:/Users/.../MyApp.csproj/decompiled/System.String.cs"
 ```
 
-On **Windows** `project.FilePath` = `C:\path\to\MyApp.csproj`:
+### URI parsing — why it works on Windows
 
-```
-Uri(...)      → file:///C:/path/to/MyApp.csproj
-Substring(8)  → "C:/path/to/MyApp.csproj"    ← colon unencoded, no leading '/'
-sprintf       → "csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs"
-```
-
-### Why the constructor must not change
-
-FSI confirmed that switching from `string |> Substring(8)` to `.AbsolutePath` in the
-constructor breaks macOS. `Uri("/Users/bob/proj/MyApp.csproj").AbsolutePath` = `/Users/bob/...`
-(leading `/` included). Passing that to `sprintf "csharp:/%s/..."` produces `csharp://Users/...`
-— a double-slash URI. .NET's `Uri` class then interprets `Users` as the **authority (host)**
-component, silently dropping it from the path:
-
-```
-Uri("csharp://Users/bob/proj/MyApp.csproj/decompiled/System.String.cs").LocalPath
-  → "/bob/proj/MyApp.csproj/decompiled/System.String.cs"   ← "Users" eaten as host!
-```
-
-The tab label in VSCode is unaffected (last segment is still `System.String.cs`) but the path
-is completely wrong and the round-trip breaks on macOS. The constructor's current format —
-`csharp:/<path>/decompiled/<symbol>.cs` with a single leading slash — is load-bearing for
-correct URI semantics and must be preserved.
-
-### URI parsing (current code — where the bug lives)
-
-```fsharp
-let u = Uri uri
-let path = u.LocalPath
-let decompiledPrefix =
-    sprintf ".csproj%sdecompiled%s"
-        (string Path.DirectorySeparatorChar)
-        (string Path.DirectorySeparatorChar)
-```
-
-`Uri.LocalPath` is platform-dependent. On macOS, for a Windows-style URI like
-`csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs`, it converts forward slashes
-to **backslashes**:
+`Uri.LocalPath` is platform-sensitive: for a `C:/`-style path embedded in a `csharp:` URI
+it returns **backslashes** on every platform:
 
 ```
 Uri("csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs").LocalPath
-  → "C:\path\to\MyApp.csproj\decompiled\System.String.cs"     (backslashes on macOS!)
+  macOS  → "C:\path\to\MyApp.csproj\decompiled\System.String.cs"
+  Windows→ "C:\path\to\MyApp.csproj\decompiled\System.String.cs"
 ```
 
-`decompiledPrefix` on macOS uses `Path.DirectorySeparatorChar` = `/`, so
-`.IndexOf(".csproj/decompiled/")` on a string full of backslashes returns `−1` → parse fails
-→ `csharp/metadata` returns `None` → client gets an empty buffer.
-
-| Host OS | URI                          | `LocalPath`                  | `decompiledPrefix`    | `IndexOf` |
-|---------|------------------------------|------------------------------|-----------------------|-----------|
-| macOS   | `csharp:/Users/bob/…`        | `/Users/bob/…` (forward `/`) | `.csproj/decompiled/` | found ✓   |
-| macOS   | `csharp:/C:/path/…`          | `C:\path\…`  (backslashes!)  | `.csproj/decompiled/` | **−1 ✗**  |
-| Windows | `csharp:/C:/path/…`          | `C:\path\…`  (backslashes)   | `.csproj\decompiled\` | found ✓   |
-
-In contrast, `Uri.AbsolutePath` always preserves the slash style from the URI string itself,
-with no OS-specific transforms:
+On Windows, `decompiledPrefix` uses `Path.DirectorySeparatorChar = '\'`:
 
 ```
-Uri("csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs").AbsolutePath
-  → "C:/path/to/MyApp.csproj/decompiled/System.String.cs"    (forward slashes everywhere)
+decompiledPrefix = ".csproj\decompiled\"
 ```
 
-### The accidental correctness on macOS for macOS paths
+And Roslyn's `project.FilePath` also uses backslashes on Windows. So all three sides of the
+comparison (`LocalPath`, `decompiledPrefix`, `project.FilePath`) use backslashes
+consistently → `IndexOf` finds the prefix → the path extracted matches `project.FilePath`
+→ the round-trip succeeds.
 
-`Uri("/Users/bob/proj/MyApp.csproj").ToString()` = `"file:///Users/bob/proj/MyApp.csproj"`.
-`Substring(8)` strips `"file:///"`, which also removes the leading `/`, producing
-`"Users/bob/proj/MyApp.csproj"`. The resulting URI is `csharp:/Users/bob/...`.
-`Uri.LocalPath` then re-adds the leading `/`, giving `"/Users/bob/..."`.
-The strip in the constructor and the re-add in the parser cancel out — correctness by
-coincidence.
+This is confirmed by the CI test suite: `CSharpMetadataTests` run on `windows-latest` in
+`.github/workflows/test.yaml` and **currently pass**.
+
+### Where the analysis went wrong
+
+The only scenario where the parser breaks is when a **non-Windows** runtime receives a
+Windows-style URI (i.e. `csharp:/C:/...`). On macOS/Linux:
+- `LocalPath` gives backslashes (same as Windows)
+- `Path.DirectorySeparatorChar = '/'`
+- `decompiledPrefix = ".csproj/decompiled/"` (forward slashes)
+- `IndexOf(".csproj/decompiled/")` on a backslash string → **−1**
+
+But this cross-platform case (a Linux/macOS server receiving a URI with a Windows drive-letter
+path) does not occur in normal usage. The server always runs on the same OS as the project
+files.
+
+### macOS round-trip — also works, but for different reasons
+
+On macOS, `project.FilePath` starts with `/` (e.g. `/Users/bob/proj/MyApp.csproj`).
+
+- Constructor: `Substring(8)` strips the leading `/`, embedding `"Users/bob/..."` in the URI  
+- Parser: `LocalPath` re-adds the leading `/`, giving back `"/Users/bob/..."`  
+- The strip and re-add cancel out — correctness by coincidence, but it holds reliably
 
 ---
 
-## Root causes
+## Conclusion
 
-1. **`Uri.LocalPath` is platform-sensitive.** For URIs whose path looks like a Windows drive
-   path (`C:/...`), .NET converts forward slashes to backslashes in `LocalPath` regardless of
-   host OS. This is the direct cause of the parse failure on Windows paths.
+The URI round-trip is **not broken** on either Windows or macOS for normal (same-platform)
+usage. The `CSharpMetadataTests` passing on `windows-latest` CI confirms this.
 
-2. **`decompiledPrefix` uses `Path.DirectorySeparatorChar`.** This means it only matches the
-   slash style of `LocalPath` on the *current* OS. Since the URIs always use forward slashes
-   (RFC 3986 §3.3), the prefix should also always use `/`.
+The reported symptoms in issue #319 (empty definitions, empty buffer) are caused by
+**issue #1** — the `useMetadataUris` opt-in gate — not by a URI parsing bug.
+Clients that do not advertise `experimental.csharp.metadataUris = true` get `[]` from
+`textDocument/definition` because `useMetadataUris` defaults to `false`, so the metadata
+URI is never constructed or returned in the first place.
 
----
-
-## Proposed fix — parser only
-
-The fix is entirely in `workspaceFolderParseCSharpDocumentUri`. The constructor and all
-call sites stay unchanged.
-
-### 1. Replace `u.LocalPath` with `u.AbsolutePath`
-
-`AbsolutePath` preserves the slash style as written in the URI, giving a stable,
-forward-slash path on all platforms.
-
-### 2. Use a literal `/` in the prefix strings
-
-```fsharp
-// Before
-let decompiledPrefix =
-    sprintf ".csproj%sdecompiled%s"
-        (string Path.DirectorySeparatorChar)
-        (string Path.DirectorySeparatorChar)
-let generatedPrefix =
-    sprintf ".csproj%sgenerated%s"
-        (string Path.DirectorySeparatorChar)
-        (string Path.DirectorySeparatorChar)
-
-// After
-let decompiledPrefix = ".csproj/decompiled/"
-let generatedPrefix  = ".csproj/generated/"
-```
-
-### 3. The project lookup in `CSharpMetadata.fs`
-
-After parsing, `projectFilePath` will be the raw `AbsolutePath` segment — forward slashes,
-no leading `/` on Windows (`C:/path/...`), with leading `/` on Unix (`/Users/...`).
-
-`project.FilePath` as Roslyn stores it uses the OS path separator. The comparison must
-normalize both sides:
-
-```fsharp
-// In CSharpMetadata.fs, the existing lookup:
-solution.Projects |> Seq.tryFind (fun p -> p.FilePath = projectFilePath)
-
-// Needs to become:
-solution.Projects
-|> Seq.tryFind (fun p ->
-    p.FilePath.Replace('\\', '/') = projectFilePath.Replace('\\', '/'))
-```
-
-> The `Map.tryFind (project.FilePath, symbolMetadataName)` lookup in
-> `workspaceFolderDecompiledDocumentFromMetadata` uses the key as Roslyn originally gave it,
-> so that cache is unaffected. Only the project-discovery lookup needs normalisation.
+This plan is closed. The Windows encoding concern raised by thomashilke does not manifest
+as a runtime bug in practice.
 
 ---
 
-## Worked example after the fix
+## Follow-up: documentation and eglot config key correction
 
-### macOS, macOS path (must keep working)
+Discovered while investigating issue #319: the documented (and commonly attempted) eglot
+workspace configuration for enabling `useMetadataUris` uses the wrong key path.
 
-```
-URI       : csharp:/Users/bob/proj/MyApp.csproj/decompiled/System.String.cs
-AbsPath   : /Users/bob/proj/MyApp.csproj/decompiled/System.String.cs
-prefix    : .csproj/decompiled/                              ← found ✓
-extracted : /Users/bob/proj/MyApp.csproj
-FilePath  : /Users/bob/proj/MyApp.csproj
-match     : "/Users/bob/proj/MyApp.csproj" = "/Users/bob/proj/MyApp.csproj" ✓
-```
-
-### macOS or Windows receiving a Windows-path URI (currently broken)
-
-```
-URI       : csharp:/C:/path/to/MyApp.csproj/decompiled/System.String.cs
-AbsPath   : C:/path/to/MyApp.csproj/decompiled/System.String.cs
-prefix    : .csproj/decompiled/                              ← found ✓
-extracted : C:/path/to/MyApp.csproj
-FilePath  : C:\path\to\MyApp.csproj
-match     : "C:/path/to/MyApp.csproj" = "C:/path/to/MyApp.csproj"
-            (after Replace('\\', '/') on FilePath)          ✓
+**Wrong** (as seen in the wild):
+```elisp
+(setq eglot-workspace-configuration
+      '((experimental
+           (csharp
+             (metadataUris . t)))))
 ```
 
----
-
-## Files to change
-
-| File | Change |
-|------|--------|
-| `src/CSharpLanguageServer/Lsp/WorkspaceFolder.fs` | `workspaceFolderParseCSharpDocumentUri`: use `u.AbsolutePath`; use literal `/` in `decompiledPrefix` and `generatedPrefix` |
-| `src/CSharpLanguageServer/Handlers/CSharpMetadata.fs` | Normalize path separators when looking up the project by `FilePath` |
-
-The constructor functions (`workspaceFolderMetadataSymbolSourceViewUri`,
-`encodeGeneratedDocumentUri`) and all test files are **unchanged** — the URI format emitted
-by the server does not change.
-
----
-
-## Verification
-
-### Local (macOS) — confirm no regression
-
-```
-dotnet test --filter FullyQualifiedName~CSharpMetadataTests
+**Correct:**
+```elisp
+(setq eglot-workspace-configuration
+      '((csharp
+           (useMetadataUris . t))))
 ```
 
-The existing tests do a full end-to-end round-trip: `textDocument/typeDefinition` returns a
-`csharp:` URI, then `csharp/metadata` is called with it. They must continue to pass.
+### Why
 
-### CI (GitHub Actions) — confirm the Windows fix
+The server's `TryPullCSharpConfig` (in `Lsp/Client.fs`) requests the `"csharp"` section via
+`workspace/configuration` and deserializes it directly into `CSharpConfiguration`, whose
+field is named `useMetadataUris`. The `experimental.csharp.metadataUris` path is only read
+from `ClientCapabilities.experimental` (in `ServerStateLoop.fs`) — something the LSP client
+would have to populate in the `initialize` request's capabilities, not via workspace
+configuration.
 
-`.github/workflows/test.yaml` already runs `dotnet test` on both `ubuntu-24.04` and
-`windows-latest` on every push and PR (`fail-fast: false`). No workflow changes are needed.
+### TODO
 
-On the `windows-latest` runner, Roslyn hands back a real `C:\...` project file path. The
-constructor embeds it as `C:/...` in the `csharp:` URI. The client sends that URI back to
-`csharp/metadata`. With the current buggy parser it returns `None`; with the fix the
-`CSharpMetadataTests` round-trip tests must pass. **The Windows CI leg is the primary
-validation for this fix** — open a PR and watch those two existing tests go green on Windows.
-
----
-
-## What this does NOT fix
-
-Issue #1 from the same bug report: clients that do not advertise
-`experimental.csharp.metadataUris = true` still get `[]` from `textDocument/definition`
-because `useMetadataUris` defaults to `false`. That is a separate design decision and is
-tracked separately.
+- [ ] Update `README` / docs to show the correct `eglot-workspace-configuration` snippet
+- [ ] Reply to / close issue #319 (https://github.com/razzmatazz/csharp-language-server/issues/319)
+      noting that the correct key is `csharp.useMetadataUris`, not `experimental.csharp.metadataUris`
+- [ ] Provide an eglot extension (or a `lsp-mode` equivalent) — either as a documented
+      snippet or as a shipped helper — that teaches eglot/lsp-mode how to open `csharp:`
+      URIs returned by `textDocument/definition`.  Neither client handles these URIs
+      out-of-the-box: eglot has no built-in `csharp:` scheme handler, and lsp-mode
+      likewise does not open decompiled-metadata buffers for this server.  The fix is a
+      small Elisp hook (e.g. overriding `eglot-find-file-hook` or advising
+      `eglot--uri-to-path` / `lsp--uri-to-path`) that calls `csharp/metadata` and
+      opens the response in a read-only buffer, making go-to-definition on library
+      symbols work end-to-end.
