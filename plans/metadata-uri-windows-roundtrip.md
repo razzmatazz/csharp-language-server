@@ -123,17 +123,91 @@ from `ClientCapabilities.experimental` (in `ServerStateLoop.fs`) — something t
 would have to populate in the `initialize` request's capabilities, not via workspace
 configuration.
 
-### TODO
+Note: the server accepts **either** activation path (`workspace/configuration` pull **or**
+`ClientCapabilities.experimental.csharp.metadataUris = true`) and merges them with
+`Option.orElse`, so setting the workspace-configuration key is the easiest client-side fix.
+
+---
+
+## Client investigation findings
+
+### eglot URI handling
+
+`eglot-uri-to-path` (eglot ≥ 1.16, bug#58790) returns any non-`file://` URI **unchanged**
+and explicitly delegates to `file-name-handler-alist`. There is no hook, no generic, and no
+per-scheme dispatch table — `file-name-handler-alist` is the **only** sanctioned extension
+point for custom URI schemes.
+
+The canonical pattern (same as what `eglot-java` uses for `jdt://`):
+
+```elisp
+(add-to-list 'file-name-handler-alist
+             (cons "\\`csharp://" #'csharp-ls--file-name-handler))
+
+(defun csharp-ls--file-name-handler (operation &rest args)
+  (cond
+    ((eq operation 'find-file-noselect)
+     ;; issue csharp/metadata, write source to a temp buffer, return it
+     ...)
+    (t (let ((inhibit-file-name-handlers
+              (cons #'csharp-ls--file-name-handler inhibit-file-name-handlers))
+             (inhibit-file-name-operation operation))
+         (apply operation args)))))
+```
+
+Neither doom emacs nor any installed package in this setup wires up a `csharp://` handler
+for eglot. The `eglot-java` package (which would be the reference implementation for
+`jdt://`) is not installed; there is only a MELPA recipe stub.
+
+The `eglot--uri-to-path` / `eglot-uri-to-path` advice approach (mentioned in older docs)
+is **obsolete** — the aliases were deprecated in eglot 1.16 and the function is not a
+generic, so per-server overrides via `cl-defmethod` are not possible.
+
+### lsp-mode — `useMetadataUris` is never enabled (bug)
+
+`lsp-csharp.el` already ships a working `csharp:` URI handler
+(`lsp-csharp--cls-metadata-uri-handler`, registered via `:uri-handlers`) and the
+`CSharpMetadataResponse` destructuring matches the server's wire format exactly. However,
+**the handler is effectively dead code** because `useMetadataUris` is never turned on:
+
+- **`workspace/configuration` pull path:** lsp-mode never calls
+  `lsp-register-custom-settings` for any `csharp.*` key, so the server receives `{}` for
+  the `"csharp"` section and deserializes `useMetadataUris` as `None` (defaults to
+  `false`).
+- **`experimental` capabilities path:** the `csharp-ls` client registration has no
+  `:initialized-fn` or experimental-capabilities block that would inject
+  `experimental: { csharp: { metadataUris: true } }` into the `initialize` request.
+
+Fix options (either suffices; both is belt-and-suspenders):
+
+1. Add a `defcustom lsp-csharp-cls-use-metadata-uris` (default `t`) and register it:
+   ```elisp
+   (lsp-register-custom-settings
+    '(("csharp.useMetadataUris" lsp-csharp-cls-use-metadata-uris t)))
+   ```
+2. Add an `:initialized-fn` to the `lsp-register-client` call that sends
+   `experimental: { csharp: { metadataUris: true } }`.
+
+There is no `lsp-csharp-cls-use-metadata-uris` defcustom today — it needs to be added.
+The solution-file setting (`lsp-csharp-solution-file`) is passed as a `-s` CLI flag, not
+via `workspace/configuration`, so it is unaffected.
+
+---
+
+## TODO
 
 - [ ] Update `README` / docs to show the correct `eglot-workspace-configuration` snippet
 - [ ] Reply to / close issue #319 (https://github.com/razzmatazz/csharp-language-server/issues/319)
       noting that the correct key is `csharp.useMetadataUris`, not `experimental.csharp.metadataUris`
-- [ ] Provide an eglot extension (or a `lsp-mode` equivalent) — either as a documented
-      snippet or as a shipped helper — that teaches eglot/lsp-mode how to open `csharp:`
-      URIs returned by `textDocument/definition`.  Neither client handles these URIs
-      out-of-the-box: eglot has no built-in `csharp:` scheme handler, and lsp-mode
-      likewise does not open decompiled-metadata buffers for this server.  The fix is a
-      small Elisp hook (e.g. overriding `eglot-find-file-hook` or advising
-      `eglot--uri-to-path` / `lsp--uri-to-path`) that calls `csharp/metadata` and
-      opens the response in a read-only buffer, making go-to-definition on library
-      symbols work end-to-end.
+- [ ] **eglot recipe:** write and document a `file-name-handler-alist` handler for
+      `csharp://` URIs (modelled on the `jdt://` pattern used by `eglot-java`). The handler
+      must call `csharp/metadata` via `jsonrpc-request` on `eglot-current-server`, write
+      the returned source to a temp/cache file, and return a read-only buffer. Pair with
+      the correct `eglot-workspace-configuration` snippet to enable `useMetadataUris`.
+- [ ] **lsp-mode fix:** file a bug / patch against `lsp-mode` upstream:
+      add `defcustom lsp-csharp-cls-use-metadata-uris` (default `t`) and call
+      `lsp-register-custom-settings` so `csharp.useMetadataUris` is sent to the server —
+      activating the already-present `:uri-handlers` machinery.
+- [ ] Provide client-specific configuration recipes (eglot and lsp-mode) in docs —
+      self-contained snippets a user can drop into their config to get working
+      go-to-definition on decompiled library symbols.
