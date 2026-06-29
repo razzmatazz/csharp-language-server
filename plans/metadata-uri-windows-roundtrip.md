@@ -192,6 +192,28 @@ There is no `lsp-csharp-cls-use-metadata-uris` defcustom today — it needs to b
 The solution-file setting (`lsp-csharp-solution-file`) is passed as a `-s` CLI flag, not
 via `workspace/configuration`, so it is unaffected.
 
+### Razor support — `razorSupport` flag (parallel to `useMetadataUris`)
+
+`razorSupport` is a second opt-in in `CSharpConfiguration`, exactly parallel to
+`useMetadataUris`. When enabled the server expands its `DocumentSelector` to include
+`.cshtml` files (`Scheme = "file"`, `Pattern = "**/*.cshtml"`, `Language = "razor"`), and
+routes all standard LSP methods (definition, completion, hover, rename, diagnostics, …)
+through Roslyn's Razor source-generator path internally.
+
+Key facts:
+- **No custom URI scheme** — razor uses `file://` URIs pointing to `.cshtml` files on
+  disk. There is no `razor://` or `razor-component://` scheme anywhere in the codebase.
+- **No custom LSP methods** — all standard LSP methods work; the server maps `.cshtml`
+  positions to the Roslyn-generated `.g.cs` via `#line` directives internally.
+- **Same activation pattern as `useMetadataUris`:** `--features razor-support` CLI flag
+  or `csharp.razorSupport = true` via `workspace/configuration`.
+- **lsp-mode has zero razor support for csharp-ls** — no `razor`/`cshtml` references in
+  `lsp-csharp.el`, no `lsp-razor.el`. The same `lsp-register-custom-settings` gap applies.
+- **eglot needs no URI handler** for razor (URIs are plain `file://`). The only eglot work
+  is: (a) setting `csharp.razorSupport = true` in `eglot-workspace-configuration`, and
+  (b) ensuring `web-mode` (or a dedicated cshtml-mode) is associated with a language ID of
+  `"razor"` so eglot activates csharp-ls for those buffers.
+
 ---
 
 ## TODO
@@ -199,15 +221,25 @@ via `workspace/configuration`, so it is unaffected.
 - [ ] Update `README` / docs to show the correct `eglot-workspace-configuration` snippet
 - [ ] Reply to / close issue #319 (https://github.com/razzmatazz/csharp-language-server/issues/319)
       noting that the correct key is `csharp.useMetadataUris`, not `experimental.csharp.metadataUris`
-- [ ] **eglot recipe:** write and document a `file-name-handler-alist` handler for
-      `csharp://` URIs (modelled on the `jdt://` pattern used by `eglot-java`). The handler
-      must call `csharp/metadata` via `jsonrpc-request` on `eglot-current-server`, write
-      the returned source to a temp/cache file, and return a read-only buffer. Pair with
-      the correct `eglot-workspace-configuration` snippet to enable `useMetadataUris`.
-- [ ] **lsp-mode fix:** file a bug / patch against `lsp-mode` upstream:
+- [ ] **eglot recipe — metadata URIs:** write and document a `file-name-handler-alist`
+      handler for `csharp://` URIs (modelled on the `jdt://` pattern used by `eglot-java`).
+      The handler must call `csharp/metadata` via `jsonrpc-request` on
+      `eglot-current-server`, write the returned source to a temp/cache file, and return a
+      read-only buffer. Pair with the correct `eglot-workspace-configuration` snippet to
+      enable `useMetadataUris`.
+- [ ] **eglot recipe — razor:** document the `eglot-workspace-configuration` snippet for
+      `csharp.razorSupport = true` plus the major-mode / language-ID wiring needed to
+      activate csharp-ls on `.cshtml` buffers (e.g. `(add-to-list 'eglot-server-programs
+      '((web-mode :language-id "razor") . (...)))`). No custom URI handler needed.
+- [ ] **lsp-mode fix — metadata URIs:** file a bug / patch against `lsp-mode` upstream:
       add `defcustom lsp-csharp-cls-use-metadata-uris` (default `t`) and call
       `lsp-register-custom-settings` so `csharp.useMetadataUris` is sent to the server —
       activating the already-present `:uri-handlers` machinery.
+- [ ] **lsp-mode fix — razor:** same pattern — add `defcustom lsp-csharp-cls-razor-support`
+      (default `nil` since it requires a compatible cshtml major mode) and register
+      `"csharp.razorSupport"` via `lsp-register-custom-settings`. Also wire
+      `lsp-csharp--cls-metadata-uri-handler`-style activation for cshtml buffers (associate
+      the `csharp-ls` server-id with `web-mode` or `cshtml-mode` + language-id `"razor"`).
 - [ ] Provide client-specific configuration recipes (eglot and lsp-mode) in docs —
-      self-contained snippets a user can drop into their config to get working
-      go-to-definition on decompiled library symbols.
+      self-contained snippets for: (1) metadata URI / go-to-definition on decompiled
+      symbols, and (2) razor / `.cshtml` editing.
