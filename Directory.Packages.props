@@ -11,7 +11,7 @@
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="FSharp.Core" Version="10.0.101" />
+    <PackageVersion Include="FSharp.Core" Version="10.1.201" />
     <PackageVersion Include="Argu" Version="6.2.5" />
     <PackageVersion Include="Fabulous.AST" Version="[1.2.0]" />
     <PackageVersion Include="StreamJsonRpc" Version="2.16.36" />
