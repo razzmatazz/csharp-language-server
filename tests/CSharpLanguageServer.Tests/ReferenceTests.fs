@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.ReferenceTests
 
+open System
 open System.Threading
 
 open NUnit.Framework
@@ -74,6 +75,44 @@ let testReferenceWorks () =
                  End = { Line = 12u; Character = 15u } } } |]
 
     Assert.AreEqual(expectedLocations2, locations2.Value)
+
+[<Test>]
+let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
+    // Regression test: textDocument/references with IncludeDeclaration=true on a BCL
+    // method (Console.WriteLine) should include the decompiled definition location as a
+    // csharp: URI when useMetadataUris=true, just like textDocument/definition does.
+    use client = activateFixture "genericProject"
+    use classFile = client.Open "Project/Class.cs"
+
+    // Class.cs line 7 (0-indexed): Console.WriteLine(str);
+    //                                       ^^^^^^^^^
+    //                                       char 16-25
+    let referenceParams: ReferenceParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 7u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = { IncludeDeclaration = true } }
+
+    let locations: Location[] option =
+        client.Request("textDocument/references", referenceParams)
+
+    let expectedDefUri =
+        client.SolutionDir
+        |> Uri
+        |> string
+        |> _.Substring("file:///".Length)
+        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Console.cs"
+
+    Assert.IsTrue(locations.IsSome, "Expected Some locations")
+
+    let defLocations =
+        locations.Value |> Array.filter (fun l -> l.Uri.StartsWith "csharp:")
+
+    Assert.IsTrue(defLocations.Length > 0, "Expected at least one decompiled definition location")
+
+    for loc in defLocations do
+        Assert.AreEqual(expectedDefUri, loc.Uri)
 
 [<Test>]
 let testReferenceWorksDotnet8 () =

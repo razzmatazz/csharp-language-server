@@ -216,6 +216,38 @@ Key facts:
 
 ---
 
+## Server-side changes that affect this plan
+
+The following server-side fixes have been made since this plan was written.
+They are consistent with the `useMetadataUris` gate (i.e. they produce `csharp:` URIs only
+when `useMetadataUris = true`), so the client-side TODO items below remain unchanged —
+eglot/lsp-mode must still opt in via `csharp.useMetadataUris` to benefit.
+
+### `textDocument/implementation` fallback (Handlers/Implementation.fs)
+
+`findImplLocationsOfSymbol` previously returned `[]` for concrete or BCL symbols
+(e.g. `Console.WriteLine`) because `FindImplementationsAsync` returns nothing for them.
+Fixed: when `impls` is empty, the function falls back to the symbol's own declaration
+locations via `workspaceFolderSymbolLocations` — triggering decompilation when
+`useMetadataUris = true`, just like `textDocument/definition`.
+
+Detection condition: `impls.IsEmpty` (Roslyn found no implementations/overrides/derived
+types) — not `locations.Count = 0` after the loop, which would also be zero when
+implementations exist but are all in unreachable metadata with `useMetadataUris = false`.
+
+### `textDocument/references` definition location (Handlers/References.fs)
+
+With `IncludeDeclaration = true`, the definition location for BCL symbols was silently
+dropped because `r.Definition.Locations` were resolved via `Location.fromRoslynLocation`
+directly, which only handles `LocationKind.SourceFile`.
+Fixed: definition locations are now resolved via `workspaceFolderSymbolLocations` —
+the same path used by `textDocument/definition` and `textDocument/implementation` —
+so `csharp:` URIs are returned for BCL symbols when `useMetadataUris = true`.
+Call-site reference locations (`r.Locations`) remain resolved via `Location.fromRoslynLocation`
+unchanged (they are always in source).
+
+---
+
 ## TODO
 
 - [ ] Update `README` / docs to show the correct `eglot-workspace-configuration` snippet
@@ -226,7 +258,9 @@ Key facts:
       The handler must call `csharp/metadata` via `jsonrpc-request` on
       `eglot-current-server`, write the returned source to a temp/cache file, and return a
       read-only buffer. Pair with the correct `eglot-workspace-configuration` snippet to
-      enable `useMetadataUris`.
+      enable `useMetadataUris`. Note: once the handler is wired, `textDocument/implementation`
+      and `textDocument/references` (IncludeDeclaration=true) on BCL symbols will also
+      navigate to decompiled source via `csharp:` URIs.
 - [ ] **eglot recipe — razor:** document the `eglot-workspace-configuration` snippet for
       `csharp.razorSupport = true` plus the major-mode / language-ID wiring needed to
       activate csharp-ls on `.cshtml` buffers (e.g. `(add-to-list 'eglot-server-programs
@@ -234,7 +268,9 @@ Key facts:
 - [ ] **lsp-mode fix — metadata URIs:** file a bug / patch against `lsp-mode` upstream:
       add `defcustom lsp-csharp-cls-use-metadata-uris` (default `t`) and call
       `lsp-register-custom-settings` so `csharp.useMetadataUris` is sent to the server —
-      activating the already-present `:uri-handlers` machinery.
+      activating the already-present `:uri-handlers` machinery. Once enabled, the
+      `:uri-handlers` machinery will also handle `csharp:` URIs returned by
+      `textDocument/implementation` and `textDocument/references` (IncludeDeclaration=true).
 - [ ] **lsp-mode fix — razor:** same pattern — add `defcustom lsp-csharp-cls-razor-support`
       (default `nil` since it requires a compatible cshtml major mode) and register
       `"csharp.razorSupport"` via `lsp-register-custom-settings`. Also wire
