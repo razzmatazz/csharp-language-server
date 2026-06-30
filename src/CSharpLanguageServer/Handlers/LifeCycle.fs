@@ -38,8 +38,13 @@ module LifeCycle =
                 context.LspClient.WindowLogMessage({ Type = MessageType.Info; Message = m })
 
             let serverName = "csharp-ls"
+
             let serverVersion =
-                Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion
+                Assembly
+                    .GetExecutingAssembly()
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                    .InformationalVersion
+
             logger.LogInformation("initializing, {name} version {version}", serverName, serverVersion)
 
             do! windowShowMessage (sprintf "csharp-ls: initializing, version %s" serverVersion)

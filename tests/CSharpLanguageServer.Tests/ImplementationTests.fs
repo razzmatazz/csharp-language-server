@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.ImplementationTests
 
+open System
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
@@ -54,6 +55,45 @@ let testImplementationOnConcreteClassWorks () =
         Assert.AreEqual(1, locations.Length)
         Assert.AreEqual(hierarchyFile.Uri, locations[0].Uri)
         Assert.AreEqual(24u, locations[0].Range.Start.Line)
+
+    | _ -> failwithf "Some Location[] was expected but %s received" (string result)
+
+[<Test>]
+let testImplementationOnConcreteBclMethodFallsBackToDecompilation () =
+    // Regression test: textDocument/implementation on a concrete BCL method (Console.WriteLine)
+    // should fall back to the symbol's own declaration location. With useMetadataUris=true this
+    // means decompilation is triggered and a csharp: URI is returned, just like textDocument/definition.
+    use client = activateFixture "genericProject"
+    use classFile = client.Open "Project/Class.cs"
+
+    // Class.cs line 7 (0-indexed): Console.WriteLine(str);
+    //                                       ^^^^^^^^^
+    //                                       char 16–25
+    let implParams: ImplementationParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 7u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let result: U2<Definition, DefinitionLink array> option =
+        client.Request("textDocument/implementation", implParams)
+
+    // Should return decompiled location(s) for Console.WriteLine — all pointing at
+    // the System.Console decompiled document. Multiple overloads with the same arity
+    // may be returned (same as textDocument/definition), but every URI must be exact.
+    let expectedUri =
+        client.SolutionDir
+        |> Uri
+        |> string
+        |> _.Substring("file:///".Length)
+        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Console.cs"
+
+    match result with
+    | Some(U2.C1(U2.C2 locations)) ->
+        Assert.IsTrue(locations.Length > 0, "Expected at least one location")
+
+        for loc in locations do
+            Assert.AreEqual(expectedUri, loc.Uri)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)
 

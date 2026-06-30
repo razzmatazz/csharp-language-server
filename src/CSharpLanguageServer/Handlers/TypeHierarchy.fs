@@ -102,24 +102,19 @@ module TypeHierarchy =
                     let interfaces = Seq.toList typeSymbol.Interfaces
                     let supertypes = baseType @ interfaces
 
-                    let items = System.Collections.Generic.List<TypeHierarchyItem>()
+                    let! symbolLocations, aggregatedWfUpdates =
+                        wf
+                        |> workspaceFolderSymbolsLocations
+                            context.Config
+                            project
+                            (supertypes |> Seq.map (fun s -> s :> ISymbol))
 
-                    let mutable aggregatedWf = wf
-                    let mutable aggregatedWfUpdates = []
+                    let items =
+                        symbolLocations
+                        |> List.collect (fun (sym, locs) ->
+                            locs |> List.map (TypeHierarchyItem.fromSymbolAndLocation sym))
 
-                    for typeSym in supertypes do
-                        let! locations, wfUpdates =
-                            aggregatedWf |> workspaceFolderSymbolLocations context.Config typeSym project
-
-                        let typeSymItems =
-                            locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
-
-                        items.AddRange(typeSymItems)
-
-                        aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
-                        aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
-
-                    let lspResult = items |> Seq.toArray |> Some |> LspResult.success
+                    let lspResult = items |> List.toArray |> Some |> LspResult.success
 
                     let wsUpdate =
                         LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, aggregatedWfUpdates)
@@ -174,26 +169,22 @@ module TypeHierarchy =
                         |> Async.Parallel
                         |> Async.map (Seq.collect id >> Seq.toList)
 
-                    let items = System.Collections.Generic.List<TypeHierarchyItem>()
-                    let mutable aggregatedWf = wf
-                    let mutable aggregatedWfUpdates = []
+                    let! symbolLocations, aggregatedWfUpdates =
+                        wf
+                        |> workspaceFolderSymbolsLocations
+                            context.Config
+                            project
+                            (subtypes |> Seq.map (fun s -> s :> ISymbol))
 
-                    for typeSym in subtypes do
-                        let! locations, wfUpdates =
-                            aggregatedWf |> workspaceFolderSymbolLocations context.Config typeSym project
-
-                        let typeSymItems =
-                            locations |> Seq.map (TypeHierarchyItem.fromSymbolAndLocation typeSym)
-
-                        items.AddRange(typeSymItems)
-
-                        aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
-                        aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
+                    let items =
+                        symbolLocations
+                        |> List.collect (fun (sym, locs) ->
+                            locs |> List.map (TypeHierarchyItem.fromSymbolAndLocation sym))
 
                     let wsUpdate =
                         LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, aggregatedWfUpdates)
 
-                    let lspResult = items |> Seq.toArray |> Some |> LspResult.success
+                    let lspResult = items |> List.toArray |> Some |> LspResult.success
 
                     return lspResult, wsUpdate
 

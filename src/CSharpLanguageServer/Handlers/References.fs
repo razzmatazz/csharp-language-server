@@ -15,6 +15,7 @@ open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Types
+open CSharpLanguageServer.Util
 
 [<RequireQualifiedAccess>]
 module References =
@@ -81,22 +82,46 @@ module References =
                         SymbolFinder.FindReferencesAsync(symbol, solution, allDocs, ct)
                         |> Async.AwaitTask
 
-                    let locationsFromReferencedSym (r: ReferencedSymbol) =
-                        let locations = r.Locations |> Seq.map _.Location
-
-                        match p.Context.IncludeDeclaration with
-                        | true -> locations |> Seq.append r.Definition.Locations
-                        | false -> locations
-
-                    return
+                    let refLocations =
                         refs
-                        |> Seq.collect locationsFromReferencedSym
+                        |> Seq.collect _.Locations
+                        |> Seq.map _.Location
                         |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
+                        |> Seq.distinct
+                        |> List.ofSeq
+
+                    let! defLocations, wfUpdates =
+                        match p.Context.IncludeDeclaration with
+                        | false -> async.Return([], [])
+                        | true -> async {
+                            // Resolve definition locations through workspaceFolderSymbolsLocations so
+                            // that useMetadataUris decompilation is triggered for BCL symbols, just
+                            // like textDocument/definition and textDocument/implementation.
+                            //
+                            // Any project suffices for metadata decompilation; for source symbols
+                            // Location.fromRoslynLocation resolves without a project.
+                            let anyProject = solution.Projects |> Seq.head
+
+                            let! symbolLocations, wfUpdates =
+                                wf
+                                |> workspaceFolderSymbolsLocations
+                                    context.Config
+                                    anyProject
+                                    (refs |> Seq.map _.Definition)
+
+                            return symbolLocations |> List.collect snd, wfUpdates
+                          }
+
+                    let lspResult =
+                        Seq.append defLocations refLocations
                         |> Seq.distinct
                         |> Seq.toArray
                         |> Some
-                        |> LspResult.success,
-                        LspWorkspaceUpdate.Empty
+                        |> LspResult.success
+
+                    let wsUpdate = LspWorkspaceUpdate.Empty.WithFolderUpdates(wf.Uri, wfUpdates)
+
+                    return lspResult, wsUpdate
 
             | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }

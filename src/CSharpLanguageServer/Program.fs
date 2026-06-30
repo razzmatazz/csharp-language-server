@@ -56,7 +56,10 @@ let entry args =
 
         let printVersion () =
             let asm = Assembly.GetExecutingAssembly()
-            let ver = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion
+
+            let ver =
+                asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion
+
             printfn "csharp-ls, %s" ver
 
         serverArgs.TryGetResult <@ Version @>

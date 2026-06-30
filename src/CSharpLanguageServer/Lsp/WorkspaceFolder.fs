@@ -379,6 +379,33 @@ let workspaceFolderSymbolLocations
         return aggregatedLspLocations, aggregatedWfUpdates
     }
 
+/// Resolve locations (via workspaceFolderSymbolLocations) for a whole sequence of
+/// symbols at once, threading the LspWorkspaceFolder through each resolution and
+/// aggregating all resulting updates. Returns each symbol paired with its resolved
+/// locations, in input order, leaving it to the caller to flatten/map as needed
+/// (e.g. discarding the symbol for plain Location lists, or pairing it with each
+/// location to build a richer per-symbol shape such as a TypeHierarchyItem).
+let workspaceFolderSymbolsLocations
+    (config: CSharpConfiguration)
+    (project: Microsoft.CodeAnalysis.Project)
+    (symbols: Microsoft.CodeAnalysis.ISymbol seq)
+    wf
+    : Async<(Microsoft.CodeAnalysis.ISymbol * Location list) list * LspWorkspaceFolderUpdateFn list> =
+    async {
+        let mutable wf = wf
+        let mutable aggregatedWfUpdates = []
+        let mutable results = []
+
+        for symbol in symbols do
+            let! locations, wfUpdates = wf |> workspaceFolderSymbolLocations config symbol project
+
+            wf <- wfUpdates |> List.fold (|>) wf
+            aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
+            results <- (symbol, locations) :: results
+
+        return results |> List.rev, aggregatedWfUpdates
+    }
+
 let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) =
     let uri = Uri(u.Replace("%3A", ":", true, null))
 

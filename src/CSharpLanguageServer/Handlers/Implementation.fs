@@ -65,22 +65,17 @@ module Implementation =
                 | _ -> return []
             }
 
-            let impls = Seq.append baseImpls (derivedClasses |> Seq.cast<ISymbol>)
+            let impls = Seq.append baseImpls (derivedClasses |> Seq.cast<ISymbol>) |> List.ofSeq
 
-            let mutable aggregatedWf = wf
-            let mutable aggregatedWfUpdates = []
+            // If Roslyn found no implementations/overrides/derived types, fall back to
+            // the symbol's own declaration locations so that useMetadataUris decompilation
+            // is triggered just like textDocument/definition.
+            let symbolsToResolve = if impls.IsEmpty then [ sym ] else impls
 
-            let locations = System.Collections.Generic.List<Location>()
+            let! symbolLocations, aggregatedWfUpdates =
+                wf |> workspaceFolderSymbolsLocations config project symbolsToResolve
 
-            for i in impls do
-                let! implLocations, wfUpdates = aggregatedWf |> workspaceFolderSymbolLocations config i project
-
-                aggregatedWf <- wfUpdates |> List.fold (|>) aggregatedWf
-                aggregatedWfUpdates <- aggregatedWfUpdates @ wfUpdates
-
-                locations.AddRange(implLocations)
-
-            return locations |> Seq.toArray, aggregatedWfUpdates
+            return symbolLocations |> List.collect snd |> List.toArray, aggregatedWfUpdates
 
         | _ -> return [||], []
     }
