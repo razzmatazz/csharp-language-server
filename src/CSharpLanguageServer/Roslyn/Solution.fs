@@ -472,7 +472,8 @@ let solutionGetRazorDocumentForPath
             let razorGenDoc =
                 generatedDocs
                 |> Seq.tryFind (fun d ->
-                    d.HintName.EndsWith cshtmlHintNameFlat || d.HintName.EndsWith cshtmlHintNameHierarchical)
+                    d.HintName.EndsWith cshtmlHintNameFlat
+                    || d.HintName.EndsWith cshtmlHintNameHierarchical)
 
             match razorGenDoc with
             | None -> return None
