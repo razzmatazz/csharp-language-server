@@ -17,6 +17,7 @@ let testDiagnoseCommandWorks () =
 
     let testAssemblyLocationDir =
         Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+        |> nonNull "Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)"
 
     let actualFixtureDir =
         DirectoryInfo(Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureDir))

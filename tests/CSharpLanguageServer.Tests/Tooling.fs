@@ -22,6 +22,17 @@ open CSharpLanguageServer.Runtime.DebugInfo
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Util
 
+/// Local copy of CSharpLanguageServer.Util.nonNull — shadows the one brought in by the
+/// `open` above, kept independent of the server's internals so the test project's
+/// null-safety plumbing doesn't depend on production code.
+/// NOTE: uses the `'T | null` union annotation rather than the classic `'T when 'T: null`
+/// constraint, since only the former actually clears the nullability of the return type
+/// under F#'s nullness checker (the constraint form still infers 'T as nullable downstream).
+let nonNull name (value: 'T | null) : 'T =
+    match value |> Option.ofObj with
+    | Some v -> v
+    | None -> raise (Exception(sprintf "A non-null value was expected: %s" name))
+
 let indexJE (name: string) (je: option<JsonElement>) : option<JsonElement> =
     je
     |> Option.bind (fun p ->
@@ -30,7 +41,7 @@ let indexJE (name: string) (je: option<JsonElement>) : option<JsonElement> =
         | _ -> None)
 
 let jeStringProp (name: string) (je: option<JsonElement>) : option<string> =
-    je |> indexJE name |> Option.map _.GetString()
+    je |> indexJE name |> Option.bind (fun v -> v.GetString() |> Option.ofObj)
 
 let emptyClientCapabilities: ClientCapabilities =
     { Workspace = None
@@ -133,8 +144,11 @@ let defaultClientProfile =
 
 let makeServerProcessInfo projectTempDir =
     let serverExe = Path.Combine(Environment.CurrentDirectory)
-    let tfm = Path.GetFileName(serverExe)
-    let buildMode = Path.GetFileName(Path.GetDirectoryName(serverExe))
+    let tfm = Path.GetFileName(serverExe) |> nonNull "Path.GetFileName(serverExe)"
+
+    let buildMode =
+        Path.GetFileName(Path.GetDirectoryName(serverExe))
+        |> nonNull "Path.GetFileName(Path.GetDirectoryName(serverExe))"
 
     let baseDir =
         serverExe
@@ -143,6 +157,7 @@ let makeServerProcessInfo projectTempDir =
         |> Path.GetDirectoryName
         |> Path.GetDirectoryName
         |> Path.GetDirectoryName
+        |> nonNull "baseDir (walked up 5 directories from serverExe)"
 
     let baseServerFileName =
         Path.Combine(baseDir, "src", "CSharpLanguageServer", "bin", buildMode, tfm, "CSharpLanguageServer")
@@ -480,7 +495,7 @@ let processClientEvent (state: LspClientState) (post: LspClientEvent -> unit) ms
         let readNextStdErrLine () =
             if not state.ServerProcess.Value.HasExited then
                 let line = state.ServerProcess.Value.StandardError.ReadLine()
-                post (ServerStderrLineRead(Some line))
+                post (ServerStderrLineRead(line |> Option.ofObj))
 
         let nextStdErrLineReadTask = Task.Run(readNextStdErrLine)
 
@@ -770,7 +785,9 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
         // prepare temp dir and copy in solution contents
         let testAssemblyLocationDir =
-            Assembly.GetExecutingAssembly().Location |> Path.GetDirectoryName
+            Assembly.GetExecutingAssembly().Location
+            |> Path.GetDirectoryName
+            |> nonNull "Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)"
 
         let sourceTestDataDir =
             Path.Combine(testAssemblyLocationDir, "..", "..", "..", "Fixtures", fixtureName)

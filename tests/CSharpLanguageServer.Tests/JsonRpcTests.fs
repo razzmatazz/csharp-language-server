@@ -10,6 +10,16 @@ open NUnit.Framework
 
 open CSharpLanguageServer.Runtime.JsonRpc
 
+/// Local copy of CSharpLanguageServer.Util.nonNull — kept independent of the server's
+/// internals so this test file's null-safety plumbing doesn't depend on production code.
+/// NOTE: uses the `'T | null` union annotation rather than the classic `'T when 'T: null`
+/// constraint, since only the former actually clears the nullability of the return type
+/// under F#'s nullness checker (the constraint form still infers 'T as nullable downstream).
+let private nonNull name (value: 'T | null) : 'T =
+    match value |> Option.ofObj with
+    | Some v -> v
+    | None -> raise (Exception(sprintf "A non-null value was expected: %s" name))
+
 /// Helper: encode a JSON-RPC message with Content-Length framing into bytes.
 let private encodeMessage (json: string) =
     let body = Encoding.UTF8.GetBytes(json)
@@ -194,7 +204,11 @@ let testUnregisteredMethodReturnsMethodNotFoundError () =
     let response = responseOpt.Value
     Assert.AreEqual(3, response.GetProperty("id").GetInt32())
     Assert.AreEqual(-32601, response.GetProperty("error").GetProperty("code").GetInt32())
-    Assert.IsTrue(response.GetProperty("error").GetProperty("message").GetString().Contains("Method not found"))
+    Assert.IsTrue(
+        response.GetProperty("error").GetProperty("message").GetString()
+        |> nonNull "error message"
+        |> _.Contains("Method not found")
+    )
 
 [<Test>]
 let testMultipleRequestsAreHandledSequentially () =
@@ -360,7 +374,9 @@ let testNotificationHandlerReceivesCorrectParams () =
                    message = "hello world" |} |}
         )
 
-    let handler ctx = async { capturedParams.Value <- ctx.Params.Value.GetProperty("message").GetString() }
+    let handler ctx = async {
+        capturedParams.Value <- ctx.Params.Value.GetProperty("message").GetString() |> nonNull "message"
+    }
 
     let notificationHandlings = Map.ofList [ "test/log", handler ]
 
@@ -453,7 +469,7 @@ let testNotificationWithIdIsRoutedAsRequest () =
 
     let requestHandler _ctx = async {
         requestHandlerCalled.Value <- true
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     let notificationHandler _ctx = async { notificationHandlerCalled.Value <- true }
@@ -1097,7 +1113,7 @@ let testShutdownWaitsForRunningHandlerToFinish () =
         handlerStarted.Set()
         handlerMayFinish.Wait() |> ignore
         handlerFinished.Value <- true
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1149,7 +1165,7 @@ let testShutdownCancelsRunningHandlerAndThenReturns () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 60_000 // would block forever without cancellation
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1210,7 +1226,7 @@ let testShutdownDrainsAllConcurrentHandlers () =
         allStarted.Signal() |> ignore
         do! mayFinishTcs.Task |> Async.AwaitTask
         System.Threading.Interlocked.Increment(finishedCount) |> ignore
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1320,7 +1336,7 @@ let testSendCallDuringShutdownDrainReturnsError () =
         handlerStarted.Set()
         // Await the TCS — this yields the thread so F# async cancellation can fire.
         do! mayFinishTcs.Task |> Async.AwaitTask
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1492,7 +1508,7 @@ let testEofCancelsRunningHandler () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 60_000 // would block forever without cancellation
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1536,7 +1552,7 @@ let testEofLateCallReturnsError () =
     let handler _ctx = async {
         handlerStarted.Set()
         do! mayFinishTcs.Task |> Async.AwaitTask
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1595,7 +1611,7 @@ let testEofDrainsAllConcurrentHandlers () =
         allStarted.Signal() |> ignore
         do! mayFinishTcs.Task |> Async.AwaitTask
         System.Threading.Interlocked.Increment(finishedCount) |> ignore
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
@@ -1783,7 +1799,11 @@ let testSendCallReturnsErrorOnMethodNotFound () =
     match replyTask.Result with
     | Error err ->
         Assert.AreEqual(-32601, err.GetProperty("code").GetInt32())
-        Assert.IsTrue(err.GetProperty("message").GetString().Contains("Method not found"))
+        Assert.IsTrue(
+            err.GetProperty("message").GetString()
+            |> nonNull "error message"
+            |> _.Contains("Method not found")
+        )
     | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -2029,7 +2049,8 @@ let testCancelRequestCancelsRunningHandler () =
             .GetProperty("error")
             .GetProperty("message")
             .GetString()
-            .Contains("cancel", StringComparison.OrdinalIgnoreCase)
+        |> nonNull "error message"
+        |> _.Contains("cancel", StringComparison.OrdinalIgnoreCase)
     )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -2140,7 +2161,7 @@ let testHandlerObservesCancellationToken () =
 
             // Block until cancelled
             do! Async.Sleep 30000
-            return Ok(JsonSerializer.SerializeToElement(null: obj))
+            return Ok(JsonSerializer.SerializeToElement(null: obj | null))
         }
 
     let requestHandlings = Map.ofList [ "test/cancellable", handler ]
@@ -2198,7 +2219,7 @@ let testOtherRequestsStillWorkAfterCancellation () =
     let slowHandler _ctx = async {
         handlerStarted.Set()
         do! Async.Sleep 30000
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     let fastHandler _ctx = async { return Ok(JsonSerializer.SerializeToElement("ok")) }
@@ -2437,7 +2458,7 @@ let testGetRpcStatsRunningHandlerIsVisible () =
         // Use AwaitWaitHandle so the thread-pool thread is released while waiting,
         // leaving the pool free for the actor mailbox and getJsonRpcStats to run.
         do! Async.AwaitWaitHandle(handlerMayFinish.WaitHandle) |> Async.Ignore
-        return Ok(JsonSerializer.SerializeToElement(null: obj))
+        return Ok(JsonSerializer.SerializeToElement(null: obj | null))
     }
 
     use clientToServer =
