@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Upgrade Roslyn (`Microsoft.CodeAnalysis.*`) packages to 5.6.0
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/374
 * Fix `textDocument/implementation` and `textDocument/references` (with `includeDeclaration`) returning no locations for BCL/decompiled symbols; definition locations are now resolved via `workspaceFolderSymbolLocations`, triggering decompilation when `useMetadataUris` is enabled, just like `textDocument/definition`
   - Reported by @stigl-cc in https://github.com/razzmatazz/csharp-language-server/issues/319
 
