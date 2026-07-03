@@ -441,12 +441,28 @@ let solutionGetRazorDocumentForPath
             // build_property.* options it needs — no manual injection required.
             //
             // The Razor generator derives HintNames from the base64-decoded TargetPath in
-            // the editorconfig, replacing BOTH directory separators AND dots with '_', e.g.:
-            //   Views/Test/ViewFileWithErrors.cshtml → Views_Test_ViewFileWithErrors_cshtml.g.cs
-            let cshtmlPathTranslated =
-                Path.GetRelativePath(projectBaseDir, cshtmlPath)
+            // the editorconfig. The exact separator convention has varied across SDK/Roslyn
+            // versions:
+            //   - SDK 10.0.1xx (Roslyn ~5.0-5.3): directory separators AND the extension dot
+            //     are both replaced with '_', e.g.
+            //     Views/Test/ViewFileWithErrors.cshtml → Views_Test_ViewFileWithErrors_cshtml.g.cs
+            //   - SDK 10.0.300+ (Roslyn ~5.5+): directory separators are preserved as '/'
+            //     (Roslyn supports hierarchical hint names) and only the extension dot is
+            //     replaced, e.g.
+            //     Views/Test/ViewFileWithErrors.cshtml → Views/Test/ViewFileWithErrors_cshtml.g.cs
+            // Match against both formats for forward/backward compatibility.
+            let relativeCshtmlPath = Path.GetRelativePath(projectBaseDir, cshtmlPath)
+
+            let cshtmlHintNameFlat =
+                relativeCshtmlPath
                 |> _.Replace(".", "_")
                 |> _.Replace(Path.DirectorySeparatorChar, '_')
+                |> (fun s -> s + ".g.cs")
+
+            let cshtmlHintNameHierarchical =
+                relativeCshtmlPath
+                |> _.Replace(Path.DirectorySeparatorChar, '/')
+                |> _.Replace(".", "_")
                 |> (fun s -> s + ".g.cs")
 
             let! ct = Async.CancellationToken
@@ -454,7 +470,9 @@ let solutionGetRazorDocumentForPath
             let! generatedDocs = project.GetSourceGeneratedDocumentsAsync(ct).AsTask() |> Async.AwaitTask
 
             let razorGenDoc =
-                generatedDocs |> Seq.tryFind (fun d -> d.HintName.EndsWith cshtmlPathTranslated)
+                generatedDocs
+                |> Seq.tryFind (fun d ->
+                    d.HintName.EndsWith cshtmlHintNameFlat || d.HintName.EndsWith cshtmlHintNameHierarchical)
 
             match razorGenDoc with
             | None -> return None

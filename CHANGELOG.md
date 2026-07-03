@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Upgrade Roslyn (`Microsoft.CodeAnalysis.*`) packages to 5.6.0 and MSBuild (`Microsoft.Build`/`Microsoft.Build.Framework`) packages to 18.7.1
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/374
+* Fix Razor support breaking on .NET SDK 10.0.300+: the Razor source generator's `HintName` format
+  changed to preserve `/` directory separators instead of flattening them to `_`; `solutionGetRazorDocumentForPath`
+  now matches both the old (SDK ≤ 10.0.2xx) and new (SDK ≥ 10.0.300) formats
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/374
 * Fix `textDocument/implementation` and `textDocument/references` (with `includeDeclaration`) returning no locations for BCL/decompiled symbols; definition locations are now resolved via `workspaceFolderSymbolLocations`, triggering decompilation when `useMetadataUris` is enabled, just like `textDocument/definition`
   - Reported by @stigl-cc in https://github.com/razzmatazz/csharp-language-server/issues/319
 
