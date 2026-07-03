@@ -5,6 +5,40 @@ from 10.0.200 to 10.0.300.
 
 ---
 
+## Update (2026-07): resolved after Roslyn 5.6.0 upgrade
+
+After bumping `RoslynPackageVersion` to `5.6.0` in `Directory.Packages.props`, the version
+mismatch described in "Root Cause — Layer 3" is gone: SDK 10.0.300/10.0.301's
+`Microsoft.CodeAnalysis.Razor.Compiler.dll` requires assembly version `5.5.0.0`, and the
+NuGet-provided `Microsoft.CodeAnalysis.dll` is now `5.6.0.0` — `GetGenerators()` loads
+successfully and `GetSourceGeneratedDocumentsAsync()` returns documents again.
+
+However, a **second, previously-undiscovered breaking change** surfaced once generation
+started working: the Razor generator's `HintName` format changed between the SDK 10.0.1xx
+band and 10.0.300+.
+
+- SDK 10.0.1xx (Roslyn ~5.0–5.3): directory separators **and** the extension dot are both
+  flattened to `_` — `Views/Test/ViewFileWithErrors.cshtml` → `Views_Test_ViewFileWithErrors_cshtml.g.cs`
+- SDK 10.0.300+ (Roslyn ~5.5+): directory separators are preserved as `/` (Roslyn supports
+  hierarchical hint names) and only the extension dot is flattened —
+  `Views/Test/ViewFileWithErrors.cshtml` → `Views/Test/ViewFileWithErrors_cshtml.g.cs`
+
+`solutionGetRazorDocumentForPath` (`src/CSharpLanguageServer/Roslyn/Solution.fs`) now builds
+both candidate suffixes and matches `HintName.EndsWith` against either, so Razor support works
+across both SDK generations without needing to pin a specific band.
+
+As a result, `tests/CSharpLanguageServer.Tests/Fixtures/aspnetProject/global.json` was relaxed
+from pinning the 10.0.1xx feature band (`rollForward: "minor"` on `10.0.100`) to
+`rollForward: "latestMajor"`, so the fixture picks up whatever SDK is newest on the machine —
+confirmed working against SDK 10.0.301 (4/4 Razor tests pass, full suite 212/212).
+
+The root workspace `global.json` (pinning the build/test-runner engine itself) was left
+untouched, since that is orthogonal to which SDK the *project* `Sdk="Microsoft.NET.Sdk.Web"`
+resolves to inside the temp fixture directory (see "The MSBuild engine SDK vs. project SDK"
+section below for why these are independent).
+
+---
+
 ## Symptom
 
 14 integration tests fail with empty/null results. All failures are in tests that exercise
