@@ -8,6 +8,17 @@ and potentially earlier ones.
 csharp-ls is MIT-licensed (see [LICENSE](LICENSE)) and is provided with no
 warranty of any kind.
 
+# AI Assistance
+
+This project has been developed with substantial help from LLMs, including the following models:
+
+- `anthropic/claude-opus-4-6`
+- `anthropic/claude-sonnet-4-6`
+- `anthropic/claude-sonnet-5`
+
+Source files carry an `Assisted-by:` header line per the
+[Linux kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html#attribution).
+
 # Documentation
 
 See [CHANGELOG.md](CHANGELOG.md) for the list of recent improvements/fixes.
