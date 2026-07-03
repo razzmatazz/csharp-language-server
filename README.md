@@ -149,6 +149,7 @@ This is where editor-specific plugins can be helpful.
 Notable clients:
 * Neovim: [csharpls-extended-lsp.nvim](https://github.com/Decodetalkers/csharpls-extended-lsp.nvim)
 * Emacs: [emacs/lsp-mode](https://github.com/emacs-lsp/lsp-mode)
+* Emacs: [eglot-csharp](https://github.com/razzmatazz/eglot-csharp)
 * Visual Studio Code: [vscode-csharp-ls @ github](https://github.com/vytautassurvila/vscode-csharp-ls)
 
 # Acknowledgements
