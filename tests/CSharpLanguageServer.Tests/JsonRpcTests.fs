@@ -204,6 +204,7 @@ let testUnregisteredMethodReturnsMethodNotFoundError () =
     let response = responseOpt.Value
     Assert.AreEqual(3, response.GetProperty("id").GetInt32())
     Assert.AreEqual(-32601, response.GetProperty("error").GetProperty("code").GetInt32())
+
     Assert.IsTrue(
         response.GetProperty("error").GetProperty("message").GetString()
         |> nonNull "error message"
@@ -1799,6 +1800,7 @@ let testSendCallReturnsErrorOnMethodNotFound () =
     match replyTask.Result with
     | Error err ->
         Assert.AreEqual(-32601, err.GetProperty("code").GetInt32())
+
         Assert.IsTrue(
             err.GetProperty("message").GetString()
             |> nonNull "error message"
@@ -2045,10 +2047,7 @@ let testCancelRequestCancelsRunningHandler () =
     )
 
     Assert.IsTrue(
-        response
-            .GetProperty("error")
-            .GetProperty("message")
-            .GetString()
+        response.GetProperty("error").GetProperty("message").GetString()
         |> nonNull "error message"
         |> _.Contains("cancel", StringComparison.OrdinalIgnoreCase)
     )
