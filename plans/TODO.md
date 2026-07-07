@@ -8,43 +8,11 @@ See `plans/test-performance-improvements.md` for the full plan.
 
 ---
 
-## Suppress type inlay hints when type is apparent from the initializer
+## Reduce superfluous inlay hints
 
-**Affects:** `textDocument/inlayHint` — `InlayHint.fs`, `toInlayHint` function.
-
-For `var` declarations where the right-hand side already makes the type obvious to the reader,
-the type inlay hint is redundant noise. Example:
-
-```csharp
-var someValue = getIntAbove10();  // showing `: int` here adds no value
-```
-
-The `VariableDeclarationSyntax` match arm in `toInlayHint` does not currently inspect the
-initializer expression at all — it emits a hint for every `var x = <anything>` as long as the
-type resolves without error.
-
-### Recommended fix
-
-Add an `isTypeApparentFromExpression` helper (mirroring Roslyn's own
-`CSharpInlineTypeHintsService` suppression logic) and call it on the initializer before emitting
-the hint. Suppress when the initializer is one of:
-
-- `InvocationExpressionSyntax` — method/delegate call (`getIntAbove10()`)
-- `ObjectCreationExpressionSyntax` — `new Foo(...)`
-- `CastExpressionSyntax` — `(int)x`
-- `LiteralExpressionSyntax` — `42`, `"hi"`, `true`, `null`
-- `DefaultExpressionSyntax` — `default(T)` / `default`
-- `TypeOfExpressionSyntax` — `typeof(T)`
-- `SizeOfExpressionSyntax` — `sizeof(T)`
-- `BinaryExpressionSyntax` with `AsExpression` kind — `expr as T`
-- `ParenthesizedExpressionSyntax` — recurse into inner expression
-
-The same suppression should be applied to the `DeclarationExpressionSyntax`,
-`SingleVariableDesignationSyntax`, and `ForEachStatementSyntax` arms where an initializer is
-accessible.
-
-The existing TODO comment in the file already notes:
-> `// TODO: Support the configuration whether or not to show some kinds of inlay hints.`
+See `plans/inlay-hint-reduction.md` for the full plan. Exact suppression rules are still to be
+defined during design; the plan file tracks the goal and candidate ideas gathered so far
+(e.g. suppressing `var` type hints when the type is already apparent from the initializer).
 
 ---
 
