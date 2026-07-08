@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Reduce superfluous `textDocument/inlayHint` noise: fix the same-name argument suppression gap (multi-line/indented and qualified `this.Foo`-style arguments), suppress uninformative parameter names (short, numbered-suffix, `obj`/sole `value`) and sole-lambda-argument calls, and suppress redundant `var` type hints when the type is already spelled out or echoed by the identifier
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/375
 * Upgrade Roslyn (`Microsoft.CodeAnalysis.*`) packages to 5.6.0 and MSBuild (`Microsoft.Build`/`Microsoft.Build.Framework`) packages to 18.7.1
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/374
 * Fix Razor support breaking on .NET SDK 10.0.300+: the Razor source generator's `HintName` format
