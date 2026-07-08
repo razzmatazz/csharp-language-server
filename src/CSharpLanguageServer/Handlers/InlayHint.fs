@@ -190,6 +190,16 @@ module InlayHint =
             | _ when String.IsNullOrEmpty(par.Name) -> None
             // Don't show hint if the parameter name itself is too short/generic to be informative
             | _ when hasUninformativeParameterName par.Name -> None
+            // Don't show hint for the sole lambda argument of a call (the enclosing method symbol
+            // is already known to have resolved unambiguously -- see getParameterForArgumentSyntax
+            // above) -- the method's own name already conveys the lambda's role (`Where(predicate)`,
+            // `Select(selector)`, NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`,
+            // ...), so a parameter-name hint here is redundant no matter how generic or specific
+            // that name is. Deliberately scoped to lambda expressions only (not method-group
+            // arguments) and to single-argument calls only -- multiple lambda parameters in one
+            // call aren't each automatically self-describing from the method name alone.
+            | :? ArgumentListSyntax as argList when argList.Arguments.Count = 1 && (argExpr :? LambdaExpressionSyntax) ->
+                None
             // Don't show hint if argument's own name (or, for a qualified member access, its last
             // segment) matches the parameter name
             | _ when String.Equals(significantArgumentName argExpr, par.Name, StringComparison.CurrentCultureIgnoreCase) ->

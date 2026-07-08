@@ -112,4 +112,52 @@ namespace Project.InlayHintTest
             helper.WriteBuffer(data, 0, data.Length);
         }
     }
+
+    public class FluentQuery
+    {
+        public FluentQuery Where(System.Func<int, bool> predicate)
+        {
+            return this;
+        }
+
+        public FluentQuery Fetch(System.Func<int, int> relatedObjectSelector)
+        {
+            return this;
+        }
+
+        public FluentQuery ThenFetch(System.Func<int, int> relatedObjectSelector)
+        {
+            return this;
+        }
+
+        public FluentQuery Combine(System.Func<int, int> first, System.Func<int, int> second)
+        {
+            return this;
+        }
+    }
+
+    public class FluentQuerySubject
+    {
+        private static bool IsPositive(int x) => x > 0;
+
+        public void SingleLambdaArgumentToWhereIsSuppressed()
+        {
+            new FluentQuery().Where(x => x > 0);
+        }
+
+        public void SingleLambdaArgumentToFluentOrmStyleMethodIsSuppressed()
+        {
+            new FluentQuery().Fetch(x => x).ThenFetch(x => x);
+        }
+
+        public void MultiLambdaArgumentCallKeepsHints()
+        {
+            new FluentQuery().Combine(x => x, x => x);
+        }
+
+        public void SingleMethodGroupArgumentKeepsHint()
+        {
+            new FluentQuery().Where(IsPositive);
+        }
+    }
 }

@@ -290,3 +290,84 @@ let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter
     Assert.IsTrue(onLine |> hasHintWithLabel "offset:", sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine)
 
     Assert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- parameter is `predicate`
+    let onLine = hints |> hintsOnLine 144u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "predicate:",
+        sprintf
+            "Expected no \"predicate:\" hint on line 144 (sole lambda argument, method name conveys role), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 149 (0-indexed): `new FluentQuery().Fetch(x => x).ThenFetch(x => x);`
+    // -- both parameters are `relatedObjectSelector`
+    let onLine = hints |> hintsOnLine 149u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "relatedObjectSelector:",
+        sprintf
+            "Expected no \"relatedObjectSelector:\" hint on line 149 (sole lambda argument of each\
+             call, method name conveys role), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps hints when a call takes more than one lambda argument`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 154 (0-indexed): `new FluentQuery().Combine(x => x, x => x);`
+    // -- parameters are `first`, `second`
+    let onLine = hints |> hintsOnLine 154u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "first:",
+        sprintf "Expected a \"first:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "second:",
+        sprintf "Expected a \"second:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 159 (0-indexed): `new FluentQuery().Where(IsPositive);` -- parameter is `predicate`
+    let onLine = hints |> hintsOnLine 159u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "predicate:",
+        sprintf
+            "Expected a \"predicate:\" hint on line 159 (sole argument is a method group, not a lambda\
+             expression -- out of scope for this rule), got: %A"
+            onLine
+    )
