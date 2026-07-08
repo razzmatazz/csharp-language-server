@@ -451,3 +451,82 @@ let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with
             "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when a qualified generic invocation's type argument matches``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 240 (0-indexed): `var widget = GenericFactory.Create<Widget>();`
+    let onLine = hints |> hintsOnLine 240u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": Widget",
+        sprintf
+            "Expected no \": Widget\" hint on line 240 (type is already spelled out in the\
+             invocation's explicit type argument), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a var type hint when a generic invocation's type argument doesn't match the inferred type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 245 (0-indexed): `var description = GenericFactory.Describe<Widget>(new Widget());`
+    // -- `Describe<Widget>` returns `string`, not `Widget`
+    let onLine = hints |> hintsOnLine 245u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel ": string",
+        sprintf
+            "Expected a \": string\" hint on line 245 (inferred type doesn't match the invocation's\
+             type argument), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when an unqualified generic invocation's type argument matches``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 250 (0-indexed): `var widget = CreateLocal<Widget>();`
+    let onLine = hints |> hintsOnLine 250u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": Widget",
+        sprintf
+            "Expected no \": Widget\" hint on line 250 (type is already spelled out in the\
+             unqualified invocation's explicit type argument), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 255 (0-indexed): `var day = System.Enum.Parse<System.DayOfWeek>("Monday");`
+    let onLine = hints |> hintsOnLine 255u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": DayOfWeek",
+        sprintf
+            "Expected no \": DayOfWeek\" hint on line 255 (type is already spelled out in\
+             Enum.Parse's explicit type argument), got: %A"
+            onLine
+    )

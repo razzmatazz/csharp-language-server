@@ -153,6 +153,38 @@ module InlayHint =
               PaddingRight = Some false
               Data = None }
 
+        // Returns true when `initializer` is a generic invocation (optionally on a member access,
+        // e.g. `Enum.Parse<DayOfWeek>(...)`, or unqualified, e.g. a local `CreateLocal<T>()`)
+        // whose explicit type-argument list already contains a type symbol-equal to `ty` -- in
+        // that case a `var` type hint would be purely redundant, since the type is already
+        // spelled out one step to the left in the very same expression (`Enum.Parse<`,
+        // `JsonSerializer.Deserialize<`, `Activator.CreateInstance<`, a local factory method,
+        // ...). Parenthesized expressions are unwrapped. Compares by symbol (not just by name),
+        // so it correctly doesn't fire when the invocation's return type differs from its type
+        // argument (e.g. a hypothetical `Describe<Widget>(...)` returning `string`).
+        let rec isTypeSpelledOutInGenericInvocation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+            match initializer with
+            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInGenericInvocation paren.Expression ty
+            | :? InvocationExpressionSyntax as invocation ->
+                let genericName =
+                    match invocation.Expression with
+                    | :? GenericNameSyntax as generic -> Some generic
+                    | :? MemberAccessExpressionSyntax as memberAccess ->
+                        match memberAccess.Name with
+                        | :? GenericNameSyntax as generic -> Some generic
+                        | _ -> None
+                    | _ -> None
+
+                genericName
+                |> Option.map (fun generic ->
+                    generic.TypeArgumentList.Arguments
+                    |> Seq.exists (fun typeArgSyntax ->
+                        match semanticModel.GetTypeInfo(typeArgSyntax).Type |> Option.ofObj with
+                        | Some typeArgSymbol -> SymbolEqualityComparer.Default.Equals(typeArgSymbol, ty)
+                        | None -> false))
+                |> Option.defaultValue false
+            | _ -> false
+
         // Returns the significant (trivia-free) name an argument expression is "known by", so it
         // can be compared against a parameter name to detect a redundant hint:
         // - a bare identifier (`resourceName`) contributes its own text
@@ -247,6 +279,14 @@ module InlayHint =
             ->
             semanticModel.GetTypeInfo(var.Type).Type
             |> validateType
+            // Don't show hint if the initializer is a generic invocation whose explicit
+            // type-argument list already spells out this exact type (`Enum.Parse<T>()`,
+            // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...)
+            |> Option.filter (fun ty ->
+                var.Variables[0].Initializer
+                |> Option.ofObj
+                |> Option.map (fun eq -> not (isTypeSpelledOutInGenericInvocation eq.Value ty))
+                |> Option.defaultValue true)
             |> Option.map (toTypeInlayHint var.Variables[0].Identifier.Span.End)
         // We handle individual variables of ParenthesizedVariableDesignationSyntax separately.
         // For example, in `var (x, y) = (0, "")`, we should `int` for `x` and `string` for `y`.

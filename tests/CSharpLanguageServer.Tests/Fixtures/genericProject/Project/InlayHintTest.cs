@@ -211,4 +211,49 @@ namespace Project.InlayHintTest
             new FluentQueryAsync().CombineAsync(x => x, x => x, default);
         }
     }
+
+    public class Widget
+    {
+    }
+
+    public static class GenericFactory
+    {
+        public static T Create<T>() where T : new()
+        {
+            return new T();
+        }
+
+        public static string Describe<T>(T value)
+        {
+            return value?.ToString() ?? "";
+        }
+    }
+
+    public class GenericFactorySubject
+    {
+        private T CreateLocal<T>() where T : new()
+        {
+            return new T();
+        }
+
+        public void QualifiedGenericInvocationSpellingOutTypeIsSuppressed()
+        {
+            var widget = GenericFactory.Create<Widget>();
+        }
+
+        public void QualifiedGenericInvocationWithDifferentReturnTypeKeepsHint()
+        {
+            var description = GenericFactory.Describe<Widget>(new Widget());
+        }
+
+        public void UnqualifiedGenericInvocationSpellingOutTypeIsSuppressed()
+        {
+            var widget = CreateLocal<Widget>();
+        }
+
+        public void RealBclEnumParseGenericInvocationIsSuppressed()
+        {
+            var day = System.Enum.Parse<System.DayOfWeek>("Monday");
+        }
+    }
 }
