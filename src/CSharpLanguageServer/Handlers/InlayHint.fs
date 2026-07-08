@@ -120,6 +120,13 @@ module InlayHint =
     // so it's compiled once, not once per syntax node visited per request.
     let private numberedSuffixParameterName = Regex(@"^\w*?\d+$", RegexOptions.Compiled)
 
+    // Parameter names that are just a generic placeholder for "the argument", carrying no more
+    // information than the argument's own name/shape already does -- e.g. NHibernate's
+    // `ISession.SaveAsync(object obj, ...)`. Unlike `hasUninformativeParameterName`'s
+    // length/numbered-suffix checks below, these are specific, known-opaque names rather than a
+    // mechanical shape, so they're kept in an explicit, easy-to-extend set instead of a regex.
+    let private genericParameterNames = set [ "obj" ]
+
     // Splits a PascalCase/camelCase identifier into its constituent words (e.g.
     // `settingChangeCondition` -> `setting`, `Change`, `Condition`), so the last word can be
     // compared across identifiers using different casing conventions (a local variable:
@@ -206,6 +213,29 @@ module InlayHint =
                 |> Option.defaultValue false
             | _ -> false
 
+        // Returns true when `initializer` is an explicit object-creation expression (`new
+        // SomeType(...)` / `new SomeType { ... }`) whose spelled-out type is symbol-equal to
+        // `ty` -- in that case a `var` type hint would be purely redundant, since the type is
+        // already spelled out immediately after `new`, one step to the left in the very same
+        // expression (mirrors `isTypeSpelledOutInGenericInvocation` above, but for plain
+        // object-creation rather than an explicit generic type argument). Parenthesized
+        // expressions are unwrapped. Deliberately restricted to explicit
+        // `ObjectCreationExpressionSyntax` -- NOT `ImplicitObjectCreationExpressionSyntax`
+        // (target-typed `new()`), where the type is *not* spelled out and the hint remains the
+        // useful, intended case (handled separately, right after `new`, by the
+        // `ImplicitObjectCreationExpressionSyntax` match arm below). Compares by symbol so it
+        // doesn't fire on a mismatching type (e.g. an upcast via `as`, which isn't unwrapped
+        // here, so its `ObjectCreationExpressionSyntax` operand is never reached in the first
+        // place).
+        let rec isTypeSpelledOutInObjectCreation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+            match initializer with
+            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInObjectCreation paren.Expression ty
+            | :? ObjectCreationExpressionSyntax as objectCreation ->
+                match semanticModel.GetTypeInfo(objectCreation.Type).Type |> Option.ofObj with
+                | Some createdType -> SymbolEqualityComparer.Default.Equals(createdType, ty)
+                | None -> false
+            | _ -> false
+
         // Returns the significant (trivia-free) name an argument expression is "known by", so it
         // can be compared against a parameter name to detect a redundant hint:
         // - a bare identifier (`resourceName`) contributes its own text
@@ -231,9 +261,13 @@ module InlayHint =
         // real-world evidence behind this heuristic. Deliberately narrow/mechanical: it doesn't
         // try to catch every opaque BCL name (e.g. `Math.Round`'s `decimals`/`mode`), only the
         // shapes confirmed safe against genuinely-disambiguating counter-examples like
-        // `string.Substring(startIndex, length)` and `Stream.Write(buffer, offset, count)`.
+        // `string.Substring(startIndex, length)` and `Stream.Write(buffer, offset, count)`. Also
+        // suppressed for the explicit, known-opaque names in `genericParameterNames` (e.g.
+        // `obj`), which aren't short/numbered enough for the mechanical checks alone to catch.
         let hasUninformativeParameterName (name: string) =
-            name.Length <= 2 || numberedSuffixParameterName.IsMatch(name)
+            name.Length <= 2
+            || numberedSuffixParameterName.IsMatch(name)
+            || genericParameterNames.Contains(name)
 
         // A `CancellationToken` argument is a conventional, non-essential "pass-through"
         // parameter on async APIs, so its presence shouldn't disqualify the single-lambda-argument
@@ -307,11 +341,15 @@ module InlayHint =
             |> validateType
             // Don't show hint if the initializer is a generic invocation whose explicit
             // type-argument list already spells out this exact type (`Enum.Parse<T>()`,
-            // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...)
+            // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...), or an
+            // explicit object-creation expression that already spells out this exact type
+            // (`new SomeType(...)` / `new SomeType { ... }`)
             |> Option.filter (fun ty ->
                 var.Variables[0].Initializer
                 |> Option.ofObj
-                |> Option.map (fun eq -> not (isTypeSpelledOutInGenericInvocation eq.Value ty))
+                |> Option.map (fun eq ->
+                    not (isTypeSpelledOutInGenericInvocation eq.Value ty)
+                    && not (isTypeSpelledOutInObjectCreation eq.Value ty))
                 |> Option.defaultValue true)
             // Don't show hint if the variable's own identifier already echoes the type name
             // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)
