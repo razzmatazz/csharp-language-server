@@ -125,7 +125,21 @@ module InlayHint =
     // `ISession.SaveAsync(object obj, ...)`. Unlike `hasUninformativeParameterName`'s
     // length/numbered-suffix checks below, these are specific, known-opaque names rather than a
     // mechanical shape, so they're kept in an explicit, easy-to-extend set instead of a regex.
+    // Applied unconditionally, regardless of how many arguments the call has -- safe only for
+    // names that stay uninformative no matter the position (unlike `soleArgumentGenericParameterNames`
+    // below).
     let private genericParameterNames = set [ "obj" ]
+
+    // Parameter names that are only uninformative when they're the call's sole (effective)
+    // argument -- e.g. `value` in `validStatusList.Contains(this.Order.Status)`, or `item` in
+    // `orderProduct.SupplierOrderRequestProducts.Add(requestProduct)`, where `Contains`/`Add`
+    // already convey the single argument's role just as clearly as a lambda does for `Where`.
+    // Deliberately kept out of the always-on `genericParameterNames` set above: both legitimately
+    // help disambiguate a *multi*-argument call (e.g. `Dictionary<TKey, TValue>.Add(key, value)`,
+    // `List<T>.Insert(int index, T item)`), so they're only safe to suppress when there's nothing
+    // to disambiguate -- see their scoped use in `validateParameter` below, alongside the
+    // sole-lambda-argument rule this set extends.
+    let private soleArgumentGenericParameterNames = set [ "value"; "item" ]
 
     // Splits a PascalCase/camelCase identifier into its constituent words (e.g.
     // `settingChangeCondition` -> `setting`, `Change`, `Condition`), so the last word can be
@@ -236,6 +250,31 @@ module InlayHint =
                 | None -> false
             | _ -> false
 
+        // Returns true when `initializer` is an invocation of a static member accessed through
+        // its declaring type's own name (`string.Format(...)`, `Guid.NewGuid()`, `int.Parse(...)`,
+        // ...) where that qualifying type is itself symbol-equal to `ty` -- in that case a `var`
+        // type hint would be purely redundant, since the type is already spelled out immediately
+        // to the left of `.` in the very same expression (the qualifier-based sibling of
+        // `isTypeSpelledOutInGenericInvocation`'s type-argument-based check above). Parenthesized
+        // expressions are unwrapped. `GetSymbolInfo` (not `GetTypeInfo`) is used on the qualifier
+        // because a type used as a static-member-access receiver doesn't have a "value type" of
+        // its own -- its symbol *is* the type. Compares by symbol, so it correctly doesn't fire
+        // when the qualifier is an unrelated type whose name doesn't match the return type (e.g.
+        // `Convert.ToInt32(...)`, qualifier `Convert` vs. return type `int`) or when the qualifier
+        // is an instance (a local/field/property access resolves to that member's symbol, not a
+        // type, so it never matches `:? ITypeSymbol`).
+        let rec isTypeSpelledOutInStaticInvocationQualifier (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+            match initializer with
+            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInStaticInvocationQualifier paren.Expression ty
+            | :? InvocationExpressionSyntax as invocation ->
+                match invocation.Expression with
+                | :? MemberAccessExpressionSyntax as memberAccess ->
+                    match semanticModel.GetSymbolInfo(memberAccess.Expression).Symbol |> Option.ofObj with
+                    | Some(:? ITypeSymbol as qualifierType) -> SymbolEqualityComparer.Default.Equals(qualifierType, ty)
+                    | _ -> false
+                | _ -> false
+            | _ -> false
+
         // Returns the significant (trivia-free) name an argument expression is "known by", so it
         // can be compared against a parameter name to detect a redundant hint:
         // - a bare identifier (`resourceName`) contributes its own text
@@ -299,15 +338,23 @@ module InlayHint =
             | _ when identifierEchoesTypeName par.Name par.Type.Name -> None
             // Don't show hint for the sole (non-CancellationToken) argument of a call (the
             // enclosing method symbol is already known to have resolved unambiguously -- see
-            // getParameterForArgumentSyntax above) when that argument is a lambda -- the method's
-            // own name already conveys the lambda's role (`Where(predicate)`, `Select(selector)`,
-            // NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`, ...), so a
-            // parameter-name hint here is redundant no matter how generic or specific that name
-            // is. Deliberately scoped to lambda expressions only (not method-group arguments) and
-            // to single-(effective-)argument calls only -- multiple lambda parameters in one call
-            // aren't each automatically self-describing from the method name alone.
+            // getParameterForArgumentSyntax above) when either:
+            // - that argument is a lambda -- the method's own name already conveys the lambda's
+            //   role (`Where(predicate)`, `Select(selector)`, NHibernate-style
+            //   `Fetch(relatedObjectSelector)`/`ThenFetch(...)`, ...), so a parameter-name hint
+            //   here is redundant no matter how generic or specific that name is. Deliberately
+            //   scoped to lambda expressions only (not method-group arguments); or
+            // - the parameter's own name is in `soleArgumentGenericParameterNames` (e.g. `value`
+            //   in `Contains(value)`, or `item` in `someCollection.Add(item)`) -- with only one
+            //   argument there's no position to disambiguate, so the name adds nothing beyond
+            //   what the method name (`Contains`, `Add`, ...) already conveys, regardless of the
+            //   argument expression's shape.
+            // Both cases are scoped to single-(effective-)argument calls only -- multiple
+            // arguments in one call aren't each automatically self-describing from the method
+            // name alone (e.g. `Dictionary<TKey, TValue>.Add(key, value)`,
+            // `List<T>.Insert(int index, T item)` keep all their hints).
             | :? ArgumentListSyntax as argList when
-                (argExpr :? LambdaExpressionSyntax)
+                ((argExpr :? LambdaExpressionSyntax) || soleArgumentGenericParameterNames.Contains(par.Name))
                 && (argList.Arguments |> Seq.filter (isCancellationTokenArgument >> not) |> Seq.length) = 1
                 ->
                 None
@@ -341,15 +388,17 @@ module InlayHint =
             |> validateType
             // Don't show hint if the initializer is a generic invocation whose explicit
             // type-argument list already spells out this exact type (`Enum.Parse<T>()`,
-            // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...), or an
-            // explicit object-creation expression that already spells out this exact type
-            // (`new SomeType(...)` / `new SomeType { ... }`)
+            // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...), an explicit
+            // object-creation expression that already spells out this exact type (`new
+            // SomeType(...)` / `new SomeType { ... }`), or a static invocation qualified by this
+            // exact type's own name (`string.Format(...)`, `Guid.NewGuid()`, ...)
             |> Option.filter (fun ty ->
                 var.Variables[0].Initializer
                 |> Option.ofObj
                 |> Option.map (fun eq ->
                     not (isTypeSpelledOutInGenericInvocation eq.Value ty)
-                    && not (isTypeSpelledOutInObjectCreation eq.Value ty))
+                    && not (isTypeSpelledOutInObjectCreation eq.Value ty)
+                    && not (isTypeSpelledOutInStaticInvocationQualifier eq.Value ty))
                 |> Option.defaultValue true)
             // Don't show hint if the variable's own identifier already echoes the type name
             // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)
