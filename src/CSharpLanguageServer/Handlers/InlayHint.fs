@@ -146,11 +146,16 @@ module InlayHint =
     // compared across identifiers using different casing conventions (a local variable:
     // camelCase; a type name: PascalCase). Module-level for the same reason as
     // numberedSuffixParameterName above.
-    let private camelCaseWordBoundary = Regex(@"(?<=[a-z0-9])(?=[A-Z])", RegexOptions.Compiled)
+    let private camelCaseWordBoundary =
+        Regex(@"(?<=[a-z0-9])(?=[A-Z])", RegexOptions.Compiled)
 
     let private lastWord (identifier: string) : string =
         let words = camelCaseWordBoundary.Split(identifier)
-        if words.Length = 0 then identifier else words[words.Length - 1]
+
+        if words.Length = 0 then
+            identifier
+        else
+            words[words.Length - 1]
 
     // True when `identifier` already "echoes" `typeName` -- either a full case-insensitive match
     // (`resourceStatus` vs. `ResourceStatus`, `messageDispatcherAsync` vs.
@@ -265,7 +270,8 @@ module InlayHint =
         // type, so it never matches `:? ITypeSymbol`).
         let rec isTypeSpelledOutInStaticInvocationQualifier (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInStaticInvocationQualifier paren.Expression ty
+            | :? ParenthesizedExpressionSyntax as paren ->
+                isTypeSpelledOutInStaticInvocationQualifier paren.Expression ty
             | :? InvocationExpressionSyntax as invocation ->
                 match invocation.Expression with
                 | :? MemberAccessExpressionSyntax as memberAccess ->
@@ -354,8 +360,11 @@ module InlayHint =
             // name alone (e.g. `Dictionary<TKey, TValue>.Add(key, value)`,
             // `List<T>.Insert(int index, T item)` keep all their hints).
             | :? ArgumentListSyntax as argList when
-                ((argExpr :? LambdaExpressionSyntax) || soleArgumentGenericParameterNames.Contains(par.Name))
-                && (argList.Arguments |> Seq.filter (isCancellationTokenArgument >> not) |> Seq.length) = 1
+                ((argExpr :? LambdaExpressionSyntax)
+                 || soleArgumentGenericParameterNames.Contains(par.Name))
+                && (argList.Arguments
+                    |> Seq.filter (isCancellationTokenArgument >> not)
+                    |> Seq.length) = 1
                 ->
                 None
             // Don't show hint if argument's own name (or, for a qualified member access, its last
