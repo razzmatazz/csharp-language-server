@@ -146,14 +146,32 @@ module InlayHint =
               PaddingRight = Some false
               Data = None }
 
-        let validateParameter (arg: SyntaxNode) (par: IParameterSymbol) =
+        // Returns the significant (trivia-free) name an argument expression is "known by", so it
+        // can be compared against a parameter name to detect a redundant hint:
+        // - a bare identifier (`resourceName`) contributes its own text
+        // - a qualified member access (`this.ResourceName`, `foo.Bar.ResourceName`) contributes
+        //   just its last segment, since that's the name a reader actually associates the value
+        //   with
+        // - a parenthesized expression is unwrapped
+        // - anything else falls back to its own (trivia-free) text via ToString(), which is what
+        //   the previous, buggy `arg.GetText()` (a trivia-inclusive, ToFullString()-equivalent
+        //   call) was trying, but failing, to do
+        let rec significantArgumentName (expr: ExpressionSyntax) : string =
+            match expr with
+            | :? IdentifierNameSyntax as ident -> ident.Identifier.ValueText
+            | :? MemberAccessExpressionSyntax as memberAccess -> memberAccess.Name.Identifier.ValueText
+            | :? ParenthesizedExpressionSyntax as paren -> significantArgumentName paren.Expression
+            | _ -> expr.ToString()
+
+        let validateParameter (arg: SyntaxNode) (argExpr: ExpressionSyntax) (par: IParameterSymbol) =
             match arg.Parent with
             // Don't show hint for indexer
             | :? BracketedArgumentListSyntax -> None
             // Don't show hint if parameter name is empty
             | _ when String.IsNullOrEmpty(par.Name) -> None
-            // Don't show hint if argument matches parameter name
-            | _ when String.Equals(arg.GetText().ToString(), par.Name, StringComparison.CurrentCultureIgnoreCase) ->
+            // Don't show hint if argument's own name (or, for a qualified member access, its last
+            // segment) matches the parameter name
+            | _ when String.Equals(significantArgumentName argExpr, par.Name, StringComparison.CurrentCultureIgnoreCase) ->
                 None
             | _ -> Some par
 
@@ -225,12 +243,12 @@ module InlayHint =
         | :? ArgumentSyntax as argument when isNull argument.NameColon ->
             argument
             |> getParameterForArgumentSyntax semanticModel
-            |> Option.bind (validateParameter node)
+            |> Option.bind (validateParameter node argument.Expression)
             |> Option.map (toParameterInlayHint argument.Span.Start)
         | :? AttributeArgumentSyntax as argument when isNull argument.NameEquals && isNull argument.NameColon ->
             argument
             |> getParameterForAttributeArgumentSyntax semanticModel
-            |> Option.bind (validateParameter node)
+            |> Option.bind (validateParameter node argument.Expression)
             |> Option.map (toParameterInlayHint argument.Span.Start)
 
         | _ -> None
