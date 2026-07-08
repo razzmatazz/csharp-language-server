@@ -225,9 +225,7 @@ let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter nam
     )
 
 [<Test>]
-let ``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones``
-    ()
-    =
+let ``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -256,9 +254,7 @@ let ``textDocument/inlayHint suppresses Math.Round's short parameter name but ke
     )
 
 [<Test>]
-let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names``
-    ()
-    =
+let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -272,7 +268,10 @@ let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disamb
         sprintf "Expected a \"startIndex:\" hint on line 105, got: %A" onLine
     )
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "length:", sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine)
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "length:",
+        sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine
+    )
 
 [<Test>]
 let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
@@ -285,16 +284,20 @@ let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter
     // -- parameters are `buffer`, `offset`, `count`
     let onLine = hints |> hintsOnLine 111u
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "buffer:", sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine)
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "buffer:",
+        sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine
+    )
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "offset:", sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine)
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "offset:",
+        sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
+    )
 
     Assert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
 
 [<Test>]
-let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call``
-    ()
-    =
+let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -311,9 +314,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a
     )
 
 [<Test>]
-let ``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls``
-    ()
-    =
+let ``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -353,9 +354,7 @@ let ``textDocument/inlayHint keeps hints when a call takes more than one lambda 
     )
 
 [<Test>]
-let ``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda``
-    ()
-    =
+let ``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -387,7 +386,10 @@ let ``textDocument/inlayHint suppresses composite-format-string positional argum
     // already match rule #2's numbered-suffix pattern (`hasUninformativeParameterName`).
     let onLine = hints |> hintsOnLine 177u
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "format:", sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine)
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "format:",
+        sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine
+    )
 
     Assert.IsFalse(
         onLine |> hasHintWithLabel "arg0:",
@@ -426,9 +428,7 @@ let ``textDocument/inlayHint suppresses a hint for a single lambda argument foll
     )
 
 [<Test>]
-let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken``
-    ()
-    =
+let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -440,16 +440,12 @@ let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with
 
     Assert.IsTrue(
         onLine |> hasHintWithLabel "first:",
-        sprintf
-            "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
-            onLine
+        sprintf "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
     )
 
     Assert.IsTrue(
         onLine |> hasHintWithLabel "second:",
-        sprintf
-            "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
-            onLine
+        sprintf "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
     )
 
 [<Test>]
@@ -532,9 +528,7 @@ let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<
     )
 
 [<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name``
-    ()
-    =
+let ``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -572,9 +566,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the identifier's la
     )
 
 [<Test>]
-let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name``
-    ()
-    =
+let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name`` () =
     use client = activateFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
@@ -751,9 +743,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of
 
     Assert.IsFalse(
         onLine |> hasHintWithLabel "value:",
-        sprintf
-            "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A"
-            onLine
+        sprintf "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A" onLine
     )
 
 [<Test>]
@@ -832,9 +822,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of 
 
     Assert.IsFalse(
         onLine |> hasHintWithLabel "item:",
-        sprintf
-            "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A"
-            onLine
+        sprintf "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A" onLine
     )
 
 [<Test>]
