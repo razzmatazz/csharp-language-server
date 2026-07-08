@@ -256,4 +256,70 @@ namespace Project.InlayHintTest
             var day = System.Enum.Parse<System.DayOfWeek>("Monday");
         }
     }
+
+    public delegate void MessageDispatcherAsync();
+
+    public class ResourceCondition
+    {
+    }
+
+    public class IdentifierEchoesTypeSubject
+    {
+        private static ResourceCondition GetCondition()
+        {
+            return new ResourceCondition();
+        }
+
+        private static System.Collections.Generic.List<Widget> GetWidgets()
+        {
+            return new System.Collections.Generic.List<Widget>();
+        }
+
+        private static void Dispatch(MessageDispatcherAsync messageDispatcherAsync)
+        {
+        }
+
+        private static void DispatchWithGenericName(MessageDispatcherAsync handler)
+        {
+        }
+
+        public void FullNameMatchTypeHintIsSuppressed()
+        {
+            var resourceCondition = GetCondition();
+        }
+
+        public void LastWordMatchTypeHintIsSuppressed()
+        {
+            var settingChangeCondition = GetCondition();
+        }
+
+        public void NonMatchingIdentifierKeepsTypeHint()
+        {
+            var outcome = GetCondition();
+        }
+
+        public void ForeachVariableEchoingElementTypeIsSuppressed()
+        {
+            foreach (var widget in GetWidgets())
+            {
+            }
+        }
+
+        public void ForeachVariableNotEchoingElementTypeKeepsHint()
+        {
+            foreach (var item in GetWidgets())
+            {
+            }
+        }
+
+        public void ParameterNameEchoingOwnTypeIsSuppressed()
+        {
+            Dispatch(null);
+        }
+
+        public void ParameterNameNotEchoingOwnTypeKeepsHint()
+        {
+            DispatchWithGenericName(null);
+        }
+    }
 }
