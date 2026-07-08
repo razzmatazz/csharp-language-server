@@ -50,7 +50,17 @@ to keep extending for further rules without touching other tests):
   *not* fire when the invocation's return type differs from its type argument (e.g. a hypothetical
   `Describe<Widget>(...)` returning `string` keeps its `: string` hint). Covered by a test using
   the plan's own real BCL example, `Enum.Parse<DayOfWeek>(...)`.
-- Rules #6–#7 below are not yet implemented.
+- ✅ **Rule #6 (identifier-echoes-type-name generalization)** — new `identifierEchoesTypeName`
+  helper (full case-insensitive match, or last-camelCase-word match via `lastWord`) wired into
+  both sides: the `VariableDeclarationSyntax`, `DeclarationExpressionSyntax`,
+  `SingleVariableDesignationSyntax`, and `ForEachStatementSyntax` type-hint match arms (suppress
+  when the declared identifier echoes the inferred type, e.g. `resourceCondition`/
+  `settingChangeCondition` vs. `ResourceCondition`), and a new `validateParameter` match arm (the
+  "narrower, safer sibling" from the evidence: suppress a parameter-name hint when the parameter's
+  own name is a decapitalized echo of its own declared type, e.g. a `MessageDispatcherAsync
+  messageDispatcherAsync` parameter). Both sides covered by matching negative-control tests where
+  the identifier does *not* echo the type.
+- Rule #7 below is not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -676,10 +686,16 @@ first, ranked roughly by combined volume, confidence, and implementation risk:
    both qualified (`Enum.Parse<T>()`) and unqualified (a local generic factory method) call shapes
    without a per-method allow-list, and correctly keeps the hint when the invocation's return type
    differs from its type argument (confirmed via a `Describe<Widget>(...) : string` test).
-6. Generalize the existing same-name suppression (`validateParameter`) to type hints
-   (`validateType`): suppress when the declared variable's identifier is a case-insensitive
+6. **✅ Implemented.** Generalize the existing same-name suppression (`validateParameter`) to type
+   hints (`validateType`): suppress when the declared variable's identifier is a case-insensitive
    match — full or suffix — of the inferred type's name (and, per this sample, consider the same
    for parameter names that are a decapitalized echo of their own type, e.g. `messageDispatcherAsync`).
+   Implemented as `identifierEchoesTypeName` (full case-insensitive match, or last-camelCase-word
+   match, so `settingChangeCondition` vs. `ResourceCondition` — both ending in "Condition" — is
+   caught even though neither is a full match or plain substring of the other), wired into all
+   four identifier-bearing type-hint contexts (`var` declarations, `out var`/deconstruction,
+   pattern-match designations, `foreach` variables) and, for the parameter-name sibling, into
+   `validateParameter`.
 7. Consider suppressing parameter-name hints for arguments to `extern`/P-Invoke-declared methods,
    given their names are typically non-idiomatic, verbatim native-header copies that add little
    without external platform documentation regardless.
@@ -720,16 +736,18 @@ built-in suppression heuristics is also to be decided during design.
    `VariableDeclarationSyntax` match arm, with test coverage for qualified/unqualified matching
    invocations, a non-matching-return-type negative control, and the plan's own
    `Enum.Parse<DayOfWeek>(...)` example.
-6. Design session to enumerate the exact suppression rules for the remaining candidates (rules
-   #6–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
-   Gathered So Far"), informed by the real-world evidence above and by user/editor feedback on
-   which current hints still feel noisy in practice.
-7. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
-   `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize
-   generalizing same-name suppression to type hints (rule #6), then (lower priority)
-   `extern`/P-Invoke parameter names (rule #7).
-8. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
-   rule (positive case: hint suppressed; negative case: hint still shown for the non-redundant
+6. ✅ **Done.** Implement rule #6 (identifier-echoes-type-name generalization) as
+   `identifierEchoesTypeName`, wired into the four identifier-bearing type-hint match arms and
+   into `validateParameter` for the parameter-name sibling, with test coverage for full-name
+   matches, last-word matches, foreach variables, and non-matching negative controls on both the
+   type-hint and parameter-hint sides.
+7. Design session to enumerate the exact suppression rule for the one remaining candidate (rule
+   #7 in the "Net takeaway" ranking — `extern`/P-Invoke parameter names — plus any of the
+   lower-priority/subjective ideas from "Candidate Ideas Gathered So Far" worth reconsidering),
+   informed by the real-world evidence above and by user/editor feedback on which current hints
+   still feel noisy in practice.
+8. Implement the agreed predicate(s) in `toInlayHint`, with unit/integration test coverage
+   (positive case: hint suppressed; negative case: hint still shown for the non-redundant
    variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
    creating new ones, so all rules stay exercised against one file.
 9. Decide on and (if wanted) implement the configuration angle above.
@@ -738,6 +756,6 @@ built-in suppression heuristics is also to be decided during design.
 
 | File | Likely Change |
 |------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#5 already landed/closed) |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#5 already covered) |
+| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicate to `toInlayHint`'s match arms, per the design once finalized (rules #1–#6 already landed/closed) |
+| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage for the remaining rule (rules #1–#6 already covered) |
 | `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |
