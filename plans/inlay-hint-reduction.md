@@ -83,6 +83,29 @@ to keep extending for further rules without touching other tests):
   the plain-constructor shape (`new Widget()`) and the object-initializer shape (`new
   WidgetWithProperty { Value = 1 }`, mirroring the real `{ Product = ..., Warehouse = ..., ... }`
   shape from the log).
+- ✅ **New rule (sole "value" parameter)** — prompted by a third real `csharp-ls-rpc.log` example,
+  `validStatusList.Contains(this.Order.Status)`, which showed a `value:` hint even though
+  `Contains`'s own name already conveys the sole argument's role just as clearly as a lambda does
+  for `Where`/`Select` (rule #3). Rather than adding `value` to the always-on
+  `genericParameterNames` set (which risked regressing genuinely-disambiguating multi-argument
+  cases like `Dictionary<TKey, TValue>.Add(key, value)`), extended rule #3's existing
+  sole-(effective-)argument match arm in `validateParameter` to also fire when the parameter's own
+  name is in a new, narrower `soleArgumentGenericParameterNames` set (currently just `{ "value" }`)
+  -- so it only suppresses when there's truly nothing left to disambiguate. Covered by a positive
+  test (`Contains(value)`) and a negative control confirming a two-argument call keeps both hints
+  (`Add(key, value)`).
+- ✅ **New rule (static-invocation-qualifier-redundant `var` type hints)** — prompted by a fourth
+  real `csharp-ls-rpc.log` example, `var reason = string.Format(...)`, which showed a `: string?`
+  hint even though the type is spelled out immediately to the left, as the invocation's own
+  qualifier. This is rule #5's sibling for a plain (non-generic) static invocation: added
+  `isTypeSpelledOutInStaticInvocationQualifier`, which suppresses the `var` type hint when the
+  initializer's invocation is qualified by a member access whose qualifier resolves (via
+  `GetSymbolInfo`, since a type-as-qualifier has no "value type" of its own) to a type symbol-equal
+  to the inferred variable type (`string.Format(...)`, `Guid.NewGuid()`, `int.Parse(...)`, ...).
+  Compares by symbol, so it correctly doesn't fire when the qualifier is an unrelated type (e.g.
+  `Convert.ToInt32(...)`, qualifier `Convert` vs. return type `int`) or an instance (whose
+  qualifier symbol is a local/field/property, never a type). Covered by a matching positive/negative
+  test pair.
 - Rule #7 below is not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`

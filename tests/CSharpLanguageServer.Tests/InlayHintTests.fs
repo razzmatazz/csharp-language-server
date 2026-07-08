@@ -738,3 +738,124 @@ let ``textDocument/inlayHint suppresses a var type hint when an explicit object-
              right after `new`, even with an object initializer), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 387 (0-indexed): `helper.Contains(5);` -- sole parameter is `value`
+    let onLine = hints |> hintsOnLine 387u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "value:",
+        sprintf
+            "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 392 (0-indexed): `helper.Add(1, 2);` -- parameters are `key`, `value`
+    let onLine = hints |> hintsOnLine 392u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "key:",
+        sprintf "Expected a \"key:\" hint on line 392 (call has more than one argument), got: %A" onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "value:",
+        sprintf
+            "Expected a \"value:\" hint on line 392 (call has more than one argument, so \"value\"\
+             still helps disambiguate from \"key\"), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when a static invocation's qualifier matches the return type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 400 (0-indexed): `var reason = string.Format("{0}", 1);`
+    let onLine = hints |> hintsOnLine 400u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": string",
+        sprintf
+            "Expected no \": string\" hint on line 400 (type is already spelled out as the\
+             invocation's qualifier), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a var type hint when a static invocation's qualifier doesn't match the return type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 405 (0-indexed): `var converted = System.Convert.ToInt32("5");`
+    // -- qualifier is `Convert`, return type is `int`
+    let onLine = hints |> hintsOnLine 405u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel ": int",
+        sprintf
+            "Expected a \": int\" hint on line 405 (invocation's qualifier doesn't match the\
+             return type), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 426 (0-indexed): `helper.Add(5);` -- sole parameter is `item`
+    let onLine = hints |> hintsOnLine 426u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "item:",
+        sprintf
+            "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 431 (0-indexed): `helper.Insert(0, 5);` -- parameters are `index`, `item`
+    let onLine = hints |> hintsOnLine 431u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "index:",
+        sprintf "Expected an \"index:\" hint on line 431 (call has more than one argument), got: %A" onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "item:",
+        sprintf
+            "Expected an \"item:\" hint on line 431 (call has more than one argument, so \"item\"\
+             still helps disambiguate from \"index\"), got: %A"
+            onLine
+    )

@@ -366,4 +366,70 @@ namespace Project.InlayHintTest
             var widget = new WidgetWithProperty { Value = 1 };
         }
     }
+
+    public class ValueParameterHelper
+    {
+        public bool Contains(int value)
+        {
+            return value > 0;
+        }
+
+        public void Add(int key, int value)
+        {
+        }
+    }
+
+    public class ValueParameterSubject
+    {
+        private readonly ValueParameterHelper helper = new ValueParameterHelper();
+
+        public void SoleValueParameterNameIsSuppressed()
+        {
+            helper.Contains(5);
+        }
+
+        public void MultiArgumentValueParameterNameKeepsHint()
+        {
+            helper.Add(1, 2);
+        }
+    }
+
+    public class StaticQualifierTypeHintSubject
+    {
+        public void StaticQualifierMatchingReturnTypeIsSuppressed()
+        {
+            var reason = string.Format("{0}", 1);
+        }
+
+        public void StaticQualifierNotMatchingReturnTypeKeepsHint()
+        {
+            var converted = System.Convert.ToInt32("5");
+        }
+    }
+
+    public class ItemParameterHelper
+    {
+        public void Add(int item)
+        {
+        }
+
+        public void Insert(int index, int item)
+        {
+        }
+    }
+
+    public class ItemParameterSubject
+    {
+        private readonly ItemParameterHelper helper = new ItemParameterHelper();
+
+        public void SoleItemParameterNameIsSuppressed()
+        {
+            helper.Add(5);
+        }
+
+        public void MultiArgumentItemParameterNameKeepsHint()
+        {
+            helper.Insert(0, 5);
+        }
+    }
 }
