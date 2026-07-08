@@ -530,3 +530,139 @@ let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<
              Enum.Parse's explicit type argument), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 287 (0-indexed): `var resourceCondition = GetCondition();`
+    let onLine = hints |> hintsOnLine 287u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": ResourceCondition",
+        sprintf
+            "Expected no \": ResourceCondition\" hint on line 287 (identifier is a full\
+             case-insensitive match of the inferred type name), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when the identifier's last word matches the inferred type's last word``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 292 (0-indexed): `var settingChangeCondition = GetCondition();`
+    let onLine = hints |> hintsOnLine 292u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": ResourceCondition",
+        sprintf
+            "Expected no \": ResourceCondition\" hint on line 292 (identifier's last word\
+             \"Condition\" matches the inferred type's last word), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 297 (0-indexed): `var outcome = GetCondition();`
+    let onLine = hints |> hintsOnLine 297u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel ": ResourceCondition",
+        sprintf
+            "Expected a \": ResourceCondition\" hint on line 297 (identifier doesn't echo the\
+             inferred type name), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a foreach variable's type hint when the identifier echoes the element type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 302 (0-indexed): `foreach (var widget in GetWidgets())`
+    let onLine = hints |> hintsOnLine 302u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": Widget",
+        sprintf
+            "Expected no \": Widget\" hint on line 302 (identifier is a full case-insensitive\
+             match of the element type name), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a foreach variable's type hint when the identifier doesn't echo the element type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 309 (0-indexed): `foreach (var item in GetWidgets())`
+    let onLine = hints |> hintsOnLine 309u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel ": Widget",
+        sprintf "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a parameter-name hint when the parameter name echoes its own declared type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 316 (0-indexed): `Dispatch(null);` -- parameter is `MessageDispatcherAsync messageDispatcherAsync`
+    let onLine = hints |> hintsOnLine 316u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "messageDispatcherAsync:",
+        sprintf
+            "Expected no \"messageDispatcherAsync:\" hint on line 316 (parameter name is a\
+             decapitalized echo of its own declared type), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name doesn't echo its own declared type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 321 (0-indexed): `DispatchWithGenericName(null);` -- parameter is `MessageDispatcherAsync handler`
+    let onLine = hints |> hintsOnLine 321u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "handler:",
+        sprintf
+            "Expected a \"handler:\" hint on line 321 (parameter name doesn't echo its own declared type), got: %A"
+            onLine
+    )

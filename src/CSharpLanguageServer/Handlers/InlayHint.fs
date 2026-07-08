@@ -120,6 +120,27 @@ module InlayHint =
     // so it's compiled once, not once per syntax node visited per request.
     let private numberedSuffixParameterName = Regex(@"^\w*?\d+$", RegexOptions.Compiled)
 
+    // Splits a PascalCase/camelCase identifier into its constituent words (e.g.
+    // `settingChangeCondition` -> `setting`, `Change`, `Condition`), so the last word can be
+    // compared across identifiers using different casing conventions (a local variable:
+    // camelCase; a type name: PascalCase). Module-level for the same reason as
+    // numberedSuffixParameterName above.
+    let private camelCaseWordBoundary = Regex(@"(?<=[a-z0-9])(?=[A-Z])", RegexOptions.Compiled)
+
+    let private lastWord (identifier: string) : string =
+        let words = camelCaseWordBoundary.Split(identifier)
+        if words.Length = 0 then identifier else words[words.Length - 1]
+
+    // True when `identifier` already "echoes" `typeName` -- either a full case-insensitive match
+    // (`resourceStatus` vs. `ResourceStatus`, `messageDispatcherAsync` vs.
+    // `MessageDispatcherAsync`), or their last words match (`settingChangeCondition` vs.
+    // `ResourceCondition`, both ending in "Condition"). In either case, a hint would just restate
+    // what the identifier's own name already conveys. See plans/inlay-hint-reduction.md for the
+    // real-world evidence behind this heuristic.
+    let private identifierEchoesTypeName (identifier: string) (typeName: string) : bool =
+        String.Equals(identifier, typeName, StringComparison.CurrentCultureIgnoreCase)
+        || String.Equals(lastWord identifier, lastWord typeName, StringComparison.CurrentCultureIgnoreCase)
+
     let private toInlayHint
         (semanticModel: SemanticModel)
         (lines: TextLineCollection)
@@ -237,6 +258,11 @@ module InlayHint =
             | _ when String.IsNullOrEmpty(par.Name) -> None
             // Don't show hint if the parameter name itself is too short/generic to be informative
             | _ when hasUninformativeParameterName par.Name -> None
+            // Don't show hint if the parameter's own name is just a (decapitalized) echo of its
+            // own declared type (e.g. a `MessageDispatcherAsync messageDispatcherAsync`
+            // parameter) -- the parameter-hint analogue of the identifier-echoes-type-name rule
+            // applied to type hints below
+            | _ when identifierEchoesTypeName par.Name par.Type.Name -> None
             // Don't show hint for the sole (non-CancellationToken) argument of a call (the
             // enclosing method symbol is already known to have resolved unambiguously -- see
             // getParameterForArgumentSyntax above) when that argument is a lambda -- the method's
@@ -287,6 +313,9 @@ module InlayHint =
                 |> Option.ofObj
                 |> Option.map (fun eq -> not (isTypeSpelledOutInGenericInvocation eq.Value ty))
                 |> Option.defaultValue true)
+            // Don't show hint if the variable's own identifier already echoes the type name
+            // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)
+            |> Option.filter (fun ty -> not (identifierEchoesTypeName var.Variables[0].Identifier.ValueText ty.Name))
             |> Option.map (toTypeInlayHint var.Variables[0].Identifier.Span.End)
         // We handle individual variables of ParenthesizedVariableDesignationSyntax separately.
         // For example, in `var (x, y) = (0, "")`, we should `int` for `x` and `string` for `y`.
@@ -297,6 +326,11 @@ module InlayHint =
             ->
             semanticModel.GetTypeInfo(dec.Type).Type
             |> validateType
+            |> Option.filter (fun ty ->
+                match dec.Designation with
+                | :? SingleVariableDesignationSyntax as designation ->
+                    not (identifierEchoesTypeName designation.Identifier.ValueText ty.Name)
+                | _ -> true)
             |> Option.map (toTypeInlayHint dec.Designation.Span.End)
         | :? SingleVariableDesignationSyntax as var when
             not (var.Parent :? DeclarationPatternSyntax)
@@ -309,10 +343,12 @@ module InlayHint =
                 | _ -> None
             |> Option.map (fun local -> local.Type)
             |> Option.bind validateType
+            |> Option.filter (fun ty -> not (identifierEchoesTypeName var.Identifier.ValueText ty.Name))
             |> Option.map (toTypeInlayHint var.Identifier.Span.End)
         | :? ForEachStatementSyntax as forEach when forEach.Type.IsVar ->
             semanticModel.GetForEachStatementInfo(forEach).ElementType
             |> validateType
+            |> Option.filter (fun ty -> not (identifierEchoesTypeName forEach.Identifier.ValueText ty.Name))
             |> Option.map (toTypeInlayHint forEach.Identifier.Span.End)
         | :? ParameterSyntax as parameterNode when isNull parameterNode.Type ->
             let parameter = semanticModel.GetDeclaredSymbol(parameterNode)
