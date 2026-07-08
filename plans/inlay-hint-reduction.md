@@ -42,7 +42,15 @@ to keep extending for further rules without touching other tests):
   (`hasUninformativeParameterName`), while `format:` (not numbered-suffix) correctly stays. The
   broader originally-proposed heuristic (parse the format string's `{n}` placeholders) turned out
   to be unnecessary for the evidence gathered.
-- Rules #5–#7 below are not yet implemented.
+- ✅ **Rule #5 (generic-invocation-redundant `var` type hints)** — `validateType`'s result is now
+  filtered by `isTypeSpelledOutInGenericInvocation`, which suppresses the `var` type hint when the
+  initializer is a generic invocation (qualified, e.g. `Enum.Parse<T>()`, or unqualified, e.g. a
+  local `CreateLocal<T>()`) whose explicit type-argument list contains a type symbol-equal to the
+  inferred variable type. Compares by resolved symbol rather than by name, so it correctly does
+  *not* fire when the invocation's return type differs from its type argument (e.g. a hypothetical
+  `Describe<Widget>(...)` returning `string` keeps its `: string` hint). Covered by a test using
+  the plan's own real BCL example, `Enum.Parse<DayOfWeek>(...)`.
+- Rules #6–#7 below are not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -661,9 +669,13 @@ first, ranked roughly by combined volume, confidence, and implementation risk:
    overload shape that `arg0`/`arg1`/`arg2` are already caught by rule #2's numbered-suffix
    pattern — the broader originally-proposed heuristic (parsing `{n}` placeholders out of the
    format string) wasn't needed.
-5. Suppress `var` type hints when the initializer is a generic invocation whose explicit
-   type-argument list already contains the exact inferred type (e.g. `Enum.Parse<T>()`,
-   `JsonSerializer.Deserialize<T>()`) — concrete, low-risk, no allow-list needed.
+5. **✅ Implemented.** Suppress `var` type hints when the initializer is a generic invocation whose
+   explicit type-argument list already contains the exact inferred type (e.g. `Enum.Parse<T>()`,
+   `JsonSerializer.Deserialize<T>()`) — concrete, low-risk, no allow-list needed. Implemented as
+   `isTypeSpelledOutInGenericInvocation`, comparing by resolved symbol (not name), so it covers
+   both qualified (`Enum.Parse<T>()`) and unqualified (a local generic factory method) call shapes
+   without a per-method allow-list, and correctly keeps the hint when the invocation's return type
+   differs from its type argument (confirmed via a `Describe<Widget>(...) : string` test).
 6. Generalize the existing same-name suppression (`validateParameter`) to type hints
    (`validateType`): suppress when the declared variable's identifier is a case-insensitive
    match — full or suffix — of the inferred type's name (and, per this sample, consider the same
@@ -703,24 +715,29 @@ built-in suppression heuristics is also to be decided during design.
 4. ✅ **Done.** Verify rule #4 (composite-format-string positional arguments) against a
    `log4net`-shaped `DebugFormat(format, arg0, arg1, arg2)` test — confirmed it's fully subsumed by
    rule #2's numbered-suffix pattern; closed out with no separate implementation.
-5. Design session to enumerate the exact suppression rules for the remaining candidates (rules
-   #5–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
+5. ✅ **Done.** Implement rule #5 (generic-invocation-redundant `var` hints) as
+   `isTypeSpelledOutInGenericInvocation`, filtering `validateType`'s result in the
+   `VariableDeclarationSyntax` match arm, with test coverage for qualified/unqualified matching
+   invocations, a non-matching-return-type negative control, and the plan's own
+   `Enum.Parse<DayOfWeek>(...)` example.
+6. Design session to enumerate the exact suppression rules for the remaining candidates (rules
+   #6–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
    Gathered So Far"), informed by the real-world evidence above and by user/editor feedback on
    which current hints still feel noisy in practice.
-6. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
-   `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize, in order:
-   generic-type-argument-redundant `var` hints (rule #5), generalizing same-name suppression to
-   type hints (rule #6), and (lower priority) `extern`/P-Invoke parameter names (rule #7).
-7. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
+7. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
+   `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize
+   generalizing same-name suppression to type hints (rule #6), then (lower priority)
+   `extern`/P-Invoke parameter names (rule #7).
+8. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
    rule (positive case: hint suppressed; negative case: hint still shown for the non-redundant
    variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
    creating new ones, so all rules stay exercised against one file.
-8. Decide on and (if wanted) implement the configuration angle above.
+9. Decide on and (if wanted) implement the configuration angle above.
 
 ## Files Likely Touched
 
 | File | Likely Change |
 |------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#4 already landed/closed) |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#4 already covered) |
+| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#5 already landed/closed) |
+| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#5 already covered) |
 | `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |
