@@ -24,14 +24,25 @@ to keep extending for further rules without touching other tests):
   `Math.Round`'s `decimals`/`mode`, only `d`) — see the rule's doc comment in `InlayHint.fs` for
   the rationale.
 - ✅ **Rule #3 (single lambda-argument calls)** — `validateParameter` now suppresses the hint for
-  the sole argument of a call when that argument is a lambda expression, regardless of the
-  parameter's own name — covers both LINQ (`Where(predicate)`, `Select(selector)`, …) and other
+  the sole (effective) argument of a call when that argument is a lambda expression, regardless of
+  the parameter's own name — covers both LINQ (`Where(predicate)`, `Select(selector)`, …) and other
   fluent/ORM APIs (NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`). Deliberately
   scoped to single-argument calls (multi-lambda-argument calls like `Combine(first, second)` keep
   both hints) and to lambda expressions specifically (a method-group argument, e.g.
   `Where(IsPositive)`, is out of scope and keeps its hint) — both scoping decisions are covered by
-  dedicated negative-control tests.
-- Rules #4–#7 below are not yet implemented.
+  dedicated negative-control tests. Refined so a trailing `CancellationToken` argument doesn't
+  count towards "effective argument count" (`isCancellationTokenArgument`, matched by name only) —
+  e.g. `WhereAsync(x => x.IsActive, cancellationToken)` is treated the same as
+  `Where(x => x.IsActive)`; a two-lambda call with a trailing token (`CombineAsync(first, second,
+  cancellationToken)`) still correctly keeps both hints.
+- ✅ **Rule #4 (composite-format-string positional arguments)** — investigated and closed out with
+  **no separate implementation**: confirmed via a test mirroring log4net's real
+  `ILog.DebugFormat(string format, object arg0, object arg1, object arg2)` overload shape that
+  `arg0`/`arg1`/`arg2` are already suppressed by rule #2's numbered-suffix pattern
+  (`hasUninformativeParameterName`), while `format:` (not numbered-suffix) correctly stays. The
+  broader originally-proposed heuristic (parse the format string's `{n}` placeholders) turned out
+  to be unnecessary for the evidence gathered.
+- Rules #5–#7 below are not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -639,10 +650,17 @@ first, ranked roughly by combined volume, confidence, and implementation risk:
    the call is a `LambdaExpressionSyntax`) rather than a method allow-list, so it covers any
    fluent/ORM API with this shape for free. Confirmed via tests that it doesn't fire on
    multi-lambda-argument calls (e.g. a hypothetical `Combine(first, second)`) or on method-group
-   arguments (e.g. `Where(IsPositive)`), both of which keep their hints.
-4. Suppress parameter-name hints for arguments following a composite-format string literal
-   (`{0}`/`{1}`/... placeholders) on formatting/logging-style method calls (this may now be fully
-   subsumed by rule #2's numbered-suffix pattern, since `arg0`/`arg1`/`arg2` match it directly).
+   arguments (e.g. `Where(IsPositive)`), both of which keep their hints. Also refined to not count
+   a trailing `CancellationToken` argument towards "sole argument", since it's a conventional,
+   non-essential pass-through parameter on async APIs (`WhereAsync(x => x.IsActive,
+   cancellationToken)` behaves the same as `Where(x => x.IsActive)`).
+4. **✅ Verified subsumed by rule #2, no separate implementation needed.** Suppress
+   parameter-name hints for arguments following a composite-format string literal (`{0}`/`{1}`/...
+   placeholders) on formatting/logging-style method calls. Confirmed via a test mirroring
+   log4net's real `ILog.DebugFormat(string format, object arg0, object arg1, object arg2)`
+   overload shape that `arg0`/`arg1`/`arg2` are already caught by rule #2's numbered-suffix
+   pattern — the broader originally-proposed heuristic (parsing `{n}` placeholders out of the
+   format string) wasn't needed.
 5. Suppress `var` type hints when the initializer is a generic invocation whose explicit
    type-argument list already contains the exact inferred type (e.g. `Enum.Parse<T>()`,
    `JsonSerializer.Deserialize<T>()`) — concrete, low-risk, no allow-list needed.
@@ -679,28 +697,30 @@ built-in suppression heuristics is also to be decided during design.
    `hasUninformativeParameterName` in `validateParameter`, with test coverage including the
    `string.Substring`/`Stream.Write(buffer, offset, count)`-style negative controls.
 3. ✅ **Done.** Implement rule #3 (single lambda-argument calls) as a new `validateParameter`
-   match arm keyed on `argList.Arguments.Count = 1 && (argExpr :? LambdaExpressionSyntax)`, with
-   test coverage for the multi-lambda-argument and method-group-argument negative controls.
-4. Design session to enumerate the exact suppression rules for the remaining candidates (rules
-   #4–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
+   match arm keyed on the argument list's effective (non-`CancellationToken`) argument count being
+   1 and `argExpr :? LambdaExpressionSyntax`, with test coverage for the multi-lambda-argument,
+   method-group-argument, and trailing-`CancellationToken` negative/edge-case controls.
+4. ✅ **Done.** Verify rule #4 (composite-format-string positional arguments) against a
+   `log4net`-shaped `DebugFormat(format, arg0, arg1, arg2)` test — confirmed it's fully subsumed by
+   rule #2's numbered-suffix pattern; closed out with no separate implementation.
+5. Design session to enumerate the exact suppression rules for the remaining candidates (rules
+   #5–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
    Gathered So Far"), informed by the real-world evidence above and by user/editor feedback on
    which current hints still feel noisy in practice.
-5. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
+6. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
    `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize, in order:
-   composite-format-string positional arguments (rule #4 — likely already subsumed by rule #2's
-   numbered-suffix pattern; verify and close out if so), generic-type-argument-redundant `var`
-   hints (rule #5), generalizing same-name suppression to type hints (rule #6), and (lower
-   priority) `extern`/P-Invoke parameter names (rule #7).
-6. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
+   generic-type-argument-redundant `var` hints (rule #5), generalizing same-name suppression to
+   type hints (rule #6), and (lower priority) `extern`/P-Invoke parameter names (rule #7).
+7. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
    rule (positive case: hint suppressed; negative case: hint still shown for the non-redundant
    variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
    creating new ones, so all rules stay exercised against one file.
-7. Decide on and (if wanted) implement the configuration angle above.
+8. Decide on and (if wanted) implement the configuration angle above.
 
 ## Files Likely Touched
 
 | File | Likely Change |
 |------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#3 already landed) |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#3 already covered) |
+| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#4 already landed/closed) |
+| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#4 already covered) |
 | `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |
