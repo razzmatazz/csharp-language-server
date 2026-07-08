@@ -2,6 +2,7 @@ namespace CSharpLanguageServer.Handlers
 
 open System
 open System.Collections.Immutable
+open System.Text.RegularExpressions
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
@@ -113,6 +114,12 @@ module InlayHint =
             | _ -> None
         | _ -> None
 
+    // A parameter name matching this pattern (`arg0`, `val1`, `path2`, …) ends in a numeric
+    // suffix and carries essentially no information beyond its argument's position -- see
+    // `hasUninformativeParameterName` below. Module-level (rather than local to `toInlayHint`)
+    // so it's compiled once, not once per syntax node visited per request.
+    let private numberedSuffixParameterName = Regex(@"^\w*?\d+$", RegexOptions.Compiled)
+
     let private toInlayHint
         (semanticModel: SemanticModel)
         (lines: TextLineCollection)
@@ -163,12 +170,26 @@ module InlayHint =
             | :? ParenthesizedExpressionSyntax as paren -> significantArgumentName paren.Expression
             | _ -> expr.ToString()
 
+        // A parameter name that's very short, or ends in a numeric suffix, carries essentially
+        // no information beyond its argument's position (`d`, `s`, `val1`, `arg0`, `path2`, the
+        // real .NET BCL parameter names of e.g. `Guid`'s constructor, `Math.Min`/`Math.Max`,
+        // `Path.Combine`, and composite-format-string overloads like `string.Format`) -- a hint
+        // for it can't help a reader, only add clutter. See plans/inlay-hint-reduction.md for the
+        // real-world evidence behind this heuristic. Deliberately narrow/mechanical: it doesn't
+        // try to catch every opaque BCL name (e.g. `Math.Round`'s `decimals`/`mode`), only the
+        // shapes confirmed safe against genuinely-disambiguating counter-examples like
+        // `string.Substring(startIndex, length)` and `Stream.Write(buffer, offset, count)`.
+        let hasUninformativeParameterName (name: string) =
+            name.Length <= 2 || numberedSuffixParameterName.IsMatch(name)
+
         let validateParameter (arg: SyntaxNode) (argExpr: ExpressionSyntax) (par: IParameterSymbol) =
             match arg.Parent with
             // Don't show hint for indexer
             | :? BracketedArgumentListSyntax -> None
             // Don't show hint if parameter name is empty
             | _ when String.IsNullOrEmpty(par.Name) -> None
+            // Don't show hint if the parameter name itself is too short/generic to be informative
+            | _ when hasUninformativeParameterName par.Name -> None
             // Don't show hint if argument's own name (or, for a qualified member access, its last
             // segment) matches the parameter name
             | _ when String.Equals(significantArgumentName argExpr, par.Name, StringComparison.CurrentCultureIgnoreCase) ->

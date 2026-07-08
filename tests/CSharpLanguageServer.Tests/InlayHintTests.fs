@@ -163,3 +163,130 @@ let ``textDocument/inlayHint keeps a hint when a qualified member-access argumen
              match the parameter name), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 85 (0-indexed): `helper.SetX(5);` -- parameter is `x`
+    let onLine = hints |> hintsOnLine 85u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "x:",
+        sprintf "Expected no \"x:\" hint on line 85 (parameter name is too short to be informative), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 90 (0-indexed): `string.Format("{0} {1}", 1, 2);` -- parameters are `format`, `arg0`, `arg1`
+    let onLine = hints |> hintsOnLine 90u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "arg0:",
+        sprintf "Expected no \"arg0:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "arg1:",
+        sprintf "Expected no \"arg1:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "format:",
+        sprintf "Expected a \"format:\" hint on line 90 (not a numbered-suffix parameter name), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 95 (0-indexed): `System.Math.Min(1, 2);` -- parameters are `val1`, `val2`
+    let onLine = hints |> hintsOnLine 95u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "val1:",
+        sprintf "Expected no \"val1:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "val2:",
+        sprintf "Expected no \"val2:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 100 (0-indexed): `System.Math.Round(1.23m, 2, System.MidpointRounding.AwayFromZero);`
+    // -- parameters are `d`, `decimals`, `mode`
+    let onLine = hints |> hintsOnLine 100u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "d:",
+        sprintf "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A" onLine
+    )
+
+    // `decimals`/`mode` aren't short or numbered-suffix, so the narrow mechanical rule
+    // intentionally doesn't suppress them (unlike `d`), even though they're arguably still
+    // low-information BCL names -- see plans/inlay-hint-reduction.md for the rationale.
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "decimals:",
+        sprintf "Expected a \"decimals:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "mode:",
+        sprintf "Expected a \"mode:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 105 (0-indexed): `"hello".Substring(1, 2);` -- parameters are `startIndex`, `length`
+    let onLine = hints |> hintsOnLine 105u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "startIndex:",
+        sprintf "Expected a \"startIndex:\" hint on line 105, got: %A" onLine
+    )
+
+    Assert.IsTrue(onLine |> hasHintWithLabel "length:", sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine)
+
+[<Test>]
+let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 111 (0-indexed): `helper.WriteBuffer(data, 0, data.Length);`
+    // -- parameters are `buffer`, `offset`, `count`
+    let onLine = hints |> hintsOnLine 111u
+
+    Assert.IsTrue(onLine |> hasHintWithLabel "buffer:", sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine)
+
+    Assert.IsTrue(onLine |> hasHintWithLabel "offset:", sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine)
+
+    Assert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)

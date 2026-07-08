@@ -65,4 +65,51 @@ namespace Project.InlayHintTest
                 "other");
         }
     }
+
+    public class ShortAndNumberedParameterHelper
+    {
+        public void SetX(int x)
+        {
+        }
+
+        public void WriteBuffer(byte[] buffer, int offset, int count)
+        {
+        }
+    }
+
+    public class ShortAndNumberedParameterSubject
+    {
+        private readonly ShortAndNumberedParameterHelper helper = new ShortAndNumberedParameterHelper();
+
+        public void ShortParameterNameIsSuppressed()
+        {
+            helper.SetX(5);
+        }
+
+        public void NumberedSuffixParameterNameIsSuppressed()
+        {
+            string.Format("{0} {1}", 1, 2);
+        }
+
+        public void WellKnownBclNumberedSuffixParameterNamesAreSuppressed()
+        {
+            System.Math.Min(1, 2);
+        }
+
+        public void OpaqueBclShortParameterNamesAreSuppressed()
+        {
+            System.Math.Round(1.23m, 2, System.MidpointRounding.AwayFromZero);
+        }
+
+        public void DisambiguatingParameterNamesKeepHint()
+        {
+            "hello".Substring(1, 2);
+        }
+
+        public void BufferOffsetCountParameterNamesKeepHint()
+        {
+            var data = new byte[] { 1, 2, 3 };
+            helper.WriteBuffer(data, 0, data.Length);
+        }
+    }
 }
