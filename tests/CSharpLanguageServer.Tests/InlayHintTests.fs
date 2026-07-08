@@ -371,3 +371,83 @@ let ``textDocument/inlayHint keeps a hint when the sole argument is a method gro
              expression -- out of scope for this rule), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses composite-format-string positional argument hints (rule #4, subsumed by rule #2)``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 177 (0-indexed): `new Logger().DebugFormat("{0}: {1} did {2}", 1, 2, 3);`
+    // -- parameters are `format`, `arg0`, `arg1`, `arg2` (mirrors log4net's real ILog.DebugFormat
+    // overload shapes). No dedicated implementation was needed for this: `arg0`/`arg1`/`arg2`
+    // already match rule #2's numbered-suffix pattern (`hasUninformativeParameterName`).
+    let onLine = hints |> hintsOnLine 177u
+
+    Assert.IsTrue(onLine |> hasHintWithLabel "format:", sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine)
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "arg0:",
+        sprintf "Expected no \"arg0:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "arg1:",
+        sprintf "Expected no \"arg1:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "arg2:",
+        sprintf "Expected no \"arg2:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for a single lambda argument followed by a trailing CancellationToken``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 205 (0-indexed): `new FluentQueryAsync().WhereAsync(x => x > 0, default);`
+    // -- parameters are `predicate`, `cancellationToken`
+    let onLine = hints |> hintsOnLine 205u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "predicate:",
+        sprintf
+            "Expected no \"predicate:\" hint on line 205 (sole non-CancellationToken argument is a\
+             lambda, method name conveys role), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 210 (0-indexed): `new FluentQueryAsync().CombineAsync(x => x, x => x, default);`
+    // -- parameters are `first`, `second`, `cancellationToken`
+    let onLine = hints |> hintsOnLine 210u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "first:",
+        sprintf
+            "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
+            onLine
+    )
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "second:",
+        sprintf
+            "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
+            onLine
+    )
