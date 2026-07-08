@@ -1,12 +1,29 @@
 # Reducing Superfluous Inlay Hints
 
-**Status:** Design not started, but now informed by six real-world samples (an MVC controller, two
-large business-logic "ops" classes, a companion pair of MVC controller files, a small API
-controller, and a diverse batch spanning a controller/file-I/O utility/Win32 interop/message
-handler) — see the "Real-World Evidence" sections below for concrete label-frequency data pulled
-from a live `csharp-ls-rpc.log` session, plus a source-level root-cause diagnosis of the same-name
-suppression gap (from reading `InlayHint.fs` directly). Exact suppression rules are still not
-finalized, but the same-name gap now has a concrete, actionable fix proposal.
+**Status:** Full design/rule-table pass for the remaining candidates still not started, but
+informed by six real-world samples (an MVC controller, two large business-logic "ops" classes, a
+companion pair of MVC controller files, a small API controller, and a diverse batch spanning a
+controller/file-I/O utility/Win32 interop/message handler) — see the "Real-World Evidence" sections
+below for concrete label-frequency data pulled from a live `csharp-ls-rpc.log` session, plus a
+source-level root-cause diagnosis of the same-name suppression gap (from reading `InlayHint.fs`
+directly).
+
+Implementation has started against the "Net takeaway" priority ranking below, backed by a new
+`InlayHintTests.fs` (+ dedicated `Fixtures/genericProject/Project/InlayHintTest.cs` fixture, safe
+to keep extending for further rules without touching other tests):
+
+- ✅ **Rule #1 (same-name suppression gap)** — both sub-fixes landed in `validateParameter`:
+  comparing against the argument expression's significant (trivia-free) identifier text instead
+  of `arg.GetText()`, and matching the last identifier segment of a qualified member-access
+  expression (`this.Foo` vs. parameter `foo`).
+- ✅ **Rule #2 (short / numbered-suffix parameter names)** — `hasUninformativeParameterName`
+  suppresses hints for parameter names of length ≤ 2 or matching `^\w*?\d+$` (`arg0`, `val1`,
+  `path2`, …), with negative-control test coverage for `string.Substring(startIndex, length)` and
+  a `Stream.Write`-shaped `(buffer, offset, count)` method to confirm it doesn't over-suppress.
+  Deliberately narrower than the original per-method-allow-list idea (it does *not* catch
+  `Math.Round`'s `decimals`/`mode`, only `d`) — see the rule's doc comment in `InlayHint.fs` for
+  the rationale.
+- Rules #3–#7 below are not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -591,19 +608,22 @@ argument's own name" rule actually work in the two most common shapes it current
 **Net takeaway across all six samples:** the highest-value, lowest-risk rules to prioritize
 first, ranked roughly by combined volume, confidence, and implementation risk:
 
-1. **Fix the same-name parameter suppression gap** — now root-caused (see above) into two
-   concrete, independent, small fixes: (a) compare significant identifier text instead of raw
-   `GetText()` (likely trivia/whitespace bug), and (b) extend the match to the last segment of
+1. **✅ Implemented.** Fix the same-name parameter suppression gap — now root-caused (see above)
+   into two concrete, independent, small fixes: (a) compare significant identifier text instead of
+   raw `GetText()` (likely trivia/whitespace bug), and (b) extend the match to the last segment of
    qualified member-access arguments (`this.Foo` vs. parameter `foo`). Confirmed across three
    samples against at least three unrelated call sites/helpers; given how idiomatic both call
    shapes are throughout the codebase, this pair of fixes alone would likely eliminate a large
    fraction of real-world noise, before any new heuristic work.
-2. Suppress parameter-name hints for very short (≤ 1–2 character) parameter names and for
-   numbered-suffix parameter names (`arg0`, `val1`, `path2`, i.e. matching `^\w*?\d+$`) —
-   collapses what were three separate special cases (BCL opaque names, format-string args,
-   `Math.Min`/`Max`, `Path.Combine`) into one or two simple, mechanical, method-agnostic rules.
-   Still needs the `string.Substring`/`Stream.Write(buffer, offset, count)`-style counter-example
-   check — i.e. confirm this doesn't fire on short-but-genuinely-disambiguating names.
+2. **✅ Implemented.** Suppress parameter-name hints for very short (≤ 1–2 character) parameter
+   names and for numbered-suffix parameter names (`arg0`, `val1`, `path2`, i.e. matching
+   `^\w*?\d+$`) — collapses what were three separate special cases (BCL opaque names,
+   format-string args, `Math.Min`/`Max`, `Path.Combine`) into one or two simple, mechanical,
+   method-agnostic rules. Confirmed against the `string.Substring`/`Stream.Write(buffer, offset,
+   count)`-style counter-example — it doesn't fire on short-but-genuinely-disambiguating names.
+   Note: intentionally doesn't catch every opaque BCL name this way (e.g. `Math.Round`'s
+   `decimals`/`mode` are kept, only `d` is suppressed) — a per-method allow-list would catch more
+   but was deferred as higher-risk/higher-maintenance.
 3. Suppress parameter-name hints for single lambda/expression-typed arguments passed to methods
    whose own name already conveys the lambda's role and which have no ambiguous overload —
    generalized from "well-known `System.Linq` methods" to also cover other fluent/ORM APIs (e.g.
@@ -638,31 +658,35 @@ built-in suppression heuristics is also to be decided during design.
 
 ## Next Steps
 
-1. Design session to enumerate the exact suppression rules per hint kind (type vs. parameter),
-   informed by the candidates above, the real-world evidence below, and by user/editor feedback
-   on which current hints feel noisy in practice.
-2. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
-   `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize the seven
-   rules ranked in the combined "Net takeaway" above first, in order: the same-name suppression
-   gap fix (two concrete sub-fixes, now root-caused — see below), short/opaque and numbered-suffix
-   parameter names, LINQ-and-friends single-lambda parameter names, composite-format-string
-   positional arguments, generic-type-argument-redundant `var` hints, generalizing same-name
-   suppression to type hints, and (lower priority) `extern`/P-Invoke parameter names.
-3. Land the two same-name suppression gap fixes identified by reading `InlayHint.fs` (see
-   "Root-Cause Analysis" above): (a) compare significant identifier text rather than raw
-   `arg.GetText()` in `validateParameter` (likely a leading-trivia/whitespace bug — verify with a
-   unit test contrasting single-line vs. multi-line indented call sites before committing to this
-   as the fix), and (b) extend the same-name match to also cover the last identifier segment of
-   qualified member-access arguments (`this.Foo` vs. parameter `foo`). Both are small, additive,
-   and testable in isolation from the rest of this plan's heuristic work.
-4. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
+1. ✅ **Done.** Land the two same-name suppression gap fixes identified by reading `InlayHint.fs`
+   (see "Root-Cause Analysis" above): (a) compare significant identifier text rather than raw
+   `arg.GetText()` in `validateParameter`, and (b) extend the same-name match to also cover the
+   last identifier segment of qualified member-access arguments (`this.Foo` vs. parameter `foo`).
+   Landed with dedicated positive/negative test coverage in `InlayHintTests.fs`.
+2. ✅ **Done.** Implement rule #2 (short / numbered-suffix parameter names) as
+   `hasUninformativeParameterName` in `validateParameter`, with test coverage including the
+   `string.Substring`/`Stream.Write(buffer, offset, count)`-style negative controls.
+3. Design session to enumerate the exact suppression rules for the remaining candidates (rules
+   #3–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
+   Gathered So Far"), informed by the real-world evidence above and by user/editor feedback on
+   which current hints still feel noisy in practice.
+4. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
+   `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize, in order:
+   LINQ-and-friends single-lambda parameter names (rule #3), composite-format-string positional
+   arguments (rule #4 — likely already subsumed by rule #2's numbered-suffix pattern; verify and
+   close out if so), generic-type-argument-redundant `var` hints (rule #5), generalizing same-name
+   suppression to type hints (rule #6), and (lower priority) `extern`/P-Invoke parameter names
+   (rule #7).
+5. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
    rule (positive case: hint suppressed; negative case: hint still shown for the non-redundant
-   variant).
-5. Decide on and (if wanted) implement the configuration angle above.
+   variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
+   creating new ones, so all rules stay exercised against one file.
+6. Decide on and (if wanted) implement the configuration angle above.
 
 ## Files Likely Touched
 
 | File | Likely Change |
 |------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add suppression predicates to `toInlayHint`'s match arms, per the design once finalized |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` (if present) or a new test file | Add positive/negative coverage per rule |
+| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1 and #2 already landed) |
+| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1 and #2 already covered) |
+| `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |
