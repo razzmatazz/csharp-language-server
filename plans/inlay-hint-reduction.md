@@ -23,7 +23,15 @@ to keep extending for further rules without touching other tests):
   Deliberately narrower than the original per-method-allow-list idea (it does *not* catch
   `Math.Round`'s `decimals`/`mode`, only `d`) — see the rule's doc comment in `InlayHint.fs` for
   the rationale.
-- Rules #3–#7 below are not yet implemented.
+- ✅ **Rule #3 (single lambda-argument calls)** — `validateParameter` now suppresses the hint for
+  the sole argument of a call when that argument is a lambda expression, regardless of the
+  parameter's own name — covers both LINQ (`Where(predicate)`, `Select(selector)`, …) and other
+  fluent/ORM APIs (NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`). Deliberately
+  scoped to single-argument calls (multi-lambda-argument calls like `Combine(first, second)` keep
+  both hints) and to lambda expressions specifically (a method-group argument, e.g.
+  `Where(IsPositive)`, is out of scope and keeps its hint) — both scoping decisions are covered by
+  dedicated negative-control tests.
+- Rules #4–#7 below are not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -624,10 +632,14 @@ first, ranked roughly by combined volume, confidence, and implementation risk:
    Note: intentionally doesn't catch every opaque BCL name this way (e.g. `Math.Round`'s
    `decimals`/`mode` are kept, only `d` is suppressed) — a per-method allow-list would catch more
    but was deferred as higher-risk/higher-maintenance.
-3. Suppress parameter-name hints for single lambda/expression-typed arguments passed to methods
-   whose own name already conveys the lambda's role and which have no ambiguous overload —
-   generalized from "well-known `System.Linq` methods" to also cover other fluent/ORM APIs (e.g.
-   NHibernate's `Fetch`/`ThenFetch`).
+3. **✅ Implemented.** Suppress parameter-name hints for single lambda/expression-typed arguments
+   passed to methods whose own name already conveys the lambda's role and which have no ambiguous
+   overload — generalized from "well-known `System.Linq` methods" to also cover other fluent/ORM
+   APIs (e.g. NHibernate's `Fetch`/`ThenFetch`). Implemented as a syntactic check (sole argument of
+   the call is a `LambdaExpressionSyntax`) rather than a method allow-list, so it covers any
+   fluent/ORM API with this shape for free. Confirmed via tests that it doesn't fire on
+   multi-lambda-argument calls (e.g. a hypothetical `Combine(first, second)`) or on method-group
+   arguments (e.g. `Where(IsPositive)`), both of which keep their hints.
 4. Suppress parameter-name hints for arguments following a composite-format string literal
    (`{0}`/`{1}`/... placeholders) on formatting/logging-style method calls (this may now be fully
    subsumed by rule #2's numbered-suffix pattern, since `arg0`/`arg1`/`arg2` match it directly).
@@ -666,27 +678,29 @@ built-in suppression heuristics is also to be decided during design.
 2. ✅ **Done.** Implement rule #2 (short / numbered-suffix parameter names) as
    `hasUninformativeParameterName` in `validateParameter`, with test coverage including the
    `string.Substring`/`Stream.Write(buffer, offset, count)`-style negative controls.
-3. Design session to enumerate the exact suppression rules for the remaining candidates (rules
-   #3–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
+3. ✅ **Done.** Implement rule #3 (single lambda-argument calls) as a new `validateParameter`
+   match arm keyed on `argList.Arguments.Count = 1 && (argExpr :? LambdaExpressionSyntax)`, with
+   test coverage for the multi-lambda-argument and method-group-argument negative controls.
+4. Design session to enumerate the exact suppression rules for the remaining candidates (rules
+   #4–#7 in the "Net takeaway" ranking, plus the type-hint-side candidates from "Candidate Ideas
    Gathered So Far"), informed by the real-world evidence above and by user/editor feedback on
    which current hints still feel noisy in practice.
-4. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
+5. Turn the agreed rules into a rule table (condition → suppress/keep) similar in spirit to the
    `validateType` / `validateParameter` predicates already in `InlayHint.fs`. Prioritize, in order:
-   LINQ-and-friends single-lambda parameter names (rule #3), composite-format-string positional
-   arguments (rule #4 — likely already subsumed by rule #2's numbered-suffix pattern; verify and
-   close out if so), generic-type-argument-redundant `var` hints (rule #5), generalizing same-name
-   suppression to type hints (rule #6), and (lower priority) `extern`/P-Invoke parameter names
-   (rule #7).
-5. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
+   composite-format-string positional arguments (rule #4 — likely already subsumed by rule #2's
+   numbered-suffix pattern; verify and close out if so), generic-type-argument-redundant `var`
+   hints (rule #5), generalizing same-name suppression to type hints (rule #6), and (lower
+   priority) `extern`/P-Invoke parameter names (rule #7).
+6. Implement the agreed predicates in `toInlayHint`, with unit/integration test coverage for each
    rule (positive case: hint suppressed; negative case: hint still shown for the non-redundant
    variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
    creating new ones, so all rules stay exercised against one file.
-6. Decide on and (if wanted) implement the configuration angle above.
+7. Decide on and (if wanted) implement the configuration angle above.
 
 ## Files Likely Touched
 
 | File | Likely Change |
 |------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1 and #2 already landed) |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1 and #2 already covered) |
+| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicates to `toInlayHint`'s match arms, per the design once finalized (rules #1–#3 already landed) |
+| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage per remaining rule (rules #1–#3 already covered) |
 | `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |
