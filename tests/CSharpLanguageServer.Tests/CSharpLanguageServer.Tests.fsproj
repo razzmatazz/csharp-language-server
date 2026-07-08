@@ -39,6 +39,7 @@
     <Compile Include="WorkspaceTests.fs" />
     <Compile Include="CallHierarchyTests.fs" />
     <Compile Include="FoldingRangeTests.fs" />
+    <Compile Include="InlayHintTests.fs" />
     <Compile Include="SourceGeneratorTests.fs" />
     <Compile Include="JsonRpcTests.fs" />
   </ItemGroup>
