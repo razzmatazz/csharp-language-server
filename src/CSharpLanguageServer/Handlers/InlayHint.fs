@@ -182,6 +182,21 @@ module InlayHint =
         let hasUninformativeParameterName (name: string) =
             name.Length <= 2 || numberedSuffixParameterName.IsMatch(name)
 
+        // A `CancellationToken` argument is a conventional, non-essential "pass-through"
+        // parameter on async APIs, so its presence shouldn't disqualify the single-lambda-argument
+        // rule below -- e.g. `WhereAsync(x => x.IsActive, cancellationToken)` should be treated
+        // the same as `Where(x => x.IsActive)`. Uses the argument's converted type (rather than
+        // its natural type) so a `default`/`default(CancellationToken)` argument is still
+        // recognized. Matched by name only, not a full compilation-wide symbol lookup, since this
+        // is meant to be a cheap, conventional signal rather than a rigorous type check.
+        let isCancellationTokenArgument (argument: ArgumentSyntax) : bool =
+            let typeInfo = semanticModel.GetTypeInfo(argument.Expression)
+
+            [ typeInfo.ConvertedType; typeInfo.Type ]
+            |> List.tryPick Option.ofObj
+            |> Option.map (fun ty -> ty.Name = "CancellationToken")
+            |> Option.defaultValue false
+
         let validateParameter (arg: SyntaxNode) (argExpr: ExpressionSyntax) (par: IParameterSymbol) =
             match arg.Parent with
             // Don't show hint for indexer
@@ -190,15 +205,19 @@ module InlayHint =
             | _ when String.IsNullOrEmpty(par.Name) -> None
             // Don't show hint if the parameter name itself is too short/generic to be informative
             | _ when hasUninformativeParameterName par.Name -> None
-            // Don't show hint for the sole lambda argument of a call (the enclosing method symbol
-            // is already known to have resolved unambiguously -- see getParameterForArgumentSyntax
-            // above) -- the method's own name already conveys the lambda's role (`Where(predicate)`,
-            // `Select(selector)`, NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`,
-            // ...), so a parameter-name hint here is redundant no matter how generic or specific
-            // that name is. Deliberately scoped to lambda expressions only (not method-group
-            // arguments) and to single-argument calls only -- multiple lambda parameters in one
-            // call aren't each automatically self-describing from the method name alone.
-            | :? ArgumentListSyntax as argList when argList.Arguments.Count = 1 && (argExpr :? LambdaExpressionSyntax) ->
+            // Don't show hint for the sole (non-CancellationToken) argument of a call (the
+            // enclosing method symbol is already known to have resolved unambiguously -- see
+            // getParameterForArgumentSyntax above) when that argument is a lambda -- the method's
+            // own name already conveys the lambda's role (`Where(predicate)`, `Select(selector)`,
+            // NHibernate-style `Fetch(relatedObjectSelector)`/`ThenFetch(...)`, ...), so a
+            // parameter-name hint here is redundant no matter how generic or specific that name
+            // is. Deliberately scoped to lambda expressions only (not method-group arguments) and
+            // to single-(effective-)argument calls only -- multiple lambda parameters in one call
+            // aren't each automatically self-describing from the method name alone.
+            | :? ArgumentListSyntax as argList when
+                (argExpr :? LambdaExpressionSyntax)
+                && (argList.Arguments |> Seq.filter (isCancellationTokenArgument >> not) |> Seq.length) = 1
+                ->
                 None
             // Don't show hint if argument's own name (or, for a qualified member access, its last
             // segment) matches the parameter name

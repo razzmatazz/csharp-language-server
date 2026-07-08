@@ -160,4 +160,55 @@ namespace Project.InlayHintTest
             new FluentQuery().Where(IsPositive);
         }
     }
+
+    // Mirrors the real log4net `ILog.DebugFormat` overload shapes cited in
+    // plans/inlay-hint-reduction.md's rule #4 evidence: explicit `arg0`/`arg1`/`arg2` parameters
+    // rather than a single `params object[] args`.
+    public class Logger
+    {
+        public void DebugFormat(string format, object arg0, object arg1, object arg2)
+        {
+        }
+    }
+
+    public class LoggerSubject
+    {
+        public void CompositeFormatStringPositionalArgumentsAreSuppressed()
+        {
+            new Logger().DebugFormat("{0}: {1} did {2}", 1, 2, 3);
+        }
+    }
+
+    // A trailing CancellationToken argument is a conventional, non-essential "pass-through"
+    // parameter on async APIs, so it shouldn't disqualify the single-lambda-argument rule (#3).
+    public class FluentQueryAsync
+    {
+        public FluentQueryAsync WhereAsync(
+            System.Func<int, bool> predicate,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            return this;
+        }
+
+        public FluentQueryAsync CombineAsync(
+            System.Func<int, int> first,
+            System.Func<int, int> second,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            return this;
+        }
+    }
+
+    public class FluentQueryAsyncSubject
+    {
+        public void SingleLambdaArgumentWithTrailingCancellationTokenIsSuppressed()
+        {
+            new FluentQueryAsync().WhereAsync(x => x > 0, default);
+        }
+
+        public void MultiLambdaArgumentWithTrailingCancellationTokenKeepsHints()
+        {
+            new FluentQueryAsync().CombineAsync(x => x, x => x, default);
+        }
+    }
 }
