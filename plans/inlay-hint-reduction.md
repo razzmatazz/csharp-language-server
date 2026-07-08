@@ -60,6 +60,29 @@ to keep extending for further rules without touching other tests):
   own name is a decapitalized echo of its own declared type, e.g. a `MessageDispatcherAsync
   messageDispatcherAsync` parameter). Both sides covered by matching negative-control tests where
   the identifier does *not* echo the type.
+- ✅ **New rule (generic `obj`-style parameter names)** — prompted by a real `csharp-ls-rpc.log`
+  example, `NHibernate.ISession.SaveAsync(object obj, CancellationToken cancellationToken =
+  default)` called with a single explicit argument. Neither rule #1 (argument name doesn't match
+  `obj`) nor rule #2 (`obj` is 3 characters, over the ≤2 mechanical cutoff, and not a
+  numbered-suffix shape) caught it. Added a small, explicit, easy-to-extend
+  `genericParameterNames` set (currently just `{ "obj" }`) folded into
+  `hasUninformativeParameterName`, rather than broadening the mechanical length/regex checks
+  (which risked over-suppressing other short-but-meaningful 3-letter names). Covered by a positive
+  test (`Save(object obj)`) and a negative control confirming a different, coincidentally
+  same-length parameter name (`Log(string msg)`) still keeps its hint.
+- ✅ **New rule (explicit-object-creation-redundant `var` type hints)** — prompted by a second real
+  `csharp-ls-rpc.log` example, `var whProd = new DBWarehouseProduction { ... };`, which showed a
+  `": DBWarehouseProduction?"` hint even though the type is spelled out immediately after `new` on
+  the same line. This is the plain-object-creation sibling of rule #5 (which only handles generic
+  invocations' type-argument lists): added `isTypeSpelledOutInObjectCreation`, which suppresses the
+  `var` type hint when the initializer is an explicit (non-target-typed, i.e. not `new()`)
+  `ObjectCreationExpressionSyntax` whose spelled-out type is symbol-equal to the inferred variable
+  type. Deliberately restricted to explicit `new Type(...)`/`new Type { ... }` — target-typed
+  `new()` is the genuinely useful case and is handled separately by the existing
+  `ImplicitObjectCreationExpressionSyntax` match arm, which is untouched. Covered by tests for both
+  the plain-constructor shape (`new Widget()`) and the object-initializer shape (`new
+  WidgetWithProperty { Value = 1 }`, mirroring the real `{ Product = ..., Warehouse = ..., ... }`
+  shape from the log).
 - Rule #7 below is not yet implemented.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
@@ -741,6 +764,13 @@ built-in suppression heuristics is also to be decided during design.
    into `validateParameter` for the parameter-name sibling, with test coverage for full-name
    matches, last-word matches, foreach variables, and non-matching negative controls on both the
    type-hint and parameter-hint sides.
+6a. ✅ **Done.** Implement the `obj`-specific generic-parameter-name rule as `genericParameterNames`
+   (folded into `hasUninformativeParameterName`), with test coverage for the positive case
+   (`Save(object obj)`) and a same-length-but-different-name negative control (`Log(string msg)`).
+6b. ✅ **Done.** Implement rule #5's plain-object-creation sibling as
+   `isTypeSpelledOutInObjectCreation`, filtering `validateType`'s result in the
+   `VariableDeclarationSyntax` match arm alongside `isTypeSpelledOutInGenericInvocation`, with test
+   coverage for both the plain-constructor and object-initializer shapes.
 7. Design session to enumerate the exact suppression rule for the one remaining candidate (rule
    #7 in the "Net takeaway" ranking — `extern`/P-Invoke parameter names — plus any of the
    lower-priority/subjective ideas from "Candidate Ideas Gathered So Far" worth reconsidering),

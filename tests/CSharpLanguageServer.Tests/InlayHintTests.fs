@@ -666,3 +666,75 @@ let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name
             "Expected a \"handler:\" hint on line 321 (parameter name doesn't echo its own declared type), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 342 (0-indexed): `helper.Save(5);` -- parameter is `object obj`
+    let onLine = hints |> hintsOnLine 342u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel "obj:",
+        sprintf "Expected no \"obj:\" hint on line 342 (\"obj\" is a generic placeholder name), got: %A" onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 347 (0-indexed): `helper.Log("hi");` -- parameter is `string msg`
+    let onLine = hints |> hintsOnLine 347u
+
+    Assert.IsTrue(
+        onLine |> hasHintWithLabel "msg:",
+        sprintf
+            "Expected a \"msg:\" hint on line 347 (\"msg\" isn't the generic \"obj\" exception, only\
+             coincidentally the same length), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression spells out the type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 360 (0-indexed): `var widget = new Widget();`
+    let onLine = hints |> hintsOnLine 360u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": Widget",
+        sprintf
+            "Expected no \": Widget\" hint on line 360 (type is already spelled out right after `new`), got: %A"
+            onLine
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression with an initializer spells out the type``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 365 (0-indexed): `var widget = new WidgetWithProperty { Value = 1 };`
+    let onLine = hints |> hintsOnLine 365u
+
+    Assert.IsFalse(
+        onLine |> hasHintWithLabel ": WidgetWithProperty",
+        sprintf
+            "Expected no \": WidgetWithProperty\" hint on line 365 (type is already spelled out\
+             right after `new`, even with an object initializer), got: %A"
+            onLine
+    )

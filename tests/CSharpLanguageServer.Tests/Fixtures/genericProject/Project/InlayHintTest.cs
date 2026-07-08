@@ -322,4 +322,48 @@ namespace Project.InlayHintTest
             DispatchWithGenericName(null);
         }
     }
+
+    public class GenericParameterNameHelper
+    {
+        public void Save(object obj)
+        {
+        }
+
+        public void Log(string msg)
+        {
+        }
+    }
+
+    public class GenericParameterNameSubject
+    {
+        private readonly GenericParameterNameHelper helper = new GenericParameterNameHelper();
+
+        public void GenericObjParameterNameIsSuppressed()
+        {
+            helper.Save(5);
+        }
+
+        public void NonGenericSameLengthParameterNameKeepsHint()
+        {
+            helper.Log("hi");
+        }
+    }
+
+    public class WidgetWithProperty
+    {
+        public int Value { get; set; }
+    }
+
+    public class ExplicitObjectCreationTypeHintSubject
+    {
+        public void ExplicitObjectCreationTypeHintIsSuppressed()
+        {
+            var widget = new Widget();
+        }
+
+        public void ExplicitObjectCreationWithInitializerTypeHintIsSuppressed()
+        {
+            var widget = new WidgetWithProperty { Value = 1 };
+        }
+    }
 }
