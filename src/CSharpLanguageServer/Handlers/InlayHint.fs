@@ -281,6 +281,57 @@ module InlayHint =
                 | _ -> false
             | _ -> false
 
+        // Returns true when `initializer` is an `as` cast (`expr as SomeType`) whose target type
+        // is symbol-equal to `ty` -- in that case a `var` type hint would be purely redundant,
+        // since the type is already spelled out immediately after `as`, in the very same
+        // expression (a real example: `obj as DBBankAccount` (illustrative name), from a private
+        // codebase's `Equals` override, cited in plans/inlay-hint-reduction.md). Parenthesized
+        // expressions are unwrapped.
+        // `GetSymbolInfo` (not `GetTypeInfo`) is used on the right-hand side for the same reason
+        // as `isTypeSpelledOutInStaticInvocationQualifier` above: it's a type reference, not a
+        // value-producing expression, so it has no "value type" of its own -- its symbol *is* the
+        // type. Mirrors Roslyn's own `CSharpInlineTypeHintsService`'s `BinaryExpressionSyntax`
+        // with `AsExpression` kind candidate (see plans/inlay-hint-reduction.md).
+        let rec isTypeSpelledOutInAsExpression (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+            match initializer with
+            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInAsExpression paren.Expression ty
+            | :? BinaryExpressionSyntax as binary when binary.Kind() = SyntaxKind.AsExpression ->
+                match semanticModel.GetSymbolInfo(binary.Right).Symbol |> Option.ofObj with
+                | Some(:? ITypeSymbol as castType) -> SymbolEqualityComparer.Default.Equals(castType, ty)
+                | _ -> false
+            | _ -> false
+
+        // Returns true when `initializer` is a literal expression whose kind unambiguously
+        // implies a specific type (a numeric, string, or boolean literal), or an interpolated
+        // string expression (whose natural type, absent any target typing -- which a `var`
+        // declaration never provides -- is always `string`) -- in either case a `var` type hint
+        // would be purely redundant, since the type is directly implied by the initializer's own
+        // syntax (`var x = "hi"` and `var x = $"hi {name}"` are both obviously `string`, `var x =
+        // 42` is obviously `int`, ...). Parenthesized expressions are unwrapped. Deliberately
+        // excludes the `null` literal (its type can't be inferred from the literal alone -- it
+        // could be any reference/nullable-value type) and the `default` literal (same reasoning,
+        // plus it's its own distinct syntax node, DefaultExpressionSyntax, not
+        // LiteralExpressionSyntax). Also deliberately narrow about *which* expressions count:
+        // e.g. a unary-negated numeric literal (`var x = -1`) is a PrefixUnaryExpressionSyntax,
+        // not itself a LiteralExpressionSyntax, so it's intentionally left alone by this rule.
+        // See plans/inlay-hint-reduction.md's "LiteralExpressionSyntax" Roslyn prior-art candidate
+        // and the real interpolated-string example from a private codebase's trace/log-handler
+        // class (illustrative name) that prompted extending it to interpolated strings too.
+        let rec isTypeSpelledOutInLiteralOrInterpolatedString (initializer: ExpressionSyntax) : bool =
+            match initializer with
+            | :? ParenthesizedExpressionSyntax as paren ->
+                isTypeSpelledOutInLiteralOrInterpolatedString paren.Expression
+            | :? InterpolatedStringExpressionSyntax -> true
+            | :? LiteralExpressionSyntax as literal ->
+                match literal.Kind() with
+                | SyntaxKind.NumericLiteralExpression
+                | SyntaxKind.StringLiteralExpression
+                | SyntaxKind.CharacterLiteralExpression
+                | SyntaxKind.TrueLiteralExpression
+                | SyntaxKind.FalseLiteralExpression -> true
+                | _ -> false
+            | _ -> false
+
         // Returns the significant (trivia-free) name an argument expression is "known by", so it
         // can be compared against a parameter name to detect a redundant hint:
         // - a bare identifier (`resourceName`) contributes its own text
@@ -399,15 +450,20 @@ module InlayHint =
             // type-argument list already spells out this exact type (`Enum.Parse<T>()`,
             // `JsonSerializer.Deserialize<T>()`, a local generic factory method, ...), an explicit
             // object-creation expression that already spells out this exact type (`new
-            // SomeType(...)` / `new SomeType { ... }`), or a static invocation qualified by this
-            // exact type's own name (`string.Format(...)`, `Guid.NewGuid()`, ...)
+            // SomeType(...)` / `new SomeType { ... }`), a static invocation qualified by this
+            // exact type's own name (`string.Format(...)`, `Guid.NewGuid()`, ...), an `as` cast to
+            // this exact type (`obj as SomeType`), or a literal/interpolated-string expression
+            // whose type is directly implied by its own syntax (`"hi"`, `42`, `true`, `$"hi
+            // {name}"`, ...)
             |> Option.filter (fun ty ->
                 var.Variables[0].Initializer
                 |> Option.ofObj
                 |> Option.map (fun eq ->
                     not (isTypeSpelledOutInGenericInvocation eq.Value ty)
                     && not (isTypeSpelledOutInObjectCreation eq.Value ty)
-                    && not (isTypeSpelledOutInStaticInvocationQualifier eq.Value ty))
+                    && not (isTypeSpelledOutInStaticInvocationQualifier eq.Value ty)
+                    && not (isTypeSpelledOutInAsExpression eq.Value ty)
+                    && not (isTypeSpelledOutInLiteralOrInterpolatedString eq.Value))
                 |> Option.defaultValue true)
             // Don't show hint if the variable's own identifier already echoes the type name
             // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)

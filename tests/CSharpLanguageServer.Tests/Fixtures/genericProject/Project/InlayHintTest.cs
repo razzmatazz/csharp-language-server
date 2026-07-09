@@ -467,4 +467,45 @@ namespace Project.InlayHintTest
             chained.Where(p => p != null);
         }
     }
+
+    public class LiteralInitializerSubject
+    {
+        public void StringLiteralTypeHintIsSuppressed()
+        {
+            var greeting = "hi";
+        }
+
+        public void NumericLiteralTypeHintIsSuppressed()
+        {
+            var count = 42;
+        }
+
+        public void BooleanLiteralTypeHintIsSuppressed()
+        {
+            var flag = true;
+        }
+
+        public void UnaryMinusExpressionKeepsHint()
+        {
+            var negated = -1;
+        }
+
+        // Mirrors a real `var logMessage = $"{level}: {message}";`-shaped example (illustrative
+        // names) from a private codebase's trace/log-handler class, cited in
+        // plans/inlay-hint-reduction.md: an interpolated string's natural type is always `string`
+        // (there's no target type to widen it to `FormattableString`/`IFormattable` in a `var`
+        // declaration), so the hint is exactly as redundant as a plain string literal's.
+        public void InterpolatedStringTypeHintIsSuppressed(string name)
+        {
+            var greeting = $"Hello, {name}";
+        }
+    }
+
+    public class AsExpressionInitializerSubject
+    {
+        public void AsExpressionTypeHintIsSuppressed(object obj)
+        {
+            var widget = obj as Widget;
+        }
+    }
 }
