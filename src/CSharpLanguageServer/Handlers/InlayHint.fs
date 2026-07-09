@@ -446,17 +446,14 @@ module InlayHint =
             |> validateType
             |> Option.filter (fun ty -> not (identifierEchoesTypeName forEach.Identifier.ValueText ty.Name))
             |> Option.map (toTypeInlayHint forEach.Identifier.Span.End)
-        | :? ParameterSyntax as parameterNode when isNull parameterNode.Type ->
-            let parameter = semanticModel.GetDeclaredSymbol(parameterNode)
-
-            parameter
-            |> fun parameter ->
-                match parameter.ContainingSymbol with
-                | :? IMethodSymbol as methSym when methSym.MethodKind = MethodKind.AnonymousFunction -> Some parameter
-                | _ -> None
-            |> Option.map (fun parameter -> parameter.Type)
-            |> Option.bind validateType
-            |> Option.map (toTypeInlayHint parameterNode.Identifier.Span.End)
+        // Deliberately no longer emitting implicit lambda-parameter type hints (the
+        // `(p: DBEntity) => ...` style hint) at all -- see plans/inlay-hint-reduction.md for the
+        // rationale: real-world evidence across multiple samples showed this hint category is
+        // almost always redundant (spelled out by an immediately-preceding generic invocation,
+        // inferable from a property access one hop to the left, or simply repeated identically
+        // for the same type across multiple lambdas in one short fluent chain), and Visual
+        // Studio's own default configuration ships with all inline hints -- including this one --
+        // off by default.
         | :? ImplicitObjectCreationExpressionSyntax as implicitNew ->
             semanticModel.GetTypeInfo(implicitNew).Type
             |> validateType
