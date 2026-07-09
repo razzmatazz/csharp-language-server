@@ -847,3 +847,37 @@ let ``textDocument/inlayHint keeps an "item" parameter hint when the call has mo
              still helps disambiguate from \"index\"), got: %A"
             onLine
     )
+
+[<Test>]
+let ``textDocument/inlayHint never shows a type hint for an implicit lambda parameter`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // Implicit lambda-parameter type hints (the `(p: SomeType) => ...` style hint) were removed
+    // entirely -- see plans/inlay-hint-reduction.md. Real-world evidence showed this category is
+    // almost always redundant (spelled out by an immediately-preceding generic invocation,
+    // inferable from a property access one hop away, or simply repeated for the same type across
+    // multiple lambdas in one short fluent chain), and Visual Studio's own default configuration
+    // ships with all inline hints off by default.
+
+    // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- `x` infers to `int`
+    Assert.IsFalse(
+        hints |> hintsOnLine 144u |> hasHintWithLabel ": int",
+        "Expected no \": int\" implicit lambda-parameter type hint on line 144"
+    )
+
+    // line 460 (0-indexed): `repository.Query<Widget>().Where(p => p != null);` -- `p` infers to
+    // `Widget`, spelled out one call earlier at `Query<Widget>`
+    Assert.IsFalse(
+        hints |> hintsOnLine 460u |> hasHintWithLabel ": Widget",
+        "Expected no \": Widget\" implicit lambda-parameter type hint on line 460"
+    )
+
+    // line 466 (0-indexed): `chained.Where(p => p != null);` -- `p` also infers to `Widget`, but
+    // here the receiver isn't itself a generic invocation that spells the type out
+    Assert.IsFalse(
+        hints |> hintsOnLine 466u |> hasHintWithLabel ": Widget",
+        "Expected no \": Widget\" implicit lambda-parameter type hint on line 466"
+    )

@@ -1,12 +1,12 @@
 # Reducing Superfluous Inlay Hints
 
 **Status:** Full design/rule-table pass for the remaining candidates still not started, but
-informed by six real-world samples (an MVC controller, two large business-logic "ops" classes, a
-companion pair of MVC controller files, a small API controller, and a diverse batch spanning a
-controller/file-I/O utility/Win32 interop/message handler) — see the "Real-World Evidence" sections
-below for concrete label-frequency data pulled from a live `csharp-ls-rpc.log` session, plus a
-source-level root-cause diagnosis of the same-name suppression gap (from reading `InlayHint.fs`
-directly).
+informed by seven real-world samples (an MVC controller, two large business-logic "ops" classes, a
+companion pair of MVC controller files, a small API controller, a diverse batch spanning a
+controller/file-I/O utility/Win32 interop/message handler, and a large private ERP/CRM codebase
+session) — see the "Real-World Evidence" sections below for concrete label-frequency data pulled
+from live `csharp-ls-rpc.log` sessions, plus a source-level root-cause diagnosis of the same-name
+suppression gap (from reading `InlayHint.fs` directly).
 
 Implementation has started against the "Net takeaway" priority ranking below, backed by a new
 `InlayHintTests.fs` (+ dedicated `Fixtures/genericProject/Project/InlayHintTest.cs` fixture, safe
@@ -106,7 +106,40 @@ to keep extending for further rules without touching other tests):
   `Convert.ToInt32(...)`, qualifier `Convert` vs. return type `int`) or an instance (whose
   qualifier symbol is a local/field/property, never a type). Covered by a matching positive/negative
   test pair.
+- ⛔ **Superseded — implicit lambda-parameter type hints removed entirely.** A narrower,
+  shape-based suppression rule (`isTypeSpelledOutInInvocationChainReceiver`) was implemented first
+  (prompted by a seventh real `csharp-ls-rpc.log` session — a large private ERP/CRM codebase —
+  showing individual type-hint labels repeating 249, 138, 51, 45, 36, ... times each in a single
+  response, traced to the `db.Query<DBEntity>().Where(p => ...)` idiom re-hinting `p`'s type on
+  every call even though it's spelled out one call earlier at `Query<DBEntity>`), but a follow-up
+  look at the same file (an entity class, illustrative name `DBOrgEntity.cs`) surfaced further,
+  structurally different instances of the same redundancy that rule wasn't scoped to catch — e.g.
+  `rootUnit.Contacts.OrderBy(x => x.Id).First(x => ...)`, where the identical inferred type
+  (illustrative name `DBContactPerson`) was hinted twice in a row across two chained lambdas with
+  no generic-invocation receiver in sight, and `this.Owner.OrgUnits.Single(b => ...)`, where `b`'s
+  type is trivially inferable from the `.OrgUnits` property name one hop to the left. Asked to
+  justify the hint category in general, and given (a) every real occurrence found across all seven
+  samples turned out to be redundant in one of these shapes, and (b) Visual Studio's own default
+  configuration ships with all inline hints — including this one — off entirely (it's opt-in), the
+  decision (explicit user call) was to stop emitting `InlayHintKind.Type` for implicit lambda
+  parameters altogether, rather than keep chasing individual redundancy shapes. Implemented by
+  deleting the `ParameterSyntax` match arm in `toInlayHint` (and the now-dead
+  `isTypeSpelledOutInInvocationChainReceiver` helper) entirely. The two tests that had covered the
+  narrower rule were replaced with a single regression test asserting no type hint is ever shown
+  for an implicit lambda parameter, covering both the original `Query<T>().Where(p => ...)` shape
+  and a plain non-generic-receiver shape.
 - Rule #7 below is not yet implemented.
+- **Open candidate (not yet implemented):** two-(or-more)-lambda-argument LINQ combinators (e.g.
+  `ToDictionary(keySelector, elementSelector)`, `GroupBy` with an element selector, `ToLookup`,
+  `Join`/`GroupJoin`) still show all their parameter-name hints, since rule #3 above is
+  deliberately scoped to sole-lambda-argument calls only. Confirmed in the same seventh sample
+  (`keySelector:`/`elementSelector:`, 8 occurrences each, from real `ToDictionary(g => g.Key, g =>
+  ...)` call sites). Two design options were discussed but not decided: (a) generalize rule #3 to
+  "every effective argument is a lambda expression" (broader, but risks over-suppressing
+  user-defined multi-lambda methods where position genuinely needs a name, e.g. a hypothetical
+  `Combine(first, second)`), or (b) a narrow allow-list of known `System.Linq.Enumerable`
+  method names with all-lambda arguments (lower risk, needs maintenance). Deferred pending a
+  decision in a future design session.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -119,10 +152,12 @@ function.
 useful to the reader" heuristics:
 
 - **Type hints** (`InlayHintKind.Type`) — for `var` declarations, deconstruction designations,
-  `foreach` loop variables, implicit lambda parameters, and `new(...)` implicit object creation.
-  The only filtering applied today is `validateType`, which suppresses a hint solely when the
-  type fails to resolve (`IErrorTypeSymbol`) or is literally named `"var"`. It does **not**
-  consider whether the type is already obvious from the surrounding code.
+  `foreach` loop variables, and `new(...)` implicit object creation. (Implicit lambda parameters
+  were originally in this list too, but that hint category was removed entirely — see the ⛔
+  **Superseded** entry near the top of this document.) The only filtering applied today is
+  `validateType`, which suppresses a hint solely when the type fails to resolve
+  (`IErrorTypeSymbol`) or is literally named `"var"`. It does **not** consider whether the type is
+  already obvious from the surrounding code.
 - **Parameter name hints** (`InlayHintKind.Parameter`) — for positional call-site arguments.
   The only filtering applied today is `validateParameter`, which suppresses a hint for indexers,
   for parameters with an empty name, or when the argument text already matches the parameter
@@ -688,7 +723,94 @@ Both fixes are independent, small, and additive to the existing `validateParamet
 heuristic categories needed, just making the existing "don't restate what's already in the
 argument's own name" rule actually work in the two most common shapes it currently misses.
 
-**Net takeaway across all six samples:** the highest-value, lowest-risk rules to prioritize
+## Real-World Evidence: Seventh Sample (Large Private ERP/CRM Codebase Session)
+
+A seventh sample, from a live editor session against a large private ERP/CRM codebase (contract
+pricing, product, and device-management "ops"/repository classes), captured via
+`~/csharp-ls-rpc.log`. Unlike the earlier samples' single-file/single-request snapshots, this
+session spanned many `textDocument/inlayHint` responses across several files. Label-frequency
+tally across the whole session, top entries:
+
+| Label | Count | Kind |
+|---|---|---|
+| `: DBLineItemPrice` (illustrative name) / `?` | 249 + 38 | Type |
+| `: DBLineItemCategory` (illustrative name) | 138 | Type |
+| `format:` | 117 | Parameter |
+| `proxy:` | 104 | Parameter |
+| `: DBLineItemDevice` (illustrative name) / `?` | 51 + 21 | Type |
+| `args:` | 54 | Parameter |
+| `: DBArticle` (illustrative name) / `?` | 45 + 10 | Type |
+| `paramName:` | 44 | Parameter |
+| `product:` | 44 | Parameter |
+| `: DBUserCredential` (illustrative name) | 36 | Type |
+| `keySelector:` / `elementSelector:` | 8 each | Parameter |
+| (long tail) | ≤34 each | — |
+
+Three findings: one initially acted on with a narrow fix, then superseded by a full removal after
+a follow-up look at the same file; one left open.
+
+1. **Root cause of the extreme type-hint repetition (249×, 138×, 51×, 45×, 36×, ...): implicit
+   lambda-parameter type hints restating a type already spelled out one call earlier in the same
+   fluent chain.** Every one of these counts traced back to the same data-access idiom, repeated
+   throughout the codebase:
+
+   ```csharp
+   db.Query<DBLineItemPrice>().Where(p => p.SomeCondition)
+   ```
+
+   `p`'s inferred type (`DBLineItemPrice`, illustrative name) was hinted on *every single call*,
+   even though it's spelled out immediately to the left, at `Query<DBLineItemPrice>`. Initially
+   fixed narrowly (a shape-based rule mirroring rule #5, reused against the lambda's enclosing
+   invocation's receiver) — see finding 3 below for why this was superseded.
+2. **Open candidate, not yet implemented: two-lambda-argument LINQ combinators still show all
+   their parameter-name hints.** `keySelector:`/`elementSelector:` (8 occurrences each) come from
+   real `ToDictionary(keySelector, elementSelector)` call sites, e.g.:
+
+   ```csharp
+   .GroupBy(item => item.ReplacedBySerialNumber)
+   .ToDictionary(
+       g => g.Key,
+       g => g.OrderBy(item => item.Revision).Last());
+   ```
+
+   Rule #3 (sole lambda-argument suppression) is *deliberately* scoped to calls with exactly one
+   effective (non-`CancellationToken`) argument, so it correctly does not fire here — confirmed
+   this is working as designed, not a bug, by checking that the single-lambda-argument LINQ case
+   (`predicate:`/`selector:` from `.Where(...)`/`.Select(...)`) produces zero hints anywhere in
+   this session. See the bullet under "Open candidate (not yet implemented)" near the top of this
+   document for the two design options considered for extending coverage to this shape.
+3. **Follow-up on the same file (an entity class, illustrative name `DBOrgEntity.cs`) surfaced
+   further instances of the same redundancy that the narrow fix from finding 1 wasn't scoped to
+   catch, leading to removing the whole hint category.** Two more shapes, both with *no*
+   generic-invocation receiver in sight (so finding 1's fix couldn't have caught them even if
+   generalized slightly):
+
+   ```csharp
+   var primaryContact = rootUnit.Contacts
+       .OrderBy(x => x.Id)
+       .First(x => x.ContactType.Id == DBContactPersonType.ID_DEFAULT);
+   ```
+
+   hinted the *identical* inferred type (illustrative name `DBContactPerson`) twice in a row, once
+   per chained lambda — pure repetition within a few tokens of itself. And:
+
+   ```csharp
+   var rootUnit = this.Owner.OrgUnits.Single(b => b.IsRoot);
+   ```
+
+   hinted `b: DBOrgUnit` (illustrative name), a type trivially inferable from the `.OrgUnits`
+   property name one hop to the left (the `var rootUnit` hint itself was already correctly
+   suppressed here by rule #6, since `rootUnit`'s last word "Unit" echoes the type's last word
+   "Unit" — confirming rule #6 works as intended and isn't the gap). Asked directly to justify
+   keeping the hint category at all, and finding that (a) every real occurrence across all seven
+   samples fell into one of these redundant shapes, and (b) Visual Studio's own default
+   configuration ships with *all* inline hints, including this one, off entirely (opt-in only), the
+   decision was to stop
+   emitting implicit lambda-parameter type hints altogether rather than keep chasing individual
+   redundancy shapes with more narrow rules. See the ⛔ **Superseded** entry near the top of this
+   document for the implementation (a straight deletion of the `ParameterSyntax` match arm).
+
+**Net takeaway across all seven samples:** the highest-value, lowest-risk rules to prioritize
 first, ranked roughly by combined volume, confidence, and implementation risk:
 
 1. **✅ Implemented.** Fix the same-name parameter suppression gap — now root-caused (see above)
@@ -745,11 +867,30 @@ first, ranked roughly by combined volume, confidence, and implementation risk:
 7. Consider suppressing parameter-name hints for arguments to `extern`/P-Invoke-declared methods,
    given their names are typically non-idiomatic, verbatim native-header copies that add little
    without external platform documentation regardless.
+8. **⛔ Superseded by full removal.** Initially implemented narrowly as
+   `isTypeSpelledOutInInvocationChainReceiver` (suppress when the type is already spelled out one
+   call earlier in the same fluent chain, e.g. `db.Query<DBEntity>().Where(p => ...)` — the single
+   biggest-volume finding across all seven samples, accounting for hundreds of hints in the
+   seventh sample alone). A follow-up look at the same file surfaced further redundant shapes this
+   narrow rule wasn't scoped to catch (repeated hints across chained lambdas with no generic
+   receiver at all, e.g. `.OrderBy(x => ...).First(x => ...)`; hints trivially inferable from a
+   property name one hop away, e.g. `.Branches.Single(b => ...)`). Given every real occurrence
+   across all samples turned out redundant, and Visual Studio's own default ships all inline
+   hints — including this one — off entirely, implicit lambda-parameter type hints were removed
+   from `toInlayHint` altogether (the `ParameterSyntax` match arm was deleted, along with the
+   now-dead helper) rather than adding further narrow rules.
+9. **Not yet implemented — open candidate.** Extend coverage to two-(or-more)-lambda-argument LINQ
+   combinators (`ToDictionary(keySelector, elementSelector)`, `GroupBy` with an element selector,
+   `ToLookup`, `Join`/`GroupJoin`), confirmed still fully hinted in the seventh sample. Two
+   untried design options: generalize rule #3 to "every effective argument is a lambda" (broader,
+   riskier for arbitrary user-defined multi-lambda methods) vs. a narrow
+   `System.Linq.Enumerable`-method allow-list (lower risk, more maintenance). Needs a decision
+   before implementation.
 
 The idiom-repetition (suppress-on-known-recurring-callback-shape), idiom-shape (e.g.
 `RedirectToAction`/`View`), qualified-enum-argument idea, and anonymous/tuple-type-verbosity ideas
 remain worth pursuing but are lower-volume, more subjective, and/or a different kind of problem
-(length vs. redundancy) than the seven above. Equally important: this sample reinforced that
+(length vs. redundancy) than the nine above. Equally important: this sample reinforced that
 **negative test cases matter as much as positive ones** — `Stream.Write(buffer, offset, count)`
 and `oldValue`/`newValue`-style handlers are concrete, real examples where hints must be kept.
 
@@ -794,21 +935,30 @@ built-in suppression heuristics is also to be decided during design.
    `isTypeSpelledOutInObjectCreation`, filtering `validateType`'s result in the
    `VariableDeclarationSyntax` match arm alongside `isTypeSpelledOutInGenericInvocation`, with test
    coverage for both the plain-constructor and object-initializer shapes.
-7. Design session to enumerate the exact suppression rule for the one remaining candidate (rule
-   #7 in the "Net takeaway" ranking — `extern`/P-Invoke parameter names — plus any of the
-   lower-priority/subjective ideas from "Candidate Ideas Gathered So Far" worth reconsidering),
-   informed by the real-world evidence above and by user/editor feedback on which current hints
-   still feel noisy in practice.
+6c. ✅ **Done, then superseded.** Implemented rule #8 (implicit lambda-parameter type hints
+   redundant with an immediate generic-invocation receiver) as
+   `isTypeSpelledOutInInvocationChainReceiver`, wired into the `ParameterSyntax` (implicit lambda
+   parameter) type-hint match arm. Written test-first: the positive test
+   (`repository.Query<Widget>().Where(p => ...)`) was confirmed red before wiring the helper in,
+   then green after; the negative control (`chained.Where(p => ...)`, a non-generic receiver)
+   passed throughout. Full `dotnet test` suite (255 tests) confirmed green.
+6d. ✅ **Done.** Superseded 6c: removed implicit lambda-parameter type hints entirely (deleted the
+   `ParameterSyntax` match arm and the now-dead `isTypeSpelledOutInInvocationChainReceiver`
+   helper), per explicit user decision after a follow-up look at the same sample file surfaced
+   further redundant shapes (`.OrderBy(x => ...).First(x => ...)` repeating the same type twice;
+   `.OrgUnits.Single(b => ...)` inferable from the property name) that rule #8 wasn't scoped to
+   catch, and after confirming Visual Studio's own default configuration ships all inline hints
+   off. The two rule-#8-specific tests were replaced with a single regression test asserting no
+   type hint is ever shown for an implicit lambda parameter. Full `dotnet test` suite (254 tests)
+   confirmed green.
+7. Design session to enumerate the exact suppression rule for the two remaining candidates (rule
+   #7 in the "Net takeaway" ranking — `extern`/P-Invoke parameter names — and rule #9 —
+   two-(or-more)-lambda-argument LINQ combinators like `ToDictionary(keySelector,
+   elementSelector)` — plus any of the lower-priority/subjective ideas from "Candidate Ideas
+   Gathered So Far" worth reconsidering), informed by the real-world evidence above and by
+   user/editor feedback on which current hints still feel noisy in practice.
 8. Implement the agreed predicate(s) in `toInlayHint`, with unit/integration test coverage
    (positive case: hint suppressed; negative case: hint still shown for the non-redundant
    variant) — extend the existing `InlayHintTests.fs` / `InlayHintTest.cs` fixture rather than
    creating new ones, so all rules stay exercised against one file.
 9. Decide on and (if wanted) implement the configuration angle above.
-
-## Files Likely Touched
-
-| File | Likely Change |
-|------|----------------|
-| `src/CSharpLanguageServer/Handlers/InlayHint.fs` | Add remaining suppression predicate to `toInlayHint`'s match arms, per the design once finalized (rules #1–#6 already landed/closed) |
-| `tests/CSharpLanguageServer.Tests/InlayHintTests.fs` | Add positive/negative coverage for the remaining rule (rules #1–#6 already covered) |
-| `tests/CSharpLanguageServer.Tests/Fixtures/genericProject/Project/InlayHintTest.cs` | Extend with new code shapes per remaining rule |

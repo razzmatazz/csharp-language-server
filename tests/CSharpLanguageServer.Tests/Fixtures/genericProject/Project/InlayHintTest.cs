@@ -432,4 +432,39 @@ namespace Project.InlayHintTest
             helper.Insert(0, 5);
         }
     }
+
+    // Mirrors a common ORM/data-access idiom (`db.Query<T>().Where(p => ...)`): the lambda's
+    // implicit parameter type is already spelled out one call earlier, in the receiver's own
+    // explicit generic type argument.
+    public class Repository
+    {
+        public Repository<T> Query<T>()
+        {
+            return new Repository<T>();
+        }
+    }
+
+    public class Repository<T>
+    {
+        public Repository<T> Where(System.Func<T, bool> predicate)
+        {
+            return this;
+        }
+    }
+
+    public class RepositoryQuerySubject
+    {
+        private readonly Repository repository = new Repository();
+
+        public void LambdaParameterTypeSpelledOutInReceiverIsSuppressed()
+        {
+            repository.Query<Widget>().Where(p => p != null);
+        }
+
+        public void LambdaParameterTypeNotSpelledOutInReceiverKeepsHint()
+        {
+            var chained = repository.Query<Widget>().Where(p => p != null);
+            chained.Where(p => p != null);
+        }
+    }
 }
