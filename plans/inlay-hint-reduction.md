@@ -1,11 +1,12 @@
 # Reducing Superfluous Inlay Hints
 
 **Status:** Full design/rule-table pass for the remaining candidates still not started, but
-informed by seven real-world samples (an MVC controller, two large business-logic "ops" classes, a
+informed by eight real-world samples (an MVC controller, two large business-logic "ops" classes, a
 companion pair of MVC controller files, a small API controller, a diverse batch spanning a
-controller/file-I/O utility/Win32 interop/message handler, and a large private ERP/CRM codebase
-session) — see the "Real-World Evidence" sections below for concrete label-frequency data pulled
-from live `csharp-ls-rpc.log` sessions, plus a source-level root-cause diagnosis of the same-name
+controller/file-I/O utility/Win32 interop/message handler, a large private ERP/CRM codebase
+session, and a targeted follow-up spot-check of two more files from that same session) — see the
+"Real-World Evidence" sections below for concrete label-frequency data pulled from live
+`csharp-ls-rpc.log` sessions, plus a source-level root-cause diagnosis of the same-name
 suppression gap (from reading `InlayHint.fs` directly).
 
 Implementation has started against the "Net takeaway" priority ranking below, backed by a new
@@ -140,6 +141,33 @@ to keep extending for further rules without touching other tests):
   `Combine(first, second)`), or (b) a narrow allow-list of known `System.Linq.Enumerable`
   method names with all-lambda arguments (lower risk, needs maintenance). Deferred pending a
   decision in a future design session.
+- ✅ **New rule (`as`-cast-redundant `var` type hints)** — prompted by an eighth real
+  `csharp-ls-rpc.log` spot-check (see "Eighth Sample" below), `var other = obj as DBBankAccount;`
+  (illustrative name) in an entity class's `Equals(object obj)` override, which showed a
+  `": DBBankAccount"` hint even though the type is spelled out immediately after `as`, on the same
+  line. The `as`-cast sibling of rule #5/the object-creation and static-qualifier rules above:
+  added `isTypeSpelledOutInAsExpression`, which suppresses the `var` type hint when the initializer
+  is a `BinaryExpressionSyntax` of `AsExpression` kind whose right-hand (target) type is
+  symbol-equal to the inferred variable type. Uses `GetSymbolInfo` (not `GetTypeInfo`) on the
+  right-hand side, for the same reason as the static-qualifier rule: it's a type reference, not a
+  value-producing expression. Covered by a positive test (`obj as Widget`).
+- ✅ **New rule (literal/interpolated-string-redundant `var` type hints)** — prompted by two more
+  examples from the same eighth spot-check: a bare string literal assigned to a local later reused
+  as an NHibernate `UniqueKey` name (illustrative rename: `var uniqueAccountKey =
+  "account_number_unique";`), and `var logMessage = $"{level}: {message}";` (illustrative names)
+  in a trace/log-handler class — both showed a redundant `": string"`/`": string?"` hint despite
+  the type being directly implied by the initializer's own syntax. This is the
+  `LiteralExpressionSyntax` candidate from Roslyn's own `CSharpInlineTypeHintsService` prior art
+  (see the "Candidate Ideas" section below), extended to also cover
+  `InterpolatedStringExpressionSyntax` (whose natural type, absent any target typing -- which a
+  `var` declaration never provides -- is always `string`). Added
+  `isTypeSpelledOutInLiteralOrInterpolatedString`, covering numeric, string, character, and
+  boolean literals plus interpolated strings. Deliberately excludes the `null`/`default` literals
+  (neither reveals a specific type on its own) and doesn't unwrap non-literal wrapping expressions
+  like a unary-negated numeric (`var x = -1` is a `PrefixUnaryExpressionSyntax`, not itself a
+  `LiteralExpressionSyntax`, and is deliberately left alone -- covered by a dedicated
+  negative-control test). Covered by positive tests for each literal kind plus the interpolated
+  string, and the unary-negation negative control.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -893,6 +921,69 @@ remain worth pursuing but are lower-volume, more subjective, and/or a different 
 (length vs. redundancy) than the nine above. Equally important: this sample reinforced that
 **negative test cases matter as much as positive ones** — `Stream.Write(buffer, offset, count)`
 and `oldValue`/`newValue`-style handlers are concrete, real examples where hints must be kept.
+
+## Real-World Evidence: Eighth Sample (Follow-Up Spot-Check, Two More Files)
+
+A targeted follow-up spot-check of two more files from the same private ERP/CRM-adjacent codebase
+session as the seventh sample (an entity class with a hand-written `Equals`/`GetHashCode`
+override plus a FluentNHibernate mapping class, and a small trace/log-event handler class),
+captured via `~/csharp-ls-rpc.log`. Unlike the seventh sample's broad label-frequency tally, this
+was a narrow, line-by-line check of a single `textDocument/inlayHint` response per file — but it
+surfaced two new type-hint redundancy shapes not covered by any of the six `isTypeSpelledOutIn*`
+rules implemented so far, both now fixed:
+
+1. **An `as`-cast's target type is already spelled out on the same line, but nothing suppressed
+   it.** The entity class's `Equals` override followed the common
+   `object.Equals(object)`-overriding pattern:
+
+   ```csharp
+   public override bool Equals(object obj)
+   {
+       var other = obj as DBBankAccount;  // illustrative name
+       return other != null && this.Id == other.Id;
+   }
+   ```
+
+   → hinted `": DBBankAccount"` (technically `": DBBankAccount?"`, since `as` always produces a
+   nullable result) on `other`, even though `DBBankAccount` is spelled out four characters to the
+   left, right after `as`, in the very same statement. None of the five existing
+   `isTypeSpelledOutIn*` checks (generic-invocation, object-creation, static-invocation-qualifier)
+   matched this shape — it's syntactically distinct from all three (a `BinaryExpressionSyntax`, not
+   an `InvocationExpressionSyntax`/`ObjectCreationExpressionSyntax`). This is exactly the
+   `BinaryExpressionSyntax` with `AsExpression` kind candidate from Roslyn's own
+   `CSharpInlineTypeHintsService` prior art, cited in this doc's "Candidate Ideas" section since
+   the very first draft but never implemented until now.
+2. **A bare literal or interpolated string's type is directly implied by its own syntax, but
+   nothing suppressed that either.** Two distinct concrete examples, from the two different files:
+
+   ```csharp
+   // In the FluentNHibernate mapping class's constructor:
+   var uniqueAccountKey = "account_number_unique";  // illustrative rename
+   ```
+
+   → hinted `": string"` on a plain string literal — about as unambiguous as a type hint gets.
+   And, from the trace/log-handler class (also seen re-hinting the same shape repeatedly across
+   its handler methods):
+
+   ```csharp
+   var logMessage = $"{level}: {message}";  // illustrative names
+   ```
+
+   → hinted `": string?"` on an interpolated string. An interpolated string's natural type,
+   absent any target typing (which a `var` declaration never provides), is always `string` — every
+   bit as self-evident as a bare literal. Neither shape is covered by Roslyn's own
+   `LiteralExpressionSyntax` candidate as originally scoped (which only covers literals, not
+   interpolated strings), so the implementation (`isTypeSpelledOutInLiteralOrInterpolatedString`)
+   extends it to cover both, while deliberately *not* unwrapping a unary-negated numeric
+   (`var x = -1`, a `PrefixUnaryExpressionSyntax`) or the `null`/`default` literals (neither of
+   which implies a specific type on its own) -- both confirmed via dedicated negative-control
+   tests.
+
+Both fixes are small, additive `validateType` filters mirroring the existing
+`isTypeSpelledOutInGenericInvocation`/`isTypeSpelledOutInObjectCreation`/
+`isTypeSpelledOutInStaticInvocationQualifier` pattern -- no new heuristic *category*, just two more
+initializer shapes recognized within the already-established "type is spelled out in the
+initializer" rule family.
 
 ## Configuration Angle
 

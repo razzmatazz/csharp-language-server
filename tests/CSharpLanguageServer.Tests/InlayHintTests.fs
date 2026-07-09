@@ -881,3 +881,82 @@ let ``textDocument/inlayHint never shows a type hint for an implicit lambda para
         hints |> hintsOnLine 466u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" implicit lambda-parameter type hint on line 466"
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint for a string literal initializer`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 474 (0-indexed): `var greeting = "hi";`
+    Assert.IsFalse(
+        hints |> hintsOnLine 474u |> hasHintWithLabel ": string",
+        "Expected no \": string\" hint on line 474 (type is directly implied by the string literal)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 479 (0-indexed): `var count = 42;`
+    Assert.IsFalse(
+        hints |> hintsOnLine 479u |> hasHintWithLabel ": int",
+        "Expected no \": int\" hint on line 479 (type is directly implied by the numeric literal)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 484 (0-indexed): `var flag = true;`
+    Assert.IsFalse(
+        hints |> hintsOnLine 484u |> hasHintWithLabel ": bool",
+        "Expected no \": bool\" hint on line 484 (type is directly implied by the boolean literal)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 489 (0-indexed): `var negated = -1;` -- a PrefixUnaryExpressionSyntax, not itself a
+    // LiteralExpressionSyntax, so intentionally out of scope for the literal-initializer rule
+    Assert.IsTrue(
+        hints |> hintsOnLine 489u |> hasHintWithLabel ": int",
+        "Expected a \": int\" hint on line 489 (initializer is a unary expression, not a bare literal)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 498 (0-indexed): `var greeting = $"Hello, {name}";`
+    Assert.IsFalse(
+        hints |> hintsOnLine 498u |> hasHintWithLabel ": string",
+        "Expected no \": string\" hint on line 498 (interpolated string's natural type is always string)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 506 (0-indexed): `var widget = obj as Widget;`
+    Assert.IsFalse(
+        hints |> hintsOnLine 506u |> hasHintWithLabel ": Widget",
+        "Expected no \": Widget\" hint on line 506 (type is already spelled out right after `as`)"
+    )
