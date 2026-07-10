@@ -508,4 +508,46 @@ namespace Project.InlayHintTest
             var widget = obj as Widget;
         }
     }
+
+    // Mirrors the real-world `var orders = await db.Query<DBOrder>().Where(o => ...).ToListAsync();`
+    // idiom cited in plans/inlay-hint-reduction.md (illustrative names): the *element* type of the
+    // inferred `List<T>` was already spelled out earlier in the same fluent chain, at the
+    // `Query<T>()` call -- `ToList`/`ToListAsync`-style materialization doesn't introduce any new
+    // type information beyond what's already visible a few calls to the left.
+    public class ListRepository
+    {
+        public ListRepository<T> Query<T>()
+        {
+            return new ListRepository<T>();
+        }
+    }
+
+    public class ListRepository<T>
+    {
+        public ListRepository<T> Where(System.Func<T, bool> predicate)
+        {
+            return this;
+        }
+
+        public System.Collections.Generic.List<T> ToList()
+        {
+            return new System.Collections.Generic.List<T>();
+        }
+    }
+
+    public class ListRepositoryQuerySubject
+    {
+        private readonly ListRepository repository = new ListRepository();
+
+        public void ElementTypeSpelledOutEarlierInChainTypeHintIsSuppressed()
+        {
+            var widgets = repository.Query<Widget>().Where(p => p != null).ToList();
+        }
+
+        public void ElementTypeNotSpelledOutInChainKeepsHint()
+        {
+            var partial = repository.Query<Widget>().Where(p => p != null);
+            var widgets2 = partial.ToList();
+        }
+    }
 }

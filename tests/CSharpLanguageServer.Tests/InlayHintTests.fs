@@ -960,3 +960,40 @@ let ``textDocument/inlayHint suppresses a var type hint when an "as" expression'
         hints |> hintsOnLine 506u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" hint on line 506 (type is already spelled out right after `as`)"
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in a fluent chain``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 543 (0-indexed): `var widgets = repository.Query<Widget>().Where(p => p != null).ToList();`
+    // -- mirrors the real `var orders = await db.Query<DBOrder>().Where(o => ...).ToListAsync();`
+    // idiom cited in plans/inlay-hint-reduction.md: `Widget` is already spelled out earlier in the
+    // same chain, at `Query<Widget>()`, so the `: List<Widget>` hint on the materialized result is
+    // redundant.
+    Assert.IsFalse(
+        hints |> hintsOnLine 543u |> hasHintWithLabel ": List<Widget>",
+        "Expected no \": List<Widget>\" hint on line 543 (element type is already spelled out\
+         earlier in the fluent chain, at Query<Widget>())"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 549 (0-indexed): `var widgets2 = partial.ToList();`
+    // -- the explicit `Query<Widget>()` generic invocation happened in a *previous* statement, not
+    // in this initializer's own invocation chain, so the type isn't "spelled out" from this hint's
+    // point of view and the hint should be kept.
+    Assert.IsTrue(
+        hints |> hintsOnLine 549u |> hasHintWithLabel ": List<Widget>",
+        "Expected a \": List<Widget>\" hint on line 549 (element type isn't spelled out anywhere\
+         in this initializer's own invocation chain)"
+    )
