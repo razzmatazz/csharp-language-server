@@ -232,6 +232,69 @@ module InlayHint =
                 |> Option.defaultValue false
             | _ -> false
 
+        // Returns true when `ty` is a constructed generic type (e.g. `List<DBSalesOrder>`) and
+        // one of its own type arguments (e.g. `DBSalesOrder`) was already spelled out *earlier* in
+        // the same fluent invocation chain that produced `initializer`, via an explicit generic
+        // invocation's type-argument list -- the materializing-call sibling of
+        // `isTypeSpelledOutInGenericInvocation` above, which only looks at the initializer's own,
+        // outermost invocation. A real example (illustrative names, see
+        // plans/inlay-hint-reduction.md): `var orders = await
+        // db.Query<DBSalesOrder>().Where(o => ...).ToListAsync();` -- the outermost invocation is
+        // `ToListAsync()`, which has no explicit type arguments of its own (its `List<DBSalesOrder>`
+        // result is entirely inferred), so `isTypeSpelledOutInGenericInvocation` doesn't catch
+        // this shape. But `DBSalesOrder` -- one of the inferred `List<DBSalesOrder>` type's own
+        // type arguments -- is still spelled out two calls to the left, at `Query<DBSalesOrder>()`,
+        // in the very same expression. Walks the invocation chain leftwards (each invocation's own
+        // receiver, when that receiver is itself an invocation reached through a member access)
+        // looking for any explicit generic invocation whose type-argument list contains a type
+        // symbol-equal to one of `ty`'s type arguments. Parenthesized expressions are unwrapped.
+        // Deliberately does not require the outermost call to be a specific, named method (e.g.
+        // `ToList`/`ToListAsync`/`ToArray`) -- restricting to `ty` being a *constructed generic*
+        // type whose element was spelled out is enough of a signal on its own, and avoids having
+        // to maintain a per-method allow-list.
+        let rec isElementTypeSpelledOutEarlierInInvocationChain
+            (initializer: ExpressionSyntax)
+            (ty: ITypeSymbol)
+            : bool =
+            match ty with
+            | :? INamedTypeSymbol as namedTy when not namedTy.TypeArguments.IsEmpty ->
+                let rec walkChain (expr: ExpressionSyntax) : bool =
+                    match expr with
+                    | :? ParenthesizedExpressionSyntax as paren -> walkChain paren.Expression
+                    | :? InvocationExpressionSyntax as invocation ->
+                        let genericName =
+                            match invocation.Expression with
+                            | :? GenericNameSyntax as generic -> Some generic
+                            | :? MemberAccessExpressionSyntax as memberAccess ->
+                                match memberAccess.Name with
+                                | :? GenericNameSyntax as generic -> Some generic
+                                | _ -> None
+                            | _ -> None
+
+                        let spelledOutHere =
+                            genericName
+                            |> Option.map (fun generic ->
+                                generic.TypeArgumentList.Arguments
+                                |> Seq.exists (fun typeArgSyntax ->
+                                    match semanticModel.GetTypeInfo(typeArgSyntax).Type |> Option.ofObj with
+                                    | Some typeArgSymbol ->
+                                        namedTy.TypeArguments
+                                        |> Seq.exists (fun elemTy ->
+                                            SymbolEqualityComparer.Default.Equals(elemTy, typeArgSymbol))
+                                    | None -> false))
+                            |> Option.defaultValue false
+
+                        if spelledOutHere then
+                            true
+                        else
+                            match invocation.Expression with
+                            | :? MemberAccessExpressionSyntax as memberAccess -> walkChain memberAccess.Expression
+                            | _ -> false
+                    | _ -> false
+
+                walkChain initializer
+            | _ -> false
+
         // Returns true when `initializer` is an explicit object-creation expression (`new
         // SomeType(...)` / `new SomeType { ... }`) whose spelled-out type is symbol-equal to
         // `ty` -- in that case a `var` type hint would be purely redundant, since the type is
@@ -452,9 +515,11 @@ module InlayHint =
             // object-creation expression that already spells out this exact type (`new
             // SomeType(...)` / `new SomeType { ... }`), a static invocation qualified by this
             // exact type's own name (`string.Format(...)`, `Guid.NewGuid()`, ...), an `as` cast to
-            // this exact type (`obj as SomeType`), or a literal/interpolated-string expression
-            // whose type is directly implied by its own syntax (`"hi"`, `42`, `true`, `$"hi
-            // {name}"`, ...)
+            // this exact type (`obj as SomeType`), a literal/interpolated-string expression whose
+            // type is directly implied by its own syntax (`"hi"`, `42`, `true`, `$"hi {name}"`,
+            // ...), or a constructed generic type (e.g. `List<DBSalesOrder>`) one of whose own
+            // type arguments was already spelled out earlier in the same fluent invocation chain
+            // (e.g. `db.Query<DBSalesOrder>().Where(...).ToListAsync()`)
             |> Option.filter (fun ty ->
                 var.Variables[0].Initializer
                 |> Option.ofObj
@@ -463,7 +528,8 @@ module InlayHint =
                     && not (isTypeSpelledOutInObjectCreation eq.Value ty)
                     && not (isTypeSpelledOutInStaticInvocationQualifier eq.Value ty)
                     && not (isTypeSpelledOutInAsExpression eq.Value ty)
-                    && not (isTypeSpelledOutInLiteralOrInterpolatedString eq.Value))
+                    && not (isTypeSpelledOutInLiteralOrInterpolatedString eq.Value)
+                    && not (isElementTypeSpelledOutEarlierInInvocationChain eq.Value ty))
                 |> Option.defaultValue true)
             // Don't show hint if the variable's own identifier already echoes the type name
             // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)

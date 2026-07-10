@@ -1,10 +1,11 @@
 # Reducing Superfluous Inlay Hints
 
 **Status:** Full design/rule-table pass for the remaining candidates still not started, but
-informed by eight real-world samples (an MVC controller, two large business-logic "ops" classes, a
+informed by nine real-world samples (an MVC controller, two large business-logic "ops" classes, a
 companion pair of MVC controller files, a small API controller, a diverse batch spanning a
 controller/file-I/O utility/Win32 interop/message handler, a large private ERP/CRM codebase
-session, and a targeted follow-up spot-check of two more files from that same session) — see the
+session, a targeted follow-up spot-check of two more files from that same session, and a further
+follow-up spot-check of a message/event-processing handler class from that same session) — see the
 "Real-World Evidence" sections below for concrete label-frequency data pulled from live
 `csharp-ls-rpc.log` sessions, plus a source-level root-cause diagnosis of the same-name
 suppression gap (from reading `InlayHint.fs` directly).
@@ -168,6 +169,25 @@ to keep extending for further rules without touching other tests):
   `LiteralExpressionSyntax`, and is deliberately left alone -- covered by a dedicated
   negative-control test). Covered by positive tests for each literal kind plus the interpolated
   string, and the unary-negation negative control.
+- ✅ **New rule (element type spelled out earlier in a fluent invocation chain, redundant `var`
+  type hints on "materializing" calls)** — prompted by a ninth real `csharp-ls-rpc.log` example
+  (see "Ninth Sample" below), `var orders = await
+  db.Query<DBSalesOrder>().Where(o => ...).ToListAsync();` (illustrative entity name), which showed
+  a `": List<DBSalesOrder>?"` hint even though `DBSalesOrder` is already spelled out two calls to
+  the left, at `Query<DBSalesOrder>()`. This is the "materializing-call" sibling of rule #5
+  (`isTypeSpelledOutInGenericInvocation`), which only inspects the initializer's own, outermost
+  invocation's explicit type-argument list -- here the outermost call is `ToListAsync()`, which has
+  no explicit type arguments of its own (its `List<T>` result is entirely inferred from the query).
+  Added `isElementTypeSpelledOutEarlierInInvocationChain`, which fires when the inferred `var` type
+  is a constructed generic type (e.g. `List<DBSalesOrder>`) one of whose own type arguments was
+  already spelled out earlier in the same fluent chain, found by walking the chain's receiver
+  expressions leftwards looking for any earlier invocation's explicit generic type-argument list
+  containing a symbol-equal type. Deliberately doesn't hard-code `ToList`/`ToListAsync`/`ToArray`-
+  style method names as an allow-list -- requiring the inferred type to be a constructed generic
+  type whose element was spelled out is signal enough on its own, and needs no per-method
+  maintenance. Covered by a positive test mirroring the real shape and a negative control where the
+  explicit generic invocation happens in a separate statement (so it's outside this initializer's
+  own invocation chain), which correctly keeps the hint.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -985,6 +1005,43 @@ Both fixes are small, additive `validateType` filters mirroring the existing
 initializer shapes recognized within the already-established "type is spelled out in the
 initializer" rule family.
 
+## Real-World Evidence: Ninth Sample (Message/Event-Processing Handler Class, Follow-Up)
+
+A further follow-up spot-check of a message/event-processing handler class (illustrative
+description) from the same private ERP/CRM-adjacent codebase session as the seventh and eighth
+samples, captured via `~/csharp-ls-rpc.log`. Like the eighth sample, this was a narrow,
+line-by-line check rather than a broad label-frequency tally -- but it surfaced one more type-hint
+redundancy shape not covered by any of the seven `isTypeSpelledOutIn*`-family rules implemented so
+far.
+
+**The element type of a materialized query result is already spelled out earlier in the same
+fluent chain, but nothing suppressed it.** A handler method followed a common
+"query-then-materialize" idiom:
+
+```csharp
+var orders = await db.Query<DBSalesOrder>()   // illustrative entity name
+    .Where(o =>
+        o.SalesOffice!.Webshop
+        && o.Status == OrderStatus.NewOrder
+        && o.CreateDate >= processFromDate
+        && o.CreateDate < processToDate
+        && o.PendingPayments.Any() == false)
+    .ToListAsync();
+```
+
+→ hinted `": List<DBSalesOrder>?"` on `orders`, even though `DBSalesOrder` is spelled out two calls
+to the left, at `Query<DBSalesOrder>()`, in the very same expression. None of rule #5's existing
+checks caught this: `isTypeSpelledOutInGenericInvocation` only inspects the initializer's own
+*outermost* invocation (`ToListAsync()`, whose `List<DBSalesOrder>` result is entirely inferred --
+it has no explicit type-argument list of its own to check). This is structurally the same
+"redundant with an earlier call in the chain" insight behind the (now-superseded) implicit
+lambda-parameter rule from the seventh sample, but applied to the `var` declaration's own type hint
+instead of a lambda parameter's. The fix, `isElementTypeSpelledOutEarlierInInvocationChain`, walks
+the invocation chain's receivers leftwards looking for an earlier explicit generic invocation whose
+type argument matches one of the inferred (constructed generic) type's own type arguments --
+mirroring rule #5's matching logic, just applied one or more calls further to the left instead of
+only at the outermost call.
+
 ## Configuration Angle
 
 A related (but separate) axis is **making hint kinds configurable** (per the existing TODO
@@ -1042,6 +1099,15 @@ built-in suppression heuristics is also to be decided during design.
    off. The two rule-#8-specific tests were replaced with a single regression test asserting no
    type hint is ever shown for an implicit lambda parameter. Full `dotnet test` suite (254 tests)
    confirmed green.
+6e. ✅ **Done.** Implement rule #5's materializing-call sibling as
+   `isElementTypeSpelledOutEarlierInInvocationChain` (see "Ninth Sample" above), filtering
+   `validateType`'s result in the `VariableDeclarationSyntax` match arm alongside the other
+   `isTypeSpelledOutIn*` checks. Written test-first: the positive test (element type spelled out
+   via an earlier `Query<Widget>()` call in the same chain, materialized via `.ToList()`) was
+   confirmed red before wiring the helper in, then green after; the negative control (the generic
+   invocation happening in a separate statement, outside the initializer's own invocation chain)
+   passed throughout. Full `dotnet test` suite confirmed green (one unrelated, pre-existing
+   timing-flaky test in `JsonRpcTests.fs` aside).
 7. Design session to enumerate the exact suppression rule for the two remaining candidates (rule
    #7 in the "Net takeaway" ranking — `extern`/P-Invoke parameter names — and rule #9 —
    two-(or-more)-lambda-argument LINQ combinators like `ToDictionary(keySelector,
