@@ -1020,3 +1020,27 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
         "Expected no \": List<Widget>\" hint on line 562 (element type is already spelled out\
          earlier in the fluent chain, at Query<Widget>(), even though the chain is awaited)"
     )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when an awaited generic invocation's type argument matches``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 585 (0-indexed): `var result = await CreateAsync<Widget>();`
+    // -- mirrors the real, `await`-wrapped shape from a further follow-up spot-check cited in
+    // plans/inlay-hint-reduction.md: `var order = await db.GetAsync<DBOrder>(...);` (illustrative
+    // entity name). Unlike the previous test, this is rule #5's *original* shape
+    // (`isTypeSpelledOutInGenericInvocation`) -- the generic invocation whose type argument
+    // matches is the initializer's own single, outermost invocation, not an earlier call in a
+    // chain -- which, before this fix, didn't unwrap `await` either. The variable is deliberately
+    // named `result` (not `widget`) so this test isn't accidentally passing for the unrelated
+    // identifier-echoes-type-name reason (rule #6).
+    Assert.IsFalse(
+        hints |> hintsOnLine 585u |> hasHintWithLabel ": Widget",
+        "Expected no \": Widget\" hint on line 585 (type is already spelled out in the awaited\
+         invocation's explicit type argument)"
+    )

@@ -181,6 +181,24 @@ module InlayHint =
                 else
                     Some ty
 
+        // Strips `await` (and parenthesization) off the *outside* of a `var` initializer before
+        // any of the `isTypeSpelledOutIn*` shape checks below inspect it. `await` can only ever
+        // wrap the entire initializer expression once, at the very outside (you can't call more
+        // members after awaiting mid-chain -- `await x.Foo().Bar()` awaits the whole `Foo().Bar()`
+        // chain's result at the end, not `x.Foo()` alone), so a single, shared, top-level unwrap
+        // here covers every one of the `isTypeSpelledOutIn*` checks without each of them needing
+        // their own `AwaitExpressionSyntax` case. Almost every real-world async data-access call
+        // site is awaited (e.g. `await db.GetAsync<T>(id)`, `await
+        // db.Query<T>().Where(...).ToListAsync()`), so without this, every one of those checks
+        // would silently fall through to its default "not spelled out" case and needlessly keep
+        // the hint -- see plans/inlay-hint-reduction.md for two real, independently-discovered
+        // examples of exactly this gap.
+        let rec unwrapAwaitAndParens (expr: ExpressionSyntax) : ExpressionSyntax =
+            match expr with
+            | :? AwaitExpressionSyntax as await -> unwrapAwaitAndParens await.Expression
+            | :? ParenthesizedExpressionSyntax as paren -> unwrapAwaitAndParens paren.Expression
+            | _ -> expr
+
         let typeDisplayStyle =
             SymbolDisplayFormat(
                 genericsOptions = SymbolDisplayGenericsOptions.IncludeTypeParameters,
@@ -261,12 +279,6 @@ module InlayHint =
                 let rec walkChain (expr: ExpressionSyntax) : bool =
                     match expr with
                     | :? ParenthesizedExpressionSyntax as paren -> walkChain paren.Expression
-                    // The far-and-away most common real-world shape of this idiom is `await
-                    // db.Query<T>().Where(...)....ToListAsync()` -- unwrap the `await` so the
-                    // invocation chain underneath it is still reached (otherwise every awaited
-                    // call site, i.e. virtually every real NHibernate `...Async()` call, would
-                    // silently fall through to the `_ -> false` case below and keep its hint).
-                    | :? AwaitExpressionSyntax as await -> walkChain await.Expression
                     | :? InvocationExpressionSyntax as invocation ->
                         let genericName =
                             match invocation.Expression with
@@ -530,12 +542,14 @@ module InlayHint =
                 var.Variables[0].Initializer
                 |> Option.ofObj
                 |> Option.map (fun eq ->
-                    not (isTypeSpelledOutInGenericInvocation eq.Value ty)
-                    && not (isTypeSpelledOutInObjectCreation eq.Value ty)
-                    && not (isTypeSpelledOutInStaticInvocationQualifier eq.Value ty)
-                    && not (isTypeSpelledOutInAsExpression eq.Value ty)
-                    && not (isTypeSpelledOutInLiteralOrInterpolatedString eq.Value)
-                    && not (isElementTypeSpelledOutEarlierInInvocationChain eq.Value ty))
+                    let initializerValue = unwrapAwaitAndParens eq.Value
+
+                    not (isTypeSpelledOutInGenericInvocation initializerValue ty)
+                    && not (isTypeSpelledOutInObjectCreation initializerValue ty)
+                    && not (isTypeSpelledOutInStaticInvocationQualifier initializerValue ty)
+                    && not (isTypeSpelledOutInAsExpression initializerValue ty)
+                    && not (isTypeSpelledOutInLiteralOrInterpolatedString initializerValue)
+                    && not (isElementTypeSpelledOutEarlierInInvocationChain initializerValue ty))
                 |> Option.defaultValue true)
             // Don't show hint if the variable's own identifier already echoes the type name
             // (`resourceCondition`/`settingChangeCondition` vs. `ResourceCondition`)
