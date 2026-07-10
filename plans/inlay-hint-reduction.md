@@ -1071,6 +1071,46 @@ evidence's *exact* syntactic shape (including `await`), not just its type-level 
 original fixture's `.ToList()` (no `await`) exercised the new helper's core logic but missed this
 specific, common wrapper.
 
+**Second follow-up: the `await`-unwrapping gap wasn't specific to the new chain-walking rule --
+it affected rule #5's *original* shape too.** A third real file from the same session (illustrative
+description below) surfaced the same missing hint via the simplest possible version of rule #5,
+with no chain-walking involved at all:
+
+```csharp
+var order = await db.GetAsync<DBSalesOrder>(orderConfirmed.OrderId);  // illustrative entity name
+```
+
+→ still hinted `": DBSalesOrder?"`, even though `DBSalesOrder` is spelled out immediately as
+`GetAsync`'s own explicit type argument, one step to the left, in the very same expression. This
+is rule #5's exact original, simplest case (`isTypeSpelledOutInGenericInvocation`) -- not a
+multi-call chain -- just wrapped in `await`, which `isTypeSpelledOutInGenericInvocation` never
+unwrapped either (it only ever handled `ParenthesizedExpressionSyntax`). Confirmed test-first with
+a minimal reproduction *deliberately using a variable name unrelated to the type* (`result`, not
+`order`/`widget`) so the regression test couldn't accidentally pass for the unrelated
+identifier-echoes-type-name reason (rule #6) instead of the intended one -- confirmed red before
+the fix, green after.
+
+Since `await` can only ever wrap the *entire* initializer expression once, at the very outside (a
+chain can't be partially awaited mid-expression), the fix consolidates unwrapping into one shared,
+top-level helper, `unwrapAwaitAndParens`, applied once to the initializer before it's handed to
+*any* of the `isTypeSpelledOutIn*` checks -- rather than teaching each individual check (or, as in
+the first follow-up above, just the newest one) to unwrap `await` itself. This is a strictly better
+fix than a locally-scoped one: it also transparently covers `isTypeSpelledOutInObjectCreation`,
+`isTypeSpelledOutInStaticInvocationQualifier`, and `isTypeSpelledOutInAsExpression`, none of which
+had a reported real-world failure yet, but all of which had the identical latent gap (e.g. `var x =
+await FetchAsync() as SomeType;` would have been equally unaffected by
+`isTypeSpelledOutInAsExpression` before this fix).
+
+One question raised while investigating: whether the real miss was actually about nullable
+annotations (`DBSalesOrder` vs. the hinted `DBSalesOrder?`) rather than `await`, since
+`GetAsync<T>`-style NHibernate methods are typically annotated to return `Task<T?>`. Ruled out by
+the minimal reproduction above, which involves no nullable types at all (a plain `Task<T>`-returning
+generic factory method) and reproduced the identical miss -- conclusively isolating `await` as the
+actual cause. This also lines up with `SymbolEqualityComparer.Default` (already used by every
+`isTypeSpelledOutIn*` check) being documented to ignore top-level nullable-annotation differences
+when comparing symbols, so a `DBSalesOrder` vs. `DBSalesOrder?` mismatch was never actually a risk
+here in the first place.
+
 ## Configuration Angle
 
 A related (but separate) axis is **making hint kinds configurable** (per the existing TODO

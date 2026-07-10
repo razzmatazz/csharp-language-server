@@ -563,4 +563,27 @@ namespace Project.InlayHintTest
             var widgets = await repository.Query<Widget>().Where(p => p != null).ToListAsync();
         }
     }
+
+    // Mirrors the real `var order = await db.GetAsync<DBOrder>(orderConfirmed.OrderId);` idiom
+    // (illustrative entity name) cited in plans/inlay-hint-reduction.md: unlike
+    // `ListRepositoryQuerySubject` above (whose element type is spelled out earlier in a *chain*),
+    // here the generic invocation whose type argument is spelled out IS the initializer's own,
+    // single, outermost invocation -- rule #5's exact original shape
+    // (`isTypeSpelledOutInGenericInvocation`) -- just wrapped in `await`, same as almost every
+    // real-world NHibernate `...Async<T>()` call site.
+    public class AwaitedGenericInvocationSubject
+    {
+        private static System.Threading.Tasks.Task<T> CreateAsync<T>() where T : new()
+        {
+            return System.Threading.Tasks.Task.FromResult(new T());
+        }
+
+        public async System.Threading.Tasks.Task AwaitedGenericInvocationSpellingOutTypeIsSuppressed()
+        {
+            // Deliberately not named `widget`/`createdWidget`/etc. -- that would also be
+            // suppressed by the unrelated identifier-echoes-type-name rule (#6), masking whether
+            // this test is actually exercising the await-unwrapping fix for rule #5.
+            var result = await CreateAsync<Widget>();
+        }
+    }
 }
