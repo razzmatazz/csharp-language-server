@@ -586,4 +586,34 @@ namespace Project.InlayHintTest
             var result = await CreateAsync<Widget>();
         }
     }
+
+    // Long, compound type hints (anonymous types, tuples) grow without bound with the number of
+    // members/elements and can dwarf a line of real code -- see plans/inlay-hint-reduction.md's
+    // "anonymous/tuple-type verbosity" follow-up. Middle-truncated with the full name moved to the
+    // hint's hover tooltip, rather than shown/lost in full.
+    public class LongTypeNameHelper
+    {
+        public string ShortName { get; set; } = "";
+    }
+
+    public class LongTypeNameSubject
+    {
+        public void ShortTypeHintIsNotTruncated()
+        {
+            var helper = new LongTypeNameHelper();
+            var name = helper.ShortName;
+        }
+
+        public void LongAnonymousTypeHintIsTruncated()
+        {
+            var summary = new
+            {
+                AlphaValue = 1,
+                BravoValue = 2,
+                CharlieValue = 3,
+                DeltaValue = 4,
+                EchoValue = 5
+            };
+        }
+    }
 }

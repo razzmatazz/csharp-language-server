@@ -167,6 +167,34 @@ module InlayHint =
         String.Equals(identifier, typeName, StringComparison.CurrentCultureIgnoreCase)
         || String.Equals(lastWord identifier, lastWord typeName, StringComparison.CurrentCultureIgnoreCase)
 
+    // A rendered type name longer than this (in characters, not counting the leading ": ") gets
+    // middle-truncated by `truncateMiddle` below rather than shown in full. Most named types
+    // (even fairly descriptive domain entity names) comfortably fit under this; it's compound
+    // types -- anonymous types (`<anonymous type: int Year, int Month, ..., int InvoiceCount>`)
+    // and tuples (`(string Code, string Value, string Name, string UIValue)`) -- that tend to blow
+    // past it, since they grow without bound with the number of members/elements. See
+    // plans/inlay-hint-reduction.md's "anonymous/tuple-type verbosity" follow-up for the
+    // real-world motivation. Module-level so it's easy to find/tune in one place.
+    let private maxTypeHintLabelLength = 40
+
+    // Middle-truncates `s` with a `"..."` ellipsis once it exceeds `maxLength` characters,
+    // otherwise returns it unchanged. Elides the *middle* (rather than just the tail) so both ends
+    // stay visible: the head usually carries the outermost/generic type name (`<anonymous type: `,
+    // `List<`, the leading element name of a tuple, ...), while the tail often carries the last,
+    // sometimes most-distinguishing member/element (`..., int InvoiceCount>`). Splits the
+    // available (non-ellipsis) budget as evenly as possible between head and tail, biasing any odd
+    // leftover character to the head. `maxLength` values too small to fit even the ellipsis itself
+    // degrade gracefully to the ellipsis alone (or less), rather than throwing.
+    let private truncateMiddle (maxLength: int) (s: string) : string =
+        if s.Length <= maxLength then
+            s
+        else
+            let ellipsis = "..."
+            let keep = max 0 (maxLength - ellipsis.Length)
+            let headLen = (keep + 1) / 2
+            let tailLen = keep - headLen
+            s.Substring(0, headLen) + ellipsis + s.Substring(s.Length - tailLen, tailLen)
+
     let private toInlayHint
         (semanticModel: SemanticModel)
         (lines: TextLineCollection)
@@ -209,11 +237,21 @@ module InlayHint =
             )
 
         let toTypeInlayHint (pos: int) (ty: ITypeSymbol) : InlayHint =
+            let fullTypeName = SymbolName.fromSymbol typeDisplayStyle ty
+            let displayTypeName = truncateMiddle maxTypeHintLabelLength fullTypeName
+
             { Position = pos |> lines.GetLinePosition |> Position.fromLinePosition
-              Label = U2.C1(": " + SymbolName.fromSymbol typeDisplayStyle ty)
+              Label = U2.C1(": " + displayTypeName)
               Kind = Some InlayHintKind.Type
               TextEdits = None
-              Tooltip = None
+              // When the label was truncated, surface the full, untruncated type name as the
+              // hint's hover tooltip, so the information eliding the middle removed from the
+              // label is still just a hover away rather than lost entirely.
+              Tooltip =
+                if displayTypeName <> fullTypeName then
+                    Some(U2.C1 fullTypeName)
+                else
+                    None
               PaddingLeft = Some false
               PaddingRight = Some false
               Data = None }

@@ -32,6 +32,11 @@ let private hintsOnLine (line: uint32) (hints: InlayHint array) : InlayHint arra
 let private hasHintWithLabel (label: string) (hints: InlayHint array) : bool =
     hints |> Array.exists (fun h -> labelText h = label)
 
+let private tooltipText (hint: InlayHint) : string option =
+    match hint.Tooltip with
+    | Some(U2.C1 s) -> Some s
+    | _ -> None
+
 [<Test>]
 let ``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call`` () =
     use client = activateFixture "genericProject"
@@ -1043,4 +1048,62 @@ let ``textDocument/inlayHint suppresses a var type hint when an awaited generic 
         hints |> hintsOnLine 585u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" hint on line 585 (type is already spelled out in the awaited\
          invocation's explicit type argument)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 603 (0-indexed): `var name = helper.ShortName;` -- infers `string`, well under the
+    // truncation threshold.
+    let onLine = hints |> hintsOnLine 603u
+    let typeHint = onLine |> Array.tryFind (fun h -> labelText h = ": string")
+
+    Assert.IsTrue(typeHint.IsSome, sprintf "Expected a \": string\" hint on line 603, got: %A" onLine)
+
+    Assert.IsTrue(
+        typeHint |> Option.bind tooltipText |> Option.isNone,
+        "Expected no tooltip on an untruncated, short type hint"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip`` () =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 608 (0-indexed): `var summary = new { AlphaValue = ..., BravoValue = ..., ... };` --
+    // the anonymous type's rendered name (`<anonymous type: int AlphaValue, int BravoValue, ...>`)
+    // is far longer than the truncation threshold.
+    let onLine = hints |> hintsOnLine 608u
+    let typeHint = onLine |> Array.tryFind (fun h -> (labelText h).StartsWith(": "))
+
+    Assert.IsTrue(typeHint.IsSome, sprintf "Expected a type hint on line 608, got: %A" onLine)
+
+    let label = typeHint |> Option.map labelText |> Option.defaultValue ""
+
+    Assert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
+
+    // 2 for the ": " prefix, plus the truncation threshold itself.
+    Assert.IsTrue(
+        label.Length <= 2 + 40,
+        sprintf "Expected the truncated label to be short, got (%d chars): %s" label.Length label
+    )
+
+    let tooltip = typeHint |> Option.bind tooltipText
+
+    Assert.IsTrue(tooltip.IsSome, "Expected a tooltip carrying the full, untruncated type name")
+
+    Assert.IsTrue(
+        (tooltip |> Option.defaultValue "").Length > label.Length,
+        "Expected the tooltip's full type name to be longer than the truncated label"
+    )
+
+    Assert.IsFalse(
+        (tooltip |> Option.defaultValue "").Contains("..."),
+        "Expected the tooltip to hold the full, untruncated type name, not another truncated copy"
     )

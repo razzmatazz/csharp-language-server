@@ -188,6 +188,12 @@ to keep extending for further rules without touching other tests):
   maintenance. Covered by a positive test mirroring the real shape and a negative control where the
   explicit generic invocation happens in a separate statement (so it's outside this initializer's
   own invocation chain), which correctly keeps the hint.
+- ✅ **Type hint label truncation** (see "Type Hint Label Truncation" below) — a presentational,
+  not suppression, follow-up prompted by direct user feedback: type-hint labels longer than 40
+  characters (anonymous types, tuples, and any unusually long named type alike) are now
+  middle-truncated with a `"..."` ellipsis via `truncateMiddle`, with the full, untruncated name
+  moved to the hint's `Tooltip` field rather than lost. Closes out the "anonymous-type hints can be
+  very long" nuance raised in the third sample below.
 
 **Affects:** `textDocument/inlayHint` — `Handlers/InlayHint.fs`, primarily the `toInlayHint`
 function.
@@ -532,6 +538,8 @@ even higher volume, and surfaces two genuinely new points:
    framework this doc has used so far. But the sheer rendered length is its own distinct
    complaint — worth tracking separately as a possible follow-up (e.g. truncating/eliding
    anonymous-type hints beyond N members) rather than folding it into the suppress/keep binary.
+   **✅ Done** (see the "Type Hint Label Truncation" section below): implemented as a general,
+   length-based middle-truncation, not scoped specifically to anonymous types.
 
 ## Real-World Evidence: Fourth Sample (MVC Controller, Two Companion Files)
 
@@ -1110,6 +1118,34 @@ actual cause. This also lines up with `SymbolEqualityComparer.Default` (already 
 `isTypeSpelledOutIn*` check) being documented to ignore top-level nullable-annotation differences
 when comparing symbols, so a `DBSalesOrder` vs. `DBSalesOrder?` mismatch was never actually a risk
 here in the first place.
+
+## Type Hint Label Truncation
+
+Orthogonal to every suppression rule above (which decide *whether* to show a hint at all), this is
+a UX-only follow-up on *how* a shown type hint is rendered, closing out the "anonymous-type hints
+can be very long" nuance raised in the third sample above -- prompted directly by user feedback
+rather than a fresh `csharp-ls-rpc.log` sample. Compound types -- anonymous types (`<anonymous
+type: int Year, int Month, ..., int InvoiceCount>`) and tuples (`(string Code, string Value, string
+Name, string UIValue)`) -- have no fixed upper bound on their rendered length: they grow with every
+additional member/element, and unlike a suppressible redundant hint, the information in an
+anonymous/tuple type's shape genuinely isn't available anywhere else (there's no name to look up).
+So rather than a suppress/keep decision, the fix is purely presentational.
+
+Implemented as `truncateMiddle` in `InlayHint.fs`: any rendered type-hint label longer than
+`maxTypeHintLabelLength` (40 characters, not counting the leading `": "`) is middle-truncated with
+a `"..."` ellipsis, keeping the head and tail (roughly evenly split) and eliding only the interior.
+The middle (rather than just the tail) is elided so both ends stay visible -- the head usually
+carries the outermost/generic type name or the first tuple element, while the tail often carries
+the last, sometimes most-distinguishing member. Deliberately a general, length-based rule (not
+scoped specifically to `AnonymousTypeSymbol`/tuple types) -- simpler to implement and reason about,
+and a small number of unusually long named types benefit from the same treatment for free. When
+truncation happens, the full, untruncated type name is moved to the hint's `Tooltip` field (a
+first-class LSP inlay-hint field, previously always `None` for type hints), so the elided
+information is still just a hover away rather than lost; a hint that isn't truncated gets no
+tooltip at all, matching prior behavior exactly. Covered by a positive test (a five-property
+anonymous type, confirming the label is short, contains an ellipsis, and carries a longer,
+ellipsis-free tooltip) and a negative control (an ordinary `string`-typed hint, confirming it's
+left untouched with no tooltip added).
 
 ## Configuration Angle
 
