@@ -533,6 +533,14 @@ namespace Project.InlayHintTest
         {
             return new System.Collections.Generic.List<T>();
         }
+
+        // Mirrors the real `await db.Query<T>().Where(...).ToListAsync();` shape (illustrative
+        // names) cited in plans/inlay-hint-reduction.md -- the `await`-wrapped sibling of the
+        // synchronous `ToList()` above.
+        public System.Threading.Tasks.Task<System.Collections.Generic.List<T>> ToListAsync()
+        {
+            return System.Threading.Tasks.Task.FromResult(new System.Collections.Generic.List<T>());
+        }
     }
 
     public class ListRepositoryQuerySubject
@@ -548,6 +556,11 @@ namespace Project.InlayHintTest
         {
             var partial = repository.Query<Widget>().Where(p => p != null);
             var widgets2 = partial.ToList();
+        }
+
+        public async System.Threading.Tasks.Task ElementTypeSpelledOutEarlierInAwaitedChainTypeHintIsSuppressed()
+        {
+            var widgets = await repository.Query<Widget>().Where(p => p != null).ToListAsync();
         }
     }
 }
