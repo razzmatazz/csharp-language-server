@@ -970,14 +970,14 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
 
     let hints = getHints client doc
 
-    // line 543 (0-indexed): `var widgets = repository.Query<Widget>().Where(p => p != null).ToList();`
-    // -- mirrors the real `var orders = await db.Query<DBOrder>().Where(o => ...).ToListAsync();`
+    // line 551 (0-indexed): `var widgets = repository.Query<Widget>().Where(p => p != null).ToList();`
+    // -- mirrors the real `var orders = await db.Query<DBSalesOrder>().Where(o => ...).ToListAsync();`
     // idiom cited in plans/inlay-hint-reduction.md: `Widget` is already spelled out earlier in the
     // same chain, at `Query<Widget>()`, so the `: List<Widget>` hint on the materialized result is
     // redundant.
     Assert.IsFalse(
-        hints |> hintsOnLine 543u |> hasHintWithLabel ": List<Widget>",
-        "Expected no \": List<Widget>\" hint on line 543 (element type is already spelled out\
+        hints |> hintsOnLine 551u |> hasHintWithLabel ": List<Widget>",
+        "Expected no \": List<Widget>\" hint on line 551 (element type is already spelled out\
          earlier in the fluent chain, at Query<Widget>())"
     )
 
@@ -988,12 +988,35 @@ let ``textDocument/inlayHint keeps a var type hint when the element type isn't s
 
     let hints = getHints client doc
 
-    // line 549 (0-indexed): `var widgets2 = partial.ToList();`
+    // line 557 (0-indexed): `var widgets2 = partial.ToList();`
     // -- the explicit `Query<Widget>()` generic invocation happened in a *previous* statement, not
     // in this initializer's own invocation chain, so the type isn't "spelled out" from this hint's
     // point of view and the hint should be kept.
     Assert.IsTrue(
-        hints |> hintsOnLine 549u |> hasHintWithLabel ": List<Widget>",
-        "Expected a \": List<Widget>\" hint on line 549 (element type isn't spelled out anywhere\
+        hints |> hintsOnLine 557u |> hasHintWithLabel ": List<Widget>",
+        "Expected a \": List<Widget>\" hint on line 557 (element type isn't spelled out anywhere\
          in this initializer's own invocation chain)"
+    )
+
+[<Test>]
+let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in an awaited fluent chain``
+    ()
+    =
+    use client = activateFixture "genericProject"
+    use doc = client.Open "Project/InlayHintTest.cs"
+
+    let hints = getHints client doc
+
+    // line 562 (0-indexed):
+    // `var widgets = await repository.Query<Widget>().Where(p => p != null).ToListAsync();`
+    // -- mirrors the real, `await`-wrapped shape from a follow-up spot-check cited in
+    // plans/inlay-hint-reduction.md (a second handler file in the same private codebase):
+    // `var masterOffices = await db.Query<DBOffice>().Where(...).FetchMany(...).ToListAsync();`.
+    // The synchronous version of this rule (tested above) doesn't unwrap an `AwaitExpressionSyntax`
+    // wrapping the whole invocation chain, so it missed this -- extremely common, since virtually
+    // every real NHibernate `...Async()` call site is awaited -- shape.
+    Assert.IsFalse(
+        hints |> hintsOnLine 562u |> hasHintWithLabel ": List<Widget>",
+        "Expected no \": List<Widget>\" hint on line 562 (element type is already spelled out\
+         earlier in the fluent chain, at Query<Widget>(), even though the chain is awaited)"
     )

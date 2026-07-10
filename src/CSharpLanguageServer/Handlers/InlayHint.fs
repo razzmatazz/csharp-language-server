@@ -261,6 +261,12 @@ module InlayHint =
                 let rec walkChain (expr: ExpressionSyntax) : bool =
                     match expr with
                     | :? ParenthesizedExpressionSyntax as paren -> walkChain paren.Expression
+                    // The far-and-away most common real-world shape of this idiom is `await
+                    // db.Query<T>().Where(...)....ToListAsync()` -- unwrap the `await` so the
+                    // invocation chain underneath it is still reached (otherwise every awaited
+                    // call site, i.e. virtually every real NHibernate `...Async()` call, would
+                    // silently fall through to the `_ -> false` case below and keep its hint).
+                    | :? AwaitExpressionSyntax as await -> walkChain await.Expression
                     | :? InvocationExpressionSyntax as invocation ->
                         let genericName =
                             match invocation.Expression with

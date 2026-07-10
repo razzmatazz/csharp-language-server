@@ -1042,6 +1042,35 @@ type argument matches one of the inferred (constructed generic) type's own type 
 mirroring rule #5's matching logic, just applied one or more calls further to the left instead of
 only at the outermost call.
 
+**Follow-up bug found by re-checking the fix against a second file in the same session: the
+walk didn't unwrap `await`.** The above fix landed with a test-first regression test, but that test
+used a *synchronous* `.ToList()` call for simplicity, not the `await ... .ToListAsync()` shape the
+real evidence actually used. A second handler file (illustrative description) from the same
+session surfaced the gap directly:
+
+```csharp
+var masterOffices = await db.Query<DBBranchOffice>()   // illustrative entity name
+    .Where(o => o.OfficeType == OfficeType.MASTER && o.Enabled)
+    .FetchMany(o => o.Configuration)
+    .ToListAsync();
+```
+
+→ still hinted `": List<DBBranchOffice>?"`, unfixed. The `await` keyword wraps the entire
+invocation chain in an `AwaitExpressionSyntax`, which the chain-walking `walkChain` helper didn't
+know how to see through -- it only unwrapped `ParenthesizedExpressionSyntax`, so `walkChain` was
+being invoked on an `AwaitExpressionSyntax` node at the very first step and immediately fell
+through to its `_ -> false` case, regardless of what was underneath. Since virtually every
+real-world NHibernate `...Async()` call site is awaited, this was a near-total miss for the rule's
+actual intended use case. Fixed by adding an `AwaitExpressionSyntax` unwrap arm to `walkChain`
+(recursing into `await.Expression`), alongside the existing `ParenthesizedExpressionSyntax` unwrap.
+Caught test-first: added a second positive test using the `await ... .ToListAsync()` shape
+end-to-end (a new `ListRepository<T>.ToListAsync()` fixture method returning
+`Task<List<T>>`), confirmed red before the `await`-unwrap fix, green after. This is a good
+reminder that a synthetic test fixture mirroring an initializer-shape rule should match the real
+evidence's *exact* syntactic shape (including `await`), not just its type-level structure -- the
+original fixture's `.ToList()` (no `await`) exercised the new helper's core logic but missed this
+specific, common wrapper.
+
 ## Configuration Angle
 
 A related (but separate) axis is **making hint kinds configurable** (per the existing TODO
