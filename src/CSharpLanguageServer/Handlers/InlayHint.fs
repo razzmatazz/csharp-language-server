@@ -33,6 +33,34 @@ module InlayHint =
 
         best |> Option.orElse all |> Option.defaultValue Array.empty
 
+    // Extracts the `IParameterSymbol`s of a single, unambiguously-resolved method/indexer symbol
+    // (as returned by `getBestOrAllSymbols` above), or an empty array when resolution was
+    // ambiguous (more/less than one candidate) or resolved to a non-parameterized symbol kind.
+    // Shared by `getParameterForArgumentSyntax` and `getParameterForAttributeArgumentSyntax`
+    // below, which otherwise duplicated this resolution verbatim. Deliberately returns an empty
+    // array rather than `None` in the ambiguous case (instead of the original short-circuiting
+    // `match symbols with | [| symbol |] -> ... | _ -> None`): every parameter lookup against an
+    // empty array below already naturally yields `None` on its own, so the two are behaviorally
+    // identical, without needing to thread an extra `option` layer through both callers.
+    let private parametersOfSingleResolvedSymbol (symbols: ISymbol[]) : ImmutableArray<IParameterSymbol> =
+        match symbols with
+        | [| :? IMethodSymbol as m |] -> m.Parameters
+        | [| :? IPropertySymbol as nt |] -> nt.Parameters
+        | _ -> ImmutableArray<IParameterSymbol>.Empty
+
+    // Resolves a `NameColon` (`name: value`)-style named argument (`argument: Foo(name: value)`,
+    // `attributeArgument: [Attr(name: value)]`) against `parameters` by name. Shared by
+    // `getParameterForArgumentSyntax` and `getParameterForAttributeArgumentSyntax` below, which
+    // otherwise duplicated this resolution verbatim.
+    let private tryNamedParameter
+        (parameters: ImmutableArray<IParameterSymbol>)
+        (nameColon: NameColonSyntax)
+        : IParameterSymbol option =
+        nameColon
+        |> Option.ofObj
+        |> Option.bind (fun anc -> if anc.IsMissing then None else Some anc)
+        |> Option.bind (fun anc -> parameters |> Seq.tryFind (fun p -> p.Name = anc.Name.Identifier.ValueText))
+
     // rewrite of https://github.com/dotnet/roslyn/blob/main/src/Workspaces/SharedUtilitiesAndExtensions/Compiler/CSharp/Extensions/ArgumentSyntaxExtensions.cs
     let private getParameterForArgumentSyntax
         (semanticModel: SemanticModel)
@@ -41,41 +69,31 @@ module InlayHint =
         match argument.Parent with
         | :? BaseArgumentListSyntax as argumentList when not (isNull argumentList.Parent) ->
             let argumentListParent = argumentList.Parent |> nonNull "argumentList.Parent"
-            let symbols = semanticModel.GetSymbolInfo(argumentListParent) |> getBestOrAllSymbols
 
-            match symbols with
-            | [| symbol |] ->
-                let parameters =
-                    match symbol with
-                    | :? IMethodSymbol as m -> m.Parameters
-                    | :? IPropertySymbol as nt -> nt.Parameters
-                    | _ -> ImmutableArray<IParameterSymbol>.Empty
+            let parameters =
+                semanticModel.GetSymbolInfo(argumentListParent)
+                |> getBestOrAllSymbols
+                |> parametersOfSingleResolvedSymbol
 
-                let namedParameter =
-                    argument.NameColon
-                    |> Option.ofObj
-                    |> Option.bind (fun anc -> if anc.IsMissing then None else Some anc)
-                    |> Option.bind (fun anc ->
-                        parameters |> Seq.tryFind (fun p -> p.Name = anc.Name.Identifier.ValueText))
+            let namedParameter = tryNamedParameter parameters argument.NameColon
 
-                let positionalParameter =
-                    match argumentList.Arguments.IndexOf(argument) with
-                    | index when 0 <= index && index < parameters.Length ->
-                        let parameter = parameters[index]
+            let positionalParameter =
+                match argumentList.Arguments.IndexOf(argument) with
+                | index when 0 <= index && index < parameters.Length ->
+                    let parameter = parameters[index]
 
-                        if
-                            argument.RefOrOutKeyword.Kind() = SyntaxKind.OutKeyword
-                            && parameter.RefKind <> RefKind.Out
-                            || argument.RefOrOutKeyword.Kind() = SyntaxKind.RefKeyword
-                               && parameter.RefKind <> RefKind.Ref
-                        then
-                            None
-                        else
-                            Some parameter
-                    | _ -> None
+                    if
+                        argument.RefOrOutKeyword.Kind() = SyntaxKind.OutKeyword
+                        && parameter.RefKind <> RefKind.Out
+                        || argument.RefOrOutKeyword.Kind() = SyntaxKind.RefKeyword
+                           && parameter.RefKind <> RefKind.Ref
+                    then
+                        None
+                    else
+                        Some parameter
+                | _ -> None
 
-                namedParameter |> Option.orElse positionalParameter
-            | _ -> None
+            namedParameter |> Option.orElse positionalParameter
         | _ -> None
 
     // rewrite of https://github.com/dotnet/roslyn/blob/main/src/Workspaces/SharedUtilitiesAndExtensions/Compiler/CSharp/Extensions/AttributeArgumentSyntaxExtensions.cs
@@ -87,30 +105,19 @@ module InlayHint =
         | :? AttributeArgumentListSyntax as argumentList when not (isNull argument.NameEquals) ->
             match argumentList.Parent with
             | :? AttributeSyntax as invocable ->
-                let symbols = semanticModel.GetSymbolInfo(invocable) |> getBestOrAllSymbols
+                let parameters =
+                    semanticModel.GetSymbolInfo(invocable)
+                    |> getBestOrAllSymbols
+                    |> parametersOfSingleResolvedSymbol
 
-                match symbols with
-                | [| symbol |] ->
-                    let parameters =
-                        match symbol with
-                        | :? IMethodSymbol as m -> m.Parameters
-                        | :? IPropertySymbol as nt -> nt.Parameters
-                        | _ -> ImmutableArray<IParameterSymbol>.Empty
+                let namedParameter = tryNamedParameter parameters argument.NameColon
 
-                    let namedParameter =
-                        argument.NameColon
-                        |> Option.ofObj
-                        |> Option.bind (fun anc -> if anc.IsMissing then None else Some anc)
-                        |> Option.bind (fun anc ->
-                            parameters |> Seq.tryFind (fun p -> p.Name = anc.Name.Identifier.ValueText))
+                let positionalParameter =
+                    match argumentList.Arguments.IndexOf(argument) with
+                    | index when 0 <= index && index < parameters.Length -> Some parameters[index]
+                    | _ -> None
 
-                    let positionalParameter =
-                        match argumentList.Arguments.IndexOf(argument) with
-                        | index when 0 <= index && index < parameters.Length -> Some parameters[index]
-                        | _ -> None
-
-                    namedParameter |> Option.orElse positionalParameter
-                | _ -> None
+                namedParameter |> Option.orElse positionalParameter
             | _ -> None
         | _ -> None
 
@@ -195,6 +202,39 @@ module InlayHint =
             let tailLen = keep - headLen
             s.Substring(0, headLen) + ellipsis + s.Substring(s.Length - tailLen, tailLen)
 
+    // Extracts the explicit `GenericNameSyntax` callee of an invocation, whether the invocation is
+    // itself a bare generic call (`Foo<T>()`) or a generic member access (`x.Foo<T>()`) -- i.e. so
+    // its explicit type-argument list (`Foo<T>`'s `<T>`) can be inspected. Returns `None` for a
+    // non-generic invocation (e.g. `x.Foo()`). Shared by `isTypeSpelledOutInGenericInvocation` and
+    // `isElementTypeSpelledOutEarlierInInvocationChain`'s chain walk below, which both need to
+    // find an invocation's own explicit type-argument list -- just at different points in an
+    // expression (the initializer's own outermost invocation vs. an arbitrary earlier call
+    // further along the same fluent chain).
+    let private genericNameOfInvocation (invocation: InvocationExpressionSyntax) : GenericNameSyntax option =
+        match invocation.Expression with
+        | :? GenericNameSyntax as generic -> Some generic
+        | :? MemberAccessExpressionSyntax as memberAccess ->
+            match memberAccess.Name with
+            | :? GenericNameSyntax as generic -> Some generic
+            | _ -> None
+        | _ -> None
+
+    // True when `generic`'s explicit type-argument list contains at least one type symbol
+    // satisfying `matches`. Shared by `isTypeSpelledOutInGenericInvocation` (which matches against
+    // a single, fixed `ty`) and `isElementTypeSpelledOutEarlierInInvocationChain`'s chain walk
+    // (which matches against any of a constructed generic type's own type arguments) -- both
+    // otherwise duplicated this exact type-argument resolution/comparison loop.
+    let private genericInvocationTypeArgumentMatches
+        (semanticModel: SemanticModel)
+        (matches: ITypeSymbol -> bool)
+        (generic: GenericNameSyntax)
+        : bool =
+        generic.TypeArgumentList.Arguments
+        |> Seq.exists (fun typeArgSyntax ->
+            match semanticModel.GetTypeInfo(typeArgSyntax).Type |> Option.ofObj with
+            | Some typeArgSymbol -> matches typeArgSymbol
+            | None -> false)
+
     let private toInlayHint
         (semanticModel: SemanticModel)
         (lines: TextLineCollection)
@@ -262,29 +302,20 @@ module InlayHint =
         // that case a `var` type hint would be purely redundant, since the type is already
         // spelled out one step to the left in the very same expression (`Enum.Parse<`,
         // `JsonSerializer.Deserialize<`, `Activator.CreateInstance<`, a local factory method,
-        // ...). Parenthesized expressions are unwrapped. Compares by symbol (not just by name),
-        // so it correctly doesn't fire when the invocation's return type differs from its type
-        // argument (e.g. a hypothetical `Describe<Widget>(...)` returning `string`).
-        let rec isTypeSpelledOutInGenericInvocation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+        // ...). Compares by symbol (not just by name), so it correctly doesn't fire when the
+        // invocation's return type differs from its type argument (e.g. a hypothetical
+        // `Describe<Widget>(...)` returning `string`). `initializer` is expected to already be
+        // unwrapped (see `unwrapAwaitAndParens` above) -- this only checks the immediate, top-level
+        // shape, it doesn't search recursively.
+        let isTypeSpelledOutInGenericInvocation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInGenericInvocation paren.Expression ty
             | :? InvocationExpressionSyntax as invocation ->
-                let genericName =
-                    match invocation.Expression with
-                    | :? GenericNameSyntax as generic -> Some generic
-                    | :? MemberAccessExpressionSyntax as memberAccess ->
-                        match memberAccess.Name with
-                        | :? GenericNameSyntax as generic -> Some generic
-                        | _ -> None
-                    | _ -> None
-
-                genericName
-                |> Option.map (fun generic ->
-                    generic.TypeArgumentList.Arguments
-                    |> Seq.exists (fun typeArgSyntax ->
-                        match semanticModel.GetTypeInfo(typeArgSyntax).Type |> Option.ofObj with
-                        | Some typeArgSymbol -> SymbolEqualityComparer.Default.Equals(typeArgSymbol, ty)
-                        | None -> false))
+                invocation
+                |> genericNameOfInvocation
+                |> Option.map (
+                    genericInvocationTypeArgumentMatches semanticModel (fun typeArgSymbol ->
+                        SymbolEqualityComparer.Default.Equals(typeArgSymbol, ty))
+                )
                 |> Option.defaultValue false
             | _ -> false
 
@@ -303,41 +334,31 @@ module InlayHint =
         // in the very same expression. Walks the invocation chain leftwards (each invocation's own
         // receiver, when that receiver is itself an invocation reached through a member access)
         // looking for any explicit generic invocation whose type-argument list contains a type
-        // symbol-equal to one of `ty`'s type arguments. Parenthesized expressions are unwrapped.
-        // Deliberately does not require the outermost call to be a specific, named method (e.g.
-        // `ToList`/`ToListAsync`/`ToArray`) -- restricting to `ty` being a *constructed generic*
-        // type whose element was spelled out is enough of a signal on its own, and avoids having
-        // to maintain a per-method allow-list.
-        let rec isElementTypeSpelledOutEarlierInInvocationChain
-            (initializer: ExpressionSyntax)
-            (ty: ITypeSymbol)
-            : bool =
+        // symbol-equal to one of `ty`'s type arguments (parenthesized sub-expressions encountered
+        // along the way are unwrapped too). Deliberately does not require the outermost call to be
+        // a specific, named method (e.g. `ToList`/`ToListAsync`/`ToArray`) -- restricting to `ty`
+        // being a *constructed generic* type whose element was spelled out is enough of a signal
+        // on its own, and avoids having to maintain a per-method allow-list.
+        let isElementTypeSpelledOutEarlierInInvocationChain (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match ty with
             | :? INamedTypeSymbol as namedTy when not namedTy.TypeArguments.IsEmpty ->
+                let elementTypeMatches (typeArgSymbol: ITypeSymbol) =
+                    namedTy.TypeArguments
+                    |> Seq.exists (fun elemTy -> SymbolEqualityComparer.Default.Equals(elemTy, typeArgSymbol))
+
                 let rec walkChain (expr: ExpressionSyntax) : bool =
                     match expr with
+                    // Unlike the top-level `isTypeSpelledOutIn*` checks above (which are only ever
+                    // called once, with an already-unwrapped expression -- see
+                    // `unwrapAwaitAndParens`), this walk can revisit a parenthesized sub-expression
+                    // at any point while descending through the chain's receivers, so it still
+                    // needs its own unwrap here.
                     | :? ParenthesizedExpressionSyntax as paren -> walkChain paren.Expression
                     | :? InvocationExpressionSyntax as invocation ->
-                        let genericName =
-                            match invocation.Expression with
-                            | :? GenericNameSyntax as generic -> Some generic
-                            | :? MemberAccessExpressionSyntax as memberAccess ->
-                                match memberAccess.Name with
-                                | :? GenericNameSyntax as generic -> Some generic
-                                | _ -> None
-                            | _ -> None
-
                         let spelledOutHere =
-                            genericName
-                            |> Option.map (fun generic ->
-                                generic.TypeArgumentList.Arguments
-                                |> Seq.exists (fun typeArgSyntax ->
-                                    match semanticModel.GetTypeInfo(typeArgSyntax).Type |> Option.ofObj with
-                                    | Some typeArgSymbol ->
-                                        namedTy.TypeArguments
-                                        |> Seq.exists (fun elemTy ->
-                                            SymbolEqualityComparer.Default.Equals(elemTy, typeArgSymbol))
-                                    | None -> false))
+                            invocation
+                            |> genericNameOfInvocation
+                            |> Option.map (genericInvocationTypeArgumentMatches semanticModel elementTypeMatches)
                             |> Option.defaultValue false
 
                         if spelledOutHere then
@@ -356,18 +377,16 @@ module InlayHint =
         // `ty` -- in that case a `var` type hint would be purely redundant, since the type is
         // already spelled out immediately after `new`, one step to the left in the very same
         // expression (mirrors `isTypeSpelledOutInGenericInvocation` above, but for plain
-        // object-creation rather than an explicit generic type argument). Parenthesized
-        // expressions are unwrapped. Deliberately restricted to explicit
-        // `ObjectCreationExpressionSyntax` -- NOT `ImplicitObjectCreationExpressionSyntax`
+        // object-creation rather than an explicit generic type argument). Deliberately restricted
+        // to explicit `ObjectCreationExpressionSyntax` -- NOT `ImplicitObjectCreationExpressionSyntax`
         // (target-typed `new()`), where the type is *not* spelled out and the hint remains the
         // useful, intended case (handled separately, right after `new`, by the
         // `ImplicitObjectCreationExpressionSyntax` match arm below). Compares by symbol so it
         // doesn't fire on a mismatching type (e.g. an upcast via `as`, which isn't unwrapped
         // here, so its `ObjectCreationExpressionSyntax` operand is never reached in the first
         // place).
-        let rec isTypeSpelledOutInObjectCreation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+        let isTypeSpelledOutInObjectCreation (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInObjectCreation paren.Expression ty
             | :? ObjectCreationExpressionSyntax as objectCreation ->
                 match semanticModel.GetTypeInfo(objectCreation.Type).Type |> Option.ofObj with
                 | Some createdType -> SymbolEqualityComparer.Default.Equals(createdType, ty)
@@ -379,18 +398,16 @@ module InlayHint =
         // ...) where that qualifying type is itself symbol-equal to `ty` -- in that case a `var`
         // type hint would be purely redundant, since the type is already spelled out immediately
         // to the left of `.` in the very same expression (the qualifier-based sibling of
-        // `isTypeSpelledOutInGenericInvocation`'s type-argument-based check above). Parenthesized
-        // expressions are unwrapped. `GetSymbolInfo` (not `GetTypeInfo`) is used on the qualifier
-        // because a type used as a static-member-access receiver doesn't have a "value type" of
-        // its own -- its symbol *is* the type. Compares by symbol, so it correctly doesn't fire
-        // when the qualifier is an unrelated type whose name doesn't match the return type (e.g.
-        // `Convert.ToInt32(...)`, qualifier `Convert` vs. return type `int`) or when the qualifier
-        // is an instance (a local/field/property access resolves to that member's symbol, not a
-        // type, so it never matches `:? ITypeSymbol`).
-        let rec isTypeSpelledOutInStaticInvocationQualifier (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+        // `isTypeSpelledOutInGenericInvocation`'s type-argument-based check above). `GetSymbolInfo`
+        // (not `GetTypeInfo`) is used on the qualifier because a type used as a
+        // static-member-access receiver doesn't have a "value type" of its own -- its symbol *is*
+        // the type. Compares by symbol, so it correctly doesn't fire when the qualifier is an
+        // unrelated type whose name doesn't match the return type (e.g. `Convert.ToInt32(...)`,
+        // qualifier `Convert` vs. return type `int`) or when the qualifier is an instance (a
+        // local/field/property access resolves to that member's symbol, not a type, so it never
+        // matches `:? ITypeSymbol`).
+        let isTypeSpelledOutInStaticInvocationQualifier (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren ->
-                isTypeSpelledOutInStaticInvocationQualifier paren.Expression ty
             | :? InvocationExpressionSyntax as invocation ->
                 match invocation.Expression with
                 | :? MemberAccessExpressionSyntax as memberAccess ->
@@ -404,16 +421,14 @@ module InlayHint =
         // is symbol-equal to `ty` -- in that case a `var` type hint would be purely redundant,
         // since the type is already spelled out immediately after `as`, in the very same
         // expression (a real example: `obj as DBBankAccount` (illustrative name), from a private
-        // codebase's `Equals` override, cited in plans/inlay-hint-reduction.md). Parenthesized
-        // expressions are unwrapped.
+        // codebase's `Equals` override, cited in plans/inlay-hint-reduction.md).
         // `GetSymbolInfo` (not `GetTypeInfo`) is used on the right-hand side for the same reason
         // as `isTypeSpelledOutInStaticInvocationQualifier` above: it's a type reference, not a
         // value-producing expression, so it has no "value type" of its own -- its symbol *is* the
         // type. Mirrors Roslyn's own `CSharpInlineTypeHintsService`'s `BinaryExpressionSyntax`
         // with `AsExpression` kind candidate (see plans/inlay-hint-reduction.md).
-        let rec isTypeSpelledOutInAsExpression (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
+        let isTypeSpelledOutInAsExpression (initializer: ExpressionSyntax) (ty: ITypeSymbol) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren -> isTypeSpelledOutInAsExpression paren.Expression ty
             | :? BinaryExpressionSyntax as binary when binary.Kind() = SyntaxKind.AsExpression ->
                 match semanticModel.GetSymbolInfo(binary.Right).Symbol |> Option.ofObj with
                 | Some(:? ITypeSymbol as castType) -> SymbolEqualityComparer.Default.Equals(castType, ty)
@@ -426,20 +441,18 @@ module InlayHint =
         // declaration never provides -- is always `string`) -- in either case a `var` type hint
         // would be purely redundant, since the type is directly implied by the initializer's own
         // syntax (`var x = "hi"` and `var x = $"hi {name}"` are both obviously `string`, `var x =
-        // 42` is obviously `int`, ...). Parenthesized expressions are unwrapped. Deliberately
-        // excludes the `null` literal (its type can't be inferred from the literal alone -- it
-        // could be any reference/nullable-value type) and the `default` literal (same reasoning,
-        // plus it's its own distinct syntax node, DefaultExpressionSyntax, not
-        // LiteralExpressionSyntax). Also deliberately narrow about *which* expressions count:
-        // e.g. a unary-negated numeric literal (`var x = -1`) is a PrefixUnaryExpressionSyntax,
-        // not itself a LiteralExpressionSyntax, so it's intentionally left alone by this rule.
-        // See plans/inlay-hint-reduction.md's "LiteralExpressionSyntax" Roslyn prior-art candidate
-        // and the real interpolated-string example from a private codebase's trace/log-handler
-        // class (illustrative name) that prompted extending it to interpolated strings too.
-        let rec isTypeSpelledOutInLiteralOrInterpolatedString (initializer: ExpressionSyntax) : bool =
+        // 42` is obviously `int`, ...). Deliberately excludes the `null` literal (its type can't
+        // be inferred from the literal alone -- it could be any reference/nullable-value type) and
+        // the `default` literal (same reasoning, plus it's its own distinct syntax node,
+        // DefaultExpressionSyntax, not LiteralExpressionSyntax). Also deliberately narrow about
+        // *which* expressions count: e.g. a unary-negated numeric literal (`var x = -1`) is a
+        // PrefixUnaryExpressionSyntax, not itself a LiteralExpressionSyntax, so it's intentionally
+        // left alone by this rule. See plans/inlay-hint-reduction.md's "LiteralExpressionSyntax"
+        // Roslyn prior-art candidate and the real interpolated-string example from a private
+        // codebase's trace/log-handler class (illustrative name) that prompted extending it to
+        // interpolated strings too.
+        let isTypeSpelledOutInLiteralOrInterpolatedString (initializer: ExpressionSyntax) : bool =
             match initializer with
-            | :? ParenthesizedExpressionSyntax as paren ->
-                isTypeSpelledOutInLiteralOrInterpolatedString paren.Expression
             | :? InterpolatedStringExpressionSyntax -> true
             | :? LiteralExpressionSyntax as literal ->
                 match literal.Kind() with
