@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix `textDocument/implementation` and `textDocument/references` (with `includeDeclaration`) returning no locations for BCL/decompiled symbols; definition locations are now resolved via `workspaceFolderSymbolLocations`, triggering decompilation when `useMetadataUris` is enabled, just like `textDocument/definition`
   - Reported by @stigl-cc in https://github.com/razzmatazz/csharp-language-server/issues/319
 
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.25.0...0.26.0
+
 ## [0.25.0] - 2026-06-11 / Punia
 * Speed up solution load: read target frameworks from project XML directly, falling back to MSBuild `ProjectCollection` only when needed; run probes in parallel
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/369
