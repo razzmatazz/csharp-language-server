@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.26.0] - 2026-07-15 / Dūmiškės
 * Reduce superfluous `textDocument/inlayHint` noise: suppress redundant parameter-name and `var` type hints, and remove implicit lambda-parameter type hints entirely
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/375 and https://github.com/razzmatazz/csharp-language-server/pull/376
 * Upgrade Roslyn (`Microsoft.CodeAnalysis.*`) packages to 5.6.0 and MSBuild (`Microsoft.Build`/`Microsoft.Build.Framework`) packages to 18.7.1
