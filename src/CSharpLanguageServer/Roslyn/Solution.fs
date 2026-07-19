@@ -207,11 +207,25 @@ let workspaceTargetFramework (tfmsPerProject: Map<string, string list>) : option
     match tfmsPerProject.Count with
     | 0 -> None
     | _ ->
-        tfmsPerProject.Values
-        |> Seq.map Set.ofSeq
-        |> List.ofSeq
-        |> compatibleTfmSet
-        |> bestTfm
+        let projectTfmSets = tfmsPerProject.Values |> Seq.map Set.ofSeq |> List.ofSeq
+
+        let allProjectsAreSingleTarget =
+            projectTfmSets |> List.forall (fun tfms -> Set.count tfms = 1)
+
+        let projectTfmSetsAreHeterogeneous = (projectTfmSets |> Set.ofList |> Set.count) > 1
+
+        if allProjectsAreSingleTarget && projectTfmSetsAreHeterogeneous then
+            // A global TargetFramework override is only needed to disambiguate
+            // multi-targeted projects. When all projects are single-targeted but
+            // don't agree on one TFM, any global override breaks the design-time
+            // build of every project that does not declare the chosen TFM
+            // (NETSDK1005, all references lost) -- e.g. a single net9.0-windows
+            // project would otherwise force net9.0-windows onto every net9.0
+            // project in the solution. With no override each project builds
+            // with its own declared TFM instead.
+            None
+        else
+            projectTfmSets |> compatibleTfmSet |> bestTfm
 
 let resolveDefaultWorkspaceProps (targetFramework: string option) : Map<string, string> =
     let applyTargetFrameworkProp props =

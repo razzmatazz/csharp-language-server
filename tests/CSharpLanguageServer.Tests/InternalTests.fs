@@ -18,8 +18,11 @@ open CSharpLanguageServer.Roslyn.Solution
 [<TestCase("1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", "net10.0")>]
 [<TestCase("1.csproj:net8.0,net10.0 2.csproj:net8.0,net10.0", "net10.0")>]
 [<TestCase("1.csproj:net8.0 2.csproj:net8.0,net10.0", "net10.0")>]
-[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", "net9.0-windows")>]
-[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", "net9.0-windows")>]
+[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net8.0 2.csproj:net9.0", null)>]
+[<TestCase("1.csproj:net9.0 2.csproj:net9.0 3.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net9.0,net9.0-windows 2.csproj:net9.0", "net9.0-windows")>]
 let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string | null) =
 
     let parseTfmList (projectEntry: string) : string * list<string> =
