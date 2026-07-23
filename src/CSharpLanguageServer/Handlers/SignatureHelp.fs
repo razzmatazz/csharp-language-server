@@ -18,7 +18,7 @@ open CSharpLanguageServer.Lsp.WorkspaceFolder
 open CSharpLanguageServer.Types
 
 module SignatureInformation =
-    let internal fromMethod (m: IMethodSymbol) =
+    let internal fromMethod (compilation: Compilation) (m: IMethodSymbol) =
         let parameters =
             m.Parameters
             |> Seq.map (fun p ->
@@ -28,7 +28,7 @@ module SignatureInformation =
 
         let documentation =
             { Kind = MarkupKind.Markdown
-              Value = DocumentationUtil.markdownDocForSymbol m }
+              Value = DocumentationUtil.markdownDocForSymbol compilation m }
             |> U2.C2
 
         { Label = SymbolName.fromSymbol SymbolDisplayFormat.MinimallyQualifiedFormat m
@@ -186,7 +186,10 @@ module SignatureHelp =
                         |> Option.map uint
 
                     let signatureHelpResult =
-                        { Signatures = methodGroup |> Seq.map SignatureInformation.fromMethod |> Array.ofSeq
+                        { Signatures =
+                            methodGroup
+                            |> Seq.map (SignatureInformation.fromMethod semanticModel.Compilation)
+                            |> Array.ofSeq
                           ActiveSignature =
                             matchingMethodMaybe
                             |> Option.map (fun m -> List.findIndex ((=) m) methodGroup |> uint32)

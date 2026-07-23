@@ -1,8 +1,11 @@
 module CSharpLanguageServer.Tests.DocumentationTests
 
 open System
+open System.IO
 
 open NUnit.Framework
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.CSharp
 
 open CSharpLanguageServer.DocumentationUtil
 
@@ -57,10 +60,58 @@ Exceptions:
 """,
            "Test method. Does another thing.")>]
 [<TestCase("<summary>test <c>xx</c></summary>", "test ``xx``")>]
+[<TestCase("<summary>See <see href=\"https://example.com\">the docs</see>.</summary>",
+           "See [the docs](https://example.com).")>]
+[<TestCase("<summary>See <see href=\"https://example.com\" />.</summary>", "See <https://example.com>.")>]
+[<TestCase("<summary>summary</summary><seealso cref=\"T:System.String\" /><seealso href=\"https://example.com\">Documentation</seealso>",
+           """summary
+
+See also:
+- ``System.String``
+- [Documentation](https://example.com)""")>]
+[<TestCase("<summary><b>bold</b>, <i>italic</i>, <u>underlined</u>, <typeparamref name=\"T\" />, and <a href=\"https://example.com\">a link</a>.</summary>",
+           "**bold**, *italic*, underlined, ``T``, and [a link](https://example.com).")>]
+[<TestCase("<summary>See <see cref=\"T:System.String\">the string type</see>.</summary>", "See the string type.")>]
+[<TestCase("<summary>summary</summary><value>the value</value><example><code>var x = 1;\nvar y = 2;</code></example>",
+           """summary
+
+Value: the value
+
+Example:
+```csharp
+var x = 1;
+var y = 2;
+```""")>]
+[<TestCase("<summary>Values:<list type=\"table\"><listheader><term>Name</term><description>Meaning</description></listheader><item><term><c>one</c></term><description>first</description></item><item><term><c>two</c></term><description>second</description></item></list></summary>",
+           """Values:
+
+| Name | Meaning |
+| --- | --- |
+| ``one`` | first |
+| ``two`` | second |""")>]
 [<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-tag</unknown-inline-tag></summary>",
            "test contents-of-unknown-tag")>]
 [<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
            "test contents-of-unknown-inline-tag")>]
+[<TestCase("<summary>test <unknown-inline-tag><c>nested-code</c></unknown-inline-tag></summary>", "test ``nested-code``")>]
+[<TestCase("<summary>A<br/>B</summary>", "A  \nB")>]
+[<TestCase("<summary>Items:<list type=\"bullet\"><item><description><c>one</c>: first</description></item><item><description><paramref name=\"two\" />: second</description></item></list></summary>",
+           """Items:
+
+- ``one``: first
+- ``two``: second""")>]
+[<TestCase("<summary>Steps:<list type=\"number\"><item><description>first</description></item><item><description>second</description></item></list></summary>",
+           """Steps:
+
+1. first
+2. second""")>]
+[<TestCase("<param name=\"opts\">Options:<list type=\"bullet\"><item><description><c>buf</c>: buffer</description></item><item><description><c>event</c>: event</description></item></list></param>",
+           """
+Parameters:
+- ``opts``: Options:
+
+  - ``buf``: buffer
+  - ``event``: event""")>]
 [<TestCase("<summary>summary</summary>\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
            "summary\n\
@@ -98,23 +149,30 @@ Types:
     """,
            """Adds a child ``node``. Nodes can have any number of children, but every child must have a unique name. Child nodes are automatically deleted when the parent node is deleted, so an entire scene can be removed by deleting its topmost node.
 
+
 If ``forceReadableName`` is ``true``, improves the readability of the added ``node``. If not named, the ``node`` is renamed to its type, and if it shares ``Godot.Node.Name`` with a sibling, a number is suffixed more appropriately. This operation is very slow. As such, it is recommended leaving this to ``false``, which assigns a dummy name featuring ``@`` in both situations.
+
 
 If ``internal`` is different than ``Godot.Node.InternalMode.Disabled``, the child will be added as internal node. These nodes are ignored by methods like ``Godot.Node.GetChildren(System.Boolean)``, unless their parameter ``include_internal`` is ``true``. The intended usage is to hide the internal nodes from the user, so the user won't accidentally delete or modify them. Used by some GUI nodes, e.g. ``Godot.ColorPicker``. See ``Godot.Node.InternalMode`` for available modes.
 
-Note: If ``node`` already has a parent, this method will fail. Use ``Godot.Node.RemoveChild(Godot.Node)`` first to remove ``node`` from its current parent. For example:
+
+**Note:** If ``node`` already has a parent, this method will fail. Use ``Godot.Node.RemoveChild(Godot.Node)`` first to remove ``node`` from its current parent. For example:
 
 
-            Node childNode = GetChild(0);
-            if (childNode.GetParent() != null)
-            {
-                childNode.GetParent().RemoveChild(childNode);
-            }
-            AddChild(childNode);
+```csharp
+Node childNode = GetChild(0);
+if (childNode.GetParent() != null)
+{
+    childNode.GetParent().RemoveChild(childNode);
+}
+AddChild(childNode);
+```
+
 
 If you need the child node to be added below a specific node in the list of children, use ``Godot.Node.AddSibling(Godot.Node,System.Boolean)`` instead of this method.
 
-Note: If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for tool scripts and editor plugins. If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view.""")>]
+
+**Note:** If you want a child to be persisted to a ``Godot.PackedScene``, you must set ``Godot.Node.Owner`` in addition to calling ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)``. This is typically relevant for [tool scripts]($DOCS_URL/tutorials/plugins/running_code_in_the_editor.html) and [editor plugins]($DOCS_URL/tutorials/plugins/editor/index.html). If ``Godot.Node.AddChild(Godot.Node,System.Boolean,Godot.Node.InternalMode)`` is called without setting ``Godot.Node.Owner``, the newly added ``Godot.Node`` will not be visible in the scene tree, though it will be visible in the 2D/3D view.""")>]
 [<TestCase("""
 <summary>
 Upserts an item as an asynchronous operation in the Azure Cosmos service.
@@ -141,3 +199,97 @@ Exceptions:
 let testFormatDocXml (inputXml, expectedMD: string) =
     let resultMd = String.Join("\n", formatDocXml inputXml)
     Assert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)
+
+
+let private createDocumentationCompilation
+    (source: string)
+    (sourcePath: string)
+    (xmlResolver: XmlReferenceResolver option)
+    =
+    let parseOptions =
+        CSharpParseOptions(documentationMode = DocumentationMode.Diagnose)
+
+    let syntaxTree = CSharpSyntaxTree.ParseText(source, parseOptions, sourcePath)
+
+    let compilationOptions =
+        CSharpCompilationOptions OutputKind.DynamicallyLinkedLibrary
+        |> fun options ->
+            match xmlResolver with
+            | Some resolver -> options.WithXmlReferenceResolver resolver
+            | None -> options
+
+    CSharpCompilation.Create(
+        "DocumentationTests",
+        [ syntaxTree ],
+        [ MetadataReference.CreateFromFile(typeof<obj>.Assembly.Location) ],
+        compilationOptions
+    )
+
+
+[<Test>]
+let testInheritdocIsExpanded () =
+    let source =
+        """
+public class Base
+{
+    /// <summary>Inherited documentation.</summary>
+    public virtual void M() { }
+}
+
+public class Derived : Base
+{
+    /// <inheritdoc />
+    public override void M() { }
+}
+"""
+
+    let compilation = createDocumentationCompilation source "Inheritdoc.cs" None
+
+    let method =
+        compilation.GetTypeByMetadataName "Derived"
+        |> Option.ofObj
+        |> Option.defaultWith (fun () -> failwith "Could not resolve type Derived")
+        |> _.GetMembers("M")
+        |> Seq.exactlyOne
+
+    Assert.AreEqual("Inherited documentation.", markdownDocForSymbol compilation method)
+
+
+[<Test>]
+let testIncludeIsExpanded () =
+    let directory =
+        Path.Combine(Path.GetTempPath(), "csharp-ls-docs-" + Guid.NewGuid().ToString "N")
+
+    Directory.CreateDirectory directory |> ignore
+
+    try
+        File.WriteAllText(
+            Path.Combine(directory, "docs.xml"),
+            """<docs><member name="M:C.M"><summary>Included documentation.</summary></member></docs>"""
+        )
+
+        let source =
+            """
+public class C
+{
+    /// <include file="docs.xml" path="/docs/member[@name='M:C.M']/*" />
+    public void M() { }
+}
+"""
+
+        let compilation =
+            createDocumentationCompilation
+                source
+                (Path.Combine(directory, "C.cs"))
+                (Some(XmlFileResolver directory :> XmlReferenceResolver))
+
+        let method =
+            compilation.GetTypeByMetadataName "C"
+            |> Option.ofObj
+            |> Option.defaultWith (fun () -> failwith "Could not resolve type C")
+            |> _.GetMembers("M")
+            |> Seq.exactlyOne
+
+        Assert.AreEqual("Included documentation.", markdownDocForSymbol compilation method)
+    finally
+        Directory.Delete(directory, true)
