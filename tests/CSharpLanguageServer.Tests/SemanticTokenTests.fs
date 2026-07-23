@@ -3,8 +3,13 @@ module CSharpLanguageServer.Tests.SemanticTokenTests
 open System
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Classification
+open Microsoft.CodeAnalysis.Host
+open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Roslyn.WorkspaceServices
 
 type DecodedToken =
     { Line: uint
@@ -82,7 +87,7 @@ let testSemanticTokens () =
 
     let legend = semanticTokensOptions.Value.Legend
     Assert.AreEqual([| "static" |], legend.TokenModifiers)
-    Assert.AreEqual(20, legend.TokenTypes.Length)
+    Assert.AreEqual(40, legend.TokenTypes.Length)
 
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
@@ -107,7 +112,7 @@ let testSemanticTokens () =
     let semanticToken: SemanticTokens =
         client.Request("textDocument/semanticTokens/full", semanticTokenParams)
 
-    Assert.IsTrue(semanticToken.ResultId.IsNone)
+    Assert.IsTrue semanticToken.ResultId.IsNone
 
     // Test if anything is out-of-bound (that might indicates an underflow)
     Assert.IsFalse(
@@ -116,7 +121,7 @@ let testSemanticTokens () =
         |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 fileContentsLen) false
     )
 
-    let tokens = semanticToken |> (decodeSemanticToken legend)
+    let tokens = semanticToken |> decodeSemanticToken legend
     Assert.AreEqual(129, tokens.Length)
 
     Assert.AreEqual(
@@ -162,3 +167,115 @@ let testSemanticTokens () =
              TokenModifiers = [||] } |],
         tokens |> Array.take 8
     )
+
+
+[<Test>]
+let testStringSyntaxEmbeddedLanguageSemanticTokens () =
+    use client = activateFixture "genericProject"
+
+    let semanticTokensOptions =
+        client.GetState().ServerCapabilities
+        |> Option.bind (fun c -> c.SemanticTokensProvider)
+        |> Option.bind (fun s ->
+            match s with
+            | U2.C1 c1 -> Some c1
+            | _ -> None)
+
+    Assert.IsTrue semanticTokensOptions.IsSome
+
+    let legend = semanticTokensOptions.Value.Legend
+
+    let expectedEmbeddedLanguageTokenTypes =
+        [| "regexComment"
+           "regexCharacterClass"
+           "regexAnchor"
+           "regexQuantifier"
+           "regexGrouping"
+           "regexAlternation"
+           "regexText"
+           "regexSelfEscapedCharacter"
+           "regexOtherEscape"
+           "jsonComment"
+           "jsonNumber"
+           "jsonString"
+           "jsonKeyword"
+           "jsonText"
+           "jsonOperator"
+           "jsonPunctuation"
+           "jsonArray"
+           "jsonObject"
+           "jsonPropertyName"
+           "jsonConstructorName" |]
+
+    let legendTokenTypes = legend.TokenTypes |> Set.ofArray
+
+    for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
+        Assert.IsTrue(
+            legendTokenTypes.Contains expectedTokenType,
+            sprintf "Expected '%s' in the semantic-token legend" expectedTokenType
+        )
+
+    use file = client.Open "Project/StringSyntaxSemanticTokenTest.cs"
+
+    let semanticTokenParams: SemanticTokensParams =
+        { PartialResultToken = None
+          WorkDoneToken = None
+          TextDocument = { Uri = file.Uri } }
+
+    let semanticToken: SemanticTokens =
+        client.Request("textDocument/semanticTokens/full", semanticTokenParams)
+
+    let actualTokenTypes =
+        semanticToken
+        |> decodeSemanticToken legend
+        |> Array.map _.TokenType
+        |> Set.ofArray
+
+    for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
+        Assert.IsTrue(
+            actualTokenTypes.Contains expectedTokenType,
+            sprintf
+                "Expected semantic token type '%s', got: %s"
+                expectedTokenType
+                (actualTokenTypes |> String.concat ", ")
+        )
+
+let private classifyRegexCommentWithHost (hostServices: HostServices) =
+    use workspace = new AdhocWorkspace(hostServices)
+
+    let project = workspace.AddProject("EmbeddedLanguageProbe", LanguageNames.CSharp)
+
+    let projectWithCoreLib =
+        project.AddMetadataReference(MetadataReference.CreateFromFile(typeof<obj>.Assembly.Location))
+
+    if not (workspace.TryApplyChanges projectWithCoreLib.Solution) then
+        failwith "Could not add the core library metadata reference to the probe workspace"
+
+    let source =
+        """
+class C
+{
+    void M()
+    {
+        var pattern = /* lang=regex */ @"\A(?:a|b)+\z";
+    }
+}
+"""
+
+    let document = workspace.AddDocument(project.Id, "Probe.cs", SourceText.From source)
+
+    Classifier.GetClassifiedSpansAsync(document, TextSpan(0, source.Length))
+    |> Async.AwaitTask
+    |> Async.RunSynchronously
+    |> Seq.map _.ClassificationType
+    |> Set.ofSeq
+
+
+[<Test>]
+let testCSharpLspHostSupportsEmbeddedLanguageClassification () =
+    CSharpLanguageServer.Logging.Logging.setupLogging Microsoft.Extensions.Logging.LogLevel.None
+
+    let classificationTypes =
+        classifyRegexCommentWithHost (CSharpLspHostServices() :> HostServices)
+
+    Assert.That(classificationTypes, Does.Contain ClassificationTypeNames.RegexAnchor)
