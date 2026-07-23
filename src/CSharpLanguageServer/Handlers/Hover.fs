@@ -39,17 +39,23 @@ module Hover =
                   Method = "textDocument/hover"
                   RegisterOptions = registerOptions |> serialize |> Some }
 
-    let makeHoverForSymbol symbol =
-        let content = DocumentationUtil.markdownDocForSymbolWithSignature symbol
+    let makeHoverForSymbol (project: Microsoft.CodeAnalysis.Project) symbol = async {
+        let! ct = Async.CancellationToken
+        let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
 
-        let hover =
+        let content =
+            DocumentationUtil.markdownDocForSymbolWithSignature
+                (compilation |> nonNull "project.GetCompilationAsync()")
+                symbol
+
+        return
             { Contents =
                 { Kind = MarkupKind.Markdown
                   Value = content }
                 |> U3.C1
               Range = None } // TODO: Support range
-
-        hover |> Some
+            |> Some
+    }
 
     let handle (context: RequestContext) (p: HoverParams) : Async<LspResult<Hover option> * LspWorkspaceUpdate> = async {
         let! wf, _ = context.LoadWorkspaceFolder(p.TextDocument.Uri)
@@ -60,6 +66,8 @@ module Hover =
             let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.TextDocument.Uri p.Position wf
 
             match symInfo with
-            | Some(sym, _, _) -> return makeHoverForSymbol sym |> LspResult.success, LspWorkspaceUpdate.Empty
+            | Some(sym, project, _) ->
+                let! hover = makeHoverForSymbol project sym
+                return hover |> LspResult.success, LspWorkspaceUpdate.Empty
             | None -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
     }
