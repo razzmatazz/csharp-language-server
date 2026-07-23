@@ -5,6 +5,9 @@ open System.Collections.Generic
 open System.Reflection
 open System.Threading.Tasks
 open System.Collections.Immutable
+open System.Composition
+open System.Composition.Convention
+open System.Composition.Hosting
 
 open Castle.DynamicProxy
 open Microsoft.CodeAnalysis
@@ -347,10 +350,77 @@ type WorkspaceServicesInterceptor() =
                 invocation.ReturnValue <- updatedReturnValue
 
 
+/// System.Composition only copies metadata properties declared directly on the
+/// concrete metadata attribute type. Roslyn's embedded-language export attribute
+/// derives from a metadata attribute whose Name/Languages/Identifiers properties
+/// are declared on the base type, so those values are otherwise lost. The exports
+/// are discovered, but their metadata is empty and Roslyn filters every embedded
+/// classifier out of the composition.
+///
+/// Preserve the normal attributed model and materialize the inherited Roslyn
+/// embedded-language metadata properties as ordinary ExportMetadata attributes.
+type private RoslynEmbeddedLanguageMefAttributeProvider() =
+    inherit AttributedModelProvider()
+
+    let tryFindInheritedMetadataAttributeType (attributeType: Type) =
+        let rec loop (candidate: Type) =
+            if isNull candidate || candidate = typeof<Attribute> then
+                None
+            elif
+                candidate.FullName = "Microsoft.CodeAnalysis.EmbeddedLanguages.ExportEmbeddedLanguageFeatureServiceAttribute"
+                && candidate.IsDefined(typeof<MetadataAttributeAttribute>, false)
+            then
+                Some candidate
+            else
+                loop candidate.BaseType
+
+        loop attributeType.BaseType
+
+    let inheritedMetadataAttributes (attribute: Attribute) : seq<Attribute> =
+        match tryFindInheritedMetadataAttributeType (attribute.GetType()) with
+        | None -> Seq.empty
+        | Some metadataAttributeType ->
+            metadataAttributeType.GetProperties(
+                BindingFlags.Instance
+                ||| BindingFlags.Public
+                ||| BindingFlags.NonPublic
+                ||| BindingFlags.DeclaredOnly
+            )
+            |> Seq.filter (fun property -> property.CanRead && property.GetIndexParameters().Length = 0)
+            |> Seq.map (fun property ->
+                ExportMetadataAttribute(property.Name, property.GetValue(attribute)) :> Attribute)
+
+    let augmentAttributes (attributes: Attribute seq) : IEnumerable<Attribute> = seq {
+        for attribute in attributes do
+            yield attribute
+            yield! inheritedMetadataAttributes attribute
+    }
+
+    override _.GetCustomAttributes(reflectedType: Type, memberInfo: MemberInfo) =
+        let attributes =
+            if not (memberInfo :? Type) && memberInfo.DeclaringType <> reflectedType then
+                Seq.empty
+            else
+                Attribute.GetCustomAttributes(memberInfo, false)
+
+        augmentAttributes attributes
+
+    override _.GetCustomAttributes(reflectedType: Type, parameterInfo: ParameterInfo) =
+        Attribute.GetCustomAttributes(parameterInfo, false) |> augmentAttributes
+
+
 type CSharpLspHostServices() =
     inherit HostServices()
 
-    member private _.hostServices = MSBuildMefHostServices.DefaultServices
+    static let hostServices =
+        let composition =
+            ContainerConfiguration()
+                .WithAssemblies(MSBuildMefHostServices.DefaultAssemblies, RoslynEmbeddedLanguageMefAttributeProvider())
+                .CreateContainer()
+
+        MefHostServices.Create(composition)
+
+    member private _.hostServices = hostServices
 
     override this.CreateWorkspaceServices(workspace: Workspace) =
         // Ugly but we can't:
