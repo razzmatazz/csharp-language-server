@@ -61,6 +61,25 @@ Exceptions:
            "test contents-of-unknown-tag")>]
 [<TestCase("<summary>test <unknown-inline-tag>contents-of-unknown-inline-tag</unknown-inline-tag></summary>",
            "test contents-of-unknown-inline-tag")>]
+[<TestCase("<summary>test <unknown-inline-tag><c>nested-code</c></unknown-inline-tag></summary>", "test ``nested-code``")>]
+[<TestCase("<summary>A<br/>B</summary>", "A  \nB")>]
+[<TestCase("<summary>Items:<list type=\"bullet\"><item><description><c>one</c>: first</description></item><item><description><paramref name=\"two\" />: second</description></item></list></summary>",
+           """Items:
+
+- ``one``: first
+- ``two``: second""")>]
+[<TestCase("<summary>Steps:<list type=\"number\"><item><description>first</description></item><item><description>second</description></item></list></summary>",
+           """Steps:
+
+1. first
+2. second""")>]
+[<TestCase("<param name=\"opts\">Options:<list type=\"bullet\"><item><description><c>buf</c>: buffer</description></item><item><description><c>event</c>: event</description></item></list></param>",
+           """
+Parameters:
+- ``opts``: Options:
+
+  - ``buf``: buffer
+  - ``event``: event""")>]
 [<TestCase("<summary>summary</summary>\n
     <unknown-top-level-tag>contents-of-unknown-top-level-tag</unknown-top-level-tag>",
            "summary\n\
