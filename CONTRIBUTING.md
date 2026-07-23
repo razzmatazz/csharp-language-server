@@ -11,6 +11,27 @@
 dotnet build
 ```
 
+## Nix development environment
+
+Enter the reproducible development shell with:
+
+```
+nix develop
+```
+
+The regular `dotnet build` workflow does not require a Nix build. Build the Nix package when
+you need to verify or produce the packaged application:
+
+```
+nix build .#csharp-ls
+```
+
+After changing NuGet dependencies, update the Nix dependency lock with:
+
+```
+nix run .#update-deps
+```
+
 ## Run tests
 
 ```
