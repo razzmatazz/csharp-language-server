@@ -73,12 +73,59 @@ module DocumentationUtil =
                     |> Option.ofObj
                     |> Option.map (fun x -> sprintf "``%s``" x.Value)
                     |> Option.toList
-                | "para" -> e.Nodes() |> Seq.collect formatTextNode |> Seq.append [ "\n\n" ] |> List.ofSeq
-                | _ -> [ e.Value ]
+                | "para" -> [ "\n\n"; formatTextNodes (e.Nodes()) ]
+                | "br" -> [ "  \n" ]
+                | "code" -> [ e.Value ]
+                | "list" -> [ formatListElement e ]
+                | _ -> [ formatTextNodes (e.Nodes()) ]
             | :? XText as t -> [ t.Value |> normalizeWhitespace ]
             | _ -> []
 
-        n.Nodes() |> Seq.collect formatTextNode |> (fun ss -> String.Join("", ss))
+        and formatTextNodes (nodes: seq<XNode>) =
+            nodes |> Seq.collect formatTextNode |> (fun parts -> String.Join("", parts))
+
+        and formatListElement (e: XElement) =
+            let listType =
+                e.Attribute(XName.Get "type")
+                |> Option.ofObj
+                |> Option.map (fun attribute -> attribute.Value)
+                |> Option.defaultValue "bullet"
+
+            let formatElementContents (element: XElement) =
+                element.Nodes() |> formatTextNodes |> (fun text -> text.Trim())
+
+            let formatItem index (item: XElement) =
+                let term =
+                    item.Element(XName.Get "term")
+                    |> Option.ofObj
+                    |> Option.map formatElementContents
+
+                let description =
+                    item.Element(XName.Get "description")
+                    |> Option.ofObj
+                    |> Option.map formatElementContents
+
+                let content =
+                    match term, description with
+                    | Some term, Some description -> sprintf "%s: %s" term description
+                    | Some term, None -> term
+                    | None, Some description -> description
+                    | None, None -> formatElementContents item
+
+                let marker =
+                    match listType with
+                    | "number" -> sprintf "%d." (index + 1)
+                    | _ -> "-"
+
+                sprintf "%s %s" marker content
+
+            let items = e.Elements(XName.Get "item") |> Seq.mapi formatItem |> List.ofSeq
+
+            match items with
+            | [] -> ""
+            | _ -> "\n\n" + String.Join("\n", items) + "\n\n"
+
+        n.Nodes() |> formatTextNodes
 
     let extendCommentWithElement comment (n: XElement) =
         match n.Name.LocalName with
@@ -148,12 +195,21 @@ module DocumentationUtil =
 
     let formatComment model : string list =
 
+        let indentContinuation (text: string) =
+            text.Split('\n')
+            |> Seq.mapi (fun index line ->
+                if index = 0 || String.IsNullOrWhiteSpace line then
+                    line
+                else
+                    "  " + line)
+            |> fun lines -> String.Join("\n", lines)
+
         let appendNamed name (kvs: (string * XElement) seq) markdownLines =
             match Seq.isEmpty kvs with
             | true -> markdownLines
             | false ->
                 let formatItem (key, value) =
-                    sprintf "- ``%s``: %s" key (formatTextElement value)
+                    sprintf "- ``%s``: %s" key (formatTextElement value |> indentContinuation)
 
                 markdownLines
                 |> List.append [ name + ":"; "" ]

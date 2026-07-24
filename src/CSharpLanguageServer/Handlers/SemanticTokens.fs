@@ -44,11 +44,34 @@ module SemanticTokens =
               (ClassificationTypeNames.PropertyName, "property")
               (ClassificationTypeNames.RecordClassName, "class")
               (ClassificationTypeNames.RecordStructName, "struct")
-              (ClassificationTypeNames.RegexText, "regex")
+              (ClassificationTypeNames.RegexAlternation, "regexAlternation")
+              (ClassificationTypeNames.RegexAnchor, "regexAnchor")
+              (ClassificationTypeNames.RegexCharacterClass, "regexCharacterClass")
+              (ClassificationTypeNames.RegexComment, "regexComment")
+              (ClassificationTypeNames.RegexGrouping, "regexGrouping")
+              (ClassificationTypeNames.RegexOtherEscape, "regexOtherEscape")
+              (ClassificationTypeNames.RegexQuantifier, "regexQuantifier")
+              (ClassificationTypeNames.RegexSelfEscapedCharacter, "regexSelfEscapedCharacter")
+              (ClassificationTypeNames.RegexText, "regexText")
+              (ClassificationTypeNames.StringEscapeCharacter, "stringEscapeCharacter")
               (ClassificationTypeNames.StringLiteral, "string")
               (ClassificationTypeNames.StructName, "struct")
               (ClassificationTypeNames.TypeParameterName, "typeParameter")
-              (ClassificationTypeNames.VerbatimStringLiteral, "string") ]
+              (ClassificationTypeNames.VerbatimStringLiteral, "string")
+
+              // Roslyn's JSON classification constants are internal. Their string values are
+              // nevertheless the public classification contract returned by Classifier.
+              ("json - array", "jsonArray")
+              ("json - comment", "jsonComment")
+              ("json - constructor name", "jsonConstructorName")
+              ("json - keyword", "jsonKeyword")
+              ("json - number", "jsonNumber")
+              ("json - object", "jsonObject")
+              ("json - operator", "jsonOperator")
+              ("json - property name", "jsonPropertyName")
+              ("json - punctuation", "jsonPunctuation")
+              ("json - string", "jsonString")
+              ("json - text", "jsonText") ]
 
     let private classificationModifierMap =
         Map [ (ClassificationTypeNames.StaticSymbol, "static") ]
