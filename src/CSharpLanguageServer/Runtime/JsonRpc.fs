@@ -685,18 +685,30 @@ let processEvent postEvent ev state =
             NotificationHandlers = notificationHandlers
             PendingRead = Some readOp }
 
-    | MessageWriteComplete(_success, msg) ->
+    | MessageWriteComplete(success, msg) ->
         msg.Payload.Dispose()
         msg.CompletionRC |> Option.iter _.Reply()
 
-        match state.WriteQueue, state.StdOut with
-        | nextMsg :: rest, Some stdout ->
-            let writeOp = startMessageWrite log postEvent stdout nextMsg
+        if success then
+            match state.WriteQueue, state.StdOut with
+            | nextMsg :: rest, Some stdout ->
+                let writeOp = startMessageWrite log postEvent stdout nextMsg
+
+                { state with
+                    PendingWrite = Some writeOp
+                    WriteQueue = rest }
+            | _ -> { state with PendingWrite = None }
+        else
+            for queuedMsg in state.WriteQueue do
+                queuedMsg.Payload.Dispose()
+                queuedMsg.CompletionRC |> Option.iter _.Reply()
 
             { state with
-                PendingWrite = Some writeOp
-                WriteQueue = rest }
-        | _ -> { state with PendingWrite = None }
+                StdOut = None
+                PendingWrite = None
+                WriteQueue = [] }
+            |> beginShutdown postEvent None
+            |> tryFireShutdownWaiters
 
     | InboundMessage result ->
         match result with
