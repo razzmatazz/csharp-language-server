@@ -10,6 +10,14 @@ open Ionide.LanguageServerProtocol.Server
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 
+[<Test>]
+let testHiddenDiagnosticSeverityIsHint () =
+    let severity =
+        CSharpLanguageServer.Roslyn.Conversions.DiagnosticSeverity.fromRoslynDiagnosticSeverity
+            Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden
+
+    Assert.AreEqual(DiagnosticSeverity.Hint, severity)
+
 // This test documents a race: workspace/diagnostic is called while the solution is still
 // loading (simulated via a 3-second SolutionLoadDelay). The server should return no items
 // in that window, but ideally it should block or return a retriable error instead — so the

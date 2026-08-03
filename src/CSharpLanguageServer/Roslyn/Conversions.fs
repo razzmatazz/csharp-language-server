@@ -209,6 +209,7 @@ module DiagnosticSeverity =
         | Microsoft.CodeAnalysis.DiagnosticSeverity.Info -> DiagnosticSeverity.Information
         | Microsoft.CodeAnalysis.DiagnosticSeverity.Warning -> DiagnosticSeverity.Warning
         | Microsoft.CodeAnalysis.DiagnosticSeverity.Error -> DiagnosticSeverity.Error
+        | Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden -> DiagnosticSeverity.Hint
         | _ -> DiagnosticSeverity.Warning
 
 module Diagnostic =
