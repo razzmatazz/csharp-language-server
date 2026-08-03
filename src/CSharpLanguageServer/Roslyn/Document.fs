@@ -4,7 +4,6 @@ open System.IO
 open System.Text
 
 open Microsoft.CodeAnalysis
-open Microsoft.CodeAnalysis.CSharp.Formatting
 open Microsoft.CodeAnalysis.Options
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.Formatting
@@ -90,14 +89,55 @@ let getDocumentFormattingOptionSet (doc: Document) (lspFormattingOptions: Format
                 LanguageNames.CSharp,
                 not lspFormattingOptions.InsertSpaces
             )
-            |> match lspFormattingOptions.InsertFinalNewline with
-               | Some insertFinalNewline ->
-                   _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, insertFinalNewline)
-               | None -> id
-            |> match lspFormattingOptions.TrimFinalNewlines with
-               | Some trimFinalNewlines ->
-                   _.WithChangedOption(CSharpFormattingOptions.NewLineForFinally, not trimFinalNewlines)
-               | None -> id
+}
+
+let normalizeDocumentEndOfFile (doc: Document) (options: OptionSet) (lspFormattingOptions: FormattingOptions option) = async {
+    let insertFinalNewline =
+        (lspFormattingOptions |> Option.bind _.InsertFinalNewline) = Some true
+
+    let trimFinalNewlines =
+        (lspFormattingOptions |> Option.bind _.TrimFinalNewlines) = Some true
+
+    if not insertFinalNewline && not trimFinalNewlines then
+        return doc
+    else
+        let! ct = Async.CancellationToken
+        let! text = doc.GetTextAsync(ct) |> Async.AwaitTask
+        let mutable finalNewlinesStart = text.Length
+        let isNewline char = char = '\r' || char = '\n'
+
+        while finalNewlinesStart > 0 && isNewline text[finalNewlinesStart - 1] do
+            finalNewlinesStart <- finalNewlinesStart - 1
+
+        let normalizedText =
+            if trimFinalNewlines && finalNewlinesStart < text.Length then
+                let newlineLength =
+                    if
+                        text[finalNewlinesStart] = '\r'
+                        && finalNewlinesStart < text.Length - 1
+                        && text[finalNewlinesStart + 1] = '\n'
+                    then
+                        2
+                    else
+                        1
+
+                let newline = text.ToString(TextSpan(finalNewlinesStart, newlineLength))
+                let finalNewlines = TextSpan.FromBounds(finalNewlinesStart, text.Length)
+                text.WithChanges(TextChange(finalNewlines, newline))
+            elif insertFinalNewline && finalNewlinesStart = text.Length then
+                let newline =
+                    text.Lines
+                    |> Seq.rev
+                    |> Seq.tryPick (fun line ->
+                        let span = TextSpan.FromBounds(line.End, line.EndIncludingLineBreak)
+                        if span.IsEmpty then None else Some(text.ToString(span)))
+                    |> Option.defaultWith (fun () -> options.GetOption(FormattingOptions.NewLine, LanguageNames.CSharp))
+
+                text.WithChanges(TextChange(TextSpan(text.Length, 0), newline))
+            else
+                text
+
+        return doc.WithText(normalizedText)
 }
 
 let sourceTextFromFile (filename: string) : SourceText =

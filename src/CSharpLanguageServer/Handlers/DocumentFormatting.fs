@@ -44,6 +44,7 @@ module DocumentFormatting =
         let! ct = Async.CancellationToken
         let! options = getDocumentFormattingOptionSet doc lspFormattingOptions
         let! newDoc = Formatter.FormatAsync(doc, options, cancellationToken = ct) |> Async.AwaitTask
+        let! newDoc = normalizeDocumentEndOfFile newDoc options lspFormattingOptions
         let! textEdits = getDocumentDiffAsLspTextEdits newDoc doc
         return textEdits |> Some
     }
