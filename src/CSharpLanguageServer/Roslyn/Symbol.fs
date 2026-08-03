@@ -81,10 +81,19 @@ let symbolGetMetadataName' (containingType: INamedTypeSymbol) =
         else
             Some(ns.Name, ns.ContainingNamespace)
 
+    let unfoldContainingType (namedType: INamedTypeSymbol) =
+        if namedType = null then
+            None
+        else
+            Some(namedType.MetadataName, namedType.ContainingType)
+
     let namespaceParts =
         Seq.unfold unfoldNamespace containingType.ContainingNamespace |> Seq.rev
 
-    Seq.append namespaceParts [ containingType.MetadataName ] |> String.concat "."
+    let containingTypeName =
+        Seq.unfold unfoldContainingType containingType |> Seq.rev |> String.concat "+"
+
+    Seq.append namespaceParts [ containingTypeName ] |> String.concat "."
 
 let symbolGetContainingTypeOrThis (symbol: Microsoft.CodeAnalysis.ISymbol) =
     match symbol with

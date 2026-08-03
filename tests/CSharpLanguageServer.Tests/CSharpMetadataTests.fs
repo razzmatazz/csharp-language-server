@@ -72,3 +72,59 @@ let ``test csharp/metadata works with no prior LSP request`` () =
     Assert.AreEqual("Project", metadata0.ProjectName)
     Assert.AreEqual("System.String", metadata0.SymbolName)
     Assert.IsTrue(metadata0.Source.StartsWith "using System")
+
+[<Test>]
+let ``csharp metadata preserves type names ending in suffix characters`` () =
+    use client = activateFixture "genericProject"
+
+    let processMetadataUri =
+        client.SolutionDir
+        |> Uri
+        |> string
+        |> _.Substring("file:///".Length)
+        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Diagnostics.Process.cs"
+
+    let metadataParams: CSharpMetadataParams =
+        { TextDocument = { Uri = processMetadataUri } }
+
+    let metadata: CSharpMetadataResponse =
+        match client.Request("csharp/metadata", metadataParams) with
+        | Some response -> response
+        | None -> failwithf "no response from csharp/metadata for Uri=%s" processMetadataUri
+
+    Assert.AreEqual("System.Diagnostics.Process", metadata.SymbolName)
+    StringAssert.Contains("class Process", metadata.Source)
+
+[<Test>]
+let ``definition resolves members of nested metadata types`` () =
+    use client = activateFixture "genericProject"
+
+    use classFile =
+        client.OpenWithText(
+            "Project/Class.cs",
+            """using System.Collections.Generic;
+class Class
+{
+    bool M(Dictionary<int, string>.Enumerator e) => e.MoveNext();
+}
+"""
+        )
+
+    let definitionParams: DefinitionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 3u; Character = 58u }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let definition: Declaration option =
+        client.Request("textDocument/definition", definitionParams)
+
+    let locations =
+        match definition with
+        | Some(U2.C2 locations) when locations.Length > 0 -> locations
+        | _ -> failwithf "metadata locations were expected but received %A" definition
+
+    let location = locations[0]
+
+    StringAssert.EndsWith("/decompiled/System.Collections.Generic.Dictionary%602%2BEnumerator.cs", location.Uri)
+    Assert.That(locations, Has.All.Property("Uri").EqualTo(location.Uri))
