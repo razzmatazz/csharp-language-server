@@ -114,3 +114,30 @@ let testDidChangeConfigurationAloneTriggersSolutionReload () =
 
     let diagsA1 = getWorkspaceDiagnosticsForUri client projectAUri
     Assert.AreEqual(0, diagsA1.Length)
+
+[<Test>]
+let testRemovingFinalWorkspaceFolderLeavesResponsiveConfiguredWorkspace () =
+    use client = activateFixture "genericProject"
+    use classFile = client.Open("Project/Class.cs")
+
+    let rootFolder: WorkspaceFolder =
+        { Name = "root"
+          Uri = client.SolutionDir |> Uri |> string }
+
+    let folderChangeEvent: DidChangeWorkspaceFoldersParams =
+        { Event =
+            { Added = Array.empty
+              Removed = [| rootFolder |] } }
+
+    client.Notify("workspace/didChangeWorkspaceFolders", folderChangeEvent)
+
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None }
+
+    let _: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    let workspace = client.GetDebugInfo().workspace
+    Assert.AreEqual("Configured", workspace.phase)
+    Assert.IsTrue(workspace.folders.IsEmpty)
