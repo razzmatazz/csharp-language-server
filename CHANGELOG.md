@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Map hidden diagnostics to LSP hints
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/387
 * Add semantic-token support for embedded regex and JSON strings, including strings annotated with `[StringSyntax]`
   - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/385
 * Expand XML documentation comment rendering
