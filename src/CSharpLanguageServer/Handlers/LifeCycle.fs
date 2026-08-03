@@ -122,26 +122,6 @@ module LifeCycle =
         async {
             logger.LogDebug("handleInitialized: \"initialized\" notification received from client")
 
-            logger.LogDebug("handleInitialized: registrationParams..")
-
-            let registrations =
-                getDynamicRegistrations context.Config context.ClientCapabilities
-
-            if registrations.IsEmpty then
-                logger.LogDebug("handleInitialized: no dynamic registrations, skipping client/registerCapability")
-            else
-                let registrationParams = { Registrations = registrations |> List.toArray }
-
-                logger.LogDebug("handleInitialized: ClientRegisterCapability..")
-                // TODO: Retry on error?
-                try
-                    match! lspClient.ClientRegisterCapability registrationParams with
-                    | Ok _ -> ()
-                    | Error error ->
-                        logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
-                with ex ->
-                    logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
-
             logger.LogDebug("handleInitialized: retrieve csharp settings..")
 
             //
@@ -170,6 +150,25 @@ module LifeCycle =
             }
 
             logger.LogInformation("initialize: initial csharp config: {config}", initialConfig |> string)
+
+            logger.LogDebug("handleInitialized: registrationParams..")
+
+            let registrations = getDynamicRegistrations initialConfig context.ClientCapabilities
+
+            if registrations.IsEmpty then
+                logger.LogDebug("handleInitialized: no dynamic registrations, skipping client/registerCapability")
+            else
+                let registrationParams = { Registrations = registrations |> List.toArray }
+
+                logger.LogDebug("handleInitialized: ClientRegisterCapability..")
+                // TODO: Retry on error?
+                try
+                    match! lspClient.ClientRegisterCapability registrationParams with
+                    | Ok _ -> ()
+                    | Error error ->
+                        logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", error)
+                with ex ->
+                    logger.LogWarning("handleInitialized: dynamic cap registration has failed with {error}", string ex)
 
             return Ok(), wsUpdate.WithInitializedGate()
         }

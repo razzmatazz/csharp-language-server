@@ -4,9 +4,11 @@ open System
 
 open NUnit.Framework
 
+open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Types
 
 let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
     use classFile = client.Open(file)
@@ -268,6 +270,62 @@ let testClientRegisterCapabilityIsNotSentWhenNoDynamicRegistrationsAreRequested 
         client.ServerDidInvoke "client/registerCapability",
         "server must not send client/registerCapability when all dynamicRegistration flags are absent"
     )
+
+[<Test>]
+let testDynamicRegistrationsUsePulledWorkspaceConfiguration () =
+    let diagnosticCapability: DiagnosticClientCapabilities =
+        { DynamicRegistration = Some true
+          RelatedDocumentSupport = None }
+
+    let clientCaps =
+        { defaultClientCapabilities with
+            TextDocument =
+                Some
+                    { defaultClientCapabilities.TextDocument.Value with
+                        Diagnostic = Some diagnosticCapability } }
+
+    let profile =
+        { defaultClientProfile with
+            ClientCapabilities = clientCaps
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    razorSupport = Some true }
+            // The test harness enables Razor on the CLI by default. Override it so
+            // the workspace/configuration response is the only source enabling it.
+            ExtraArgs = [ "--features"; "\"\"" ] }
+
+    use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
+
+    // Synchronize with the initialized notification before inspecting the RPC log.
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () -> client.ServerDidInvoke "client/registerCapability")
+        "server never sent client/registerCapability after initialized"
+
+    let registrationParams =
+        client.GetRpcLog()
+        |> Seq.find (fun message ->
+            message.Source = Server
+            && (Some message.Message |> jeStringProp "method") = Some "client/registerCapability")
+        |> _.Message
+        |> Some
+        |> indexJE "params"
+        |> Option.get
+        |> LSPAny.fromJsonElement
+        |> deserialize<RegistrationParams>
+
+    let diagnosticRegistration =
+        registrationParams.Registrations
+        |> Array.find (fun registration -> registration.Method = "textDocument/diagnostic")
+
+    let diagnosticOptions =
+        diagnosticRegistration.RegisterOptions.Value
+        |> deserialize<DiagnosticRegistrationOptions>
+
+    let expectedDocumentSelector: DocumentSelector =
+        [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
+
+    Assert.AreEqual(expectedDocumentSelector, diagnosticOptions.DocumentSelector.Value)
 
 [<TestCase(false, TestName = "absent: not sent")>]
 [<TestCase(true, TestName = "Some true: sent")>]
