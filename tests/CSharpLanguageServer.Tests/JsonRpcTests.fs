@@ -40,6 +40,12 @@ let private makeOpenStdin () =
 
     writeEnd, readEnd :> Stream
 
+type private FailingWriteStream() =
+    inherit MemoryStream()
+
+    override _.WriteAsync(_: byte[], _: int, _: int, _: CancellationToken) =
+        System.Threading.Tasks.Task.FromException(IOException("test write failure"))
+
 /// Helper: write a JSON-RPC request into a stream and return a MemoryStream positioned at 0 for reading.
 let private makeInputStream (messages: string list) =
     let ms = new MemoryStream()
@@ -155,6 +161,41 @@ let testBasicMethodInvocationReturnsResponse () =
     Assert.AreEqual(0, stats.WriteQueueLength, "Write queue should be empty after response is flushed")
 
     shutdownJsonRpcTransport _server |> Async.RunSynchronously
+
+[<Test>]
+let testWriteFailureStopsTransportAndFailsPendingOutboundCall () =
+    use clientToServer =
+        new IO.Pipes.AnonymousPipeServerStream(IO.Pipes.PipeDirection.Out)
+
+    use serverStdin =
+        new IO.Pipes.AnonymousPipeClientStream(IO.Pipes.PipeDirection.In, clientToServer.ClientSafePipeHandle)
+
+    use stdout = new FailingWriteStream()
+
+    let server =
+        startJsonRpcTransport serverStdin stdout None (fun _ -> Map.empty, Map.empty)
+
+    let replyTask =
+        sendJsonRpcCall server "test/write-failure" (JsonSerializer.SerializeToElement({| |}))
+        |> Async.StartAsTask
+
+    Assert.IsTrue(
+        replyTask.Wait(TimeSpan.FromSeconds 5.0),
+        "A failed transport write should complete the pending outbound call"
+    )
+
+    match replyTask.Result with
+    | Error err ->
+        Assert.AreEqual(-32099, err.GetProperty("code").GetInt32())
+        Assert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
+    | Ok _ -> Assert.Fail("Expected a transport error after the stdout write failed")
+
+    let stats = getJsonRpcStats server |> Async.RunSynchronously
+    Assert.AreEqual("Stopped", stats.Phase)
+    Assert.AreEqual(0, stats.PendingOutboundCallCount)
+    Assert.AreEqual(0, stats.WriteQueueLength)
+
+    shutdownJsonRpcTransport server |> Async.RunSynchronously
 
 [<Test>]
 let testHandlerReturningEmptyResultProducesResponse () =
