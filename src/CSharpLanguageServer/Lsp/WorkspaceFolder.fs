@@ -180,13 +180,16 @@ let workspaceFolderParseCSharpDocumentUri (uri: string) (_wf: LspWorkspaceFolder
             match path.IndexOf decompiledPrefix with
             | idx when idx >= 0 ->
                 let projectFilePath = path.Substring(0, idx + ".csproj".Length)
+                let symbolPath = path.Substring(idx + decompiledPrefix.Length)
 
-                let symbolMetadataName =
-                    path.Substring(idx + decompiledPrefix.Length)
-                    |> _.TrimEnd(".cs".ToCharArray())
-                    |> Uri.UnescapeDataString
+                if symbolPath.EndsWith(".cs", StringComparison.Ordinal) then
+                    let symbolMetadataName =
+                        symbolPath.Substring(0, symbolPath.Length - ".cs".Length)
+                        |> Uri.UnescapeDataString
 
-                DecompiledDocumentUri(projectFilePath, symbolMetadataName)
+                    DecompiledDocumentUri(projectFilePath, symbolMetadataName)
+                else
+                    UnrecognizedDocumentUri
             | _ ->
                 match path.IndexOf generatedPrefix with
                 | idx when idx >= 0 ->
@@ -468,7 +471,10 @@ let workspaceFolderProjectForPath (filePath: string) wf : Project option =
         docDir = projectDir || docDir.StartsWith projectDirWithDirSepChar
 
     let findMatchingFileInSolution (sln: Solution) =
-        sln.Projects |> Seq.filter fileIsOnProjectDir |> Seq.tryHead
+        sln.Projects
+        |> Seq.filter fileIsOnProjectDir
+        |> Seq.sortByDescending (fun p -> Path.GetDirectoryName(p.FilePath).Length)
+        |> Seq.tryHead
 
     match wf.Solution with
     | Loaded(_, solution) -> findMatchingFileInSolution solution
