@@ -136,9 +136,6 @@ let workspaceSetPhaseReconfiguring (workspace: LspWorkspace) =
         Phase = LspWorkspacePhase.Reconfiguring }
 
 let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace: LspWorkspace) =
-    if workspaceFolders.Length = 0 then
-        failwith "workspaceFoldersReplaced: at least 1 workspace folder must be provided!"
-
     let folders =
         workspaceFolders
         |> Seq.map (fun f ->
@@ -151,11 +148,20 @@ let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace
         Folders = folders
         Phase = LspWorkspacePhase.Configured }
 
+let private uriIsWithin (baseUri: string) (uri: string) =
+    let baseUri = baseUri.TrimEnd('/')
+
+    uri.Equals(baseUri, StringComparison.Ordinal)
+    || uri.StartsWith(baseUri + "/", StringComparison.Ordinal)
+
 let workspaceFolder (uri: string) (workspace: LspWorkspace) =
     let workspaceFolderMatchesUri wf =
-        uri.StartsWith wf.Uri || uri.StartsWith(workspaceFolderMetadataUriBase wf)
+        uriIsWithin wf.Uri uri || uriIsWithin (workspaceFolderMetadataUriBase wf) uri
 
-    workspace.Folders |> Seq.tryFind workspaceFolderMatchesUri
+    workspace.Folders
+    |> List.filter workspaceFolderMatchesUri
+    |> List.sortByDescending _.Uri.Length
+    |> List.tryHead
 
 let workspaceFolderUpdated (updatedWf: LspWorkspaceFolder) (workspace: LspWorkspace) =
     let updatedFolders =

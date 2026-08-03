@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Lsp.Workspace
 
 /// Send a workspace/didChangeWatchedFiles notification for a single URI + change type.
 let private notifyFileChanged (client: LspTestClient) (uri: string) (changeType: FileChangeType) =
@@ -222,3 +223,24 @@ let testDidChangeWatchedFilesDeletedCshtmlFileRemovesDocument () =
             let items = cshtmlUri |> getWorkspaceDiagnosticsForUri client
             items.IsEmpty)
         "Expected no workspace diagnostics for deleted .cshtml file"
+
+[<Test>]
+let testWorkspaceFolderRoutingUsesContainmentAndLongestRoot () =
+    let workspaceFolders =
+        [ { Name = "sibling-prefix"
+            Uri = "file:///workspace/app" }
+          { Name = "parent"
+            Uri = "file:///workspace/application" }
+          { Name = "nested"
+            Uri = "file:///workspace/application/src" } ]
+
+    let workspace = LspWorkspace.Empty |> workspaceFoldersReplaced workspaceFolders
+
+    let sibling =
+        workspace |> workspaceFolder "file:///workspace/application/Program.cs"
+
+    let nested =
+        workspace |> workspaceFolder "file:///workspace/application/src/Program.cs"
+
+    Assert.AreEqual(Some "parent", sibling |> Option.map _.Name)
+    Assert.AreEqual(Some "nested", nested |> Option.map _.Name)
