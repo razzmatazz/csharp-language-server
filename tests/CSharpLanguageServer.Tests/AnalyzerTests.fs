@@ -147,6 +147,95 @@ let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
     | _ -> failwith "'Some' was expected"
 
 [<Test>]
+let testWorkspaceDiagnosticResultIdChangesAfterDocumentEdit () =
+    use client =
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile prebuildProject id
+
+    use classFile = client.Open("Project/Class.cs")
+    let consumerUri = "Project/Consumer.cs" |> fileUriForProjectDir client.SolutionDir
+
+    let initialParams: WorkspaceDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          Identifier = None
+          PreviousResultIds = Array.empty }
+
+    let initialReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", initialParams)
+
+    let initialFullReports =
+        match initialReport with
+        | Some report ->
+            report.Items
+            |> Array.choose (function
+                | U2.C1 fullReport -> Some fullReport
+                | U2.C2 _ -> None)
+        | None -> failwith "workspace diagnostics were expected"
+
+    let initialClassReport =
+        initialFullReports |> Array.find (fun report -> report.Uri = classFile.Uri)
+
+    let initialConsumerReport =
+        initialFullReports |> Array.find (fun report -> report.Uri = consumerUri)
+
+    let initialResultId = initialClassReport.ResultId |> Option.get
+
+    Assert.That(initialClassReport.Items |> Array.choose _.Code |> Array.map string, Does.Contain("IDE0051"))
+    Assert.That(initialConsumerReport.Items |> Array.choose _.Code |> Array.map string, Does.Contain("CS0122"))
+    Assert.That(initialConsumerReport.ResultId, Is.EqualTo(Some initialResultId))
+
+    classFile.Change(
+        """public class MyClass
+{
+    public int Value { get; set; }
+}
+"""
+    )
+
+    let documentParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = Some initialResultId }
+
+    let updatedDocumentReport: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", documentParams)
+
+    let updatedDocumentResultId =
+        match updatedDocumentReport with
+        | Some(U2.C1 fullReport) -> fullReport.ResultId |> Option.get
+        | _ -> failwith "updated document diagnostics were expected"
+
+    Assert.That(updatedDocumentResultId, Is.Not.EqualTo(initialResultId))
+
+    let updatedParams: WorkspaceDiagnosticParams =
+        { initialParams with
+            PreviousResultIds =
+                [| { Uri = classFile.Uri
+                     Value = updatedDocumentResultId }
+                   { Uri = consumerUri
+                     Value = initialResultId } |] }
+
+    let updatedReport: WorkspaceDiagnosticReport option =
+        client.Request("workspace/diagnostic", updatedParams)
+
+    match updatedReport with
+    | Some report ->
+        match
+            report.Items
+            |> Array.tryFind (function
+                | U2.C1 fullReport -> fullReport.Uri = consumerUri
+                | U2.C2 unchangedReport -> unchangedReport.Uri = consumerUri)
+        with
+        | Some(U2.C1 fullReport) ->
+            Assert.That(fullReport.ResultId, Is.EqualTo(Some updatedDocumentResultId))
+            Assert.That(fullReport.Items |> Array.choose _.Code |> Array.map string, Does.Not.Contain("CS0122"))
+        | Some(U2.C2 _) -> failwith "Consumer.cs diagnostics must not be reported as unchanged"
+        | None -> failwith "updated Consumer.cs diagnostics were expected"
+    | None -> failwith "updated workspace diagnostics were expected"
+
+[<Test>]
 let testAnalyzerPipelineDoesNotCrashWhenNoAnalyzersPresent () =
     // Verify that the analyzer pipeline is robust when a project has no analyzer references
     // configured with diagnostic severity rules. Uses the genericProject fixture which has

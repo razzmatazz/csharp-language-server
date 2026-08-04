@@ -56,8 +56,11 @@ module Diagnostic =
 
             Some registration
 
-    let private projectResultId (analyzersEnabled: bool) (project: Microsoft.CodeAnalysis.Project) =
-        sprintf "%s/%b" (string project.Version) analyzersEnabled
+    let private projectResultId (analyzersEnabled: bool) (project: Microsoft.CodeAnalysis.Project) = async {
+        let! ct = Async.CancellationToken
+        let! version = project.GetDependentVersionAsync(ct) |> Async.AwaitTask
+        return sprintf "%s/%b" (string version) analyzersEnabled
+    }
 
     let private diagnosticIsToBeListed (uri: string) (d: Microsoft.CodeAnalysis.Diagnostic) =
         if uri.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase) then
@@ -117,7 +120,10 @@ module Diagnostic =
                     // VS Code substitutes the document-level pull state (which has resultId=None)
                     // over the workspace pull state for any open file, causing previousResultIds
                     // to be empty on every poll and triggering a perpetual full re-scan.
-                    let resultId = project |> Option.map (projectResultId analyzersEnabled)
+                    let! resultId =
+                        match project with
+                        | Some project -> projectResultId analyzersEnabled project |> Async.map Some
+                        | None -> async.Return None
 
                     return
                         { emptyReport with
@@ -149,19 +155,29 @@ module Diagnostic =
                 let analyzersEnabled = config.analyzersEnabled |> Option.defaultValue false
                 // Include analyzersEnabled in the resultId so that toggling the setting
                 // invalidates any cached "unchanged" result the client holds.
-                let resultId = project |> projectResultId analyzersEnabled
+                let! resultId = project |> projectResultId analyzersEnabled
 
-                // Collect URIs the client already holds for this exact project version.
-                // If any exist, the client received the full set on a previous poll —
-                // emit Unchanged for each and skip Roslyn entirely.
-                let clientKnownUris =
+                let pathToUri path = workspaceFolderPathToUri path wf
+
+                let projectDocumentUris =
+                    project.Documents
+                    |> Seq.choose (fun d -> d.FilePath |> Option.ofObj)
+                    |> Seq.map pathToUri
+                    |> Set.ofSeq
+
+                let clientKnownResultsForProject =
                     knownResultIds
                     |> Map.toSeq
-                    |> Seq.choose (fun (uri, knownId) -> if knownId = resultId then Some uri else None)
+                    |> Seq.filter (fun (uri, _) -> projectDocumentUris.Contains uri)
                     |> Array.ofSeq
 
-                if clientKnownUris.Length > 0 then
-                    for uri in clientKnownUris do
+                let clientHasCurrentProjectVersion =
+                    clientKnownResultsForProject.Length > 0
+                    && clientKnownResultsForProject
+                       |> Array.forall (fun (_, knownId) -> knownId = resultId)
+
+                if clientHasCurrentProjectVersion then
+                    for uri, _ in clientKnownResultsForProject do
                         let documentReport: WorkspaceDocumentDiagnosticReport =
                             U2.C2
                                 { Kind = "unchanged"
@@ -177,8 +193,6 @@ module Diagnostic =
                     match compilation |> Option.ofObj with
                     | None -> ()
                     | Some compilation ->
-                        let pathToUri path = workspaceFolderPathToUri path wf
-
                         // Collect file paths of source-generated documents (IIncrementalGenerator
                         // output) so we can suppress their diagnostics. Users have no control over
                         // generated code, so surfacing those diagnostics would only cause noise.
@@ -242,17 +256,9 @@ module Diagnostic =
                         // resultId.  On the next poll the client sends those mismatched
                         // resultIds, so the owning project sees them as stale and re-emits
                         // real diagnostics — producing the 0 → N → 0 cycle.
-                        let projectDocumentUris =
-                            project.Documents
-                            |> Seq.choose (fun d -> d.FilePath |> Option.ofObj)
-                            |> Seq.map pathToUri
-                            |> Set.ofSeq
-
                         let clientKnownUrisForProject =
-                            knownResultIds
-                            |> Map.toSeq
+                            clientKnownResultsForProject
                             |> Seq.map fst
-                            |> Seq.filter (fun uri -> projectDocumentUris.Contains uri)
                             |> Seq.filter (fun uri -> not (diagnosticsByDocument.ContainsKey uri))
 
                         for uri in clientKnownUrisForProject do
