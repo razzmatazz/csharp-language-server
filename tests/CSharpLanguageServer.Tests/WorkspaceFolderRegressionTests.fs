@@ -1,44 +1,24 @@
 module CSharpLanguageServer.Tests.WorkspaceFolderRegressionTests
 
-open System.IO
-
-open Microsoft.CodeAnalysis
 open NUnit.Framework
+open Ionide.LanguageServerProtocol.Types
 
-open CSharpLanguageServer.Lsp.WorkspaceFolder
+open CSharpLanguageServer.Tests.Tooling
 
 [<Test>]
 let ``loose document attaches to nearest containing project`` () =
-    use workspace = new AdhocWorkspace()
+    use client = activateFixture "nestedProjects"
+    use looseDocument = client.Open("App/Tests/Scratch.cs")
 
-    let appDirectory = Path.Combine(Path.GetTempPath(), "App")
-    let testsDirectory = Path.Combine(appDirectory, "Tests")
-    let parentProjectPath = Path.Combine(appDirectory, "App.csproj")
-    let nearestProjectPath = Path.Combine(testsDirectory, "Tests.csproj")
-    let looseDocumentPath = Path.Combine(testsDirectory, "Scratch.cs")
+    let definitionParams: DefinitionParams =
+        { TextDocument = { Uri = looseDocument.Uri }
+          Position = { Line = 0u; Character = 17u }
+          WorkDoneToken = None
+          PartialResultToken = None }
 
-    let projectInfo name filePath =
-        ProjectInfo.Create(
-            ProjectId.CreateNewId(),
-            VersionStamp.Create(),
-            name,
-            name,
-            LanguageNames.CSharp,
-            filePath = filePath
-        )
+    let definition: Declaration option =
+        client.Request("textDocument/definition", definitionParams)
 
-    let solution =
-        workspace.CurrentSolution
-            .AddProject(projectInfo "App" parentProjectPath)
-            .AddProject(projectInfo "Tests" nearestProjectPath)
-
-    let workspaceFolder =
-        { LspWorkspaceFolder.Empty with
-            Solution = Loaded(workspace, solution) }
-
-    let document, _ =
-        workspaceFolderDocumentAdd looseDocumentPath "class Scratch {}" workspaceFolder
-
-    match document with
-    | Some document -> Assert.AreEqual(nearestProjectPath, document.Project.FilePath)
-    | None -> Assert.Fail("the loose document should be attached to a containing project")
+    match definition with
+    | Some(U2.C2 [| location |]) -> StringAssert.EndsWith("/App/Tests/Marker.cs", location.Uri)
+    | _ -> Assert.Fail(sprintf "definition in the nearest containing project was expected but received %A" definition)
