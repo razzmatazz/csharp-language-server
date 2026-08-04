@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Fix decompiled metadata navigation stripping trailing characters from type names and failing for nested types; attach loose documents to the nearest containing project in nested-project layouts
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/396
 * Fix `textDocument/formatting` ignoring `insertFinalNewline`/`trimFinalNewlines` options; both are now applied after full-document formatting, preserving the document's existing line-ending convention
   - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/400
 * Fix a crash where a failed stdout write left the JSON-RPC transport in a broken state instead of shutting it down cleanly and failing pending calls
