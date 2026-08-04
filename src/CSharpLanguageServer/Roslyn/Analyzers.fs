@@ -1,28 +1,61 @@
 module CSharpLanguageServer.Roslyn.Analyzers
 
+open System
+open System.Collections.Concurrent
 open System.Collections.Immutable
+open System.Runtime.CompilerServices
 open System.Threading
+open System.Threading.Tasks
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Diagnostics
+
+type private SolutionAnalysisCache = ConcurrentDictionary<ProjectId, Lazy<Task<ImmutableArray<Diagnostic>>>>
+
+let private solutionAnalysisCaches =
+    ConditionalWeakTable<Solution, SolutionAnalysisCache>()
+
+let private projectAnalyzers (project: Project) =
+    project.AnalyzerReferences
+    |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
+    |> ImmutableArray.CreateRange
+
+let private getSharedProjectAnalysis
+    (project: Project)
+    (compilation: Compilation)
+    (analyzers: ImmutableArray<DiagnosticAnalyzer>)
+    : Async<ImmutableArray<Diagnostic>> =
+    async {
+        let solutionCache =
+            solutionAnalysisCaches.GetValue(project.Solution, fun _ -> SolutionAnalysisCache())
+
+        let analysisTask =
+            solutionCache
+                .GetOrAdd(
+                    project.Id,
+                    fun _ ->
+                        lazy
+                            // Cancellation applies to each waiter, not to the shared analysis.
+                            let cwa = compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
+                            cwa.GetAllDiagnosticsAsync(CancellationToken.None)
+                )
+                .Value
+
+        let! ct = Async.CancellationToken
+        return! analysisTask.WaitAsync(ct) |> Async.AwaitTask
+    }
 
 /// Returns compiler diagnostics + all analyzer diagnostics for an entire compilation.
 /// Falls back to compiler-only if the project has no analyzer references.
 let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Compilation) : Async<Diagnostic list> = async {
     let! ct = Async.CancellationToken
 
-    let analyzers =
-        project.AnalyzerReferences
-        |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
-        |> ImmutableArray.CreateRange
+    let analyzers = projectAnalyzers project
 
     if analyzers.IsEmpty then
         return compilation.GetDiagnostics(ct) |> List.ofSeq
     else
-        // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
-        // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        let cwa = compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
-        let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
+        let! allDiags = getSharedProjectAnalysis project compilation analyzers
         return allDiags |> List.ofSeq
 }
 
@@ -36,20 +69,12 @@ let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Comp
 let getDocumentDiagnosticsWithAnalyzers (project: Project) (semanticModel: SemanticModel) : Async<Diagnostic list> = async {
     let! ct = Async.CancellationToken
 
-    let analyzers =
-        project.AnalyzerReferences
-        |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
-        |> ImmutableArray.CreateRange
+    let analyzers = projectAnalyzers project
 
     if analyzers.IsEmpty then
         return semanticModel.GetDiagnostics(cancellationToken = ct) |> List.ofSeq
     else
-        // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
-        // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        let cwa =
-            semanticModel.Compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
-
-        let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
+        let! allDiags = getSharedProjectAnalysis project semanticModel.Compilation analyzers
 
         // Filter to only diagnostics whose source location is within this document.
         // Diagnostics with no source location (e.g. compilation-level errors) are excluded
