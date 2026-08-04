@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
+  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/403
 * Fix `.slnf` solution filters being ignored when the declared project set is read from the solution: the set was read from the filter's parent solution, so on a filtered solution the load progress reported counts like `(74/358)` with the percentage stuck at 20, and the workspace-global `TargetFramework` intersection wrongly included projects the filter excludes
   - By @pbednarcik
 * Fix `textDocument/completion` (and other interactive requests) stalling when analyzers are enabled on a multi-project solution: `workspace/diagnostic` now analyzes one project at a time instead of fanning out across every project concurrently

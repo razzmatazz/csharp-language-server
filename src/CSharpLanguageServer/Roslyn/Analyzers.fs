@@ -1,45 +1,72 @@
 module CSharpLanguageServer.Roslyn.Analyzers
 
+open System
+open System.Collections.Concurrent
 open System.Collections.Immutable
+open System.Runtime.CompilerServices
 open System.Threading
+open System.Threading.Tasks
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Diagnostics
+
+type private SolutionAnalysisCache = ConcurrentDictionary<ProjectId, Lazy<Task<ImmutableArray<Diagnostic>>>>
+
+let private solutionAnalysisCaches =
+    ConditionalWeakTable<Solution, SolutionAnalysisCache>()
+
+let private projectAnalyzers (project: Project) =
+    project.AnalyzerReferences
+    |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
+    |> ImmutableArray.CreateRange
+
+let private getSharedProjectAnalysis
+    (project: Project)
+    (compilation: Compilation)
+    (analyzers: ImmutableArray<DiagnosticAnalyzer>)
+    : Async<ImmutableArray<Diagnostic>> =
+    async {
+        let solutionCache =
+            solutionAnalysisCaches.GetValue(project.Solution, fun _ -> SolutionAnalysisCache())
+
+        let analysisTask =
+            solutionCache
+                .GetOrAdd(
+                    project.Id,
+                    fun _ ->
+                        lazy
+                            // Cancellation applies to each waiter, not to the shared analysis.
+                            // MSBuildWorkspace supplies the .editorconfig-aware analyzer options.
+                            // Keep per-project parallelism; workspace diagnostics process projects
+                            // sequentially to avoid starving interactive requests.
+                            let analysisOptions =
+                                CompilationWithAnalyzersOptions(
+                                    options = project.AnalyzerOptions,
+                                    onAnalyzerException = null,
+                                    concurrentAnalysis = true,
+                                    logAnalyzerExecutionTime = false
+                                )
+
+                            let cwa = compilation.WithAnalyzers(analyzers, analysisOptions)
+                            cwa.GetAllDiagnosticsAsync(CancellationToken.None)
+                )
+                .Value
+
+        let! ct = Async.CancellationToken
+        return! analysisTask.WaitAsync(ct) |> Async.AwaitTask
+    }
 
 /// Returns compiler diagnostics + all analyzer diagnostics for an entire compilation.
 /// Falls back to compiler-only if the project has no analyzer references.
 let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Compilation) : Async<Diagnostic list> = async {
     let! ct = Async.CancellationToken
 
-    let analyzers =
-        project.AnalyzerReferences
-        |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
-        |> ImmutableArray.CreateRange
+    let analyzers = projectAnalyzers project
 
     if analyzers.IsEmpty then
         return compilation.GetDiagnostics(ct) |> List.ofSeq
     else
-        // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
-        // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        //
-        // concurrentAnalysis is left enabled. Only one project is ever being analyzed
-        // at a time (getWorkspaceDiagnosticReports processes projects sequentially),
-        // so letting a single project's own analyzer pass use every core is safe —
-        // there's no second project's pass competing for the same cores concurrently.
-        // Confirmed against a real multi-project session with analyzers enabled:
-        // interactive requests (completion, hover, ...) stayed responsive throughout
-        // a full workspace/diagnostic sweep. See "Post-implementation notes (Option
-        // C)" in plans/interactive-request-latency-vs-analyzers.md.
-        let analysisOptions =
-            CompilationWithAnalyzersOptions(
-                options = project.AnalyzerOptions,
-                onAnalyzerException = null,
-                concurrentAnalysis = true,
-                logAnalyzerExecutionTime = false
-            )
-
-        let cwa = compilation.WithAnalyzers(analyzers, analysisOptions)
-        let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
+        let! allDiags = getSharedProjectAnalysis project compilation analyzers
         return allDiags |> List.ofSeq
 }
 
@@ -53,30 +80,12 @@ let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Comp
 let getDocumentDiagnosticsWithAnalyzers (project: Project) (semanticModel: SemanticModel) : Async<Diagnostic list> = async {
     let! ct = Async.CancellationToken
 
-    let analyzers =
-        project.AnalyzerReferences
-        |> Seq.collect _.GetAnalyzers(LanguageNames.CSharp)
-        |> ImmutableArray.CreateRange
+    let analyzers = projectAnalyzers project
 
     if analyzers.IsEmpty then
         return semanticModel.GetDiagnostics(cancellationToken = ct) |> List.ofSeq
     else
-        // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
-        // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        //
-        // concurrentAnalysis is left enabled — see the comment in
-        // getCompilationDiagnosticsWithAnalyzers above for the rationale.
-        let analysisOptions =
-            CompilationWithAnalyzersOptions(
-                options = project.AnalyzerOptions,
-                onAnalyzerException = null,
-                concurrentAnalysis = true,
-                logAnalyzerExecutionTime = false
-            )
-
-        let cwa = semanticModel.Compilation.WithAnalyzers(analyzers, analysisOptions)
-
-        let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
+        let! allDiags = getSharedProjectAnalysis project semanticModel.Compilation analyzers
 
         // Filter to only diagnostics whose source location is within this document.
         // Diagnostics with no source location (e.g. compilation-level errors) are excluded
