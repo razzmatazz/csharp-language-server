@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Fix `textDocument/formatting` ignoring `insertFinalNewline`/`trimFinalNewlines` options; both are now applied after full-document formatting, preserving the document's existing line-ending convention
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/400
+* Fix a crash where a failed stdout write left the JSON-RPC transport in a broken state instead of shutting it down cleanly and failing pending calls
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/398
+* Fix multi-root workspace document routing picking the wrong sibling-prefixed folder (e.g. `app` vs `application`); fix workspace actor terminating when the last workspace folder is removed
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/397
+* Fix dynamic registrations (e.g. `textDocument/diagnostic` selectors) being built before the initial workspace configuration was loaded, causing settings like `razorSupport` to be ignored at startup
+  - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/399
 * Map hidden diagnostics to LSP hints
   - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/387
 * Add semantic-token support for embedded regex and JSON strings, including strings annotated with `[StringSyntax]`
