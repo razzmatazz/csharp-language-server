@@ -12,8 +12,17 @@ open Microsoft.CodeAnalysis.Diagnostics
 
 type private SolutionAnalysisCache = ConcurrentDictionary<ProjectId, Lazy<Task<ImmutableArray<Diagnostic>>>>
 
-let private solutionAnalysisCaches =
-    ConditionalWeakTable<Solution, SolutionAnalysisCache>()
+/// Keyed by Solution snapshot; an edited snapshot misses.
+type AnalyzerDiagnosticsCache() =
+    let solutionCaches = ConditionalWeakTable<Solution, SolutionAnalysisCache>()
+
+    member _.GetOrStartAnalysis
+        (solution: Solution, projectId: ProjectId, startAnalysis: unit -> Task<ImmutableArray<Diagnostic>>)
+        : Task<ImmutableArray<Diagnostic>> =
+        solutionCaches
+            .GetValue(solution, fun _ -> SolutionAnalysisCache())
+            .GetOrAdd(projectId, fun _ -> lazy (startAnalysis ()))
+            .Value
 
 let private projectAnalyzers (project: Project) =
     project.AnalyzerReferences
@@ -21,25 +30,21 @@ let private projectAnalyzers (project: Project) =
     |> ImmutableArray.CreateRange
 
 let private getSharedProjectAnalysis
+    (cache: AnalyzerDiagnosticsCache)
     (project: Project)
     (compilation: Compilation)
     (analyzers: ImmutableArray<DiagnosticAnalyzer>)
     : Async<ImmutableArray<Diagnostic>> =
     async {
-        let solutionCache =
-            solutionAnalysisCaches.GetValue(project.Solution, fun _ -> SolutionAnalysisCache())
-
         let analysisTask =
-            solutionCache
-                .GetOrAdd(
-                    project.Id,
-                    fun _ ->
-                        lazy
-                            // Cancellation applies to each waiter, not to the shared analysis.
-                            let cwa = compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
-                            cwa.GetAllDiagnosticsAsync(CancellationToken.None)
-                )
-                .Value
+            cache.GetOrStartAnalysis(
+                project.Solution,
+                project.Id,
+                fun () ->
+                    // Cancellation applies to each waiter, not to the shared analysis.
+                    let cwa = compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
+                    cwa.GetAllDiagnosticsAsync(CancellationToken.None)
+            )
 
         let! ct = Async.CancellationToken
         return! analysisTask.WaitAsync(ct) |> Async.AwaitTask
@@ -47,17 +52,22 @@ let private getSharedProjectAnalysis
 
 /// Returns compiler diagnostics + all analyzer diagnostics for an entire compilation.
 /// Falls back to compiler-only if the project has no analyzer references.
-let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Compilation) : Async<Diagnostic list> = async {
-    let! ct = Async.CancellationToken
+let getCompilationDiagnosticsWithAnalyzers
+    (cache: AnalyzerDiagnosticsCache)
+    (project: Project)
+    (compilation: Compilation)
+    : Async<Diagnostic list> =
+    async {
+        let! ct = Async.CancellationToken
 
-    let analyzers = projectAnalyzers project
+        let analyzers = projectAnalyzers project
 
-    if analyzers.IsEmpty then
-        return compilation.GetDiagnostics(ct) |> List.ofSeq
-    else
-        let! allDiags = getSharedProjectAnalysis project compilation analyzers
-        return allDiags |> List.ofSeq
-}
+        if analyzers.IsEmpty then
+            return compilation.GetDiagnostics(ct) |> List.ofSeq
+        else
+            let! allDiags = getSharedProjectAnalysis cache project compilation analyzers
+            return allDiags |> List.ofSeq
+    }
 
 /// Returns compiler diagnostics + analyzer diagnostics for a single document's semantic model.
 /// Falls back to compiler-only if the project has no analyzer references.
@@ -66,22 +76,27 @@ let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Comp
 /// path rather than GetAnalyzerSemanticDiagnosticsAsync, because some IDE analyzers (e.g.
 /// IDE0040 "accessibility modifiers") emit diagnostics whose reported location causes them
 /// to be missed by the span-based semantic filter.
-let getDocumentDiagnosticsWithAnalyzers (project: Project) (semanticModel: SemanticModel) : Async<Diagnostic list> = async {
-    let! ct = Async.CancellationToken
+let getDocumentDiagnosticsWithAnalyzers
+    (cache: AnalyzerDiagnosticsCache)
+    (project: Project)
+    (semanticModel: SemanticModel)
+    : Async<Diagnostic list> =
+    async {
+        let! ct = Async.CancellationToken
 
-    let analyzers = projectAnalyzers project
+        let analyzers = projectAnalyzers project
 
-    if analyzers.IsEmpty then
-        return semanticModel.GetDiagnostics(cancellationToken = ct) |> List.ofSeq
-    else
-        let! allDiags = getSharedProjectAnalysis project semanticModel.Compilation analyzers
+        if analyzers.IsEmpty then
+            return semanticModel.GetDiagnostics(cancellationToken = ct) |> List.ofSeq
+        else
+            let! allDiags = getSharedProjectAnalysis cache project semanticModel.Compilation analyzers
 
-        // Filter to only diagnostics whose source location is within this document.
-        // Diagnostics with no source location (e.g. compilation-level errors) are excluded
-        // so they aren't duplicated across every open document.
-        let mappedPathMatchesDocFilePath (d: Diagnostic) =
-            let path = d.Location.GetMappedLineSpan().Path
-            path = semanticModel.SyntaxTree.FilePath
+            // Filter to only diagnostics whose source location is within this document.
+            // Diagnostics with no source location (e.g. compilation-level errors) are excluded
+            // so they aren't duplicated across every open document.
+            let mappedPathMatchesDocFilePath (d: Diagnostic) =
+                let path = d.Location.GetMappedLineSpan().Path
+                path = semanticModel.SyntaxTree.FilePath
 
-        return allDiags |> Seq.filter mappedPathMatchesDocFilePath |> List.ofSeq
-}
+            return allDiags |> Seq.filter mappedPathMatchesDocFilePath |> List.ofSeq
+    }

@@ -81,6 +81,8 @@ let testProjectAnalyzerAnalysisIsSharedAcrossDocumentsAndRequestCancellation () 
     let workspace, project, firstDocumentId, secondDocumentId = analyzerProject analyzer
     use _workspace = workspace
 
+    let cache = AnalyzerDiagnosticsCache()
+
     // Obtain independent Project wrappers from the same immutable Solution snapshot,
     // as separate document diagnostic requests do in the server.
     let firstProject =
@@ -93,14 +95,14 @@ let testProjectAnalyzerAnalysisIsSharedAcrossDocumentsAndRequestCancellation () 
     let secondSemanticModel = getSemanticModel secondProject secondDocumentId
 
     let firstRequest =
-        getDocumentDiagnosticsWithAnalyzers firstProject firstSemanticModel
+        getDocumentDiagnosticsWithAnalyzers cache firstProject firstSemanticModel
         |> fun work -> Async.StartAsTask(work, cancellationToken = requestCancellation.Token)
 
     try
         Assert.That(analyzerStarted.Wait(TimeSpan.FromSeconds(10.0)), Is.True, "Analyzer did not start")
 
         let secondRequest =
-            getDocumentDiagnosticsWithAnalyzers secondProject secondSemanticModel
+            getDocumentDiagnosticsWithAnalyzers cache secondProject secondSemanticModel
             |> Async.StartAsTask
 
         requestCancellation.Cancel()
@@ -116,7 +118,7 @@ let testProjectAnalyzerAnalysisIsSharedAcrossDocumentsAndRequestCancellation () 
         Assert.That(analyzer.InvocationCount, Is.EqualTo(2), "Expected one analyzer pass over the two syntax trees")
 
         let cachedFirstDiagnostics =
-            getDocumentDiagnosticsWithAnalyzers firstProject firstSemanticModel
+            getDocumentDiagnosticsWithAnalyzers cache firstProject firstSemanticModel
             |> Async.RunSynchronously
 
         Assert.That(cachedFirstDiagnostics |> List.map _.Id, Is.EqualTo([ "TEST0001" ]))
@@ -132,7 +134,7 @@ let testProjectAnalyzerAnalysisIsSharedAcrossDocumentsAndRequestCancellation () 
         let updatedSemanticModel = getSemanticModel updatedProject firstDocumentId
 
         let updatedDiagnostics =
-            getDocumentDiagnosticsWithAnalyzers updatedProject updatedSemanticModel
+            getDocumentDiagnosticsWithAnalyzers cache updatedProject updatedSemanticModel
             |> Async.RunSynchronously
 
         Assert.That(updatedDiagnostics |> List.exists (fun diagnostic -> diagnostic.Id = "TEST0001"), Is.True)
