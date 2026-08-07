@@ -18,6 +18,7 @@ open CSharpLanguageServer.Util
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Roslyn.Symbol
 open CSharpLanguageServer.Roslyn.Solution
+open CSharpLanguageServer.Roslyn.Analyzers
 open CSharpLanguageServer.Roslyn.Conversions
 open CSharpLanguageServer.Logging
 
@@ -50,6 +51,8 @@ type LspWorkspaceFolder =
 
         Solution: LspWorkspaceFolderSolution
 
+        AnalyzerDiagnostics: AnalyzerDiagnosticsCache
+
         /// key is (project.Path * symbol metadata name)
         DecompiledSymbolMetadata: Map<string * string, LspWorkspaceDecompiledMetadataDocument>
 
@@ -64,6 +67,7 @@ type LspWorkspaceFolder =
           SolutionPathOverride = None
           Generation = Guid.NewGuid()
           Solution = Uninitialized
+          AnalyzerDiagnostics = AnalyzerDiagnosticsCache()
           DecompiledSymbolMetadata = Map.empty
           OpenDocs = Map.empty
           PushDiagnosticsBacklogUpdatePending = false }
@@ -756,5 +760,6 @@ let workspaceFolderTeardown (wf: LspWorkspaceFolder) : LspWorkspaceFolder =
     { wf with
         Generation = Guid.NewGuid()
         Solution = Uninitialized
+        AnalyzerDiagnostics = AnalyzerDiagnosticsCache()
         DecompiledSymbolMetadata = Map.empty
         OpenDocs = Map.empty }

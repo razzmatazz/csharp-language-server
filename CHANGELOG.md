@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
+  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/403
 * Fix workspace pull diagnostics returning `unchanged` after source document edits, which could leave clients with stale results
   - Reported in https://github.com/razzmatazz/csharp-language-server/issues/401
 * Fix decompiled metadata navigation stripping trailing characters from type names and failing for nested types; attach loose documents to the nearest containing project in nested-project layouts
