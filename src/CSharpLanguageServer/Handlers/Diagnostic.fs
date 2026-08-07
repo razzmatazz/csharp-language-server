@@ -101,7 +101,8 @@ module Diagnostic =
 
                     let! allDiags =
                         match project, analyzersEnabled with
-                        | Some project, true -> getDocumentDiagnosticsWithAnalyzers project semanticModel
+                        | Some project, true ->
+                            getDocumentDiagnosticsWithAnalyzers wf.AnalyzerDiagnostics project semanticModel
                         | _ -> async {
                             let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
                             return diags |> List.ofSeq
@@ -202,7 +203,7 @@ module Diagnostic =
 
                         let! allDiags =
                             if analyzersEnabled then
-                                getCompilationDiagnosticsWithAnalyzers project compilation
+                                getCompilationDiagnosticsWithAnalyzers wf.AnalyzerDiagnostics project compilation
                             else
                                 async { return compilation.GetDiagnostics() |> List.ofSeq }
 
