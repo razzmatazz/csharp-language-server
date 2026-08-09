@@ -16,11 +16,16 @@ open CSharpLanguageServer.Roslyn.Solution
 [<TestCase("1.csproj:net40,net462,net6.0,net8.0,net8.0-windows,netcoreapp3.1,netstandard2.0", "net8.0-windows")>]
 [<TestCase("1.csproj:net40,net462", "net462")>]
 [<TestCase("1.csproj:net8.0 2.csproj:net8.0", "net8.0")>]
-[<TestCase("1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", "net10.0")>]
+[<TestCase("1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", null)>]
 [<TestCase("1.csproj:net8.0,net10.0 2.csproj:net8.0,net10.0", "net10.0")>]
-[<TestCase("1.csproj:net8.0 2.csproj:net8.0,net10.0", "net10.0")>]
-[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", "net9.0-windows")>]
-[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", "net9.0-windows")>]
+[<TestCase("1.csproj:net8.0 2.csproj:net8.0,net10.0", "net8.0")>]
+// A TFM that only some projects declare must never become a workspace-global MSBuild
+// property: it would override the other projects' own TargetFramework and invalidate
+// their restore output.  See https://github.com/razzmatazz/csharp-language-server/issues/405
+[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net10.0 2.csproj:net10.0-windows", null)>]
+[<TestCase("1.csproj:net10.0,net10.0-windows 2.csproj:net10.0", "net10.0")>]
 let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string | null) =
 
     let parseTfmList (projectEntry: string) : string * list<string> =

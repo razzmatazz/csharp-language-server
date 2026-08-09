@@ -182,6 +182,58 @@ let testMultiTargetProjectLoads () =
 
     ClassicAssert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
 
+/// Regression test for https://github.com/razzmatazz/csharp-language-server/issues/405:
+/// a solution mixing a plain net10.0 project with a net10.0-windows one used to have the
+/// platform-specific TFM applied as a workspace-global MSBuild property, overriding the
+/// plain project's own TargetFramework.  Its project.assets.json has no net10.0-windows
+/// target, so the design-time build failed with NETSDK1005, dropped every reference, and
+/// the server reported phantom errors on code that compiles cleanly.
+[<Test>]
+let testPlatformSpecificTfmDoesNotBreakSiblingProjects () =
+    // The restore is what makes this test meaningful: it produces a project.assets.json
+    // for Project containing a net10.0 target and nothing else.
+    let prebuild (solutionDir: string) =
+        let exitCode, stdout, stderr = runDotnetBuild solutionDir
+
+        if exitCode <> 0 then
+            failwithf
+                "Pre-build of platformSpecificTfm fixture failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
+                exitCode
+                stdout
+                stderr
+
+    use client =
+        activateFixtureExt "platformSpecificTfm" defaultClientProfile prebuild id
+
+    assertHoverWorks
+        client
+        "Project/Class.cs"
+        { Line = 5u; Character = 17u }
+        "```csharp\nvoid Class.MethodA(string arg)\n```"
+
+    use classFile = client.Open("Project/Class.cs")
+
+    let diagnosticParams: DocumentDiagnosticParams =
+        { WorkDoneToken = None
+          PartialResultToken = None
+          TextDocument = { Uri = classFile.Uri }
+          Identifier = None
+          PreviousResultId = None }
+
+    let report: DocumentDiagnosticReport option =
+        client.Request("textDocument/diagnostic", diagnosticParams)
+
+    match report with
+    | Some(U2.C1 report) ->
+        let errors =
+            report.Items
+            |> Array.filter (fun d -> d.Severity = Some DiagnosticSeverity.Error)
+
+        let errorsStr = errors |> Array.map _.Message |> String.concat "; "
+
+        ClassicAssert.AreEqual(0, errors.Length, $"expected no errors on Project/Class.cs, got: {errorsStr}")
+    | _ -> failwith "U2.C1 (full report) was expected"
+
 [<Test>]
 let testMultiTargetWorkspace () =
     let clientWorkspaceCaps: WorkspaceClientCapabilities =
