@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Keep this regression fixture deterministic in CI: its package is already restored
+         by the test project, and vulnerability auditing would add an unrelated network call. -->
+    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
   <ItemGroup>
     <!-- A PackageReference is essential to this regression: framework references come from
