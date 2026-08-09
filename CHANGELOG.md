@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Re-enable Razor tests: upgrade Roslyn packages to 5.9.0 (now satisfies .NET SDK 10.0.400's Razor generator requirement) and fix Razor hover/references resolving to the wrong token under Roslyn's newer `#line` directive format
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/408
+* Fix a project with a platform-specific TFM (e.g. `net10.0-windows`) forcing that TFM onto every other project in the solution, breaking package resolution and producing phantom errors; a workspace-global `TargetFramework` is now only applied when every project declares it
+  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/405
 * Fix workspace pull diagnostics returning `unchanged` after source document edits, which could leave clients with stale results
   - Reported in https://github.com/razzmatazz/csharp-language-server/issues/401
 * Fix decompiled metadata navigation stripping trailing characters from type names and failing for nested types; attach loose documents to the nearest containing project in nested-project layouts

@@ -171,23 +171,19 @@ let loadProjectTfms (projs: string seq) : Async<Map<string, list<string>>> =
 let frameworkIsCompatible a b =
     DefaultCompatibilityProvider.Instance.IsCompatible(a, b)
 
-let compatibleTfmsOfTwoSets afxs bfxs = seq {
-    for a in afxs |> Seq.map NuGetFramework.Parse do
-        for b in bfxs |> Seq.map NuGetFramework.Parse do
-            if frameworkIsCompatible a b then
-                yield a.GetShortFolderName()
-            else if frameworkIsCompatible b a then
-                yield b.GetShortFolderName()
-}
+/// Normalise a declared TFM to its canonical short folder name so that equivalent
+/// spellings intersect correctly.  Returns None for values NuGet cannot make sense of
+/// (GetShortFolderName throws on unsupported frameworks).
+let private tryNormalizeTfm (tfm: string) : string option =
+    try
+        let fx = NuGetFramework.Parse tfm
 
-let compatibleTfmSet (tfmSets: list<Set<string>>) : Set<string> =
-    match tfmSets.Length with
-    | 0 -> Set.empty
-    | 1 -> tfmSets |> List.head
-    | _ ->
-        let firstSet = tfmSets |> List.head
-
-        tfmSets |> List.skip 1 |> Seq.fold compatibleTfmsOfTwoSets firstSet |> Set.ofSeq
+        if fx.IsUnsupported then
+            None
+        else
+            Some(fx.GetShortFolderName())
+    with _ ->
+        None
 
 let bestTfm (tfms: string seq) : string option =
     let frameworks = tfms |> Seq.map NuGetFramework.Parse |> List.ofSeq
@@ -203,15 +199,19 @@ let bestTfm (tfms: string seq) : string option =
         |> _.GetShortFolderName()
         |> Some
 
+/// The TFM to hand to MSBuild as a workspace-global property, or None when no single TFM
+/// is safe for every project.  Only a TFM declared by *every* project qualifies: MSBuild
+/// global properties override each project's own <TargetFramework>, and a project that was
+/// never restored for that TFM has no matching target in its project.assets.json, so its
+/// design-time build fails with NETSDK1005 and loses every package and framework reference.
 let workspaceTargetFramework (tfmsPerProject: Map<string, string list>) : option<string> =
-    match tfmsPerProject.Count with
-    | 0 -> None
-    | _ ->
+    match
         tfmsPerProject.Values
-        |> Seq.map Set.ofSeq
+        |> Seq.map (Seq.choose tryNormalizeTfm >> Set.ofSeq)
         |> List.ofSeq
-        |> compatibleTfmSet
-        |> bestTfm
+    with
+    | [] -> None
+    | first :: rest -> rest |> List.fold Set.intersect first |> bestTfm
 
 let resolveDefaultWorkspaceProps (targetFramework: string option) : Map<string, string> =
     let applyTargetFrameworkProp props =
