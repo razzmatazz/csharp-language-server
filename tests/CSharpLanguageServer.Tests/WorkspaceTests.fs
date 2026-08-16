@@ -140,6 +140,7 @@ let testDidChangeWatchedFilesCreatedCsFileAddsDocument () =
 // ---------------------------------------------------------------------------
 
 [<Test>]
+[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testDidChangeWatchedFilesChangedCshtmlFileReloadsDocument () =
     use client = activateFixture "aspnetProject"
 
@@ -183,6 +184,7 @@ let testDidChangeWatchedFilesChangedCshtmlFileReloadsDocument () =
         "Expected diagnostics to appear after .cshtml file was overwritten and Changed notification sent"
 
 [<Test>]
+[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testDidChangeWatchedFilesDeletedCshtmlFileRemovesDocument () =
     use client = activateFixture "aspnetProject"
 

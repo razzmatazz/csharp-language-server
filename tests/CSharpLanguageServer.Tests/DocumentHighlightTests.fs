@@ -37,6 +37,7 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
     Assert.AreEqual(Some expectedHighlights, highlights |> Option.map List.ofArray)
 
 [<Test>]
+[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let ``test textDocument/documentHighlight works in .cshtml file`` () =
     use client = activateFixture "aspnetProject"
     use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
