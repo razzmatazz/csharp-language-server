@@ -39,6 +39,168 @@ section below for why these are independent).
 
 ---
 
+## Update (2026-08): recurs with SDK 10.0.400 — this is a structural, recurring issue
+
+Confirmed the same 4 Razor integration tests fail again (`testPullDiagnosticsWorkForRazorFiles`,
+`testHoverWorksInRazorFile`, `testReferenceWorksFromRazorPageReferencedValue`,
+`testReferenceWorksToRazorPageReferencedValue`) now that SDK **10.0.400** is installed
+locally, with the identical "Layer 3" symptom: `GetGenerators()` silently returns 0 for the
+Razor generator.
+
+### Confirmed via `AssemblyRef` metadata dump
+
+Dumped the `Microsoft.CodeAnalysis` assembly-reference requirement baked into each installed
+SDK's `Microsoft.CodeAnalysis.Razor.Compiler.dll` (source generator variant), using a small
+F# script (`PEReader` + `MetadataReader.AssemblyReferences`):
+
+| SDK | Razor compiler requires `Microsoft.CodeAnalysis` |
+|---|---|
+| 10.0.101 | `5.0.0.0` |
+| 10.0.201 | `5.3.0.0` |
+| 10.0.300 / 10.0.301 | `5.5.0.0` |
+| **10.0.400** | **`5.9.0.0`** |
+
+`Directory.Packages.props` still pins `RoslynPackageVersion` to `5.6.0` (the fix from the
+July update above). That satisfies 10.0.300/301's `5.5.0.0` requirement but **not**
+10.0.400's `5.9.0.0` requirement. Checked `nuget.org` for `Microsoft.CodeAnalysis`: the
+latest stable published version is still `5.6.0`. `5.9.0` only exists as prerelease builds
+on the internal `dotnet-tools` Azure DevOps feed
+(`pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3`), e.g.
+`5.9.0-1.26414.104` — not yet released to public NuGet.
+
+### Why the `rollForward: "latestMajor"` fixture fix reopened the gap
+
+The July fix relaxed `tests/CSharpLanguageServer.Tests/Fixtures/aspnetProject/global.json`
+from pinning the `10.0.1xx` band to `rollForward: "latestMajor"`, so the fixture's project
+SDK resolver always picks up whatever SDK is newest on the machine. That was safe **only**
+as long as the newest installed SDK's Razor-generator Roslyn requirement stayed ≤ the
+NuGet-published Roslyn version. Installing SDK 10.0.400 broke that assumption: the fixture
+now resolves to 10.0.400, whose Razor compiler needs `5.9.0.0`, which NuGet does not yet
+provide.
+
+### This is not local-only — CI is exposed to the same recurrence
+
+`.github/workflows/test.yaml` uses `actions/setup-dotnet@v6` with `dotnet-version: 10.0.x`,
+which always installs the single newest `10.0.x` SDK available on the runner image at the
+time the workflow runs (not a range of bands). Once GitHub-hosted runner images pick up
+SDK 10.0.400 (or whatever the next SDK band's Razor-generator Roslyn bump is), CI will:
+
+1. Install only `10.0.400` (no older band present).
+2. The root `global.json` (`rollForward: "minor"` from `10.0.100`) will roll forward past
+   the (absent) `10.0.1xx` band all the way to `10.0.400` for the *build/test-runner engine*
+   itself, since nothing lower is installed.
+3. The fixture's `global.json` (`rollForward: "latestMajor"`) resolves the *project* SDK to
+   the same `10.0.400`.
+4. Same `Microsoft.CodeAnalysis.Razor.Compiler.dll` (`5.9.0.0`) vs. NuGet (`5.6.0`) mismatch
+   → same silent 0-generators failure.
+
+**Conclusion: this is a structural, recurring maintenance issue, not a one-off regression.**
+Every time a new .NET SDK feature band ships a Razor-generator Roslyn version bump ahead of
+the corresponding `Microsoft.CodeAnalysis` NuGet release, both local dev machines with the
+new SDK installed *and* CI (which always tracks `10.0.x` latest) will see all Razor
+integration tests fail with empty/null results, until `RoslynPackageVersion` is manually
+bumped to a NuGet version that satisfies the new requirement.
+
+### Fix options considered (not yet implemented)
+
+1. **Pin the fixture to a known-working SDK band** — change
+   `aspnetProject/global.json` from `rollForward: "latestMajor"` to something like
+   `{ "version": "10.0.300", "rollForward": "latestFeature" }`, so it stops chasing
+   whatever newest SDK happens to be installed and stays within the band that the pinned
+   `RoslynPackageVersion` is known to satisfy. Trades "always test against the newest SDK"
+   for stability; needs a deliberate bump (fixture + `RoslynPackageVersion` together) when
+   moving to a newer band. Same reasoning would apply to relaxing the CI matrix's
+   `dotnet: [10.0.x]` to a pinned band, or accepting that CI will periodically need the
+   same bump.
+2. **Wait for Roslyn 5.9.0 (or later) stable on NuGet, then bump `RoslynPackageVersion`** —
+   same remedy as the July fix. Lowest effort, but leaves the recurring breakage window open
+   for however long the NuGet release lags the SDK release.
+3. **Add a runtime warning when `GetGenerators()` returns 0 for the Razor generator** — the
+   "future improvement" noted at the end of the original Layer 3 section. Doesn't fix Razor
+   support but turns a silent empty-result failure into a diagnosable, user-visible signal
+   (e.g. via `$/csharp/debugInfo` or a log line), independent of which SDK/NuGet combination
+   is active.
+4. **Load Roslyn's workspace assemblies from the installed SDK instead of NuGet** —
+   see "Corrected Roslyn-from-SDK analysis" below. Newly identified as viable; would
+   eliminate the whole class of recurrence permanently rather than needing a periodic
+   `RoslynPackageVersion` bump, but is the highest-effort option.
+
+These are complementary, not mutually exclusive — (1) prevents the local/CI thrash from an
+unplanned SDK upgrade, (3) helps when it eventually happens anyway, (2) is the actual
+short-term resolution each time it recurs, (4) is the candidate permanent fix.
+
+### Corrected Roslyn-from-SDK analysis: the SDK does ship a matched Workspace API surface
+
+The original "Roslyn-from-SDK question" section (further down this document) rejected
+loading Roslyn from the SDK, on the grounds that `MSBuildWorkspace`
+(`Microsoft.CodeAnalysis.Workspaces.MSBuild`) is "a NuGet-only package; it is not present
+in the SDK directory." **That claim is wrong**, at least for current SDKs.
+
+Dumped `AssemblyName.GetAssemblyName(...).Version` for `Microsoft.CodeAnalysis.dll` in
+every copy found under `sdk/10.0.400/`:
+
+| Location | `Microsoft.CodeAnalysis` version |
+|---|---|
+| `sdk/10.0.400/Microsoft.CodeAnalysis.dll` (SDK root — used by CSC tasks) | `5.9.0.0` |
+| `sdk/10.0.400/Roslyn/bincore/Microsoft.CodeAnalysis.dll` (compiler server) | `5.9.0.0` |
+| `sdk/10.0.400/DotnetTools/dotnet-format/Microsoft.CodeAnalysis.dll` | `5.9.0.0` |
+
+All three match `5.9.0.0` — the exact version the same SDK's Razor generator requires
+(see the table at the top of this update). This is expected: they're built and shipped
+as one matched set for every SDK release.
+
+The `dotnet-format` copy is the interesting one: it ships the **full** Roslyn workspace
+API surface, not just the compiler:
+
+```
+Microsoft.CodeAnalysis.Workspaces.MSBuild.dll            ← MSBuildWorkspace itself
+Microsoft.CodeAnalysis.Workspaces.MSBuild.Contracts.dll
+Microsoft.CodeAnalysis.CSharp.Workspaces.dll
+Microsoft.CodeAnalysis.CSharp.Features.dll
+Microsoft.CodeAnalysis.Workspaces.dll
+Microsoft.Build.dll / Microsoft.Build.Framework.dll
+```
+
+`dotnet-format` ships with every SDK install (it's not an optional/separately-acquired
+tool) and is rebuilt and re-versioned every feature band alongside the Razor generator.
+If csharp-ls loaded its workspace/compiler assemblies from this bundle instead of NuGet,
+it would **always** be in lockstep with whatever Razor generator that same SDK ships —
+permanently eliminating this class of version-mismatch breakage, rather than needing a
+`RoslynPackageVersion` bump chasing each new NuGet release.
+
+#### Why this is not a trivial toggle
+
+- csharp-ls's F# source (`Solution.fs`, `Handlers/*.fs`, etc.) is compiled directly
+  against the NuGet `Microsoft.CodeAnalysis.*` packages throughout. Switching to "bind to
+  whatever the SDK ships at runtime" means loading these DLLs into a dedicated
+  `AssemblyLoadContext` and redirecting resolution there — not just a `PackageReference`
+  version bump. Likely still compile against a fixed NuGet version for the API surface,
+  but override the runtime binding.
+- Locating the right `dotnet-format` folder reliably — matching whichever SDK
+  `MSBuildLocator` actually selects, across OS/architecture, across SDK layouts that may
+  change — needs its own resolution logic and will need re-verification on each SDK
+  release.
+- It is an *implementation detail* of the `dotnet-format` tool, not a documented or
+  supported extensibility point. Microsoft could relocate, rename, trim, or remove it
+  from a future SDK without notice, unlike a versioned NuGet package with SemVer
+  guarantees.
+- **Type identity hazard:** mixing SDK-loaded Roslyn types with NuGet-loaded Roslyn types
+  in the same process breaks (a `Solution` instance from one load context is not
+  type-compatible with `Solution` from another). This only works if csharp-ls loads
+  Roslyn *exclusively* from the SDK at runtime and drops the NuGet Roslyn dependency for
+  workspace/compiler assemblies entirely — a partial adoption is not viable.
+- Precedent exists for this general approach: `roslyn-language-server`
+  (OmniSharp's successor, ships as part of the SDK) does something similar by
+  co-locating with its Roslyn assemblies rather than resolving them via NuGet at
+  runtime — though it does not face the same problem since it *is* an SDK component.
+
+**Status:** identified as viable, not yet prototyped. Next step if pursued: a standalone
+probe program that loads the `dotnet-format` bundle into a custom `AssemblyLoadContext`
+and confirms `MSBuildWorkspace.Create()` + `GetSourceGeneratedDocumentsAsync()` actually
+works end-to-end before committing to the architectural change.
+
+---
+
 ## Symptom
 
 14 integration tests fail with empty/null results. All failures are in tests that exercise
@@ -601,6 +763,16 @@ and references the Roslyn assemblies co-installed with it.
 5.5.0 situation — if and when Roslyn 5.5.0 is published to NuGet, bump
 `RoslynPackageVersion` in `Directory.Packages.props`. Until then, SDK 10.0.300 Razor
 support is blocked by the NuGet/SDK version gap; SDK 10.0.1xx (GA band) works correctly.
+
+> **Correction (2026-08):** the first disadvantage above — "`MSBuildWorkspace` … is a
+> NuGet-only package; it is not present in the SDK directory" — is **wrong**, at least
+> for current SDKs. See "Update (2026-08)" below: the `dotnet-format` global tool,
+> bundled with every SDK install, ships a complete, version-matched copy of the full
+> Roslyn workspace API surface (`Microsoft.CodeAnalysis.Workspaces.MSBuild.dll` +
+> `.Contracts.dll`, `CSharp.Workspaces`, `CSharp.Features`, even `Microsoft.Build.dll`),
+> built against the *same* Roslyn version as that SDK's Razor generator. This reopens
+> the "Roslyn-from-SDK" option as a viable long-term fix — see the corrected analysis
+> below for what it would actually take.
 
 The `global.json` in the workspace root pins the *build* and *test-runner* process to
 the 10.0.1xx feature band. The `global.json` added to the `aspnetProject` fixture pins
