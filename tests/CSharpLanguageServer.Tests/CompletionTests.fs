@@ -1,9 +1,9 @@
 module CSharpLanguageServer.Tests.CompletionTests
 
 open System.Threading
+open System.Text.Json.Nodes
 
 open NUnit.Framework
-open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -254,17 +254,26 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
         | Some(U2.C2 cl) -> cl.Items |> Seq.find (fun i -> i.Label = "MethodA")
         | _ -> failwith "expected a CompletionList"
 
-    // Serialize the item to JObject, then inject a textEdit with -1 sentinel
-    // positions — exactly what a misbehaving editor would send back.
-    let itemJson = serialize item |> (fun a -> a.JToken) :?> JObject
+    // Serialize the item to a mutable JsonObject, then inject a textEdit with -1
+    // sentinel positions — exactly what a misbehaving editor would send back.
+    let itemJson =
+        match JsonObject.Create((serialize item).JsonElement) with
+        | null -> failwith "expected completion item to serialize as a JSON object"
+        | obj -> obj
 
-    let sentinelPosition = JObject(JProperty("line", -1), JProperty("character", -1))
+    let makeSentinelPosition () =
+        let pos = JsonObject()
+        pos["line"] <- JsonValue.Create(-1)
+        pos["character"] <- JsonValue.Create(-1)
+        pos
 
-    let sentinelRange =
-        JObject(JProperty("start", sentinelPosition.DeepClone()), JProperty("end", sentinelPosition.DeepClone()))
+    let sentinelRange = JsonObject()
+    sentinelRange["start"] <- makeSentinelPosition ()
+    sentinelRange["end"] <- makeSentinelPosition ()
 
-    let sentinelTextEdit =
-        JObject(JProperty("newText", ""), JProperty("range", sentinelRange))
+    let sentinelTextEdit = JsonObject()
+    sentinelTextEdit["newText"] <- JsonValue.Create("")
+    sentinelTextEdit["range"] <- sentinelRange
 
     itemJson["textEdit"] <- sentinelTextEdit
 

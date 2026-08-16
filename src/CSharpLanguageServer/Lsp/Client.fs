@@ -2,7 +2,6 @@ module CSharpLanguageServer.Lsp.Client
 
 open System.Text.Json
 open Microsoft.Extensions.Logging
-open Newtonsoft.Json.Linq
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
@@ -29,31 +28,36 @@ type CSharpLspClient
             match result with
             | Result.Ok je -> je |> LSPAny.fromJsonElement |> deserialize |> Result.Ok
             | Result.Error errEl ->
-                let errToken = JToken.Parse(errEl.GetRawText())
+                let tryGetProperty (name: string) =
+                    match errEl.ValueKind with
+                    | JsonValueKind.Object ->
+                        match errEl.TryGetProperty(name) with
+                        | true, v -> Some v
+                        | false, _ -> None
+                    | _ -> None
 
                 let code =
-                    errToken.SelectToken("code")
-                    |> Option.ofObj
-                    |> Option.bind (fun t ->
-                        t.ToString()
-                        |> System.Int32.TryParse
-                        |> function
-                            | true, v -> Some v
-                            | _ -> None)
+                    tryGetProperty "code"
+                    |> Option.bind (fun v ->
+                        match v.TryGetInt32() with
+                        | true, i -> Some i
+                        | false, _ -> None)
                     |> Option.defaultValue -32603 // -32603 = JSON-RPC "Internal error"
 
                 let message =
-                    errToken.SelectToken("message")
-                    |> Option.ofObj
-                    |> Option.map _.ToObject<string>()
+                    tryGetProperty "message"
+                    |> Option.bind (fun v -> if v.ValueKind = JsonValueKind.String then Some(v.GetString()) else None)
                     |> Option.defaultValue "Unknown error"
 
-                let data = errToken.SelectToken("data") |> Option.ofObj
-
+                // Note: `Ionide.LanguageServerProtocol.JsonRpc.Error.Data` is typed as
+                // `Newtonsoft.Json.Linq.JToken option` by the vendored library, which is
+                // outside the scope of this transport adapter. Nothing in csharp-ls reads
+                // this field for client-originated transport errors, so it is always `None`
+                // here rather than round-tripping through Newtonsoft just for this one field.
                 Result.Error
                     { Code = code
                       Message = message
-                      Data = data }
+                      Data = None }
     }
 
     override __.WindowShowMessage p =

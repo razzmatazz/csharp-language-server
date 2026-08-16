@@ -5,7 +5,6 @@ open System.Threading.Tasks
 
 open System.Text.Json
 open System.Text.Json.Nodes
-open Newtonsoft.Json.Linq
 
 let noneIfEmpty (s: string) : string option =
     s

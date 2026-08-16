@@ -7,7 +7,7 @@ open System.Threading
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol
 open Microsoft.Extensions.Logging
-open Newtonsoft.Json.Linq
+open System.Text.Json
 
 open CSharpLanguageServer.Logging
 open CSharpLanguageServer.Lsp.Workspace
@@ -400,14 +400,21 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
                 ShutdownReceived = true }
 
     | ClientCapabilityChange cc ->
-        let experimentalCapsBoolValue boolPropName =
+        let rec tryGetNestedBool (path: string list) (element: JsonElement) : bool option =
+            match path with
+            | [] ->
+                match element.ValueKind with
+                | JsonValueKind.True -> Some true
+                | JsonValueKind.False -> Some false
+                | _ -> None
+            | segment :: rest ->
+                match element.TryGetProperty(segment) with
+                | true, next -> tryGetNestedBool rest next
+                | false, _ -> None
+
+        let experimentalCapsBoolValue (boolPropPath: string) =
             cc.Experimental
-            |> Option.bind (fun a ->
-                a.JToken.SelectToken(boolPropName)
-                |> Option.ofObj
-                |> Option.map (fun t ->
-                    let v = t :?> JValue
-                    v.Value :?> bool))
+            |> Option.bind (fun a -> tryGetNestedBool (boolPropPath.Split('.') |> List.ofArray) a.JsonElement)
 
         let newConfig =
             { state.Config with
