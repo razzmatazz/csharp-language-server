@@ -1,6 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
-open Newtonsoft.Json.Linq
+open System.Text.Json
 
 open Ionide.LanguageServerProtocol.JsonRpc
 
@@ -17,7 +17,7 @@ module Debug =
     let handle
         (getDebugInfo: unit -> Async<DebugInfo option>)
         (_ctx: RequestContext)
-        (_params: JObject)
+        (_params: JsonElement)
         : Async<LspResult<DebugInfo option> * LspWorkspaceUpdate> =
         async {
             let! info = getDebugInfo ()

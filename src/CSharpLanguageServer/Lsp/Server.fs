@@ -12,7 +12,6 @@ open StreamJsonRpc
 open Microsoft.Extensions.Logging
 open System.Text.Json
 open System.Text.Json.Nodes
-open Newtonsoft.Json.Linq
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Handlers
@@ -159,7 +158,7 @@ let configureRpcTransport
         | Ok value ->
             let lspAny =
                 if isNull (box value) then
-                    LSPAny.fromJToken (Newtonsoft.Json.Linq.JValue.CreateNull())
+                    LSPAny.fromJsonElement nullJE
                 else
                     serialize value
 

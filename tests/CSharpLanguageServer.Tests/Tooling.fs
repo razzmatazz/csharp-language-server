@@ -13,7 +13,6 @@ open System.Xml.Linq
 
 open System.Text.Json
 open NUnit.Framework
-open Newtonsoft.Json.Linq
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -732,7 +731,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
 
                 try
                     let debugInfo =
-                        this.Request<JObject, DebugInfo option>("$/csharp/debugInfo", JObject())
+                        this.Request<JsonElement, DebugInfo option>("$/csharp/debugInfo", emptyObjectJE)
 
                     match debugInfo with
                     | Some info ->
@@ -969,7 +968,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
         rpcLog |> Seq.exists containsPred
 
     member self.GetDebugInfo() : DebugInfo =
-        match self.Request<LSPAny, DebugInfo option>("$/csharp/debugInfo", LSPAny.fromJToken (JObject())) with
+        match self.Request<LSPAny, DebugInfo option>("$/csharp/debugInfo", LSPAny.fromJsonElement emptyObjectJE) with
         | Some s -> s
         | None ->
             failwith
