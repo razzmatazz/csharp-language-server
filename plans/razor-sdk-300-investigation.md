@@ -199,6 +199,111 @@ probe program that loads the `dotnet-format` bundle into a custom `AssemblyLoadC
 and confirms `MSBuildWorkspace.Create()` + `GetSourceGeneratedDocumentsAsync()` actually
 works end-to-end before committing to the architectural change.
 
+### Update (2026-08, cont'd): the `ExcludeAssets=runtime` pattern — a better mechanism than a separate `AssemblyLoadContext`, but with a bigger blast radius
+
+Further research turned up a mechanism that sidesteps the "type identity hazard" objection
+above entirely, plus a real-world precedent check on whether Microsoft's own Roslyn LSP
+does this.
+
+**csharp-ls already does the equivalent trick for MSBuild itself.** `CSharpLanguageServer.fsproj`
+has:
+
+```xml
+<PackageReference Include="Microsoft.Build.Locator" />
+<PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
+<PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" />
+```
+
+`ExcludeAssets="runtime"` means the actual `Microsoft.Build*.dll` files are **not** copied
+to the output/publish directory — the project compiles against the NuGet package's types
+but ships none of the implementation. At startup, `MSBuildLocator.RegisterInstance(vsInstance)`
+(`Roslyn/Solution.fs`) hooks `AssemblyLoadContext.Default.Resolving` so that when the CLR's
+normal probing fails to find `Microsoft.Build.dll` (because it isn't in the output folder),
+the handler loads it from whichever SDK instance was selected instead. This is the
+[documented, Microsoft-sanctioned pattern](https://learn.microsoft.com/en-us/visualstudio/msbuild/find-and-use-msbuild-versions)
+for exactly this problem, and it's already proven working in this codebase.
+
+Because this hooks the **default** `AssemblyLoadContext` (not a separate isolated one),
+there is only ever one loaded copy of `Microsoft.Build.dll` in the process — whichever the
+resolver supplies. **The same technique, applied to `Microsoft.CodeAnalysis*` packages,
+would eliminate the "type identity hazard" raised above** (mixing SDK-loaded and
+NuGet-loaded Roslyn types) since there'd be no NuGet-loaded copy left to mix with — the
+SDK-supplied assembly becomes *the* `Microsoft.CodeAnalysis.dll` for the whole process,
+same as `Microsoft.Build.dll` is today.
+
+#### Empirical verification (this machine, SDKs 10.0.101 / 10.0.300 / 10.0.400)
+
+Every installed SDK ships a matched, complete Roslyn workspace surface inside its bundled
+`dotnet-format` global tool (`sdk/<ver>/DotnetTools/dotnet-format/`) — not just the
+compiler. Confirmed via `AssemblyName.GetAssemblyName`:
+
+| SDK | `Microsoft.CodeAnalysis.dll` version | Public key token |
+|---|---|---|
+| 10.0.101 | `5.0.0.0` | `31bf3856ad364e35` |
+| 10.0.300 | `5.6.0.0` | `31bf3856ad364e35` |
+| 10.0.400 | `5.9.0.0` | `31bf3856ad364e35` |
+
+All three share the same public key token as the NuGet-published `Microsoft.CodeAnalysis`
+packages csharp-ls references — a redirect wouldn't be crossing a strong-name boundary.
+The bundle also carries `Microsoft.CodeAnalysis.Workspaces.MSBuild.dll`,
+`.CSharp.Workspaces.dll`, `.CSharp.Features.dll`, `Microsoft.Build.dll`/`.Framework.dll`,
+and (from Roslyn 4.9+ onward) the `BuildHost-net472`/`BuildHost-netcore` subfolders that
+`MSBuildWorkspace` now spawns out-of-process for design-time builds.
+
+#### The bigger blast radius, vs. MSBuild's 2-assembly surface
+
+MSBuildLocator only ever redirects `Microsoft.Build`, `Microsoft.Build.Framework`, and
+`Microsoft.Build.Utilities.Core` — three assemblies with a slow, stable release cadence.
+Redirecting Roslyn means redirecting on the order of 10+ assemblies
+(`Microsoft.CodeAnalysis[.CSharp[.Workspaces|.Features]]`, `.Workspaces[.MSBuild[.Contracts]]`,
+`.Features`, `.Elfie`, `.Scripting`, `.ExternalAccess.RazorCompiler`, …), **plus** their own
+transitive dependencies that the SDK bundle carries its own copies of (`Humanizer`,
+`System.Composition.*`, `System.Reflection.MetadataLoadContext`, `Newtonsoft.Json`, …) —
+any of which could be at a different version than what csharp-ls itself depends on.
+This is a known failure mode even for the narrow MSBuild case: a
+[MSBuildLocator maintainer thread](https://github.com/microsoft/MSBuildLocator/issues/127)
+describes hitting "NuGet version conflicts" doing exactly this kind of redirect and having
+to work around it by loading the *transitive* dependencies into a second, separate
+`AssemblyLoadContext` while keeping only the primary assembly in `Default` — i.e. even the
+proven pattern needs extra care once the redirected surface grows past a couple of
+assemblies.
+
+#### Correction: what `Microsoft.CodeAnalysis.LanguageServer` (the official Roslyn LSP) actually does
+
+The claim above — "`roslyn-language-server` … ships as part of the SDK" — does not hold up.
+`Microsoft.CodeAnalysis.LanguageServer` (the server behind VS Code's C# extension, and the
+one wrapped by third-party tools like `roslyn.nvim` and `SofusA/csharp-language-server`) is
+**not** part of the .NET SDK install. It's a separately-versioned, self-contained build,
+published as prerelease packages (`Microsoft.CodeAnalysis.LanguageServer.win-x64`,
+`.neutral`, etc.) and downloaded independently by whatever wraps it — the exact same "ship
+your own pinned Roslyn" model csharp-ls already uses via `Directory.Packages.props`.
+
+However, it **does** use `MSBuildLocator` at runtime to find MSBuild from whatever SDK
+happens to be installed on the machine — a crash log from a `vscode-csharp` GitHub issue
+shows the call chain `LanguageServerProjectSystem.TryEnsureMSBuildLoadedAsync` →
+`MSBuildLocator.GetInstances` → `DotNetSdkLocationHelper.GetDotNetBasePaths`. In other
+words: **the team that owns both Roslyn and the SDK's Razor generator, when building their
+own production LSP server, uses exactly the same split csharp-ls already has today** —
+MSBuild borrowed from whatever SDK is present, Roslyn itself bundled and pinned by the
+tool. They do not dynamically bind Roslyn to the installed SDK, despite being the team best
+positioned to make that work reliably. Treat this as a meaningful (if indirect) signal
+about the real-world risk/reward of the SDK-Roslyn-loading approach, on top of the
+transitive-dependency fragility noted above.
+
+#### Revised recommendation
+
+The `ExcludeAssets=runtime` + `AssemblyLoadContext.Default.Resolving` mechanism is real,
+documented, and already working in this codebase for MSBuild — so "can it be done" is
+answered: yes, mechanically. But scaling it from MSBuild's 2–3 slow-moving assemblies to
+Roslyn's much larger, faster-moving assembly graph (and its bundled transitive
+dependencies) is a materially different amount of risk, with no known precedent of anyone
+— including Microsoft's own Roslyn LSP team — doing it in production. Given that bumping
+`RoslynPackageVersion` has twice been a low-effort fix for this exact recurrence, that
+remains the near-term strategy. SDK-Roslyn-loading stays on the table as the eventual
+"permanent fix" candidate, but should only move forward after a time-boxed spike
+prototypes the redirect for the full assembly set (not just `Microsoft.CodeAnalysis.dll`)
+and confirms no transitive-dependency conflicts before any architectural commitment.
+
 ---
 
 ## Symptom
