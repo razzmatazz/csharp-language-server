@@ -71,7 +71,7 @@ csharp-language-server/
 | Category | Package | Version | Purpose |
 |----------|---------|---------|---------|
 | **LSP** | **Ionide.LanguageServerProtocol** | 0.7.0 | LSP protocol types & base `LspClient` class |
-| **JSON** | Newtonsoft.Json | 13.0.4 | JSON serialization (used by Ionide) |
+| **JSON** | System.Text.Json | — | JSON serialization (used by Ionide; Newtonsoft.Json is no longer shipped — see `plans/system-text-json-migration.md`) |
 | **Roslyn** | Microsoft.CodeAnalysis | 5.3.0 | C# compiler & workspace APIs |
 | **Roslyn** | Microsoft.CodeAnalysis.CSharp.Features | 5.3.0 | Code actions, completion, etc. |
 | **Roslyn** | Microsoft.CodeAnalysis.Workspaces.MSBuild | 5.3.0 | .sln/.csproj loading |

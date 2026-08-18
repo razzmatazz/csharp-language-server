@@ -1,10 +1,40 @@
 # Migrate from Newtonsoft.Json to System.Text.Json
 
-## Status: Complete
+## Status: Complete, Newtonsoft.Json no longer shipped
 
 `Server.serialize`/`Server.deserialize` — the serializer csharp-ls actually uses for all LSP
 payloads — are now backed by native `System.Text.Json` (STJ) converters instead of Newtonsoft.
 `dotnet build` is clean and `dotnet test` passes in full.
+
+**Follow-up (this section):** the "Deliberately untouched (stays 100% Newtonsoft)" code paths
+described below have since been disabled, and `csharp-ls` no longer ships `Newtonsoft.Json.dll`
+at all. Concretely:
+
+- `LSPAny` (`Types.fs`) is now backed directly by `System.Text.Json.JsonElement` instead of
+  `Newtonsoft.Json.Linq.JToken` — `.JsonElement` is a direct accessor, not a bridge, and
+  `LSPAny.fromJToken`/`LSPAnyConverter` no longer exist in the active build.
+- The generated `Types.cg.fs` (and its generator, `tools/MetaModelGenerator/GenerateTypes.fs`)
+  no longer emit `JToken`-typed fields (now `System.Text.Json.JsonElement`) or the Newtonsoft
+  `[<JsonProperty>]`/`[<JsonConverter(typeof<Converters.StringEnumConverter>)>]` attributes,
+  which were always inert on the STJ path anyway. The `[<JsonIgnore>]` attribute on generated
+  `DebuggerDisplay` members now resolves to STJ's `JsonIgnoreAttribute` instead of Newtonsoft's.
+- `JsonRpc.Error.Data` is now `System.Text.Json.JsonElement option` instead of `JToken option`.
+- The remaining Newtonsoft-only code — `Server.defaultJsonRpcFormatter`, `Server.start*`
+  (`start`/`startWs`/`startWithSetup`/`startWithSetupWs`), `Server.defaultRpc`, the hand-rolled
+  `Client` module, `JsonRpc.Request`/`Notification`/`Response`/`MessageTypeTest`, and the
+  Newtonsoft-based converters in `OptionConverter.fs`/`JsonUtils.fs` — is **disabled, not
+  deleted**: it's wrapped in `#if NEWTONSOFT_LEGACY_UNUSED ... #endif` (a symbol that is never
+  defined anywhere in the build). Re-enable by defining `NEWTONSOFT_LEGACY_UNUSED` and re-adding
+  the `Newtonsoft.Json` `PackageReference` to `Ionide.LanguageServerProtocol.fsproj`.
+- `Ionide.LanguageServerProtocol.fsproj` no longer references `Newtonsoft.Json` directly.
+  `Newtonsoft.Json` still resolves as a *transitive* dependency of `StreamJsonRpc` (its default
+  `JsonMessageFormatter` needs it), so `CSharpLanguageServer.fsproj` explicitly excludes it via
+  `<PackageReference Include="Newtonsoft.Json" ExcludeAssets="all" />` to keep it out of the
+  published output — verified with `dotnet publish` that `Newtonsoft.Json.dll` is absent from
+  both the output directory and `CSharpLanguageServer.deps.json`.
+- `CodeLens.fs`'s `resolve` handler and two test files (`DiagnosticTests.fs`) that used
+  `LSPAny.fromJToken`/`.JToken` directly were updated to use `deserialize`/`.JsonElement`
+  instead.
 
 The final architecture **diverged from the original plan below** in one important way: instead
 of collapsing `LSPAny` into a raw `type LSPAny = JsonElement` alias, `origin/main` had
@@ -157,6 +187,9 @@ No changes were needed to `Types.cg.fs`, `ClientServer.cg.fs`, `GenerateTypes.fs
 - `OptionConverter.fs`/`JsonUtils.fs` `UnionInfo.get`/`canConvert` caches use `memorise`, not
   `memoriseByHash`, everywhere (Newtonsoft and STJ converters alike).
 - `Server.serialize`/`Server.deserialize` use `JsonSerializerOptions` with native STJ converters.
-- Newtonsoft.Json and StreamJsonRpc remain dependencies of
-  `Ionide.LanguageServerProtocol.fsproj`; `defaultJsonRpcFormatter` and `Server.start*` continue
-  to function correctly and are unaffected by this change.
+- Newtonsoft.Json and StreamJsonRpc remained dependencies of
+  `Ionide.LanguageServerProtocol.fsproj` at the time this migration completed;
+  `defaultJsonRpcFormatter` and `Server.start*` continued to function correctly and were
+  unaffected by this change. **No longer current** — see the "Follow-up" section at the top of
+  this file: `Newtonsoft.Json` was subsequently disabled and is no longer a dependency of
+  `Ionide.LanguageServerProtocol.fsproj` or shipped with `csharp-ls`.

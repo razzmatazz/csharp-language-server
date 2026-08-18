@@ -105,5 +105,12 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
     <PackageReference Include="NuGet.Frameworks" ExcludeAssets="runtime" />
+    <!-- Newtonsoft.Json is a transitive dependency of StreamJsonRpc (via
+         Ionide.LanguageServerProtocol), but csharp-ls no longer uses it anywhere at runtime —
+         see the NEWTONSOFT_LEGACY_UNUSED guards in Ionide.LanguageServerProtocol. Only the
+         runtime asset (the .dll copied to the output/publish folder) is excluded here, so it
+         isn't published alongside csharp-ls; the compile-time reference is kept because
+         Ionide.LanguageServerProtocol's public API can still carry Newtonsoft-attributed types. -->
+    <PackageReference Include="Newtonsoft.Json" ExcludeAssets="runtime" />
   </ItemGroup>
 </Project>

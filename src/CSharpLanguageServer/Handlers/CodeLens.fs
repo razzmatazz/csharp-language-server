@@ -160,7 +160,7 @@ module CodeLens =
 
         let lensData: CodeLensData =
             p.Data
-            |> Option.map (fun a -> a.JToken.ToObject<CodeLensData>())
+            |> Option.map deserialize<CodeLensData>
             |> Option.bind Option.ofObj
             |> Option.defaultValue CodeLensData.Default
 
