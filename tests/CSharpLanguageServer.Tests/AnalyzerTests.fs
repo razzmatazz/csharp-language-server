@@ -1,13 +1,146 @@
 module CSharpLanguageServer.Tests.AnalyzerTests
 
 open System
+open System.Collections.Immutable
 open System.IO
 open System.Threading
 
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
+open Microsoft.CodeAnalysis
+open Microsoft.CodeAnalysis.Diagnostics
+open Microsoft.CodeAnalysis.Text
 
+open CSharpLanguageServer.Roslyn.Analyzers
 open CSharpLanguageServer.Tests.Tooling
+
+let private analyzerDescriptor =
+    DiagnosticDescriptor(
+        "TEST0001",
+        "Test analyzer",
+        "Test analyzer diagnostic",
+        "Test",
+        DiagnosticSeverity.Warning,
+        true
+    )
+
+type private BlockingCountingAnalyzer(started: ManualResetEventSlim, release: ManualResetEventSlim) =
+    inherit DiagnosticAnalyzer()
+
+    let mutable invocationCount = 0
+
+    member _.InvocationCount = Volatile.Read(&invocationCount)
+
+    override _.SupportedDiagnostics = ImmutableArray.Create(analyzerDescriptor)
+
+    override _.Initialize(context: AnalysisContext) =
+        context.RegisterSyntaxTreeAction(fun context ->
+            Interlocked.Increment(&invocationCount) |> ignore
+            started.Set()
+            release.Wait()
+
+            let location = Location.Create(context.Tree, TextSpan(0, 0))
+            context.ReportDiagnostic(Microsoft.CodeAnalysis.Diagnostic.Create(analyzerDescriptor, location)))
+
+let private analyzerProject (analyzer: DiagnosticAnalyzer) =
+    let analyzerReference =
+        AnalyzerImageReference(ImmutableArray.Create(analyzer), "test-analyzers", "test-analyzers")
+
+    let workspace = new AdhocWorkspace()
+
+    let project =
+        workspace
+            .AddProject("AnalyzerCacheTests", LanguageNames.CSharp)
+            .AddMetadataReference(MetadataReference.CreateFromFile(typeof<obj>.Assembly.Location))
+            .AddAnalyzerReference(analyzerReference)
+
+    let firstDocumentId = DocumentId.CreateNewId(project.Id)
+    let secondDocumentId = DocumentId.CreateNewId(project.Id)
+
+    let project =
+        project.Solution
+            .AddDocument(firstDocumentId, "First.cs", SourceText.From("class First {}"), filePath = "/src/First.cs")
+            .AddDocument(secondDocumentId, "Second.cs", SourceText.From("class Second {}"), filePath = "/src/Second.cs")
+            .GetProject(project.Id)
+        |> Option.ofObj
+        |> Option.get
+
+    workspace, project, firstDocumentId, secondDocumentId
+
+let private getSemanticModel (project: Project) (documentId: DocumentId) =
+    let document = project.GetDocument(documentId) |> Option.ofObj |> Option.get
+    document.GetSemanticModelAsync().Result |> Option.ofObj |> Option.get
+
+[<Test>]
+let testProjectAnalyzerAnalysisIsSharedAcrossDocumentsAndRequestCancellation () =
+    use analyzerStarted = new ManualResetEventSlim()
+    use releaseAnalyzer = new ManualResetEventSlim()
+    use requestCancellation = new CancellationTokenSource()
+
+    let analyzer = BlockingCountingAnalyzer(analyzerStarted, releaseAnalyzer)
+    let workspace, project, firstDocumentId, secondDocumentId = analyzerProject analyzer
+    use _workspace = workspace
+
+    let cache = AnalyzerDiagnosticsCache()
+
+    // Obtain independent Project wrappers from the same immutable Solution snapshot,
+    // as separate document diagnostic requests do in the server.
+    let firstProject =
+        project.Solution.GetProject(project.Id) |> Option.ofObj |> Option.get
+
+    let secondProject =
+        project.Solution.GetProject(project.Id) |> Option.ofObj |> Option.get
+
+    let firstSemanticModel = getSemanticModel firstProject firstDocumentId
+    let secondSemanticModel = getSemanticModel secondProject secondDocumentId
+
+    let firstRequest =
+        getDocumentDiagnosticsWithAnalyzers cache firstProject firstSemanticModel
+        |> fun work -> Async.StartAsTask(work, cancellationToken = requestCancellation.Token)
+
+    try
+        Assert.That(analyzerStarted.Wait(TimeSpan.FromSeconds(10.0)), Is.True, "Analyzer did not start")
+
+        let secondRequest =
+            getDocumentDiagnosticsWithAnalyzers cache secondProject secondSemanticModel
+            |> Async.StartAsTask
+
+        requestCancellation.Cancel()
+
+        Assert.Catch<OperationCanceledException>(fun () -> firstRequest.GetAwaiter().GetResult() |> ignore)
+        |> ignore
+
+        releaseAnalyzer.Set()
+
+        let secondDiagnostics = secondRequest.GetAwaiter().GetResult()
+
+        Assert.That(secondDiagnostics |> List.map _.Id, Is.EqualTo([ "TEST0001" ]))
+        Assert.That(analyzer.InvocationCount, Is.EqualTo(2), "Expected one analyzer pass over the two syntax trees")
+
+        let cachedFirstDiagnostics =
+            getDocumentDiagnosticsWithAnalyzers cache firstProject firstSemanticModel
+            |> Async.RunSynchronously
+
+        Assert.That(cachedFirstDiagnostics |> List.map _.Id, Is.EqualTo([ "TEST0001" ]))
+        Assert.That(analyzer.InvocationCount, Is.EqualTo(2), "Expected the completed project analysis to be reused")
+
+        let updatedProject =
+            project.Solution
+                .WithDocumentText(firstDocumentId, SourceText.From("class First { int Value; }"))
+                .GetProject(project.Id)
+            |> Option.ofObj
+            |> Option.get
+
+        let updatedSemanticModel = getSemanticModel updatedProject firstDocumentId
+
+        let updatedDiagnostics =
+            getDocumentDiagnosticsWithAnalyzers cache updatedProject updatedSemanticModel
+            |> Async.RunSynchronously
+
+        Assert.That(updatedDiagnostics |> List.exists (fun diagnostic -> diagnostic.Id = "TEST0001"), Is.True)
+        Assert.That(analyzer.InvocationCount, Is.EqualTo(4), "Expected a changed project snapshot to be reanalyzed")
+    finally
+        releaseAnalyzer.Set()
 
 // Client profile with pull diagnostics enabled (both textDocument and workspace)
 // and analyzers explicitly turned on.

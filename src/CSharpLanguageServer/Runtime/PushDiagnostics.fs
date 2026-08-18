@@ -131,7 +131,7 @@ let processPendingPushDiagnostics
 
                             let! allDiags =
                                 if analyzersEnabled then
-                                    getDocumentDiagnosticsWithAnalyzers doc.Project semanticModel
+                                    getDocumentDiagnosticsWithAnalyzers wf.AnalyzerDiagnostics doc.Project semanticModel
                                 else
                                     async {
                                         let diags = semanticModel.GetDiagnostics(cancellationToken = ct)
