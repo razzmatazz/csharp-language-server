@@ -1,5 +1,9 @@
 module Ionide.LanguageServerProtocol.JsonRpc
 
+#if NEWTONSOFT_LEGACY_UNUSED
+// The wire types below are only consumed by the legacy hand-rolled `Client` module in
+// LanguageServerProtocol.fs, which is disabled (see there) so that csharp-ls no longer ships
+// Newtonsoft.Json. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
@@ -51,6 +55,7 @@ type Notification = {
     Method = method'
     Params = rpcParams
   }
+#endif
 
 module ErrorCodes =
   ///<summary>This is the start range of JSON-RPC reserved error codes.
@@ -72,7 +77,7 @@ open Ionide.LanguageServerProtocol.Types
 type Error = {
   Code: int
   Message: string
-  Data: JToken option
+  Data: System.Text.Json.JsonElement option
 } with
 
   static member Create(code: int, message: string) = { Code = code; Message = message; Data = None }
@@ -101,6 +106,8 @@ type Error = {
     let message = defaultArg message "Request cancelled"
     Error.Create(int LSPErrorCodes.RequestCancelled, message)
 
+#if NEWTONSOFT_LEGACY_UNUSED
+// Only consumed by the legacy `Client` module (see comment at the top of this file).
 type Response = {
   [<JsonProperty("jsonrpc")>]
   Version: string
@@ -121,6 +128,7 @@ type Response = {
   }
 
   static member Failure(id: int, error: Error) = { Version = "2.0"; Id = Some id; Result = None; Error = Some error }
+#endif
 
 
 /// Result type composed of a success value or an error of type JsonRpc.Error
@@ -179,8 +187,9 @@ module Requests =
               rpcException.ErrorCode <- error.Code
 
               rpcException.ErrorData <-
-                error.Data
-                |> Option.defaultValue null
+                match error.Data with
+                | Some d -> box d
+                | None -> null
 
               raise rpcException
         }

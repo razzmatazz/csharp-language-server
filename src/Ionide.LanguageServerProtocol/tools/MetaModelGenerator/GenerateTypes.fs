@@ -27,7 +27,10 @@ module GenerateTypes =
     |> String.concat ""
 
 
-  let JToken = LongIdent "JToken"
+  // Represents an untyped/"any" JSON value (e.g. LSPAny, or an empty `{}` structure-literal type
+  // from the meta model). Emitted as System.Text.Json.JsonElement, not Newtonsoft's JToken, so
+  // that generated code never needs Newtonsoft.Json (see plans/system-text-json-migration.md).
+  let AnyJsonValueType = LongIdent "System.Text.Json.JsonElement"
 
   let createOption (t: WidgetBuilder<Type>) = Ast.OptionPostfix t
 
@@ -230,8 +233,10 @@ module GenerateTypes =
               isOptional
               && not currentProperty.IsOptional
             then
+              // No longer attributed with Newtonsoft's `[<JsonProperty(NullValueHandling = ...)>]`
+              // (see plans/system-text-json-migration.md) — inert on the STJ path csharp-ls uses.
               createOption (createErasedUnion ts),
-              Some(Attribute "JsonProperty(NullValueHandling = NullValueHandling.Include)"),
+              None,
               namedAnonRecs
             else
               createErasedUnion ts, None, namedAnonRecs
@@ -244,7 +249,7 @@ module GenerateTypes =
             l.Value.PropertiesSafe
             |> Array.isEmpty
           then
-            JToken, None, []
+            AnyJsonValueType, None, []
           else
             let ts =
               l.Value.PropertiesSafe
@@ -647,7 +652,7 @@ module GenerateTypes =
   let createTypeAlias (alias: MetaModel.TypeAlias) =
     let rec getType path (t: MetaModel.Type) =
       if alias.Name = "LSPAny" then
-        JToken, []
+        AnyJsonValueType, []
       else
         match t with
         | MetaModel.Type.ReferenceType r -> LongIdent r.Name, []
@@ -687,7 +692,7 @@ module GenerateTypes =
             l.Value.PropertiesSafe
             |> Array.isEmpty
           then
-            JToken, []
+            AnyJsonValueType, []
           else
             let ts =
               l.Value.PropertiesSafe
@@ -844,11 +849,11 @@ module GenerateTypes =
               |> Option.mapOrDefault case case.xmlDocs
           }
 
-        let enum =
-          enumeration.StructuredDocs
-          |> Option.mapOrDefault enum enum.xmlDocs
-
-        enum.attribute (Attribute("JsonConverter(typeof<Converters.StringEnumConverter>)"))
+        // No longer attributed with Newtonsoft's `[<JsonConverter(typeof<Converters.StringEnumConverter>)>]`
+        // (see plans/system-text-json-migration.md) — STJ handles these enums via the globally
+        // registered `SingleCaseUnionConverterFactory`/`EnumMemberConverterFactory` instead.
+        enumeration.StructuredDocs
+        |> Option.mapOrDefault enum enum.xmlDocs
 
       | MetaModel.EnumerationTypeNameValues.Integer
       | MetaModel.EnumerationTypeNameValues.Uinteger -> // Create enums with number values
@@ -895,8 +900,10 @@ See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17
             Open("System")
             Open("System.Runtime.Serialization")
             Open("System.Diagnostics")
-            Open("Newtonsoft.Json")
-            Open("Newtonsoft.Json.Linq")
+            // For the DebuggerDisplay `[<JsonIgnore>]` attributes below — the STJ one, so it's
+            // actually honoured by the serializer csharp-ls uses (see
+            // plans/system-text-json-migration.md).
+            Open("System.Text.Json.Serialization")
 
             // Simple aliases for types that are not in dotnet
             Abbrev(Widgets.UriString, "string")

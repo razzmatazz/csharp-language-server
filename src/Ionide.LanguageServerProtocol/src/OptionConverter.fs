@@ -138,9 +138,11 @@ type FSharpOptionConverterFactory() =
     let converterType = typedefof<FSharpOptionConverter<_>>.MakeGenericType(inner)
     Activator.CreateInstance(converterType, opts) :?> System.Text.Json.Serialization.JsonConverter
 
-/// Newtonsoft JsonConverter for F# option types.
-/// Kept for the legacy wire path (defaultJsonRpcFormatter / StreamJsonRpc), which remains
-/// Newtonsoft-based. Prefer FSharpOptionConverter (STJ) in new code.
+#if NEWTONSOFT_LEGACY_UNUSED
+// Newtonsoft JsonConverter for F# option types. Kept only for the legacy StreamJsonRpc wire path
+// (Server.defaultJsonRpcFormatter), which is disabled (see LanguageServerProtocol.fs) so that
+// csharp-ls no longer ships Newtonsoft.Json. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
+// Prefer FSharpOptionConverter (STJ) in new code.
 [<Sealed>]
 type OptionConverter() =
   inherit Newtonsoft.Json.JsonConverter()
@@ -185,3 +187,4 @@ type OptionConverter() =
       else
         let union = UnionInfo.get t
         union.Cases[1].Create [| value |]
+#endif

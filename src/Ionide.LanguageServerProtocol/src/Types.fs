@@ -1,8 +1,6 @@
 namespace Ionide.LanguageServerProtocol.Types
 
 open Ionide.LanguageServerProtocol
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
 
 /// Types in typescript can have hardcoded values for their fields, this attribute is used to mark
 /// the default value for a field in a type and is used when deserializing the type to json
@@ -94,72 +92,57 @@ type U4<'T1, 'T2, 'T3, 'T4> =
 
 /// The LSP any type.
 ///
-/// Wraps a <see cref="JToken"/> and provides structural equality and hashing so that values
-/// can safely be used in sets, maps, and comparisons.
-///
-/// Note: structural equality and hashing are implemented here explicitly because while
-/// <see cref="Newtonsoft.Json.Linq.JValue"/> does provide structural equality for primitive values,
-/// <see cref="Newtonsoft.Json.Linq.JObject"/> and <see cref="Newtonsoft.Json.Linq.JArray"/>
-/// have a known-broken <c>GetHashCode</c> that can return different values for structurally equal
-/// instances. <c>System.Text.Json.JsonElement</c> — the intended future backing type — provides
-/// neither structural equality nor hashing at all. This wrapper is therefore necessary regardless
-/// of which JSON library is used underneath.
-///
-/// The internal representation is intentionally kept behind a single <c>JToken</c> property so
-/// that the backing type can be swapped to <c>System.Text.Json.JsonElement</c> in the future
-/// with minimal impact on call sites. Prefer the <c>fromJToken</c> / <c>fromJsonElement</c>
-/// factories over the constructor directly.
-[<JsonConverter(typeof<LSPAnyConverter>)>]
-type LSPAny(token: JToken) =
+/// Wraps a <see cref="System.Text.Json.JsonElement"/> and provides structural equality and
+/// hashing (via the raw JSON text) so that values can safely be used in sets, maps, and
+/// comparisons — <c>JsonElement</c> provides neither on its own.
+[<Sealed>]
+type LSPAny(element: System.Text.Json.JsonElement) =
 
-  /// The underlying JSON token.
-  member _.JToken: JToken = token
+  /// The underlying JSON value.
+  member _.JsonElement: System.Text.Json.JsonElement = element
 
-  /// The value as a <see cref="System.Text.Json.JsonElement"/>, bridged via raw JSON text.
-  /// Once the backing type is migrated to <see cref="System.Text.Json.JsonElement"/> this will be a direct accessor.
-  member _.JsonElement: System.Text.Json.JsonElement =
-    System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(token.ToString(Formatting.None))
+  override _.ToString() = element.GetRawText()
 
-  override _.ToString() = token.ToString(Formatting.None)
-
-  override _.GetHashCode() =
-    // JToken does not override GetHashCode, so we compute one from the raw JSON text.
-    // This is consistent with the Equals implementation below (same raw text ↔ same hash).
-    token.ToString(Formatting.None).GetHashCode()
+  override _.GetHashCode() = element.GetRawText().GetHashCode()
 
   override x.Equals(obj) =
     match obj with
-    | :? LSPAny as other -> JToken.DeepEquals(token, other.JToken)
+    | :? LSPAny as other -> element.GetRawText() = other.JsonElement.GetRawText()
     | _ -> false
 
   interface System.IEquatable<LSPAny> with
-    member x.Equals(other) = JToken.DeepEquals(token, other.JToken)
+    member x.Equals(other) = element.GetRawText() = other.JsonElement.GetRawText()
 
-  /// Wraps a <see cref="JToken"/> in an <see cref="LSPAny"/>.
-  static member inline fromJToken(token: JToken) = LSPAny(token)
+  /// Wraps a <see cref="System.Text.Json.JsonElement"/> in an <see cref="LSPAny"/>.
+  static member inline fromJsonElement(element: System.Text.Json.JsonElement) = LSPAny(element)
 
-  /// Wraps a <see cref="System.Text.Json.JsonElement"/> in an <see cref="LSPAny"/>, bridged via raw JSON text.
-  /// Once the backing type is migrated to <see cref="System.Text.Json.JsonElement"/> this will be a direct wrap.
-  static member inline fromJsonElement(element: System.Text.Json.JsonElement) =
-    LSPAny(JToken.Parse(element.GetRawText()))
+#if NEWTONSOFT_LEGACY_UNUSED
+// Newtonsoft.Json converter for LSPAny, kept for the legacy StreamJsonRpc wire path
+// (Server.defaultJsonRpcFormatter / Server.start* / the Client module), which is disabled
+// (see LanguageServerProtocol.fs) so that csharp-ls no longer ships Newtonsoft.Json. Re-enable
+// by defining NEWTONSOFT_LEGACY_UNUSED, restoring a JToken-backed LSPAny.fromJToken factory,
+// and re-adding `[<JsonConverter(typeof<LSPAnyConverter>)>]` above the LSPAny type.
+open Newtonsoft.Json
+open Newtonsoft.Json.Linq
 
-/// Newtonsoft.Json converter for <see cref="LSPAny"/>.
-/// Reads any JSON value into a <see cref="JToken"/> and wraps it; writes by delegating to the token.
-and LSPAnyConverter() =
+type LSPAnyConverter() =
   inherit JsonConverter()
 
   override _.CanConvert(t) = t = typeof<LSPAny>
 
-  override _.ReadJson(reader, _t, _existing, _serializer) = LSPAny(JToken.ReadFrom(reader)) :> obj
+  override _.ReadJson(reader, _t, _existing, _serializer) =
+    let token = JToken.ReadFrom(reader)
+    LSPAny.fromJsonElement (System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(token.ToString(Formatting.None))) :> obj
 
-  override _.WriteJson(writer, value, _serializer) = (value :?> LSPAny).JToken.WriteTo(writer)
+  override _.WriteJson(writer, value, _serializer) =
+    JToken.Parse((value :?> LSPAny).JsonElement.GetRawText()).WriteTo(writer)
+#endif
 
 /// System.Text.Json converter for <see cref="LSPAny"/>.
 /// Reads any JSON value into a <see cref="System.Text.Json.JsonElement"/> and wraps it via
 /// <see cref="LSPAny.fromJsonElement"/>; writes by delegating to the underlying JsonElement.
-/// This lets <c>LSPAny</c>-typed fields round-trip through the STJ-based
-/// <c>Ionide.LanguageServerProtocol.Server.lspSerializerOptions</c> pipeline, independently of
-/// the Newtonsoft-based <see cref="LSPAnyConverter"/> used by the StreamJsonRpc wire path.
+/// This is what <c>Ionide.LanguageServerProtocol.Server.lspSerializerOptions</c> registers so
+/// that <c>LSPAny</c>-typed fields round-trip through the STJ-based serializer.
 type LSPAnyJsonConverter() =
   inherit System.Text.Json.Serialization.JsonConverter<LSPAny>()
 

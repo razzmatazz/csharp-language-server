@@ -9,6 +9,11 @@ open Ionide.LanguageServerProtocol.Types
 open Converters
 
 
+#if NEWTONSOFT_LEGACY_UNUSED
+// Everything in this block is Newtonsoft-based and kept only for the legacy StreamJsonRpc wire
+// path (Server.defaultJsonRpcFormatter), which is disabled (see LanguageServerProtocol.fs) so
+// that csharp-ls no longer ships Newtonsoft.Json. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
+
 /// Handles fields of type `Option`:
 /// * Allows missing json properties when `Option` -> Optional
 /// * Fails when missing json property when not `Option` -> Required
@@ -25,9 +30,6 @@ open Converters
 /// {}                                // error
 /// { "name": "foo", "data": "bar" }  // ok
 /// ```
-///
-/// Kept for the legacy wire path (defaultJsonRpcFormatter / StreamJsonRpc), which remains
-/// Newtonsoft-based.
 [<Sealed>]
 type OptionAndCamelCasePropertyNamesContractResolver() as this =
   inherit Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver()
@@ -280,13 +282,13 @@ type SingleCaseUnionConverter() =
     | Some case -> case.Create [||]
     | None -> failwith $"Could not create an instance of the type '%s{t.Name}' with the name '%s{caseName}'"
 
-
 /// STJ JsonConverter for Newtonsoft.Json.Linq.JToken and its subclasses (JObject/JArray/JValue).
 /// Newtonsoft's own serializer special-cases JToken as "already JSON" and passes it through
 /// unchanged; STJ has no such built-in knowledge and would otherwise reflect over JToken's
-/// internal fields, producing garbage. This converter restores pass-through behaviour so that
-/// callers that still construct raw Newtonsoft JSON payloads (e.g. test helpers bypassing the
-/// F# type system) round-trip correctly through the STJ-based `Server.serialize`/`deserialize`.
+/// internal fields, producing garbage. This converter restored pass-through behaviour so that
+/// callers constructing raw Newtonsoft JSON payloads (e.g. test helpers bypassing the F# type
+/// system) round-tripped correctly through the STJ-based `Server.serialize`/`deserialize`. No
+/// longer needed now that `LSPAny` is backed directly by `System.Text.Json.JsonElement`.
 type JTokenJsonConverter<'T when 'T :> Newtonsoft.Json.Linq.JToken>() =
   inherit JsonConverter<'T>()
 
@@ -310,6 +312,7 @@ type JTokenJsonConverterFactory() =
     let converterType = typedefof<JTokenJsonConverter<_>>.MakeGenericType(t)
     Activator.CreateInstance(converterType) :?> System.Text.Json.Serialization.JsonConverter
 
+#endif
 
 /// STJ JsonConverter for .NET enum types whose cases carry [<EnumMember(Value = "...")>] attributes.
 /// These LSP enums are serialized as strings (e.g. ResourceOperationKind: "create"/"rename"/"delete"),
