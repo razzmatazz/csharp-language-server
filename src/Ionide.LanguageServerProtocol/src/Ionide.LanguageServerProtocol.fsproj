@@ -31,7 +31,10 @@
     <None Include="../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" />
+    <!-- Newtonsoft.Json is intentionally not referenced: the only remaining consumers of it
+         (the legacy StreamJsonRpc-based Server.defaultJsonRpcFormatter/Server.start*, and the
+         hand-rolled Client module) are disabled behind `#if NEWTONSOFT_LEGACY_UNUSED`, which is
+         never defined. Re-add the package reference if that symbol is ever defined. -->
     <PackageReference Include="System.Text.Json" />
     <PackageReference Include="StreamJsonRpc" />
   </ItemGroup>

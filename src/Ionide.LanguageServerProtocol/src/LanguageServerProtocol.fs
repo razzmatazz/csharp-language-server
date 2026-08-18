@@ -9,9 +9,7 @@ module Server =
   open System.Threading.Tasks
   open System.Reflection
   open StreamJsonRpc
-  open Newtonsoft.Json
   open Ionide.LanguageServerProtocol.JsonUtils
-  open Newtonsoft.Json.Linq
   open StreamJsonRpc
   open StreamJsonRpc.Protocol
   open JsonRpc
@@ -19,11 +17,16 @@ module Server =
 
   let logger = LogProvider.getLoggerByName "LSP Server"
 
+#if NEWTONSOFT_LEGACY_UNUSED
+  // Disabled so that csharp-ls no longer ships Newtonsoft.Json: this StreamJsonRpc wire path
+  // (defaultJsonRpcFormatter / Server.start* below, and the Client module further down) is not
+  // used by csharp-ls itself — it only exists as public API for other consumers of this vendored
+  // library. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
   let defaultJsonRpcFormatter () =
     let jsonRpcFormatter = new JsonMessageFormatter()
-    jsonRpcFormatter.JsonSerializer.NullValueHandling <- NullValueHandling.Ignore
-    jsonRpcFormatter.JsonSerializer.ConstructorHandling <- ConstructorHandling.AllowNonPublicDefaultConstructor
-    jsonRpcFormatter.JsonSerializer.MissingMemberHandling <- MissingMemberHandling.Ignore
+    jsonRpcFormatter.JsonSerializer.NullValueHandling <- Newtonsoft.Json.NullValueHandling.Ignore
+    jsonRpcFormatter.JsonSerializer.ConstructorHandling <- Newtonsoft.Json.ConstructorHandling.AllowNonPublicDefaultConstructor
+    jsonRpcFormatter.JsonSerializer.MissingMemberHandling <- Newtonsoft.Json.MissingMemberHandling.Ignore
     jsonRpcFormatter.JsonSerializer.Converters.Add(StrictNumberConverter())
     jsonRpcFormatter.JsonSerializer.Converters.Add(StrictStringConverter())
     jsonRpcFormatter.JsonSerializer.Converters.Add(StrictBoolConverter())
@@ -34,11 +37,9 @@ module Server =
     jsonRpcFormatter
 
   let jsonRpcFormatter = defaultJsonRpcFormatter ()
+#endif
 
   /// STJ JsonSerializerOptions used by `serialize`/`deserialize` below.
-  /// The StreamJsonRpc wire path (`defaultJsonRpcFormatter`, `Server.start*`, and the `Client`
-  /// module) remains Newtonsoft-based and is unaffected by this — it round-trips `LSPAny` via
-  /// the Newtonsoft `LSPAnyConverter` registered on `LSPAny` itself.
   let lspSerializerOptions =
     let opts =
       System.Text.Json.JsonSerializerOptions(
@@ -51,7 +52,6 @@ module Server =
     opts.Converters.Add(EnumMemberConverterFactory())
     opts.Converters.Add(ErasedUnionConverterFactory())
     opts.Converters.Add(SingleCaseUnionConverterFactory())
-    opts.Converters.Add(JTokenJsonConverterFactory())
     opts.Converters.Add(LSPAnyJsonConverter())
     opts
 
@@ -80,8 +80,9 @@ module Server =
               rpcException.ErrorCode <- error.Code
 
               rpcException.ErrorData <-
-                error.Data
-                |> Option.defaultValue null
+                match error.Data with
+                | Some d -> box d
+                | None -> null
 
               raise rpcException
         }
@@ -125,23 +126,25 @@ module Server =
     | _ -> ex
 
 
+#if NEWTONSOFT_LEGACY_UNUSED
   /// The default RPC logic shipped with this library. All this does is mark LocalRpcExceptions as non-fatal
   let defaultRpc (handler: IJsonRpcMessageHandler) =
     { new JsonRpc(handler) with
         member this.IsFatalException(ex: Exception) =
           match ex with
-          | Flatten(:? LocalRpcException | :? JsonSerializationException) -> false
+          | Flatten(:? LocalRpcException | :? Newtonsoft.Json.JsonSerializationException) -> false
           | _ -> true
 
         member this.CreateErrorDetails(request: JsonRpcRequest, ex: Exception) =
           let isSerializable = this.ExceptionStrategy = ExceptionProcessing.ISerializable
 
           match ex with
-          | Flatten(:? JsonSerializationException as ex) ->
+          | Flatten(:? Newtonsoft.Json.JsonSerializationException as ex) ->
             let data: obj = if isSerializable then ex else CommonErrorData(ex)
             JsonRpcError.ErrorDetail(Code = JsonRpcErrorCode.ParseError, Message = ex.Message, Data = data)
           | _ -> ``base``.CreateErrorDetails(request, ex)
     }
+#endif
 
   let startWithSetupCore<'client when 'client :> Ionide.LanguageServerProtocol.ILspClient>
     (setupRequestHandlings: 'client -> Map<string, Delegate>)
@@ -243,6 +246,7 @@ module Server =
     | false, true -> LspCloseReason.ErrorExitWithoutShutdown
     | _ -> LspCloseReason.ErrorStreamClosed
 
+#if NEWTONSOFT_LEGACY_UNUSED
   let startWithSetup<'client when 'client :> Ionide.LanguageServerProtocol.ILspClient>
     (setupRequestHandlings: 'client -> Map<string, Delegate>)
     (input: Stream)
@@ -261,6 +265,7 @@ module Server =
     =
     use jsonRpcHandler = new WebSocketMessageHandler(socket, defaultJsonRpcFormatter ())
     startWithSetupCore setupRequestHandlings jsonRpcHandler clientCreator customizeRpc
+#endif
 
 
   let serverRequestHandling<'server, 'param, 'result when 'server :> Ionide.LanguageServerProtocol.ILspServer>
@@ -283,6 +288,7 @@ module Server =
       requestHandlings
       |> Map.map (fun _ requestHandling -> requestHandling.Run server)
 
+#if NEWTONSOFT_LEGACY_UNUSED
   let start<'client, 'server
     when 'client :> Ionide.LanguageServerProtocol.ILspClient and 'server :> Ionide.LanguageServerProtocol.ILspServer>
     (requestHandlings: Map<string, ServerRequestHandling<'server>>)
@@ -303,7 +309,12 @@ module Server =
     =
     let requestHandlingSetup = requestHandlingSetupFunc requestHandlings serverCreator
     startWithSetupWs requestHandlingSetup socket clientCreator
+#endif
 
+#if NEWTONSOFT_LEGACY_UNUSED
+// The hand-rolled Client module below is a legacy, Newtonsoft-based JSON-RPC client, superseded
+// (for csharp-ls's own purposes) by CSharpLanguageServer.Lsp.Client. It is disabled so that
+// csharp-ls no longer ships Newtonsoft.Json. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
 module Client =
   open System
   open System.Diagnostics
@@ -636,3 +647,4 @@ module Client =
         return ()
       }
       |> Async.Start
+#endif
