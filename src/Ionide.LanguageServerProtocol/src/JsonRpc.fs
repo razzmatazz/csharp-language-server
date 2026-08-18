@@ -163,6 +163,10 @@ module AsyncLspResult =
   let requestCancelled<'a> : AsyncLspResult<'a> = async.Return LspResult.requestCancelled
 
 
+#if NEWTONSOFT_LEGACY_UNUSED
+// Only consumed by the legacy StreamJsonRpc-based Server.startWithSetupCore/Server.start* path
+// (see LanguageServerProtocol.fs), which is disabled so that csharp-ls no longer ships
+// StreamJsonRpc/Newtonsoft.Json. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED.
 module Requests =
   open StreamJsonRpc
   open System
@@ -205,3 +209,4 @@ module Requests =
       do! response
       return Result.Ok()
     }
+#endif

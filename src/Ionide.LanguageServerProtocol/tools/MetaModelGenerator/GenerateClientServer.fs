@@ -316,6 +316,22 @@ module GenerateClientServer =
         |> Gen.mkOak
         |> fun oak -> CodeFormatter.FormatOakAsync(oak, formatConfig)
 
+      // The `Mappings` module (routeMappings) is only consumed by the legacy StreamJsonRpc-based
+      // Server.startWithSetupCore/Server.start* path (see LanguageServerProtocol.fs), which
+      // csharp-ls disables via `#if NEWTONSOFT_LEGACY_UNUSED` so that it no longer ships
+      // StreamJsonRpc/Newtonsoft.Json. Guard the generated module the same way, so that
+      // regeneration doesn't silently reintroduce that dependency.
+      let mappingsModuleMarker = "module Mappings ="
+
+      let formattedText =
+        match formattedText.IndexOf(mappingsModuleMarker) with
+        | -1 -> formattedText
+        | idx ->
+          formattedText.Substring(0, idx)
+          + "#if NEWTONSOFT_LEGACY_UNUSED\n"
+          + formattedText.Substring(idx).TrimEnd('\n')
+          + "\n#endif\n"
+
       do! FileWriters.writeIfChanged outputPath formattedText
 
     }
