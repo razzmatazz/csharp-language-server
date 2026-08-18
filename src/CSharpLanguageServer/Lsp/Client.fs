@@ -50,10 +50,10 @@ type CSharpLspClient
                     |> Option.defaultValue "Unknown error"
 
                 // Note: `Ionide.LanguageServerProtocol.JsonRpc.Error.Data` is typed as
-                // `Newtonsoft.Json.Linq.JToken option` by the vendored library, which is
+                // `System.Text.Json.JsonElement option` by the vendored library, which is
                 // outside the scope of this transport adapter. Nothing in csharp-ls reads
                 // this field for client-originated transport errors, so it is always `None`
-                // here rather than round-tripping through Newtonsoft just for this one field.
+                // here.
                 Result.Error
                     { Code = code
                       Message = message

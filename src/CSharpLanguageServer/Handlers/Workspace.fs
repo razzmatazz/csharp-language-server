@@ -196,7 +196,7 @@ module Workspace =
                 |> Option.ofObj
                 |> Option.bind deserialize<DidChangeConfigurationSettingsDto option>
                 |> Option.map _.csharp
-                |> Option.bind id // flatten option option, also guards against null from Newtonsoft
+                |> Option.bind id // flatten option option, also guards against a deserialized null
 
             let configurationSupported =
                 context.ClientCapabilities.Workspace

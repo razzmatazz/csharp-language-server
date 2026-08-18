@@ -311,12 +311,15 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
             // The first notification uses WorkspaceDiagnosticReport,
             // subsequent ones use WorkspaceDiagnosticReportPartialResult;
             // both have an `items` array at the top level.
-            let items = pp.Value.JToken["items"] |> Option.ofObj
+            let items =
+                match pp.Value.JsonElement.TryGetProperty("items") with
+                | true, v -> Some v
+                | false, _ -> None
 
             match items with
             | Some items ->
                 items
-                |> LSPAny.fromJToken
+                |> LSPAny.fromJsonElement
                 |> deserialize<WorkspaceDocumentDiagnosticReport[]>
                 |> List.ofArray
             | None -> [])
@@ -362,12 +365,15 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
     let progressItems2 =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value.JToken["items"] |> Option.ofObj
+            let items =
+                match pp.Value.JsonElement.TryGetProperty("items") with
+                | true, v -> Some v
+                | false, _ -> None
 
             match items with
             | Some items ->
                 items
-                |> LSPAny.fromJToken
+                |> LSPAny.fromJsonElement
                 |> deserialize<WorkspaceDocumentDiagnosticReport[]>
                 |> List.ofArray
             | None -> [])
@@ -487,12 +493,15 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
     let progressItems =
         client.GetProgressParams token
         |> List.collect (fun pp ->
-            let items = pp.Value.JToken["items"] |> Option.ofObj
+            let items =
+                match pp.Value.JsonElement.TryGetProperty("items") with
+                | true, v -> Some v
+                | false, _ -> None
 
             match items with
             | Some items ->
                 items
-                |> LSPAny.fromJToken
+                |> LSPAny.fromJsonElement
                 |> deserialize<WorkspaceDocumentDiagnosticReport[]>
                 |> List.ofArray
             | None -> [])
@@ -896,12 +905,15 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
     let progressItems =
         client.GetProgressParams token2
         |> List.collect (fun pp ->
-            let items = pp.Value.JToken["items"] |> Option.ofObj
+            let items =
+                match pp.Value.JsonElement.TryGetProperty("items") with
+                | true, v -> Some v
+                | false, _ -> None
 
             match items with
             | Some items ->
                 items
-                |> LSPAny.fromJToken
+                |> LSPAny.fromJsonElement
                 |> deserialize<WorkspaceDocumentDiagnosticReport[]>
                 |> List.ofArray
             | None -> [])
