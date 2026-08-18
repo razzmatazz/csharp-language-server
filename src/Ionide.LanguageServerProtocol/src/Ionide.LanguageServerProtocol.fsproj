@@ -31,12 +31,12 @@
     <None Include="../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Newtonsoft.Json is intentionally not referenced: the only remaining consumers of it
-         (the legacy StreamJsonRpc-based Server.defaultJsonRpcFormatter/Server.start*, and the
-         hand-rolled Client module) are disabled behind `#if NEWTONSOFT_LEGACY_UNUSED`, which is
-         never defined. Re-add the package reference if that symbol is ever defined. -->
+    <!-- Neither Newtonsoft.Json nor StreamJsonRpc is referenced: the only remaining consumers of
+         them (the legacy StreamJsonRpc-based Server.defaultJsonRpcFormatter/Server.start*, the
+         generated Mappings.routeMappings, and the hand-rolled Client module) are disabled behind
+         `#if NEWTONSOFT_LEGACY_UNUSED`, which is never defined. Re-add both package references if
+         that symbol is ever defined. -->
     <PackageReference Include="System.Text.Json" />
-    <PackageReference Include="StreamJsonRpc" />
   </ItemGroup>
 
   <ItemGroup>

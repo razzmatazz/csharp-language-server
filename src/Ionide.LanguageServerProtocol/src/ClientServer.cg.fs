@@ -393,6 +393,7 @@ type ILspClient =
   /// A request sent from the server to the client to modified certain resources.
   abstract WorkspaceApplyEdit: ApplyWorkspaceEditParams -> AsyncLspResult<ApplyWorkspaceEditResult>
 
+#if NEWTONSOFT_LEGACY_UNUSED
 module Mappings =
   type ServerRequestHandling<'server when 'server :> ILspServer> = { Run: 'server -> System.Delegate }
 
@@ -587,3 +588,4 @@ module Mappings =
         |> Requests.notificationSuccess
       )
     ]
+#endif

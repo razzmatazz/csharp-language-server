@@ -8,12 +8,8 @@ module Server =
   open System.Threading
   open System.Threading.Tasks
   open System.Reflection
-  open StreamJsonRpc
   open Ionide.LanguageServerProtocol.JsonUtils
-  open StreamJsonRpc
-  open StreamJsonRpc.Protocol
   open JsonRpc
-  open Mappings
 
   let logger = LogProvider.getLoggerByName "LSP Server"
 
@@ -61,6 +57,16 @@ module Server =
   let serialize<'t> (o: 't) : LSPAny =
     System.Text.Json.JsonSerializer.SerializeToElement(o, lspSerializerOptions)
     |> LSPAny.fromJsonElement
+
+#if NEWTONSOFT_LEGACY_UNUSED
+  // Everything from here down to the `Client` module below is only reachable through the legacy
+  // StreamJsonRpc-based Server.startWithSetupCore/Server.start* wire path, which is disabled so
+  // that csharp-ls no longer ships StreamJsonRpc/Newtonsoft.Json — it only exists as public API
+  // for other consumers of this vendored library. Re-enable by defining NEWTONSOFT_LEGACY_UNUSED
+  // (and re-adding the StreamJsonRpc package reference).
+  open StreamJsonRpc
+  open StreamJsonRpc.Protocol
+  open Mappings
 
   let requestHandling<'param, 'result> (run: 'param -> AsyncLspResult<'result>) : Delegate =
     let runAsTask param ct =
@@ -126,7 +132,6 @@ module Server =
     | _ -> ex
 
 
-#if NEWTONSOFT_LEGACY_UNUSED
   /// The default RPC logic shipped with this library. All this does is mark LocalRpcExceptions as non-fatal
   let defaultRpc (handler: IJsonRpcMessageHandler) =
     { new JsonRpc(handler) with
@@ -144,7 +149,6 @@ module Server =
             JsonRpcError.ErrorDetail(Code = JsonRpcErrorCode.ParseError, Message = ex.Message, Data = data)
           | _ -> ``base``.CreateErrorDetails(request, ex)
     }
-#endif
 
   let startWithSetupCore<'client when 'client :> Ionide.LanguageServerProtocol.ILspClient>
     (setupRequestHandlings: 'client -> Map<string, Delegate>)
@@ -246,7 +250,6 @@ module Server =
     | false, true -> LspCloseReason.ErrorExitWithoutShutdown
     | _ -> LspCloseReason.ErrorStreamClosed
 
-#if NEWTONSOFT_LEGACY_UNUSED
   let startWithSetup<'client when 'client :> Ionide.LanguageServerProtocol.ILspClient>
     (setupRequestHandlings: 'client -> Map<string, Delegate>)
     (input: Stream)
@@ -265,8 +268,6 @@ module Server =
     =
     use jsonRpcHandler = new WebSocketMessageHandler(socket, defaultJsonRpcFormatter ())
     startWithSetupCore setupRequestHandlings jsonRpcHandler clientCreator customizeRpc
-#endif
-
 
   let serverRequestHandling<'server, 'param, 'result when 'server :> Ionide.LanguageServerProtocol.ILspServer>
     (run: 'server -> 'param -> AsyncLspResult<'result>)
@@ -288,7 +289,6 @@ module Server =
       requestHandlings
       |> Map.map (fun _ requestHandling -> requestHandling.Run server)
 
-#if NEWTONSOFT_LEGACY_UNUSED
   let start<'client, 'server
     when 'client :> Ionide.LanguageServerProtocol.ILspClient and 'server :> Ionide.LanguageServerProtocol.ILspServer>
     (requestHandlings: Map<string, ServerRequestHandling<'server>>)

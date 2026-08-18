@@ -4,11 +4,9 @@ open System
 open System.Diagnostics
 open System.Threading.Tasks
 
-open Ionide.LanguageServerProtocol.Mappings
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
-open StreamJsonRpc
 open Microsoft.Extensions.Logging
 open System.Text.Json
 open System.Text.Json.Nodes
