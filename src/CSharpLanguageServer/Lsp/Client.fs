@@ -46,7 +46,11 @@ type CSharpLspClient
 
                 let message =
                     tryGetProperty "message"
-                    |> Option.bind (fun v -> if v.ValueKind = JsonValueKind.String then Some(v.GetString()) else None)
+                    |> Option.bind (fun v ->
+                        if v.ValueKind = JsonValueKind.String then
+                            Some(v.GetString())
+                        else
+                            None)
                     |> Option.defaultValue "Unknown error"
 
                 // Note: `Ionide.LanguageServerProtocol.JsonRpc.Error.Data` is typed as
