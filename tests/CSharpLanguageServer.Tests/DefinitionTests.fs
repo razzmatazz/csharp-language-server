@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.DefinitionTests
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -19,7 +20,7 @@ let testDefinitionWorks () =
     let declaration0: Declaration option =
         client.Request("textDocument/definition", definitionParams0)
 
-    Assert.IsTrue(declaration0.IsNone)
+    ClassicAssert.IsTrue(declaration0.IsNone)
 
     let definitionParams1: DefinitionParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -38,7 +39,7 @@ let testDefinitionWorks () =
                    { Start = { Line = 4u; Character = 16u }
                      End = { Line = 4u; Character = 23u } } } |]
 
-        Assert.AreEqual(expectedLocations1, declaration1Locations)
+        ClassicAssert.AreEqual(expectedLocations1, declaration1Locations)
     | _ -> failwith "U2.C2 Location[] was expected"
 
 [<Test>]
@@ -64,5 +65,5 @@ let testDefinitionWorksInAspNetProject () =
                  End = { Line = 3u; Character = 25u } } } |]
 
     match definition0 with
-    | Some(U2.C2 definition0Locations) -> Assert.AreEqual(expectedLocations0, definition0Locations)
+    | Some(U2.C2 definition0Locations) -> ClassicAssert.AreEqual(expectedLocations0, definition0Locations)
     | _ -> failwithf "Some Location[] was expected but %s received" (string definition0)

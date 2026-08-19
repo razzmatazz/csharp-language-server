@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.CallHierarchyTests
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -20,13 +21,13 @@ let testCallHierarchyIncomingCallsWorks () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> Assert.Fail("prepareCallHierarchy should return a result for MethodA")
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodA")
     | Some items ->
-        Assert.AreEqual(1, items.Length)
+        ClassicAssert.AreEqual(1, items.Length)
 
         let methodAItem = items[0]
-        Assert.AreEqual("MethodA(string)", methodAItem.Name)
-        Assert.AreEqual(SymbolKind.Method, methodAItem.Kind)
+        ClassicAssert.AreEqual("MethodA(string)", methodAItem.Name)
+        ClassicAssert.AreEqual(SymbolKind.Method, methodAItem.Kind)
 
         // Step 2: Get incoming calls for MethodA - should find MethodB as caller
         let incomingCallsParams: CallHierarchyIncomingCallsParams =
@@ -38,17 +39,17 @@ let testCallHierarchyIncomingCallsWorks () =
             client.Request("callHierarchy/incomingCalls", incomingCallsParams)
 
         match incomingCallsResult with
-        | None -> Assert.Fail("incomingCalls should return a result")
+        | None -> ClassicAssert.Fail("incomingCalls should return a result")
         | Some incomingCalls ->
-            Assert.AreEqual(1, incomingCalls.Length)
+            ClassicAssert.AreEqual(1, incomingCalls.Length)
 
             let incomingCall = incomingCalls[0]
-            Assert.AreEqual("MethodB(string)", incomingCall.From.Name)
-            Assert.AreEqual(SymbolKind.Method, incomingCall.From.Kind)
+            ClassicAssert.AreEqual("MethodB(string)", incomingCall.From.Name)
+            ClassicAssert.AreEqual(SymbolKind.Method, incomingCall.From.Kind)
 
             // FromRanges should point to the location where MethodA is called in MethodB (line 12)
-            Assert.AreEqual(1, incomingCall.FromRanges.Length, "Should have one call site")
-            Assert.AreEqual(12u, incomingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
+            ClassicAssert.AreEqual(1, incomingCall.FromRanges.Length, "Should have one call site")
+            ClassicAssert.AreEqual(12u, incomingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
 
 [<Test>]
 let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
@@ -65,5 +66,5 @@ let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | Some _ -> Assert.Fail("prepareCallHierarchy should return None for non-callable symbols")
+    | Some _ -> ClassicAssert.Fail("prepareCallHierarchy should return None for non-callable symbols")
     | None -> ()

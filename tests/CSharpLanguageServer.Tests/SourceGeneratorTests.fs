@@ -4,6 +4,7 @@ open System
 open System.IO
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
@@ -93,7 +94,7 @@ let ``rebuilding a loaded source generator does not fail due to DLL locking`` ()
 
     let exitCode, stdout, stderr = runDotnetBuild generatorDir
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         0,
         exitCode,
         sprintf
@@ -123,9 +124,9 @@ let ``go-to-definition on a generated symbol returns a csharp:/<proj>/generated/
 
     match definition with
     | Some(U2.C2 locations) ->
-        Assert.AreEqual(1, locations.Length)
-        Assert.AreEqual(expectedUri, string locations.[0].Uri)
-    | _ -> Assert.Fail(sprintf "expected Some Location[], got: %A" definition)
+        ClassicAssert.AreEqual(1, locations.Length)
+        ClassicAssert.AreEqual(expectedUri, string locations.[0].Uri)
+    | _ -> ClassicAssert.Fail(sprintf "expected Some Location[], got: %A" definition)
 
 [<Test>]
 let ``csharp/metadata returns source text for a generated document`` () =
@@ -151,16 +152,16 @@ let ``csharp/metadata returns source text for a generated document`` () =
         | Some(U2.C2 [| loc |]) -> loc.Uri
         | _ -> failwithf "expected single Location from go-to-definition, got: %A" definition
 
-    Assert.AreEqual(expectedUri, string generatedUri)
+    ClassicAssert.AreEqual(expectedUri, string generatedUri)
 
     let metadataParams: CSharpMetadataParams = { TextDocument = { Uri = generatedUri } }
 
     let metadata: CSharpMetadataResponse option =
         client.Request("csharp/metadata", metadataParams)
 
-    Assert.IsTrue(metadata.IsSome, "expected Some response from csharp/metadata")
+    ClassicAssert.IsTrue(metadata.IsSome, "expected Some response from csharp/metadata")
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         metadata.Value.Source.Contains "public static class Hello",
         sprintf "expected generated source to contain 'public static class Hello', got:\n%s" metadata.Value.Source
     )
@@ -188,9 +189,9 @@ let ``go-to-definition on generated symbol works without obj directory`` () =
     let expectedUri = expectedGeneratedUri client.SolutionDir
 
     match definition with
-    | Some(U2.C2 locations) when locations.Length > 0 -> Assert.AreEqual(expectedUri, string locations.[0].Uri)
+    | Some(U2.C2 locations) when locations.Length > 0 -> ClassicAssert.AreEqual(expectedUri, string locations.[0].Uri)
     | _ ->
-        Assert.Fail(
+        ClassicAssert.Fail(
             sprintf "expected Some Location[] with csharp:/<proj>/generated/ URI even without obj/, got: %A" definition
         )
 
@@ -212,7 +213,7 @@ let ``workspace diagnostics do not include diagnostics from source-generated fil
         client.Request("workspace/diagnostic", diagnosticParams)
 
     match report with
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport")
     | Some report ->
         // Collect all URIs that appear in the workspace diagnostic report
         let reportedUris =
@@ -230,7 +231,7 @@ let ``workspace diagnostics do not include diagnostics from source-generated fil
                 // Roslyn places generated files under obj/ in the temp build directory
                 uri.Contains("/obj/") || uri.Contains("\\obj\\"))
 
-        Assert.AreEqual(
+        ClassicAssert.AreEqual(
             [||],
             generatedFileUris,
             sprintf

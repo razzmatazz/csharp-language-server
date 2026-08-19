@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.SignatureHelpTests
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -22,7 +23,7 @@ let ``test textDocument/signatureHelp works`` () =
     match signatureHelp0 with
     | None -> failwith "Some SignatureHelp was expected"
     | Some sh ->
-        Assert.AreEqual(1, sh.Signatures.Length)
+        ClassicAssert.AreEqual(1, sh.Signatures.Length)
 
         let expectedSignature0 =
             { Label = "void Class.MethodA(string arg)"
@@ -38,7 +39,7 @@ let ``test textDocument/signatureHelp works`` () =
                          Documentation = None } |]
               ActiveParameter = None }
 
-        Assert.AreEqual(expectedSignature0, sh.Signatures[0])
+        ClassicAssert.AreEqual(expectedSignature0, sh.Signatures[0])
 
-        Assert.AreEqual(Some 0u, sh.ActiveSignature)
-        Assert.AreEqual(None, sh.ActiveParameter)
+        ClassicAssert.AreEqual(Some 0u, sh.ActiveSignature)
+        ClassicAssert.AreEqual(None, sh.ActiveParameter)

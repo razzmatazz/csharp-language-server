@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.InlayHintTests
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -47,7 +48,7 @@ let ``textDocument/inlayHint shows a type hint for a var declaration initialized
     // line 25 (0-indexed): `var count = GetCount();`
     let onLine = hints |> hintsOnLine 25u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel ": int",
         sprintf "Expected a \": int\" type hint on line 25, got: %A" onLine
     )
@@ -62,9 +63,9 @@ let ``textDocument/inlayHint shows parameter hints for a regular call with diffe
     // line 30 (0-indexed): `helper.Add(1, 2);`
     let onLine = hints |> hintsOnLine 30u
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
+    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "second:",
         sprintf "Expected a \"second:\" hint on line 30, got: %A" onLine
     )
@@ -79,12 +80,12 @@ let ``textDocument/inlayHint suppresses a same-name single-line argument (regres
     // line 36 (0-indexed): `helper.WithResource(resourceName, "other");`
     let onLine = hints |> hintsOnLine 36u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "resourceName:",
         sprintf "Expected no \"resourceName:\" hint on line 36 (argument matches parameter name), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "other:",
         sprintf "Expected an \"other:\" hint on line 36 (argument doesn't match parameter name), got: %A" onLine
     )
@@ -102,7 +103,7 @@ let ``textDocument/inlayHint suppresses a same-name argument on its own indented
     //         "other");
     let onLine = hints |> hintsOnLine 43u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "resourceName:",
         sprintf
             "Expected no \"resourceName:\" hint on line 43 (argument matches parameter name, only\
@@ -123,7 +124,7 @@ let ``textDocument/inlayHint suppresses a qualified member-access argument match
     //         "other");
     let onLine = hints |> hintsOnLine 50u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "resourceName:",
         sprintf
             "Expected no \"resourceName:\" hint on line 50 (this.ResourceName's last segment matches\
@@ -141,7 +142,7 @@ let ``textDocument/inlayHint keeps a hint when the argument name doesn't match t
     // line 57 (0-indexed): `helper.WithResource(somethingElse, "other");`
     let onLine = hints |> hintsOnLine 57u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "resourceName:",
         sprintf "Expected a \"resourceName:\" hint on line 57 (argument doesn't match parameter name), got: %A" onLine
     )
@@ -161,7 +162,7 @@ let ``textDocument/inlayHint keeps a hint when a qualified member-access argumen
     //         "other");
     let onLine = hints |> hintsOnLine 63u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "resourceName:",
         sprintf
             "Expected a \"resourceName:\" hint on line 63 (this.OtherValue's last segment doesn't\
@@ -179,7 +180,7 @@ let ``textDocument/inlayHint suppresses a hint for a very short (1-character) pa
     // line 85 (0-indexed): `helper.SetX(5);` -- parameter is `x`
     let onLine = hints |> hintsOnLine 85u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "x:",
         sprintf "Expected no \"x:\" hint on line 85 (parameter name is too short to be informative), got: %A" onLine
     )
@@ -194,17 +195,17 @@ let ``textDocument/inlayHint suppresses numbered-suffix parameter names but keep
     // line 90 (0-indexed): `string.Format("{0} {1}", 1, 2);` -- parameters are `format`, `arg0`, `arg1`
     let onLine = hints |> hintsOnLine 90u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "arg0:",
         sprintf "Expected no \"arg0:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "arg1:",
         sprintf "Expected no \"arg1:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "format:",
         sprintf "Expected a \"format:\" hint on line 90 (not a numbered-suffix parameter name), got: %A" onLine
     )
@@ -219,12 +220,12 @@ let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter nam
     // line 95 (0-indexed): `System.Math.Min(1, 2);` -- parameters are `val1`, `val2`
     let onLine = hints |> hintsOnLine 95u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "val1:",
         sprintf "Expected no \"val1:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "val2:",
         sprintf "Expected no \"val2:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
     )
@@ -240,7 +241,7 @@ let ``textDocument/inlayHint suppresses Math.Round's short parameter name but ke
     // -- parameters are `d`, `decimals`, `mode`
     let onLine = hints |> hintsOnLine 100u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "d:",
         sprintf "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A" onLine
     )
@@ -248,12 +249,12 @@ let ``textDocument/inlayHint suppresses Math.Round's short parameter name but ke
     // `decimals`/`mode` aren't short or numbered-suffix, so the narrow mechanical rule
     // intentionally doesn't suppress them (unlike `d`), even though they're arguably still
     // low-information BCL names -- see plans/inlay-hint-reduction.md for the rationale.
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "decimals:",
         sprintf "Expected a \"decimals:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "mode:",
         sprintf "Expected a \"mode:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
     )
@@ -268,12 +269,12 @@ let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disamb
     // line 105 (0-indexed): `"hello".Substring(1, 2);` -- parameters are `startIndex`, `length`
     let onLine = hints |> hintsOnLine 105u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "startIndex:",
         sprintf "Expected a \"startIndex:\" hint on line 105, got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "length:",
         sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine
     )
@@ -289,17 +290,17 @@ let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter
     // -- parameters are `buffer`, `offset`, `count`
     let onLine = hints |> hintsOnLine 111u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "buffer:",
         sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "offset:",
         sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
     )
 
-    Assert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
+    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
@@ -311,7 +312,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a
     // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- parameter is `predicate`
     let onLine = hints |> hintsOnLine 144u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "predicate:",
         sprintf
             "Expected no \"predicate:\" hint on line 144 (sole lambda argument, method name conveys role), got: %A"
@@ -329,7 +330,7 @@ let ``textDocument/inlayHint suppresses hints for the sole lambda argument of ch
     // -- both parameters are `relatedObjectSelector`
     let onLine = hints |> hintsOnLine 149u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "relatedObjectSelector:",
         sprintf
             "Expected no \"relatedObjectSelector:\" hint on line 149 (sole lambda argument of each\
@@ -348,12 +349,12 @@ let ``textDocument/inlayHint keeps hints when a call takes more than one lambda 
     // -- parameters are `first`, `second`
     let onLine = hints |> hintsOnLine 154u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "first:",
         sprintf "Expected a \"first:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "second:",
         sprintf "Expected a \"second:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
     )
@@ -368,7 +369,7 @@ let ``textDocument/inlayHint keeps a hint when the sole argument is a method gro
     // line 159 (0-indexed): `new FluentQuery().Where(IsPositive);` -- parameter is `predicate`
     let onLine = hints |> hintsOnLine 159u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "predicate:",
         sprintf
             "Expected a \"predicate:\" hint on line 159 (sole argument is a method group, not a lambda\
@@ -391,22 +392,22 @@ let ``textDocument/inlayHint suppresses composite-format-string positional argum
     // already match rule #2's numbered-suffix pattern (`hasUninformativeParameterName`).
     let onLine = hints |> hintsOnLine 177u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "format:",
         sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "arg0:",
         sprintf "Expected no \"arg0:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "arg1:",
         sprintf "Expected no \"arg1:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "arg2:",
         sprintf "Expected no \"arg2:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
     )
@@ -424,7 +425,7 @@ let ``textDocument/inlayHint suppresses a hint for a single lambda argument foll
     // -- parameters are `predicate`, `cancellationToken`
     let onLine = hints |> hintsOnLine 205u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "predicate:",
         sprintf
             "Expected no \"predicate:\" hint on line 205 (sole non-CancellationToken argument is a\
@@ -443,12 +444,12 @@ let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with
     // -- parameters are `first`, `second`, `cancellationToken`
     let onLine = hints |> hintsOnLine 210u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "first:",
         sprintf "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "second:",
         sprintf "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
     )
@@ -465,7 +466,7 @@ let ``textDocument/inlayHint suppresses a var type hint when a qualified generic
     // line 240 (0-indexed): `var widget = GenericFactory.Create<Widget>();`
     let onLine = hints |> hintsOnLine 240u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": Widget",
         sprintf
             "Expected no \": Widget\" hint on line 240 (type is already spelled out in the\
@@ -486,7 +487,7 @@ let ``textDocument/inlayHint keeps a var type hint when a generic invocation's t
     // -- `Describe<Widget>` returns `string`, not `Widget`
     let onLine = hints |> hintsOnLine 245u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel ": string",
         sprintf
             "Expected a \": string\" hint on line 245 (inferred type doesn't match the invocation's\
@@ -506,7 +507,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an unqualified gene
     // line 250 (0-indexed): `var widget = CreateLocal<Widget>();`
     let onLine = hints |> hintsOnLine 250u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": Widget",
         sprintf
             "Expected no \": Widget\" hint on line 250 (type is already spelled out in the\
@@ -524,7 +525,7 @@ let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<
     // line 255 (0-indexed): `var day = System.Enum.Parse<System.DayOfWeek>("Monday");`
     let onLine = hints |> hintsOnLine 255u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": DayOfWeek",
         sprintf
             "Expected no \": DayOfWeek\" hint on line 255 (type is already spelled out in\
@@ -542,7 +543,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the identifier full
     // line 287 (0-indexed): `var resourceCondition = GetCondition();`
     let onLine = hints |> hintsOnLine 287u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": ResourceCondition",
         sprintf
             "Expected no \": ResourceCondition\" hint on line 287 (identifier is a full\
@@ -562,7 +563,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the identifier's la
     // line 292 (0-indexed): `var settingChangeCondition = GetCondition();`
     let onLine = hints |> hintsOnLine 292u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": ResourceCondition",
         sprintf
             "Expected no \": ResourceCondition\" hint on line 292 (identifier's last word\
@@ -580,7 +581,7 @@ let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't e
     // line 297 (0-indexed): `var outcome = GetCondition();`
     let onLine = hints |> hintsOnLine 297u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel ": ResourceCondition",
         sprintf
             "Expected a \": ResourceCondition\" hint on line 297 (identifier doesn't echo the\
@@ -600,7 +601,7 @@ let ``textDocument/inlayHint suppresses a foreach variable's type hint when the 
     // line 302 (0-indexed): `foreach (var widget in GetWidgets())`
     let onLine = hints |> hintsOnLine 302u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": Widget",
         sprintf
             "Expected no \": Widget\" hint on line 302 (identifier is a full case-insensitive\
@@ -620,7 +621,7 @@ let ``textDocument/inlayHint keeps a foreach variable's type hint when the ident
     // line 309 (0-indexed): `foreach (var item in GetWidgets())`
     let onLine = hints |> hintsOnLine 309u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel ": Widget",
         sprintf "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A" onLine
     )
@@ -637,7 +638,7 @@ let ``textDocument/inlayHint suppresses a parameter-name hint when the parameter
     // line 316 (0-indexed): `Dispatch(null);` -- parameter is `MessageDispatcherAsync messageDispatcherAsync`
     let onLine = hints |> hintsOnLine 316u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "messageDispatcherAsync:",
         sprintf
             "Expected no \"messageDispatcherAsync:\" hint on line 316 (parameter name is a\
@@ -657,7 +658,7 @@ let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name
     // line 321 (0-indexed): `DispatchWithGenericName(null);` -- parameter is `MessageDispatcherAsync handler`
     let onLine = hints |> hintsOnLine 321u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "handler:",
         sprintf
             "Expected a \"handler:\" hint on line 321 (parameter name doesn't echo its own declared type), got: %A"
@@ -674,7 +675,7 @@ let ``textDocument/inlayHint suppresses a hint for the generic "obj" parameter n
     // line 342 (0-indexed): `helper.Save(5);` -- parameter is `object obj`
     let onLine = hints |> hintsOnLine 342u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "obj:",
         sprintf "Expected no \"obj:\" hint on line 342 (\"obj\" is a generic placeholder name), got: %A" onLine
     )
@@ -689,7 +690,7 @@ let ``textDocument/inlayHint keeps a hint for a same-length parameter name that 
     // line 347 (0-indexed): `helper.Log("hi");` -- parameter is `string msg`
     let onLine = hints |> hintsOnLine 347u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "msg:",
         sprintf
             "Expected a \"msg:\" hint on line 347 (\"msg\" isn't the generic \"obj\" exception, only\
@@ -709,7 +710,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an explicit object-
     // line 360 (0-indexed): `var widget = new Widget();`
     let onLine = hints |> hintsOnLine 360u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": Widget",
         sprintf
             "Expected no \": Widget\" hint on line 360 (type is already spelled out right after `new`), got: %A"
@@ -728,7 +729,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an explicit object-
     // line 365 (0-indexed): `var widget = new WidgetWithProperty { Value = 1 };`
     let onLine = hints |> hintsOnLine 365u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": WidgetWithProperty",
         sprintf
             "Expected no \": WidgetWithProperty\" hint on line 365 (type is already spelled out\
@@ -746,7 +747,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of
     // line 387 (0-indexed): `helper.Contains(5);` -- sole parameter is `value`
     let onLine = hints |> hintsOnLine 387u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "value:",
         sprintf "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A" onLine
     )
@@ -761,12 +762,12 @@ let ``textDocument/inlayHint keeps a "value" parameter hint when the call has mo
     // line 392 (0-indexed): `helper.Add(1, 2);` -- parameters are `key`, `value`
     let onLine = hints |> hintsOnLine 392u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "key:",
         sprintf "Expected a \"key:\" hint on line 392 (call has more than one argument), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "value:",
         sprintf
             "Expected a \"value:\" hint on line 392 (call has more than one argument, so \"value\"\
@@ -786,7 +787,7 @@ let ``textDocument/inlayHint suppresses a var type hint when a static invocation
     // line 400 (0-indexed): `var reason = string.Format("{0}", 1);`
     let onLine = hints |> hintsOnLine 400u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel ": string",
         sprintf
             "Expected no \": string\" hint on line 400 (type is already spelled out as the\
@@ -807,7 +808,7 @@ let ``textDocument/inlayHint keeps a var type hint when a static invocation's qu
     // -- qualifier is `Convert`, return type is `int`
     let onLine = hints |> hintsOnLine 405u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel ": int",
         sprintf
             "Expected a \": int\" hint on line 405 (invocation's qualifier doesn't match the\
@@ -825,7 +826,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of 
     // line 426 (0-indexed): `helper.Add(5);` -- sole parameter is `item`
     let onLine = hints |> hintsOnLine 426u
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         onLine |> hasHintWithLabel "item:",
         sprintf "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A" onLine
     )
@@ -840,12 +841,12 @@ let ``textDocument/inlayHint keeps an "item" parameter hint when the call has mo
     // line 431 (0-indexed): `helper.Insert(0, 5);` -- parameters are `index`, `item`
     let onLine = hints |> hintsOnLine 431u
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "index:",
         sprintf "Expected an \"index:\" hint on line 431 (call has more than one argument), got: %A" onLine
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "item:",
         sprintf
             "Expected an \"item:\" hint on line 431 (call has more than one argument, so \"item\"\
@@ -868,21 +869,21 @@ let ``textDocument/inlayHint never shows a type hint for an implicit lambda para
     // ships with all inline hints off by default.
 
     // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- `x` infers to `int`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 144u |> hasHintWithLabel ": int",
         "Expected no \": int\" implicit lambda-parameter type hint on line 144"
     )
 
     // line 460 (0-indexed): `repository.Query<Widget>().Where(p => p != null);` -- `p` infers to
     // `Widget`, spelled out one call earlier at `Query<Widget>`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 460u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" implicit lambda-parameter type hint on line 460"
     )
 
     // line 466 (0-indexed): `chained.Where(p => p != null);` -- `p` also infers to `Widget`, but
     // here the receiver isn't itself a generic invocation that spells the type out
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 466u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" implicit lambda-parameter type hint on line 466"
     )
@@ -895,7 +896,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a string literal ini
     let hints = getHints client doc
 
     // line 474 (0-indexed): `var greeting = "hi";`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 474u |> hasHintWithLabel ": string",
         "Expected no \": string\" hint on line 474 (type is directly implied by the string literal)"
     )
@@ -908,7 +909,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a numeric literal in
     let hints = getHints client doc
 
     // line 479 (0-indexed): `var count = 42;`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 479u |> hasHintWithLabel ": int",
         "Expected no \": int\" hint on line 479 (type is directly implied by the numeric literal)"
     )
@@ -921,7 +922,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a boolean literal in
     let hints = getHints client doc
 
     // line 484 (0-indexed): `var flag = true;`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 484u |> hasHintWithLabel ": bool",
         "Expected no \": bool\" hint on line 484 (type is directly implied by the boolean literal)"
     )
@@ -935,7 +936,7 @@ let ``textDocument/inlayHint keeps a var type hint for a unary-negated numeric e
 
     // line 489 (0-indexed): `var negated = -1;` -- a PrefixUnaryExpressionSyntax, not itself a
     // LiteralExpressionSyntax, so intentionally out of scope for the literal-initializer rule
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         hints |> hintsOnLine 489u |> hasHintWithLabel ": int",
         "Expected a \": int\" hint on line 489 (initializer is a unary expression, not a bare literal)"
     )
@@ -948,7 +949,7 @@ let ``textDocument/inlayHint suppresses a var type hint for an interpolated stri
     let hints = getHints client doc
 
     // line 498 (0-indexed): `var greeting = $"Hello, {name}";`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 498u |> hasHintWithLabel ": string",
         "Expected no \": string\" hint on line 498 (interpolated string's natural type is always string)"
     )
@@ -961,7 +962,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an "as" expression'
     let hints = getHints client doc
 
     // line 506 (0-indexed): `var widget = obj as Widget;`
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 506u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" hint on line 506 (type is already spelled out right after `as`)"
     )
@@ -980,7 +981,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
     // idiom cited in plans/inlay-hint-reduction.md: `Widget` is already spelled out earlier in the
     // same chain, at `Query<Widget>()`, so the `: List<Widget>` hint on the materialized result is
     // redundant.
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 551u |> hasHintWithLabel ": List<Widget>",
         "Expected no \": List<Widget>\" hint on line 551 (element type is already spelled out\
          earlier in the fluent chain, at Query<Widget>())"
@@ -997,7 +998,7 @@ let ``textDocument/inlayHint keeps a var type hint when the element type isn't s
     // -- the explicit `Query<Widget>()` generic invocation happened in a *previous* statement, not
     // in this initializer's own invocation chain, so the type isn't "spelled out" from this hint's
     // point of view and the hint should be kept.
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         hints |> hintsOnLine 557u |> hasHintWithLabel ": List<Widget>",
         "Expected a \": List<Widget>\" hint on line 557 (element type isn't spelled out anywhere\
          in this initializer's own invocation chain)"
@@ -1020,7 +1021,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
     // The synchronous version of this rule (tested above) doesn't unwrap an `AwaitExpressionSyntax`
     // wrapping the whole invocation chain, so it missed this -- extremely common, since virtually
     // every real NHibernate `...Async()` call site is awaited -- shape.
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 562u |> hasHintWithLabel ": List<Widget>",
         "Expected no \": List<Widget>\" hint on line 562 (element type is already spelled out\
          earlier in the fluent chain, at Query<Widget>(), even though the chain is awaited)"
@@ -1044,7 +1045,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an awaited generic 
     // chain -- which, before this fix, didn't unwrap `await` either. The variable is deliberately
     // named `result` (not `widget`) so this test isn't accidentally passing for the unrelated
     // identifier-echoes-type-name reason (rule #6).
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         hints |> hintsOnLine 585u |> hasHintWithLabel ": Widget",
         "Expected no \": Widget\" hint on line 585 (type is already spelled out in the awaited\
          invocation's explicit type argument)"
@@ -1062,9 +1063,9 @@ let ``textDocument/inlayHint does not truncate a short type hint's label or add 
     let onLine = hints |> hintsOnLine 603u
     let typeHint = onLine |> Array.tryFind (fun h -> labelText h = ": string")
 
-    Assert.IsTrue(typeHint.IsSome, sprintf "Expected a \": string\" hint on line 603, got: %A" onLine)
+    ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a \": string\" hint on line 603, got: %A" onLine)
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         typeHint |> Option.bind tooltipText |> Option.isNone,
         "Expected no tooltip on an untruncated, short type hint"
     )
@@ -1082,28 +1083,28 @@ let ``textDocument/inlayHint middle-truncates a long anonymous-type hint and mov
     let onLine = hints |> hintsOnLine 608u
     let typeHint = onLine |> Array.tryFind (fun h -> (labelText h).StartsWith(": "))
 
-    Assert.IsTrue(typeHint.IsSome, sprintf "Expected a type hint on line 608, got: %A" onLine)
+    ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a type hint on line 608, got: %A" onLine)
 
     let label = typeHint |> Option.map labelText |> Option.defaultValue ""
 
-    Assert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
+    ClassicAssert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
 
     // 2 for the ": " prefix, plus the truncation threshold itself.
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         label.Length <= 2 + 40,
         sprintf "Expected the truncated label to be short, got (%d chars): %s" label.Length label
     )
 
     let tooltip = typeHint |> Option.bind tooltipText
 
-    Assert.IsTrue(tooltip.IsSome, "Expected a tooltip carrying the full, untruncated type name")
+    ClassicAssert.IsTrue(tooltip.IsSome, "Expected a tooltip carrying the full, untruncated type name")
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         (tooltip |> Option.defaultValue "").Length > label.Length,
         "Expected the tooltip's full type name to be longer than the truncated label"
     )
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         (tooltip |> Option.defaultValue "").Contains("..."),
         "Expected the tooltip to hold the full, untruncated type name, not another truncated copy"
     )

@@ -3,6 +3,7 @@ module CSharpLanguageServer.Tests.HoverTests
 open System.Threading
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -26,11 +27,11 @@ let testHoverWorksInCSharpFile () =
     | Some hover ->
         match hover.Contents with
         | U3.C1 c ->
-            Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-            Assert.AreEqual("```csharp\nvoid Class.MethodA(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
+            ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
+            ClassicAssert.AreEqual("```csharp\nvoid Class.MethodA(string arg)\n```", c.Value.ReplaceLineEndings("\n"))
         | _ -> failwith "C1 was expected"
 
-        Assert.IsTrue(hover.Range.IsNone)
+        ClassicAssert.IsTrue(hover.Range.IsNone)
 
     | _ -> failwith "Some (U3.C1 c) was expected"
 
@@ -46,9 +47,9 @@ let testHoverWorksInCSharpFile () =
 
     match hover1 with
     | Some { Contents = U3.C1 c } ->
-        Assert.AreEqual(MarkupKind.Markdown, c.Kind)
+        ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
 
-        Assert.AreEqual(
+        ClassicAssert.AreEqual(
             "```csharp\nstring\n```\n\nRepresents text as a sequence of UTF-16 code units.",
             c.Value.ReplaceLineEndings("\n")
         )
@@ -64,7 +65,7 @@ let testHoverWorksInCSharpFile () =
 
     let hover2: Hover option = client.Request("textDocument/hover", hover2Params)
 
-    Assert.IsTrue(hover2.IsNone)
+    ClassicAssert.IsTrue(hover2.IsNone)
 
 [<Test>]
 [<Retry(3)>]
@@ -82,11 +83,11 @@ let testHoverWorksInRazorFile () =
 
     let hover0: Hover option = client.Request("textDocument/hover", hover0Params)
 
-    Assert.IsTrue(hover0.IsSome)
+    ClassicAssert.IsTrue(hover0.IsSome)
 
     match hover0 with
     | Some { Contents = U3.C1 c } ->
-        Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-        Assert.AreEqual("```csharp\nstring? IndexViewModel.Output\n```", c.Value.ReplaceLineEndings("\n"))
+        ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
+        ClassicAssert.AreEqual("```csharp\nstring? IndexViewModel.Output\n```", c.Value.ReplaceLineEndings("\n"))
 
     | _ -> failwith "Some (U3.C1 c) was expected"

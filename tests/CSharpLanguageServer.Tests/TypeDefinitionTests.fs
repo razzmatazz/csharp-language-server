@@ -3,6 +3,7 @@ module CSharpLanguageServer.Tests.TypeDefinitionTests
 open System
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -30,7 +31,7 @@ let ``test textDocument/typeDefinition works`` () =
 
     match typeDefinition0 with
     | Some(U2.C1(U2.C2 ls)) ->
-        Assert.AreEqual(1, ls.Length)
+        ClassicAssert.AreEqual(1, ls.Length)
 
         let expectedTypeDefLocationsForStringArg =
             [| { Uri = csharpUriForSystemString
@@ -38,6 +39,6 @@ let ``test textDocument/typeDefinition works`` () =
                    { Start = { Line = 12u; Character = 20u }
                      End = { Line = 12u; Character = 26u } } } |]
 
-        Assert.AreEqual(expectedTypeDefLocationsForStringArg, ls)
+        ClassicAssert.AreEqual(expectedTypeDefLocationsForStringArg, ls)
 
     | _ -> failwith "Some U2.C1 (U2.C2) was expected"

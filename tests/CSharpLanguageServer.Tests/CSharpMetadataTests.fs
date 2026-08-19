@@ -3,6 +3,7 @@ module CSharpLanguageServer.Tests.CSharpMetadataTests
 open System
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Types
 
@@ -31,8 +32,8 @@ let ``test csharp/metadata works`` () =
 
     match typeDefinition0 with
     | Some(U2.C1(U2.C2 ls)) ->
-        Assert.AreEqual(1, ls.Length)
-        Assert.AreEqual(csharpUriForSystemString, ls[0].Uri)
+        ClassicAssert.AreEqual(1, ls.Length)
+        ClassicAssert.AreEqual(csharpUriForSystemString, ls[0].Uri)
 
     | _ -> failwith "Some U2.C1 (U2.C2) was expected"
 
@@ -44,10 +45,10 @@ let ``test csharp/metadata works`` () =
         | Some response -> response
         | None -> failwith "no response from csharp/metadata"
 
-    Assert.AreEqual("System.Runtime", metadata0.AssemblyName)
-    Assert.AreEqual("Project", metadata0.ProjectName)
-    Assert.AreEqual("System.String", metadata0.SymbolName)
-    Assert.IsTrue(metadata0.Source.StartsWith "using System")
+    ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
+    ClassicAssert.AreEqual("Project", metadata0.ProjectName)
+    ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
+    ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
 
 [<Test>]
 let ``test csharp/metadata works with no prior LSP request`` () =
@@ -68,10 +69,10 @@ let ``test csharp/metadata works with no prior LSP request`` () =
         | Some response -> response
         | None -> failwithf "no response from csharp/metadata for Uri=%s" csharpUriForSystemString
 
-    Assert.AreEqual("System.Runtime", metadata0.AssemblyName)
-    Assert.AreEqual("Project", metadata0.ProjectName)
-    Assert.AreEqual("System.String", metadata0.SymbolName)
-    Assert.IsTrue(metadata0.Source.StartsWith "using System")
+    ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
+    ClassicAssert.AreEqual("Project", metadata0.ProjectName)
+    ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
+    ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
 
 [<Test>]
 let ``csharp metadata preserves type names ending in suffix characters`` () =
@@ -92,7 +93,7 @@ let ``csharp metadata preserves type names ending in suffix characters`` () =
         | Some response -> response
         | None -> failwithf "no response from csharp/metadata for Uri=%s" processMetadataUri
 
-    Assert.AreEqual("System.Diagnostics.Process", metadata.SymbolName)
+    ClassicAssert.AreEqual("System.Diagnostics.Process", metadata.SymbolName)
     StringAssert.Contains("class Process", metadata.Source)
 
 [<Test>]

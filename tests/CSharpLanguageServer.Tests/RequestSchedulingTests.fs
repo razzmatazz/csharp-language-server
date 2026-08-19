@@ -2,6 +2,7 @@ module CSharpLanguageServer.Tests.RequestSchedulingTests
 
 open System
 open NUnit.Framework
+open NUnit.Framework.Legacy
 
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
@@ -140,13 +141,13 @@ let ``registerRequest adds a Pending request to the queue`` () =
     let queue =
         RequestQueue.Empty |> registerRequest 1L "textDocument/hover" ReadOnly None rc
 
-    Assert.AreEqual(1, queue.Requests.Count)
+    ClassicAssert.AreEqual(1, queue.Requests.Count)
 
     let req = queue.Requests.[1L]
-    Assert.AreEqual(Pending, req.Phase)
-    Assert.AreEqual("textDocument/hover", req.Name)
-    Assert.AreEqual(ReadOnly, req.Mode)
-    Assert.AreEqual(1L, req.RpcOrdinal)
+    ClassicAssert.AreEqual(Pending, req.Phase)
+    ClassicAssert.AreEqual("textDocument/hover", req.Name)
+    ClassicAssert.AreEqual(ReadOnly, req.Mode)
+    ClassicAssert.AreEqual(1L, req.RpcOrdinal)
 
 [<Test>]
 let ``registerRequest preserves existing requests`` () =
@@ -158,9 +159,9 @@ let ``registerRequest preserves existing requests`` () =
         |> registerRequest 1L "textDocument/hover" ReadOnly None rc1
         |> registerRequest 2L "textDocument/rename" ReadWrite None rc2
 
-    Assert.AreEqual(2, queue.Requests.Count)
-    Assert.IsTrue(queue.Requests.ContainsKey(1L))
-    Assert.IsTrue(queue.Requests.ContainsKey(2L))
+    ClassicAssert.AreEqual(2, queue.Requests.Count)
+    ClassicAssert.IsTrue(queue.Requests.ContainsKey(1L))
+    ClassicAssert.IsTrue(queue.Requests.ContainsKey(2L))
 
 // ---------------------------------------------------------------------------
 // finishRequest
@@ -177,7 +178,7 @@ let ``finishRequest transitions request to Finished with buffered events`` () =
     let updated = queue |> finishRequest 1L
 
     let req = updated.Requests.[1L]
-    Assert.AreEqual(Finished, req.Phase)
+    ClassicAssert.AreEqual(Finished, req.Phase)
 
 // ---------------------------------------------------------------------------
 // processRequestQueue — Retired cases
@@ -197,10 +198,10 @@ let ``processRequestQueue returns Retired for lowest-ordinal finished request`` 
 
     match result with
     | Retired(retiredRequest, updatedQueue) ->
-        Assert.AreEqual("a", retiredRequest.Name)
-        Assert.AreEqual(1, updatedQueue.Requests.Count)
-        Assert.IsTrue(updatedQueue.Requests.ContainsKey(2L))
-    | other -> Assert.Fail($"Expected Retired but got {other}")
+        ClassicAssert.AreEqual("a", retiredRequest.Name)
+        ClassicAssert.AreEqual(1, updatedQueue.Requests.Count)
+        ClassicAssert.IsTrue(updatedQueue.Requests.ContainsKey(2L))
+    | other -> ClassicAssert.Fail($"Expected Retired but got {other}")
 
 [<Test>]
 let ``processRequestQueue returns Waiting when head is still Running`` () =
@@ -216,7 +217,7 @@ let ``processRequestQueue returns Waiting when head is still Running`` () =
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting but got {other}")
 
 [<Test>]
 let ``processRequestQueue returns Retired skipping running ReadOnlyBackground`` () =
@@ -231,8 +232,8 @@ let ``processRequestQueue returns Retired skipping running ReadOnlyBackground`` 
     let result = processRequestQueue defaultSettings makeTestServerRequestContext queue
 
     match result with
-    | Retired(retiredRequest, _) -> Assert.AreEqual("normal", retiredRequest.Name)
-    | other -> Assert.Fail($"Expected Retired but got {other}")
+    | Retired(retiredRequest, _) -> ClassicAssert.AreEqual("normal", retiredRequest.Name)
+    | other -> ClassicAssert.Fail($"Expected Retired but got {other}")
 
 // ---------------------------------------------------------------------------
 // enterDrainingMode / enterDispatchingMode
@@ -260,9 +261,9 @@ let ``enterDrainingMode cancels all running requests that have a CTS`` () =
 
     let result = enterDrainingMode queue
 
-    Assert.IsTrue(result.IsSome)
-    Assert.IsTrue(cts1.IsCancellationRequested, "ReadWrite running request should be cancelled")
-    Assert.IsTrue(cts2.IsCancellationRequested, "ReadOnlyBackground running request should be cancelled")
+    ClassicAssert.IsTrue(result.IsSome)
+    ClassicAssert.IsTrue(cts1.IsCancellationRequested, "ReadWrite running request should be cancelled")
+    ClassicAssert.IsTrue(cts2.IsCancellationRequested, "ReadOnlyBackground running request should be cancelled")
 
 [<Test>]
 let ``enterDrainingMode does not cancel pending or finished requests`` () =
@@ -282,8 +283,8 @@ let ``enterDrainingMode does not cancel pending or finished requests`` () =
 
     let _ = enterDrainingMode queue
 
-    Assert.IsFalse(ctsPending.IsCancellationRequested, "Pending request should not be cancelled")
-    Assert.IsFalse(ctsFinished.IsCancellationRequested, "Finished request should not be cancelled")
+    ClassicAssert.IsFalse(ctsPending.IsCancellationRequested, "Pending request should not be cancelled")
+    ClassicAssert.IsFalse(ctsFinished.IsCancellationRequested, "Finished request should not be cancelled")
 
 [<Test>]
 let ``enterDrainingMode tolerates running requests with no CTS`` () =
@@ -292,7 +293,7 @@ let ``enterDrainingMode tolerates running requests with no CTS`` () =
             Requests = Map.ofList [ (1L, makeTestRequest 1L "a" ReadWrite Running) ] }
 
     // Should not throw even though Cts = None
-    Assert.DoesNotThrow(fun () -> enterDrainingMode queue |> ignore)
+    ClassicAssert.DoesNotThrow(System.Action(fun () -> enterDrainingMode queue |> ignore))
 
 [<Test>]
 let ``enterDrainingMode does not cancel when already draining`` () =
@@ -309,8 +310,8 @@ let ``enterDrainingMode does not cancel when already draining`` () =
 
     let result = enterDrainingMode queue
 
-    Assert.IsTrue(result.IsNone, "Should return None when already draining")
-    Assert.IsFalse(cts.IsCancellationRequested, "Should not cancel when already draining")
+    ClassicAssert.IsTrue(result.IsNone, "Should return None when already draining")
+    ClassicAssert.IsFalse(cts.IsCancellationRequested, "Should not cancel when already draining")
 
 [<Test>]
 let ``enterDrainingMode sets DrainingUpTo with max ordinal`` () =
@@ -323,11 +324,11 @@ let ``enterDrainingMode sets DrainingUpTo with max ordinal`` () =
 
     let result = enterDrainingMode queue
 
-    Assert.IsTrue(result.IsSome)
+    ClassicAssert.IsTrue(result.IsSome)
 
     match result.Value.Mode with
-    | DrainingUpTo ord -> Assert.AreEqual(10L, ord)
-    | _ -> Assert.Fail("Expected DrainingUpTo mode")
+    | DrainingUpTo ord -> ClassicAssert.AreEqual(10L, ord)
+    | _ -> ClassicAssert.Fail("Expected DrainingUpTo mode")
 
 [<Test>]
 let ``enterDrainingMode returns None when already draining`` () =
@@ -336,7 +337,7 @@ let ``enterDrainingMode returns None when already draining`` () =
             Mode = DrainingUpTo 5L }
 
     let result = enterDrainingMode queue
-    Assert.IsTrue(result.IsNone)
+    ClassicAssert.IsTrue(result.IsNone)
 
 [<Test>]
 let ``enterDispatchingMode resets to Dispatching`` () =
@@ -345,7 +346,7 @@ let ``enterDispatchingMode resets to Dispatching`` () =
             Mode = DrainingUpTo 5L }
 
     let result = enterDispatchingMode queue
-    Assert.AreEqual(Dispatching, result.Mode)
+    ClassicAssert.AreEqual(Dispatching, result.Mode)
 
 // ---------------------------------------------------------------------------
 // processRequestQueue
@@ -358,7 +359,7 @@ let ``processRequestQueue returns Waiting on empty queue`` () =
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting but got {other}")
 
 [<Test>]
 let ``processRequestQueue returns Waiting when no request can be activated`` () =
@@ -375,7 +376,7 @@ let ``processRequestQueue returns Waiting when no request can be activated`` () 
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting but got {other}")
 
 [<Test>]
 let ``processRequestQueue activates a pending ReadOnly request`` () =
@@ -388,11 +389,11 @@ let ``processRequestQueue activates a pending ReadOnly request`` () =
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
-        Assert.AreEqual("textDocument/hover", activatedRequest.Name)
-        Assert.AreEqual(ReadOnly, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.Phase)
-        Assert.IsTrue(activatedRequest.RunningSince.IsSome)
-    | other -> Assert.Fail($"Expected Activated but got {other}")
+        ClassicAssert.AreEqual("textDocument/hover", activatedRequest.Name)
+        ClassicAssert.AreEqual(ReadOnly, activatedRequest.Mode)
+        ClassicAssert.AreEqual(Running, activatedRequest.Phase)
+        ClassicAssert.IsTrue(activatedRequest.RunningSince.IsSome)
+    | other -> ClassicAssert.Fail($"Expected Activated but got {other}")
 
 [<Test>]
 let ``processRequestQueue activates a pending ReadWrite request when queue is idle`` () =
@@ -405,11 +406,11 @@ let ``processRequestQueue activates a pending ReadWrite request when queue is id
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
-        Assert.AreEqual("textDocument/rename", activatedRequest.Name)
-        Assert.AreEqual(ReadWrite, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.Phase)
-        Assert.IsTrue(activatedRequest.RunningSince.IsSome)
-    | other -> Assert.Fail($"Expected Activated but got {other}")
+        ClassicAssert.AreEqual("textDocument/rename", activatedRequest.Name)
+        ClassicAssert.AreEqual(ReadWrite, activatedRequest.Mode)
+        ClassicAssert.AreEqual(Running, activatedRequest.Phase)
+        ClassicAssert.IsTrue(activatedRequest.RunningSince.IsSome)
+    | other -> ClassicAssert.Fail($"Expected Activated but got {other}")
 
 // ---------------------------------------------------------------------------
 // Gap-in-sequence tests
@@ -450,7 +451,7 @@ let ``processRequestQueue does not activate ReadOnly request when there is a gap
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting (gap at ordinal 2 could be RW) but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting (gap at ordinal 2 could be RW) but got {other}")
 
 [<Test>]
 let ``processRequestQueue does not activate ReadWrite request when there is a gap before it`` () =
@@ -466,7 +467,7 @@ let ``processRequestQueue does not activate ReadWrite request when there is a ga
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting (gap at ordinal 1 could be RW) but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting (gap at ordinal 1 could be RW) but got {other}")
 
 [<Test>]
 let ``processRequestQueue does not activate ReadOnly past a gap even when earlier requests are running`` () =
@@ -488,7 +489,7 @@ let ``processRequestQueue does not activate ReadOnly past a gap even when earlie
 
     match result with
     | Waiting -> ()
-    | other -> Assert.Fail($"Expected Waiting (gap at ordinals 3-4 could be RW) but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Waiting (gap at ordinals 3-4 could be RW) but got {other}")
 
 [<Test>]
 let ``canActivateRequest returns false for ReadOnly request past a gap`` () =
@@ -506,7 +507,7 @@ let ``canActivateRequest returns false for ReadOnly request past a gap`` () =
 
     let canActivate = canActivateRequest queue pendingRequests (3L, request3)
 
-    Assert.IsFalse(canActivate, "Should not activate a request past a gap in the ordinal sequence")
+    ClassicAssert.IsFalse(canActivate, "Should not activate a request past a gap in the ordinal sequence")
 
 [<Test>]
 let ``canActivateRequest returns false for ReadWrite request with gap before it`` () =
@@ -521,7 +522,7 @@ let ``canActivateRequest returns false for ReadWrite request with gap before it`
 
     let canActivate = canActivateRequest queue pendingRequests (5L, request5)
 
-    Assert.IsFalse(canActivate, "Should not activate RW request when earlier ordinals have not arrived")
+    ClassicAssert.IsFalse(canActivate, "Should not activate RW request when earlier ordinals have not arrived")
 
 [<Test>]
 let ``processRequestQueue returns Drained when all requests up to drain ordinal are retired`` () =
@@ -535,7 +536,7 @@ let ``processRequestQueue returns Drained when all requests up to drain ordinal 
 
     match result with
     | Drained -> ()
-    | other -> Assert.Fail($"Expected Drained but got {other}")
+    | other -> ClassicAssert.Fail($"Expected Drained but got {other}")
 
 [<Test>]
 let ``processRequestQueue activates ReadWrite request when only ReadOnlyBackground is running`` () =
@@ -552,8 +553,8 @@ let ``processRequestQueue activates ReadWrite request when only ReadOnlyBackgrou
 
     match result with
     | Activated(activatedRequest, _updatedQueue) ->
-        Assert.AreEqual("textDocument/rename", activatedRequest.Name)
-        Assert.AreEqual(ReadWrite, activatedRequest.Mode)
-        Assert.AreEqual(Running, activatedRequest.Phase)
-        Assert.IsTrue(activatedRequest.RunningSince.IsSome)
-    | other -> Assert.Fail($"Expected Activated but got {other}")
+        ClassicAssert.AreEqual("textDocument/rename", activatedRequest.Name)
+        ClassicAssert.AreEqual(ReadWrite, activatedRequest.Mode)
+        ClassicAssert.AreEqual(Running, activatedRequest.Phase)
+        ClassicAssert.IsTrue(activatedRequest.RunningSince.IsSome)
+    | other -> ClassicAssert.Fail($"Expected Activated but got {other}")

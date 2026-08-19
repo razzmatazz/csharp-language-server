@@ -3,6 +3,7 @@ module CSharpLanguageServer.Tests.DocumentFormattingTests
 open System.IO
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -41,7 +42,7 @@ let testEditorConfigFormatting () =
         let actualClassContents =
             classFile.GetFileContentsWithTextEditsApplied(tes).ReplaceLineEndings("\n")
 
-        Assert.AreEqual(expectedClassContents, actualClassContents)
+        ClassicAssert.AreEqual(expectedClassContents, actualClassContents)
     | None -> failwith "Some TextEdit's were expected"
 
 [<Test>]
@@ -84,7 +85,7 @@ let testEofFormattingOptionsNormalizeNewlinesWithoutChangingFinallyPlacement () 
         match textEdits with
         | Some textEdits ->
             let actual = classFile.GetFileContentsWithTextEditsApplied(textEdits)
-            Assert.AreEqual(expected, actual, caseName)
+            ClassicAssert.AreEqual(expected, actual, caseName)
         | None -> failwith "Some TextEdit's were expected"
 
     assertFormatting "insert true" sourceWithoutFinalNewline (Some true) None sourceWithFinalNewline

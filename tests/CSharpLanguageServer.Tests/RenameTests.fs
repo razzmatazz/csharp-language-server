@@ -4,6 +4,7 @@ open System
 open System.IO
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -29,7 +30,7 @@ let testRenameCanBeAppliedToALocalVariable () =
           Placeholder = "str" }
         |> U3.C2
 
-    Assert.AreEqual(Some expectedPrepareResult, prepareResult)
+    ClassicAssert.AreEqual(Some expectedPrepareResult, prepareResult)
 
     let renameParams: RenameParams =
         { TextDocument = { Uri = classFile.Uri }
@@ -54,4 +55,4 @@ let testRenameCanBeAppliedToALocalVariable () =
         let actualClassContents =
             classFile.GetFileContentsWithTextEditsApplied(textEdits).ReplaceLineEndings("\n")
 
-        Assert.AreEqual(expectedClassContents, actualClassContents)
+        ClassicAssert.AreEqual(expectedClassContents, actualClassContents)
