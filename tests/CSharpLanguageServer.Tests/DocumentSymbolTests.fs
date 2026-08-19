@@ -105,4 +105,7 @@ let ``test textDocument/documentSymbol root range covers file with namespace`` (
     ClassicAssert.AreEqual(0u, root.Range.Start.Character)
 
     // Root range should extend to end of file, not be empty
-    ClassicAssert.IsTrue(root.Range.End.Line > 0u, "Root range should cover the full file, not be an empty range at 0,0")
+    ClassicAssert.IsTrue(
+        root.Range.End.Line > 0u,
+        "Root range should cover the full file, not be an empty range at 0,0"
+    )

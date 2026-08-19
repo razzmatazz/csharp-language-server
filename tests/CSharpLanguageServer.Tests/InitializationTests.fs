@@ -129,7 +129,10 @@ let testServerRegistersCapabilitiesWithTheClient () =
 
     ClassicAssert.AreEqual(null, serverCaps.DeclarationProvider)
 
-    ClassicAssert.AreEqual(true |> U2<bool, DocumentFormattingOptions>.C1 |> Some, serverCaps.DocumentFormattingProvider)
+    ClassicAssert.AreEqual(
+        true |> U2<bool, DocumentFormattingOptions>.C1 |> Some,
+        serverCaps.DocumentFormattingProvider
+    )
 
     ClassicAssert.AreEqual(true |> U2<bool, ReferenceOptions>.C1 |> Some, serverCaps.ReferencesProvider)
 
@@ -296,7 +299,11 @@ let testMultiTargetWorkspace () =
             match hover.Contents with
             | U3.C1 c ->
                 ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
-                ClassicAssert.AreEqual(sprintf "```csharp\n%s\n```" expectedMethodName, c.Value.ReplaceLineEndings("\n"))
+
+                ClassicAssert.AreEqual(
+                    sprintf "```csharp\n%s\n```" expectedMethodName,
+                    c.Value.ReplaceLineEndings("\n")
+                )
             | _ -> failwith "C1 was expected"
 
             ClassicAssert.IsTrue(hover.Range.IsNone)

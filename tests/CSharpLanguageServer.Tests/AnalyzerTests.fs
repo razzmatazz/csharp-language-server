@@ -143,7 +143,10 @@ let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
                 | _ -> [||])
             |> Set.ofArray
 
-        ClassicAssert.IsTrue(allCodes.Contains("IDE0040"), $"Expected IDE0040 in workspace diagnostics, got: {allCodes}")
+        ClassicAssert.IsTrue(
+            allCodes.Contains("IDE0040"),
+            $"Expected IDE0040 in workspace diagnostics, got: {allCodes}"
+        )
 
     | _ -> failwith "'Some' was expected"
 

@@ -189,7 +189,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report1 with
-        | Some(U2.C1 report) -> ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
+        | Some(U2.C1 report) ->
+            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -224,7 +225,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report4 with
-        | Some(U2.C1 report) -> ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
+        | Some(U2.C1 report) ->
+            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
         | _ -> failwith "U2.C1 is expected"
 
         cshtmlFile.Save()
@@ -247,7 +249,11 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report6 with
         | Some(U2.C1 report) ->
-            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error after file close")
+            ClassicAssert.GreaterOrEqual(
+                report.Items.Length,
+                1,
+                "Expected at least 1 diagnostic error after file close"
+            )
         | _ -> failwith "U2.C1 is expected"
 
 [<Test>]

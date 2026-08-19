@@ -81,7 +81,10 @@ let ``textDocument/foldingRange includes a range for a constructor`` () =
         ranges
         |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
 
-    ClassicAssert.IsTrue(hasConstructor, sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges)
+    ClassicAssert.IsTrue(
+        hasConstructor,
+        sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges
+    )
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for a property`` () =
@@ -151,7 +154,10 @@ let ``textDocument/foldingRange includes interface range`` () =
         ranges
         |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
 
-    ClassicAssert.IsTrue(hasInterface, sprintf "Expected an interface folding range starting at line 43, got: %A" ranges)
+    ClassicAssert.IsTrue(
+        hasInterface,
+        sprintf "Expected an interface folding range starting at line 43, got: %A" ranges
+    )
 
 [<Test>]
 let ``textDocument/foldingRange returns sorted ranges`` () =

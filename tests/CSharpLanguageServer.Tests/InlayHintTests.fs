@@ -63,7 +63,10 @@ let ``textDocument/inlayHint shows parameter hints for a regular call with diffe
     // line 30 (0-indexed): `helper.Add(1, 2);`
     let onLine = hints |> hintsOnLine 30u
 
-    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
+    ClassicAssert.IsTrue(
+        onLine |> hasHintWithLabel "first:",
+        sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine
+    )
 
     ClassicAssert.IsTrue(
         onLine |> hasHintWithLabel "second:",
@@ -300,7 +303,10 @@ let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter
         sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
     )
 
-    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
+    ClassicAssert.IsTrue(
+        onLine |> hasHintWithLabel "count:",
+        sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine
+    )
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
@@ -1087,7 +1093,10 @@ let ``textDocument/inlayHint middle-truncates a long anonymous-type hint and mov
 
     let label = typeHint |> Option.map labelText |> Option.defaultValue ""
 
-    ClassicAssert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
+    ClassicAssert.IsTrue(
+        label.Contains("..."),
+        sprintf "Expected the truncated label to contain an ellipsis, got: %s" label
+    )
 
     // 2 for the ": " prefix, plus the truncation threshold itself.
     ClassicAssert.IsTrue(

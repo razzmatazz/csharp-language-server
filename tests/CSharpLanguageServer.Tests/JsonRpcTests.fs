@@ -529,7 +529,11 @@ let testNotificationWithIdIsRoutedAsRequest () =
     waitUntil 5000 (fun () -> requestHandlerCalled.Value) |> ignore
 
     ClassicAssert.IsTrue(requestHandlerCalled.Value, "Request handler should be called for message with 'id'")
-    ClassicAssert.IsFalse(notificationHandlerCalled.Value, "Notification handler should NOT be called for message with 'id'")
+
+    ClassicAssert.IsFalse(
+        notificationHandlerCalled.Value,
+        "Notification handler should NOT be called for message with 'id'"
+    )
 
 [<Test>]
 let testWriteQueueDrainsAllResponses () =
@@ -912,7 +916,11 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
     for task, label in [ task1, "first"; task2, "second" ] do
         match task.Result with
         | Error err ->
-            ClassicAssert.AreEqual(-32000, err.GetProperty("code").GetInt32(), sprintf "Expected -32000 for %s call" label)
+            ClassicAssert.AreEqual(
+                -32000,
+                err.GetProperty("code").GetInt32(),
+                sprintf "Expected -32000 for %s call" label
+            )
 
             ClassicAssert.AreEqual("Call timed out", err.GetProperty("message").GetString())
         | Ok _ -> ClassicAssert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
@@ -923,7 +931,12 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
     let afterStats = getJsonRpcStats server |> Async.RunSynchronously
     ClassicAssert.AreEqual(0, afterStats.PendingOutboundCallCount, "All pending calls should be gone after timeout")
     ClassicAssert.AreEqual(false, afterStats.TimerArmed, "Timer should be disarmed once no timed calls remain")
-    ClassicAssert.AreEqual(2, afterStats.RecentlyTimedOutCallCount, "Both timed-out IDs should be in RecentlyTimedOutCalls")
+
+    ClassicAssert.AreEqual(
+        2,
+        afterStats.RecentlyTimedOutCallCount,
+        "Both timed-out IDs should be in RecentlyTimedOutCalls"
+    )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -1102,7 +1115,11 @@ let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
             | _ -> false)
 
     ClassicAssert.IsTrue(lateWarn, "Expected an RpcWarn entry about a late response for the timed-out call id")
-    ClassicAssert.IsFalse(spuriousError, "Must NOT receive an RpcError for the late response (id is in RecentlyTimedOutCalls)")
+
+    ClassicAssert.IsFalse(
+        spuriousError,
+        "Must NOT receive an RpcError for the late response (id is in RecentlyTimedOutCalls)"
+    )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -1322,7 +1339,12 @@ let testShutdownDrainsAllConcurrentHandlers () =
     // Once fully stopped, the phase must flip to Stopped and the map be empty.
     let stoppedStats = getJsonRpcStats server |> Async.RunSynchronously
     ClassicAssert.AreEqual("Stopped", stoppedStats.Phase)
-    ClassicAssert.AreEqual(0, stoppedStats.RunningInboundRequestCount, "No handlers should remain after shutdown completes")
+
+    ClassicAssert.AreEqual(
+        0,
+        stoppedStats.RunningInboundRequestCount,
+        "No handlers should remain after shutdown completes"
+    )
 
 // ---- Late sendJsonRpc* guard tests ----
 
@@ -1343,7 +1365,11 @@ let testSendNotificationAfterShutdownIsDropped () =
     sendJsonRpcNotification server "window/logMessage" (JsonSerializer.SerializeToElement({| message = "late" |}))
     |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual(bytesBeforeSend, stdout.Length, "No bytes should be written for a post-shutdown notification")
+    ClassicAssert.AreEqual(
+        bytesBeforeSend,
+        stdout.Length,
+        "No bytes should be written for a post-shutdown notification"
+    )
 
 [<Test>]
 let testSendCallAfterShutdownReturnsError () =
@@ -2453,11 +2479,18 @@ let testSingleCallTimeoutWithNoResponseReturnsError () =
 
     sw.Stop()
 
-    ClassicAssert.IsTrue(completed, sprintf "Call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds)
+    ClassicAssert.IsTrue(
+        completed,
+        sprintf "Call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds
+    )
 
     match result.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32000, err.GetProperty("code").GetInt32(), "Expected error code -32000 (Call timed out)")
+        ClassicAssert.AreEqual(
+            -32000,
+            err.GetProperty("code").GetInt32(),
+            "Expected error code -32000 (Call timed out)"
+        )
 
         ClassicAssert.AreEqual("Call timed out", err.GetProperty("message").GetString())
     | Ok _ -> ClassicAssert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
@@ -2481,7 +2514,13 @@ let testGetRpcStatsIdleTransportIsActiveWithEmptyCounters () =
     ClassicAssert.AreEqual("Active", stats.Phase)
     ClassicAssert.AreEqual(0, stats.WriteQueueLength, "Idle transport should have empty write queue")
     ClassicAssert.AreEqual(0, stats.PendingOutboundCallCount, "Idle transport should have no pending outbound calls")
-    ClassicAssert.AreEqual(0, stats.RunningInboundRequestCount, "Idle transport should have no running inbound requests")
+
+    ClassicAssert.AreEqual(
+        0,
+        stats.RunningInboundRequestCount,
+        "Idle transport should have no running inbound requests"
+    )
+
     ClassicAssert.AreEqual(false, stats.TimerArmed, "Timer should not be armed when there are no timed calls")
     ClassicAssert.AreEqual(0, stats.RecentlyTimedOutCallCount, "No recently timed-out calls on a fresh transport")
 
@@ -2537,7 +2576,12 @@ let testGetRpcStatsRunningHandlerIsVisible () =
     Thread.Sleep 50 // let the actor process HandlerCompleted
 
     let afterStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0, afterStats.RunningInboundRequestCount, "Running count should be zero after handler finishes")
+
+    ClassicAssert.AreEqual(
+        0,
+        afterStats.RunningInboundRequestCount,
+        "Running count should be zero after handler finishes"
+    )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
