@@ -148,8 +148,8 @@ module CallHierarchy =
                 | Some(symbol, _, _) when isCallableSymbol symbol ->
                     // SymbolFinder has no outgoing counterpart to FindCallersAsync, so walk
                     // every declaration body of the symbol (a partial method can have
-                    // several) and resolve each invocation / object creation through that
-                    // declaration's semantic model.
+                    // several) and resolve each invocation, object creation and
+                    // constructor initializer through that declaration's semantic model.
                     let callSitesByTarget =
                         System.Collections.Generic.Dictionary<ISymbol, ResizeArray<Ionide.LanguageServerProtocol.Types.Range>>(
                             SymbolEqualityComparer.Default
@@ -168,6 +168,7 @@ module CallHierarchy =
                                 let isCallNode (n: SyntaxNode) =
                                     n :? CSharp.Syntax.InvocationExpressionSyntax
                                     || n :? CSharp.Syntax.BaseObjectCreationExpressionSyntax
+                                    || n :? CSharp.Syntax.ConstructorInitializerSyntax
 
                                 for callNode in declNode.DescendantNodes() |> Seq.filter isCallNode do
                                     // Normalize to the original definition so constructed

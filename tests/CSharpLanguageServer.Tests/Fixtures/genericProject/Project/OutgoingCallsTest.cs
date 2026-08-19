@@ -46,3 +46,21 @@ static class StringExtensions
 {
     public static string Shout(this string s) => s.ToUpperInvariant();
 }
+
+class ChainBase
+{
+    public ChainBase(int size)
+    {
+    }
+}
+
+class ChainDerived : ChainBase
+{
+    public ChainDerived() : this(5)
+    {
+    }
+
+    public ChainDerived(int size) : base(size)
+    {
+    }
+}

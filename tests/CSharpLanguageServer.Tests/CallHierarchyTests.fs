@@ -230,6 +230,47 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
             ClassicAssert.AreEqual(38u, (call "Shout()").FromRanges[0].Start.Line, "extension method call site")
 
 [<Test>]
+let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
+    use client = activateFixture "genericProject"
+    use testFile = client.Open "Project/OutgoingCallsTest.cs"
+
+    let outgoingFor (line: uint32) (character: uint32) =
+        let prepareParams: CallHierarchyPrepareParams =
+            { TextDocument = { Uri = testFile.Uri }
+              Position = { Line = line; Character = character }
+              WorkDoneToken = None }
+
+        let prepareResult: CallHierarchyItem[] option =
+            client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+        match prepareResult with
+        | None -> failwithf "prepareCallHierarchy should return a result at %d:%d" line character
+        | Some items ->
+            let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+                { Item = items[0]
+                  WorkDoneToken = None
+                  PartialResultToken = None }
+
+            let result: CallHierarchyOutgoingCall[] option =
+                client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+            match result with
+            | None -> failwithf "outgoingCalls should return a result at %d:%d" line character
+            | Some calls -> calls
+
+    // ChainDerived() : this(5) - the chained ctor is an outgoing call (line 58)
+    let fromParameterless = outgoingFor 58u 11u
+    ClassicAssert.AreEqual(1, fromParameterless.Length)
+    ClassicAssert.AreEqual("ChainDerived(int)", fromParameterless[0].To.Name)
+    ClassicAssert.AreEqual(58u, fromParameterless[0].FromRanges[0].Start.Line, "this(5) call site")
+
+    // ChainDerived(int) : base(size) - the base ctor is an outgoing call (line 62)
+    let fromSized = outgoingFor 62u 11u
+    ClassicAssert.AreEqual(1, fromSized.Length)
+    ClassicAssert.AreEqual("ChainBase(int)", fromSized[0].To.Name)
+    ClassicAssert.AreEqual(62u, fromSized[0].FromRanges[0].Start.Line, "base(size) call site")
+
+[<Test>]
 let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
     use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
