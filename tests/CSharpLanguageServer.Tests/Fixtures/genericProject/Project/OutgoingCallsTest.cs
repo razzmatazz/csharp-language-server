@@ -29,3 +29,20 @@ class Widget
     {
     }
 }
+
+class GenericCalls
+{
+    public void CallsBoth()
+    {
+        Echo(1);
+        Echo("s");
+        "x".Shout();
+    }
+
+    public T Echo<T>(T value) => value;
+}
+
+static class StringExtensions
+{
+    public static string Shout(this string s) => s.ToUpperInvariant();
+}

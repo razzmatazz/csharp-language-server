@@ -181,6 +181,55 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
             ClassicAssert.AreEqual(10u, (call "Render()").FromRanges[0].Start.Line, "instance call site")
 
 [<Test>]
+let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethods () =
+    use client = activateFixture "genericProject"
+    use testFile = client.Open "Project/OutgoingCallsTest.cs"
+
+    // CallsBoth (line 34, char 16) invokes Echo<T> twice with different type
+    // arguments plus a user-defined extension method in instance form.
+    let prepareParams: CallHierarchyPrepareParams =
+        { TextDocument = { Uri = testFile.Uri }
+          Position = { Line = 34u; Character = 16u }
+          WorkDoneToken = None }
+
+    let prepareResult: CallHierarchyItem[] option =
+        client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+    match prepareResult with
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for CallsBoth")
+    | Some items ->
+        let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+            { Item = items[0]
+              WorkDoneToken = None
+              PartialResultToken = None }
+
+        let outgoingCallsResult: CallHierarchyOutgoingCall[] option =
+            client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+        match outgoingCallsResult with
+        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | Some outgoingCalls ->
+            let byName =
+                outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
+
+            // Echo<int> and Echo<string> are the SAME method: constructed
+            // generics must group to one target under the original definition.
+            ClassicAssert.AreEqual(
+                [| "Echo<T>(T)"; "Shout()" |],
+                byName |> Array.map fst,
+                "Constructed generic instantiations should group to one target; the extension method should be found"
+            )
+
+            let call name =
+                byName |> Array.find (fun (n, _) -> n = name) |> snd
+
+            let echoLines =
+                (call "Echo<T>(T)").FromRanges |> Array.map _.Start.Line |> Array.sort
+
+            ClassicAssert.AreEqual([| 36u; 37u |], echoLines, "Both instantiations' call sites should be present")
+            ClassicAssert.AreEqual(38u, (call "Shout()").FromRanges[0].Start.Line, "extension method call site")
+
+[<Test>]
 let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
     use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
