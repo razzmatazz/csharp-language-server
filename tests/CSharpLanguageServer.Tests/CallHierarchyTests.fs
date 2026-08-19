@@ -271,6 +271,51 @@ let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
     ClassicAssert.AreEqual(62u, fromSized[0].FromRanges[0].Start.Line, "base(size) call site")
 
 [<Test>]
+let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
+    use client = activateFixture "genericProject"
+    use testFile = client.Open "Project/OutgoingCallsTest.cs"
+
+    // Start (line 69, char 23) is a multi-line fluent chain:
+    //     return this
+    //         .Step()      <- line 72
+    //         .Step();     <- line 73
+    // Each call site must anchor at ITS callee name token, not at the start
+    // of the invocation expression (which is the chain head on line 71 for
+    // both).
+    let prepareParams: CallHierarchyPrepareParams =
+        { TextDocument = { Uri = testFile.Uri }
+          Position = { Line = 69u; Character = 23u }
+          WorkDoneToken = None }
+
+    let prepareResult: CallHierarchyItem[] option =
+        client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+    match prepareResult with
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for Start")
+    | Some items ->
+        let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+            { Item = items[0]
+              WorkDoneToken = None
+              PartialResultToken = None }
+
+        let outgoingCallsResult: CallHierarchyOutgoingCall[] option =
+            client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+        match outgoingCallsResult with
+        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | Some outgoingCalls ->
+            ClassicAssert.AreEqual(1, outgoingCalls.Length, "Both chain links call the same method")
+
+            let stepLines =
+                outgoingCalls[0].FromRanges |> Array.map _.Start.Line |> Array.sort
+
+            ClassicAssert.AreEqual(
+                [| 72u; 73u |],
+                stepLines,
+                "Each chained call should anchor on its own callee name line"
+            )
+
+[<Test>]
 let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
     use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"

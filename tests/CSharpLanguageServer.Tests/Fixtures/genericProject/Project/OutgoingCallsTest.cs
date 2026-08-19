@@ -64,3 +64,15 @@ class ChainDerived : ChainBase
     {
     }
 }
+
+class FluentChain
+{
+    public FluentChain Start()
+    {
+        return this
+            .Step()
+            .Step();
+    }
+
+    public FluentChain Step() => this;
+}

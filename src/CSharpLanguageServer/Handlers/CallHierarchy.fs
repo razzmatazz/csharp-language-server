@@ -170,6 +170,22 @@ module CallHierarchy =
                                     || n :? CSharp.Syntax.BaseObjectCreationExpressionSyntax
                                     || n :? CSharp.Syntax.ConstructorInitializerSyntax
 
+                                // Anchor each call site at its callee name token, not at the
+                                // start of the whole expression: in a fluent chain every
+                                // link's invocation node begins at the chain head, so all
+                                // links would otherwise report the same position.
+                                let callAnchor (n: SyntaxNode) =
+                                    match n with
+                                    | :? CSharp.Syntax.InvocationExpressionSyntax as inv ->
+                                        match inv.Expression with
+                                        | :? CSharp.Syntax.MemberAccessExpressionSyntax as ma -> ma.Name.GetLocation()
+                                        | :? CSharp.Syntax.MemberBindingExpressionSyntax as mb -> mb.Name.GetLocation()
+                                        | expr -> expr.GetLocation()
+                                    | :? CSharp.Syntax.ObjectCreationExpressionSyntax as oc -> oc.Type.GetLocation()
+                                    | :? CSharp.Syntax.ConstructorInitializerSyntax as ci ->
+                                        ci.ThisOrBaseKeyword.GetLocation()
+                                    | _ -> n.GetLocation()
+
                                 for callNode in declNode.DescendantNodes() |> Seq.filter isCallNode do
                                     // Normalize to the original definition so constructed
                                     // generic instantiations (Echo<int>, Echo<string>)
@@ -182,7 +198,7 @@ module CallHierarchy =
                                     match target with
                                     | Some target when isCallableSymbol target ->
                                         let range =
-                                            callNode.GetLocation().GetLineSpan().Span |> Range.fromLinePositionSpan
+                                            (callAnchor callNode).GetLineSpan().Span |> Range.fromLinePositionSpan
 
                                         match callSitesByTarget.TryGetValue target with
                                         | true, ranges -> ranges.Add range
