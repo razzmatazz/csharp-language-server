@@ -6,7 +6,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <MSBuildPackageVersion>18.7.1</MSBuildPackageVersion>
-    <RoslynPackageVersion>5.6.0</RoslynPackageVersion>
+    <RoslynPackageVersion>5.9.0</RoslynPackageVersion>
     <MSBuildLocatorPackageVersion>1.10.12</MSBuildLocatorPackageVersion>
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>

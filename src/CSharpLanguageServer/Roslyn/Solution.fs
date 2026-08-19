@@ -496,16 +496,35 @@ let solutionFindSymbolForRazorDocumentPath solution cshtmlPath pos = async {
 
         let root = cshtmlTree.GetRoot()
 
+        // Roslyn's newer "range + character-offset" #line directive format (used by the
+        // Razor generator since SDK 10.0.400 / Roslyn 5.9) maps tokens that precede the
+        // offset threshold within a directive block (e.g. the "Write(" call wrapping a
+        // Razor expression) to the *entire* enclosing mapped span rather than a precise
+        // sub-range — only tokens at/after the offset (e.g. the expression itself) get an
+        // accurate per-character mapping. A plain "first token whose mapped span contains
+        // the position" search can therefore match an overly-broad outer token (like
+        // "Write") ahead of the precise inner token. Prefer the candidate with the
+        // narrowest mapped span instead, so the most specific match wins.
         let token =
             root.DescendantTokens()
-            |> Seq.tryFind (fun t ->
+            |> Seq.choose (fun t ->
                 let span = cshtmlTree.GetMappedLineSpan(t.Span)
 
-                span.Path = cshtmlPath
-                && span.StartLinePosition.Line <= (int pos.Line)
-                && span.EndLinePosition.Line >= (int pos.Line)
-                && span.StartLinePosition.Character <= (int pos.Character)
-                && span.EndLinePosition.Character > (int pos.Character))
+                if
+                    span.Path = cshtmlPath
+                    && span.StartLinePosition.Line <= (int pos.Line)
+                    && span.EndLinePosition.Line >= (int pos.Line)
+                    && span.StartLinePosition.Character <= (int pos.Character)
+                    && span.EndLinePosition.Character > (int pos.Character)
+                then
+                    Some(t, span)
+                else
+                    None)
+            |> Seq.sortBy (fun (_, span) ->
+                (span.EndLinePosition.Line - span.StartLinePosition.Line,
+                 span.EndLinePosition.Character - span.StartLinePosition.Character))
+            |> Seq.tryHead
+            |> Option.map fst
 
         let symbol =
             token
