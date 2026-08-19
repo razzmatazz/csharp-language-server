@@ -22,7 +22,7 @@ type FoldingRangeTests() =
     inherit SharedReadOnlyFixture("genericProject", "Project/FoldingRangeTest.cs")
 
     [<Test>]
-    member this.``textDocument/foldingRange returns Some result`` () =
+    member this.``textDocument/foldingRange returns Some result``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -32,7 +32,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(result.IsSome, "Expected Some result from textDocument/foldingRange")
 
     [<Test>]
-    member this.``textDocument/foldingRange includes a range for the namespace`` () =
+    member this.``textDocument/foldingRange includes a range for the namespace``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -43,10 +43,13 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasNamespace, sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges)
+        ClassicAssert.IsTrue(
+            hasNamespace,
+            sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges
+        )
 
     [<Test>]
-    member this.``textDocument/foldingRange includes a range for the class`` () =
+    member this.``textDocument/foldingRange includes a range for the class``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -60,7 +63,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(hasClass, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
 
     [<Test>]
-    member this.``textDocument/foldingRange includes a range for a method`` () =
+    member this.``textDocument/foldingRange includes a range for a method``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -74,7 +77,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(hasMethod, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
 
     [<Test>]
-    member this.``textDocument/foldingRange includes a range for a constructor`` () =
+    member this.``textDocument/foldingRange includes a range for a constructor``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -85,10 +88,13 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasConstructor, sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges)
+        ClassicAssert.IsTrue(
+            hasConstructor,
+            sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges
+        )
 
     [<Test>]
-    member this.``textDocument/foldingRange includes a range for a property`` () =
+    member this.``textDocument/foldingRange includes a range for a property``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -99,10 +105,13 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasProperty, sprintf "Expected a property folding range starting at line 23, got: %A" ranges)
+        ClassicAssert.IsTrue(
+            hasProperty,
+            sprintf "Expected a property folding range starting at line 23, got: %A" ranges
+        )
 
     [<Test>]
-    member this.``textDocument/foldingRange includes imports range for multiple usings`` () =
+    member this.``textDocument/foldingRange includes imports range for multiple usings``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -116,7 +125,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(hasImports, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
 
     [<Test>]
-    member this.``textDocument/foldingRange includes region range`` () =
+    member this.``textDocument/foldingRange includes region range``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -130,7 +139,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(hasRegion, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
 
     [<Test>]
-    member this.``textDocument/foldingRange includes multi-line comment range`` () =
+    member this.``textDocument/foldingRange includes multi-line comment range``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -144,7 +153,7 @@ type FoldingRangeTests() =
         ClassicAssert.IsTrue(hasComment, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
 
     [<Test>]
-    member this.``textDocument/foldingRange includes interface range`` () =
+    member this.``textDocument/foldingRange includes interface range``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -155,10 +164,13 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasInterface, sprintf "Expected an interface folding range starting at line 43, got: %A" ranges)
+        ClassicAssert.IsTrue(
+            hasInterface,
+            sprintf "Expected an interface folding range starting at line 43, got: %A" ranges
+        )
 
     [<Test>]
-    member this.``textDocument/foldingRange returns sorted ranges`` () =
+    member this.``textDocument/foldingRange returns sorted ranges``() =
         let client = this.Client
         let doc = this.Doc
 

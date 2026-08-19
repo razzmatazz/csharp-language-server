@@ -43,7 +43,7 @@ type InlayHintTests() =
     inherit SharedReadOnlyFixture("genericProject", "Project/InlayHintTest.cs")
 
     [<Test>]
-    member this.``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call`` () =
+    member this.``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -58,7 +58,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint shows parameter hints for a regular call with differently-named arguments`` () =
+    member this.``textDocument/inlayHint shows parameter hints for a regular call with differently-named arguments``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -67,7 +67,10 @@ type InlayHintTests() =
         // line 30 (0-indexed): `helper.Add(1, 2);`
         let onLine = hints |> hintsOnLine 30u
 
-        ClassicAssert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "first:",
+            sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine
+        )
 
         ClassicAssert.IsTrue(
             onLine |> hasHintWithLabel "second:",
@@ -75,7 +78,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a same-name single-line argument (regression guard)`` () =
+    member this.``textDocument/inlayHint suppresses a same-name single-line argument (regression guard)``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -95,7 +98,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a same-name argument on its own indented line`` () =
+    member this.``textDocument/inlayHint suppresses a same-name argument on its own indented line``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -116,7 +119,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a qualified member-access argument matching the parameter name`` () =
+    member this.``textDocument/inlayHint suppresses a qualified member-access argument matching the parameter name``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -137,7 +140,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a hint when the argument name doesn't match the parameter name`` () =
+    member this.``textDocument/inlayHint keeps a hint when the argument name doesn't match the parameter name``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -148,7 +151,9 @@ type InlayHintTests() =
 
         ClassicAssert.IsTrue(
             onLine |> hasHintWithLabel "resourceName:",
-            sprintf "Expected a \"resourceName:\" hint on line 57 (argument doesn't match parameter name), got: %A" onLine
+            sprintf
+                "Expected a \"resourceName:\" hint on line 57 (argument doesn't match parameter name), got: %A"
+                onLine
         )
 
     [<Test>]
@@ -175,7 +180,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name`` () =
+    member this.``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -190,7 +195,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one`` () =
+    member this.``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -215,7 +220,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names`` () =
+    member this.``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -235,7 +240,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones`` () =
+    member this.``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -247,7 +254,9 @@ type InlayHintTests() =
 
         ClassicAssert.IsFalse(
             onLine |> hasHintWithLabel "d:",
-            sprintf "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A" onLine
+            sprintf
+                "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A"
+                onLine
         )
 
         // `decimals`/`mode` aren't short or numbered-suffix, so the narrow mechanical rule
@@ -264,7 +273,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names`` () =
+    member this.``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -284,7 +295,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
+    member this.``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -304,10 +315,15 @@ type InlayHintTests() =
             sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
         )
 
-        ClassicAssert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "count:",
+            sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine
+        )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
+    member this.``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -324,7 +340,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls`` () =
+    member this.``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -343,7 +361,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps hints when a call takes more than one lambda argument`` () =
+    member this.``textDocument/inlayHint keeps hints when a call takes more than one lambda argument``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -364,7 +382,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda`` () =
+    member this.``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -438,7 +458,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken`` () =
+    member this.``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -450,12 +472,16 @@ type InlayHintTests() =
 
         ClassicAssert.IsTrue(
             onLine |> hasHintWithLabel "first:",
-            sprintf "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
+            sprintf
+                "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
+                onLine
         )
 
         ClassicAssert.IsTrue(
             onLine |> hasHintWithLabel "second:",
-            sprintf "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
+            sprintf
+                "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A"
+                onLine
         )
 
     [<Test>]
@@ -520,7 +546,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -538,7 +564,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -576,7 +604,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name`` () =
+    member this.``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -627,7 +657,9 @@ type InlayHintTests() =
 
         ClassicAssert.IsTrue(
             onLine |> hasHintWithLabel ": Widget",
-            sprintf "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A" onLine
+            sprintf
+                "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A"
+                onLine
         )
 
     [<Test>]
@@ -670,7 +702,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name`` () =
+    member this.``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -685,7 +717,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"`` () =
+    member this.``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -742,7 +774,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call`` () =
+    member this.``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -757,7 +789,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument`` () =
+    member this.``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -821,7 +853,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call`` () =
+    member this.``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -836,7 +868,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument`` () =
+    member this.``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -859,7 +891,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint never shows a type hint for an implicit lambda parameter`` () =
+    member this.``textDocument/inlayHint never shows a type hint for an implicit lambda parameter``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -893,7 +925,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint for a string literal initializer`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint for a string literal initializer``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -906,7 +938,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -919,7 +951,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -932,7 +964,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression`` () =
+    member this.``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -946,7 +978,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -959,7 +991,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches`` () =
+    member this.``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -992,7 +1024,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain`` () =
+    member this.``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -1056,7 +1090,7 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip`` () =
+    member this.``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip``() =
         let client = this.Client
         let doc = this.Doc
 
@@ -1075,7 +1109,9 @@ type InlayHintTests() =
         )
 
     [<Test>]
-    member this.``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip`` () =
+    member this.``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip``
+        ()
+        =
         let client = this.Client
         let doc = this.Doc
 
@@ -1091,7 +1127,10 @@ type InlayHintTests() =
 
         let label = typeHint |> Option.map labelText |> Option.defaultValue ""
 
-        ClassicAssert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
+        ClassicAssert.IsTrue(
+            label.Contains("..."),
+            sprintf "Expected the truncated label to contain an ellipsis, got: %s" label
+        )
 
         // 2 for the ": " prefix, plus the truncation threshold itself.
         ClassicAssert.IsTrue(

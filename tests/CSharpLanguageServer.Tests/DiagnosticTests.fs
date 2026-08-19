@@ -198,7 +198,10 @@ let testPullDiagnosticsWorkForRazorFiles () =
         ClassicAssert.AreEqual(1, diagnostic0.Range.Start.Line)
         ClassicAssert.AreEqual(7, diagnostic0.Range.Start.Character)
         ClassicAssert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
-        ClassicAssert.IsTrue(diagnostic0.Message.StartsWith("'IndexViewModel' does not contain a definition for 'XXX' and no"))
+
+        ClassicAssert.IsTrue(
+            diagnostic0.Message.StartsWith("'IndexViewModel' does not contain a definition for 'XXX' and no")
+        )
 
     | _ -> failwith "U2.C1 was expected"
 
@@ -650,7 +653,9 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
             match item with
             | U2.C2 unchangedReport -> ClassicAssert.AreEqual("unchanged", unchangedReport.Kind)
             | U2.C1 fullReport ->
-                ClassicAssert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
+                ClassicAssert.Fail(
+                    sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri
+                )
     | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
 
 [<Test>]
@@ -940,5 +945,7 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
 
         match item.Value with
         | U2.C2 _ ->
-            ClassicAssert.Fail(sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri)
+            ClassicAssert.Fail(
+                sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri
+            )
         | U2.C1 _ -> ()

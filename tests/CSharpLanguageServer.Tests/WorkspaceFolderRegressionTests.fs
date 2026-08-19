@@ -22,4 +22,7 @@ let ``loose document attaches to nearest containing project`` () =
 
     match definition with
     | Some(U2.C2 [| location |]) -> StringAssert.EndsWith("/App/Tests/Marker.cs", location.Uri)
-    | _ -> ClassicAssert.Fail(sprintf "definition in the nearest containing project was expected but received %A" definition)
+    | _ ->
+        ClassicAssert.Fail(
+            sprintf "definition in the nearest containing project was expected but received %A" definition
+        )
