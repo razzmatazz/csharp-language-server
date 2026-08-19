@@ -52,6 +52,135 @@ let testCallHierarchyIncomingCallsWorks () =
             ClassicAssert.AreEqual(12u, incomingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
 
 [<Test>]
+let testCallHierarchyOutgoingCallsWorks () =
+    use client = activateFixture "genericProject"
+    use classFile = client.Open "Project/Class.cs"
+
+    // Step 1: Prepare call hierarchy for MethodB (line 10, char 16 is where "MethodB" is)
+    let prepareParams: CallHierarchyPrepareParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 10u; Character = 16u }
+          WorkDoneToken = None }
+
+    let prepareResult: CallHierarchyItem[] option =
+        client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+    match prepareResult with
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodB")
+    | Some items ->
+        ClassicAssert.AreEqual(1, items.Length)
+
+        let methodBItem = items[0]
+        ClassicAssert.AreEqual("MethodB(string)", methodBItem.Name)
+
+        // Step 2: Get outgoing calls for MethodB - should find the call to MethodA
+        let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+            { Item = methodBItem
+              WorkDoneToken = None
+              PartialResultToken = None }
+
+        let outgoingCallsResult: CallHierarchyOutgoingCall[] option =
+            client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+        match outgoingCallsResult with
+        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | Some outgoingCalls ->
+            ClassicAssert.AreEqual(1, outgoingCalls.Length)
+
+            let outgoingCall = outgoingCalls[0]
+            ClassicAssert.AreEqual("MethodA(string)", outgoingCall.To.Name)
+            ClassicAssert.AreEqual(SymbolKind.Method, outgoingCall.To.Kind)
+
+            // FromRanges should point to the call site of MethodA inside MethodB (line 12)
+            ClassicAssert.AreEqual(1, outgoingCall.FromRanges.Length, "Should have one call site")
+            ClassicAssert.AreEqual(12u, outgoingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
+
+[<Test>]
+let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
+    use client = activateFixture "genericProject"
+    use classFile = client.Open "Project/Class.cs"
+
+    // MethodA (line 4, char 16) only calls Console.WriteLine, which lives in
+    // metadata and has no source location, so the result should be an EMPTY
+    // array (an honest "nothing to show"), not null ("unsupported").
+    let prepareParams: CallHierarchyPrepareParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None }
+
+    let prepareResult: CallHierarchyItem[] option =
+        client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+    match prepareResult with
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodA")
+    | Some items ->
+        let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+            { Item = items[0]
+              WorkDoneToken = None
+              PartialResultToken = None }
+
+        let outgoingCallsResult: CallHierarchyOutgoingCall[] option =
+            client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+        match outgoingCallsResult with
+        | None -> ClassicAssert.Fail("outgoingCalls should return [] for a callable symbol, not null")
+        | Some outgoingCalls -> ClassicAssert.AreEqual(0, outgoingCalls.Length)
+
+[<Test>]
+let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
+    use client = activateFixture "genericProject"
+    use testFile = client.Open "Project/OutgoingCallsTest.cs"
+
+    // Prepare on Orchestrator (line 4, char 16), whose body mixes call shapes:
+    // a constructor call, a call inside a lambda, a local function invocation,
+    // a call inside the local function's body, a delegate Invoke (metadata,
+    // dropped) and a plain instance call.
+    let prepareParams: CallHierarchyPrepareParams =
+        { TextDocument = { Uri = testFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None }
+
+    let prepareResult: CallHierarchyItem[] option =
+        client.Request("textDocument/prepareCallHierarchy", prepareParams)
+
+    match prepareResult with
+    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for Orchestrator")
+    | Some items ->
+        let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
+            { Item = items[0]
+              WorkDoneToken = None
+              PartialResultToken = None }
+
+        let outgoingCallsResult: CallHierarchyOutgoingCall[] option =
+            client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
+
+        match outgoingCallsResult with
+        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | Some outgoingCalls ->
+            let byName =
+                outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
+
+            ClassicAssert.AreEqual(
+                [| "Helper(int)"; "LocalHelper()"; "Render()"; "Widget()" |],
+                byName |> Array.map fst,
+                "Expected the ctor, the lambda/local-function targets and the instance call; delegate Invoke has no source and is dropped"
+            )
+
+            let call name =
+                byName |> Array.find (fun (n, _) -> n = name) |> snd
+
+            // Helper is called twice: from the lambda (line 7) and from inside
+            // the local function's body (line 14) - both attribute to Orchestrator.
+            let helperLines =
+                (call "Helper(int)").FromRanges |> Array.map _.Start.Line |> Array.sort
+
+            ClassicAssert.AreEqual([| 7u; 14u |], helperLines)
+
+            ClassicAssert.AreEqual(6u, (call "Widget()").FromRanges[0].Start.Line, "ctor call site")
+            ClassicAssert.AreEqual(8u, (call "LocalHelper()").FromRanges[0].Start.Line, "local function call site")
+            ClassicAssert.AreEqual(10u, (call "Render()").FromRanges[0].Start.Line, "instance call site")
+
+[<Test>]
 let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
     use client = activateFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
