@@ -149,7 +149,6 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
         | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
-[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
     use client = activateFixture "aspnetProject"
 
@@ -282,7 +281,6 @@ let testOpeningAndClosingNonExistingCsFileRemovesItFromSolution () =
             "Expected no diagnostic items for BrokenClass.cs"
 
 [<Test>]
-[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testOpeningAndClosingNonExistingCshtmlFileRemovesItFromSolution () =
     use client = activateFixture "aspnetProject"
 

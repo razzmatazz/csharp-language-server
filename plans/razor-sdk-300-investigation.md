@@ -5,6 +5,64 @@ from 10.0.200 to 10.0.300.
 
 ---
 
+## Update (2026-08, resolved): Roslyn 5.9.0 published to NuGet — tests re-enabled
+
+`Microsoft.CodeAnalysis` (and the other `Microsoft.CodeAnalysis.*` sub-packages) 5.9.0 is
+now published as a **stable** release on NuGet — satisfying SDK 10.0.400's Razor generator
+requirement (`5.9.0.0`) described in the August update below. Bumped `RoslynPackageVersion`
+in `Directory.Packages.props` from `5.6.0` to `5.9.0` and removed the `[<Ignore(...)>]`
+attributes from all 8 Razor-related tests across `DiagnosticTests.fs`, `HoverTests.fs`,
+`ReferenceTests.fs` (×2), `CompletionTests.fs`, `DocumentHighlightTests.fs`,
+`DocumentSyncTests.fs` (×2), and `WorkspaceTests.fs` (×2).
+
+Fixing the version mismatch alone got 2/4 of the directly Razor-named tests passing;
+`testHoverWorksInRazorFile` and `testReferenceWorksFromRazorPageReferencedValue` still
+failed, exposing a **second, previously-latent bug**: Roslyn 5.9's Razor generator now
+emits a newer `#line` directive format —
+`#line (startLine,startChar)-(endLine,endChar) charOffset "file"` (a "range + character
+offset" directive, vs. the older `#line (startLine,startChar)-(endLine,endChar) "file"`
+form with no trailing offset used up through Roslyn ~5.6). Concretely, for `@Model.Output`
+the generator used to emit:
+
+```csharp
+Write(
+#line (2,2)-(2,14) "Index.cshtml"
+Model.Output
+#line default
+```
+
+(`Write(` sits *outside* the directive, so it stays unmapped/hidden) but now emits:
+
+```csharp
+#line (2,2)-(2,14) 6 "Index.cshtml"
+Write(Model.Output
+#line default
+```
+
+(`Write(` is now *inside* the directive block, preceding the 6-character offset).
+Empirically verified via a standalone Roslyn 5.9.0 probe (`CSharpSyntaxTree.ParseText` +
+`GetMappedLineSpan` on each token) that tokens positioned *before* the offset threshold
+within such a block (here, the `Write` identifier and its `(`) map to the **entire**
+enclosing directive span (`(1,1)-(1,14)`, 0-based) rather than being excluded or given a
+narrower range — only tokens at/after the offset (`Model`, `.`, `Output`) get accurate
+per-character mapping. `solutionFindSymbolForRazorDocumentPath`'s `Seq.tryFind` picked the
+first token (`Write`) whose mapped span happened to contain the cursor position, ahead of
+the actually-intended, narrower `Output` token — resolving hover/reference requests to
+`RazorPageBase.Write` instead of the Razor expression's own symbol.
+
+**Fix:** changed the token search in `solutionFindSymbolForRazorDocumentPath`
+(`src/CSharpLanguageServer/Roslyn/Solution.fs`) from "first token whose mapped span
+contains the position" to "narrowest (most specific) mapped span containing the
+position" — sorting candidates by mapped-span width and taking the smallest. This
+correctly prefers `Output` over the coarser `Write` match, and is a strictly more robust
+matching strategy regardless of which `#line` directive style the generator emits.
+
+**Result:** all 4 explicitly Razor-named tests plus all other previously-`[<Ignore>]`'d
+Razor/cshtml tests (document sync, workspace, document-highlight, completion) pass. Full
+suite: 292/292 passed, 0 failed, on SDK 10.0.400 / Roslyn 5.9.0.
+
+---
+
 ## Update (2026-07): resolved after Roslyn 5.6.0 upgrade
 
 After bumping `RoslynPackageVersion` to `5.6.0` in `Directory.Packages.props`, the version

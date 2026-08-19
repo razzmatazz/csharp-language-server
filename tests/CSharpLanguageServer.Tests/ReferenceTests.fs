@@ -184,7 +184,6 @@ let testReferenceWorksDotnet8 () =
 
 [<Test>]
 [<Retry(3)>]
-[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testReferenceWorksToRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
@@ -287,7 +286,6 @@ let testReferenceWorksToRazorPageReferencedValue () =
 
 [<Test>]
 [<Retry(3)>]
-[<Ignore("Broken by SDK 10.0.400's Razor generator requiring a Roslyn version not yet on NuGet — see plans/razor-sdk-300-investigation.md")>]
 let testReferenceWorksFromRazorPageReferencedValue () =
     use client = activateFixture "aspnetProject"
 
