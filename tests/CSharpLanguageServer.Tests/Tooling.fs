@@ -1080,6 +1080,56 @@ let activateFixtureWithLoggingEnabled fixtureName =
         emptyFixturePatch
         id
 
+/// Base class for read-only test fixtures that share a single `LspTestClient` (and one
+/// already-open `LspDocumentHandle`) across every `[<Test>]` method in the fixture, instead
+/// of spinning up a fresh server process and reloading the solution for each individual
+/// test. This is a significant win for large parameterized-by-hand suites that repeatedly
+/// query the same file (e.g. inlay hints/folding ranges over dozens of positions).
+///
+/// ONLY appropriate for tests that strictly *read* — no `Change`/`Save`/mutation calls —
+/// since the client and document are shared, mutable state, reused by every test method in
+/// the fixture.
+///
+/// Relies on two NUnit behaviours:
+///  - The default "SingleInstance" fixture lifecycle: NUnit constructs one instance of the
+///    derived `[<TestFixture>]` class and reuses it for every `[<Test>]` method, so a field
+///    set in `[<OneTimeSetUp>]` is visible to all of them.
+///  - If a fixture class implements `IDisposable`, NUnit calls `Dispose()` automatically
+///    once, after the last test in the fixture has run — no explicit `[<OneTimeTearDown>]`
+///    is needed. (Note: prior to NUnit 3.7, `[<OneTimeTearDown>]` ran before `Dispose()`;
+///    since 3.7 `Dispose()` runs first — this class has no `OneTimeTearDown`, so the
+///    ordering doesn't matter here.)
+[<AbstractClass>]
+type SharedReadOnlyFixture(fixtureName: string, docPath: string) =
+    let mutable clientOpt: LspTestClient option = None
+    let mutable docOpt: LspDocumentHandle option = None
+
+    /// The shared client, valid from `[<OneTimeSetUp>]` until the fixture is disposed.
+    member __.Client: LspTestClient =
+        match clientOpt with
+        | Some c -> c
+        | None -> failwith "SharedReadOnlyFixture.Client accessed before OneTimeSetUp ran"
+
+    /// The shared, already-open document, valid from `[<OneTimeSetUp>]` until disposal.
+    member __.Doc: LspDocumentHandle =
+        match docOpt with
+        | Some d -> d
+        | None -> failwith "SharedReadOnlyFixture.Doc accessed before OneTimeSetUp ran"
+
+    [<OneTimeSetUp>]
+    member __.SharedReadOnlyFixtureSetUp() =
+        let client = activateFixture fixtureName
+        clientOpt <- Some client
+        docOpt <- Some(client.Open docPath)
+
+    interface IDisposable with
+        member __.Dispose() =
+            docOpt |> Option.iter (fun d -> (d :> IDisposable).Dispose())
+            docOpt <- None
+
+            clientOpt |> Option.iter (fun c -> (c :> IDisposable).Dispose())
+            clientOpt <- None
+
 module TextEdit =
     let normalizeNewText (s: TextEdit) =
         { s with

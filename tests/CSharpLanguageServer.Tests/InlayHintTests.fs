@@ -38,1073 +38,1077 @@ let private tooltipText (hint: InlayHint) : string option =
     | Some(U2.C1 s) -> Some s
     | _ -> None
 
-[<Test>]
-let ``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 25 (0-indexed): `var count = GetCount();`
-    let onLine = hints |> hintsOnLine 25u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel ": int",
-        sprintf "Expected a \": int\" type hint on line 25, got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint shows parameter hints for a regular call with differently-named arguments`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 30 (0-indexed): `helper.Add(1, 2);`
-    let onLine = hints |> hintsOnLine 30u
-
-    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "second:",
-        sprintf "Expected a \"second:\" hint on line 30, got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a same-name single-line argument (regression guard)`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 36 (0-indexed): `helper.WithResource(resourceName, "other");`
-    let onLine = hints |> hintsOnLine 36u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "resourceName:",
-        sprintf "Expected no \"resourceName:\" hint on line 36 (argument matches parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "other:",
-        sprintf "Expected an \"other:\" hint on line 36 (argument doesn't match parameter name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a same-name argument on its own indented line`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // lines 42-44 (0-indexed):
-    //     helper.WithResource(
-    //         resourceName,
-    //         "other");
-    let onLine = hints |> hintsOnLine 43u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "resourceName:",
-        sprintf
-            "Expected no \"resourceName:\" hint on line 43 (argument matches parameter name, only\
-             differs by leading whitespace/newline trivia), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a qualified member-access argument matching the parameter name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // lines 49-51 (0-indexed):
-    //     helper.WithResource(
-    //         this.ResourceName,
-    //         "other");
-    let onLine = hints |> hintsOnLine 50u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "resourceName:",
-        sprintf
-            "Expected no \"resourceName:\" hint on line 50 (this.ResourceName's last segment matches\
-             the parameter name), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a hint when the argument name doesn't match the parameter name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 57 (0-indexed): `helper.WithResource(somethingElse, "other");`
-    let onLine = hints |> hintsOnLine 57u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "resourceName:",
-        sprintf "Expected a \"resourceName:\" hint on line 57 (argument doesn't match parameter name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a hint when a qualified member-access argument's last segment doesn't match the parameter name``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // lines 62-64 (0-indexed):
-    //     helper.WithResource(
-    //         this.OtherValue,
-    //         "other");
-    let onLine = hints |> hintsOnLine 63u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "resourceName:",
-        sprintf
-            "Expected a \"resourceName:\" hint on line 63 (this.OtherValue's last segment doesn't\
-             match the parameter name), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 85 (0-indexed): `helper.SetX(5);` -- parameter is `x`
-    let onLine = hints |> hintsOnLine 85u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "x:",
-        sprintf "Expected no \"x:\" hint on line 85 (parameter name is too short to be informative), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 90 (0-indexed): `string.Format("{0} {1}", 1, 2);` -- parameters are `format`, `arg0`, `arg1`
-    let onLine = hints |> hintsOnLine 90u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "arg0:",
-        sprintf "Expected no \"arg0:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "arg1:",
-        sprintf "Expected no \"arg1:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "format:",
-        sprintf "Expected a \"format:\" hint on line 90 (not a numbered-suffix parameter name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 95 (0-indexed): `System.Math.Min(1, 2);` -- parameters are `val1`, `val2`
-    let onLine = hints |> hintsOnLine 95u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "val1:",
-        sprintf "Expected no \"val1:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "val2:",
-        sprintf "Expected no \"val2:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 100 (0-indexed): `System.Math.Round(1.23m, 2, System.MidpointRounding.AwayFromZero);`
-    // -- parameters are `d`, `decimals`, `mode`
-    let onLine = hints |> hintsOnLine 100u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "d:",
-        sprintf "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A" onLine
-    )
-
-    // `decimals`/`mode` aren't short or numbered-suffix, so the narrow mechanical rule
-    // intentionally doesn't suppress them (unlike `d`), even though they're arguably still
-    // low-information BCL names -- see plans/inlay-hint-reduction.md for the rationale.
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "decimals:",
-        sprintf "Expected a \"decimals:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "mode:",
-        sprintf "Expected a \"mode:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 105 (0-indexed): `"hello".Substring(1, 2);` -- parameters are `startIndex`, `length`
-    let onLine = hints |> hintsOnLine 105u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "startIndex:",
-        sprintf "Expected a \"startIndex:\" hint on line 105, got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "length:",
-        sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 111 (0-indexed): `helper.WriteBuffer(data, 0, data.Length);`
-    // -- parameters are `buffer`, `offset`, `count`
-    let onLine = hints |> hintsOnLine 111u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "buffer:",
-        sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "offset:",
-        sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- parameter is `predicate`
-    let onLine = hints |> hintsOnLine 144u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "predicate:",
-        sprintf
-            "Expected no \"predicate:\" hint on line 144 (sole lambda argument, method name conveys role), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 149 (0-indexed): `new FluentQuery().Fetch(x => x).ThenFetch(x => x);`
-    // -- both parameters are `relatedObjectSelector`
-    let onLine = hints |> hintsOnLine 149u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "relatedObjectSelector:",
-        sprintf
-            "Expected no \"relatedObjectSelector:\" hint on line 149 (sole lambda argument of each\
-             call, method name conveys role), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps hints when a call takes more than one lambda argument`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 154 (0-indexed): `new FluentQuery().Combine(x => x, x => x);`
-    // -- parameters are `first`, `second`
-    let onLine = hints |> hintsOnLine 154u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "first:",
-        sprintf "Expected a \"first:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "second:",
-        sprintf "Expected a \"second:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 159 (0-indexed): `new FluentQuery().Where(IsPositive);` -- parameter is `predicate`
-    let onLine = hints |> hintsOnLine 159u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "predicate:",
-        sprintf
-            "Expected a \"predicate:\" hint on line 159 (sole argument is a method group, not a lambda\
-             expression -- out of scope for this rule), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses composite-format-string positional argument hints (rule #4, subsumed by rule #2)``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 177 (0-indexed): `new Logger().DebugFormat("{0}: {1} did {2}", 1, 2, 3);`
-    // -- parameters are `format`, `arg0`, `arg1`, `arg2` (mirrors log4net's real ILog.DebugFormat
-    // overload shapes). No dedicated implementation was needed for this: `arg0`/`arg1`/`arg2`
-    // already match rule #2's numbered-suffix pattern (`hasUninformativeParameterName`).
-    let onLine = hints |> hintsOnLine 177u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "format:",
-        sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine
-    )
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "arg0:",
-        sprintf "Expected no \"arg0:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "arg1:",
-        sprintf "Expected no \"arg1:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "arg2:",
-        sprintf "Expected no \"arg2:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for a single lambda argument followed by a trailing CancellationToken``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 205 (0-indexed): `new FluentQueryAsync().WhereAsync(x => x > 0, default);`
-    // -- parameters are `predicate`, `cancellationToken`
-    let onLine = hints |> hintsOnLine 205u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "predicate:",
-        sprintf
-            "Expected no \"predicate:\" hint on line 205 (sole non-CancellationToken argument is a\
-             lambda, method name conveys role), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 210 (0-indexed): `new FluentQueryAsync().CombineAsync(x => x, x => x, default);`
-    // -- parameters are `first`, `second`, `cancellationToken`
-    let onLine = hints |> hintsOnLine 210u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "first:",
-        sprintf "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "second:",
-        sprintf "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when a qualified generic invocation's type argument matches``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 240 (0-indexed): `var widget = GenericFactory.Create<Widget>();`
-    let onLine = hints |> hintsOnLine 240u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": Widget",
-        sprintf
-            "Expected no \": Widget\" hint on line 240 (type is already spelled out in the\
-             invocation's explicit type argument), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a var type hint when a generic invocation's type argument doesn't match the inferred type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 245 (0-indexed): `var description = GenericFactory.Describe<Widget>(new Widget());`
-    // -- `Describe<Widget>` returns `string`, not `Widget`
-    let onLine = hints |> hintsOnLine 245u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel ": string",
-        sprintf
-            "Expected a \": string\" hint on line 245 (inferred type doesn't match the invocation's\
-             type argument), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when an unqualified generic invocation's type argument matches``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 250 (0-indexed): `var widget = CreateLocal<Widget>();`
-    let onLine = hints |> hintsOnLine 250u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": Widget",
-        sprintf
-            "Expected no \": Widget\" hint on line 250 (type is already spelled out in the\
-             unqualified invocation's explicit type argument), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 255 (0-indexed): `var day = System.Enum.Parse<System.DayOfWeek>("Monday");`
-    let onLine = hints |> hintsOnLine 255u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": DayOfWeek",
-        sprintf
-            "Expected no \": DayOfWeek\" hint on line 255 (type is already spelled out in\
-             Enum.Parse's explicit type argument), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 287 (0-indexed): `var resourceCondition = GetCondition();`
-    let onLine = hints |> hintsOnLine 287u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": ResourceCondition",
-        sprintf
-            "Expected no \": ResourceCondition\" hint on line 287 (identifier is a full\
-             case-insensitive match of the inferred type name), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when the identifier's last word matches the inferred type's last word``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 292 (0-indexed): `var settingChangeCondition = GetCondition();`
-    let onLine = hints |> hintsOnLine 292u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": ResourceCondition",
-        sprintf
-            "Expected no \": ResourceCondition\" hint on line 292 (identifier's last word\
-             \"Condition\" matches the inferred type's last word), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 297 (0-indexed): `var outcome = GetCondition();`
-    let onLine = hints |> hintsOnLine 297u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel ": ResourceCondition",
-        sprintf
-            "Expected a \": ResourceCondition\" hint on line 297 (identifier doesn't echo the\
-             inferred type name), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a foreach variable's type hint when the identifier echoes the element type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 302 (0-indexed): `foreach (var widget in GetWidgets())`
-    let onLine = hints |> hintsOnLine 302u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": Widget",
-        sprintf
-            "Expected no \": Widget\" hint on line 302 (identifier is a full case-insensitive\
-             match of the element type name), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a foreach variable's type hint when the identifier doesn't echo the element type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 309 (0-indexed): `foreach (var item in GetWidgets())`
-    let onLine = hints |> hintsOnLine 309u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel ": Widget",
-        sprintf "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a parameter-name hint when the parameter name echoes its own declared type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 316 (0-indexed): `Dispatch(null);` -- parameter is `MessageDispatcherAsync messageDispatcherAsync`
-    let onLine = hints |> hintsOnLine 316u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "messageDispatcherAsync:",
-        sprintf
-            "Expected no \"messageDispatcherAsync:\" hint on line 316 (parameter name is a\
-             decapitalized echo of its own declared type), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name doesn't echo its own declared type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 321 (0-indexed): `DispatchWithGenericName(null);` -- parameter is `MessageDispatcherAsync handler`
-    let onLine = hints |> hintsOnLine 321u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "handler:",
-        sprintf
-            "Expected a \"handler:\" hint on line 321 (parameter name doesn't echo its own declared type), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 342 (0-indexed): `helper.Save(5);` -- parameter is `object obj`
-    let onLine = hints |> hintsOnLine 342u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "obj:",
-        sprintf "Expected no \"obj:\" hint on line 342 (\"obj\" is a generic placeholder name), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 347 (0-indexed): `helper.Log("hi");` -- parameter is `string msg`
-    let onLine = hints |> hintsOnLine 347u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "msg:",
-        sprintf
-            "Expected a \"msg:\" hint on line 347 (\"msg\" isn't the generic \"obj\" exception, only\
-             coincidentally the same length), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression spells out the type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 360 (0-indexed): `var widget = new Widget();`
-    let onLine = hints |> hintsOnLine 360u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": Widget",
-        sprintf
-            "Expected no \": Widget\" hint on line 360 (type is already spelled out right after `new`), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression with an initializer spells out the type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 365 (0-indexed): `var widget = new WidgetWithProperty { Value = 1 };`
-    let onLine = hints |> hintsOnLine 365u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": WidgetWithProperty",
-        sprintf
-            "Expected no \": WidgetWithProperty\" hint on line 365 (type is already spelled out\
-             right after `new`, even with an object initializer), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 387 (0-indexed): `helper.Contains(5);` -- sole parameter is `value`
-    let onLine = hints |> hintsOnLine 387u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "value:",
-        sprintf "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 392 (0-indexed): `helper.Add(1, 2);` -- parameters are `key`, `value`
-    let onLine = hints |> hintsOnLine 392u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "key:",
-        sprintf "Expected a \"key:\" hint on line 392 (call has more than one argument), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "value:",
-        sprintf
-            "Expected a \"value:\" hint on line 392 (call has more than one argument, so \"value\"\
-             still helps disambiguate from \"key\"), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when a static invocation's qualifier matches the return type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 400 (0-indexed): `var reason = string.Format("{0}", 1);`
-    let onLine = hints |> hintsOnLine 400u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel ": string",
-        sprintf
-            "Expected no \": string\" hint on line 400 (type is already spelled out as the\
-             invocation's qualifier), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a var type hint when a static invocation's qualifier doesn't match the return type``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 405 (0-indexed): `var converted = System.Convert.ToInt32("5");`
-    // -- qualifier is `Convert`, return type is `int`
-    let onLine = hints |> hintsOnLine 405u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel ": int",
-        sprintf
-            "Expected a \": int\" hint on line 405 (invocation's qualifier doesn't match the\
-             return type), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 426 (0-indexed): `helper.Add(5);` -- sole parameter is `item`
-    let onLine = hints |> hintsOnLine 426u
-
-    ClassicAssert.IsFalse(
-        onLine |> hasHintWithLabel "item:",
-        sprintf "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A" onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 431 (0-indexed): `helper.Insert(0, 5);` -- parameters are `index`, `item`
-    let onLine = hints |> hintsOnLine 431u
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "index:",
-        sprintf "Expected an \"index:\" hint on line 431 (call has more than one argument), got: %A" onLine
-    )
-
-    ClassicAssert.IsTrue(
-        onLine |> hasHintWithLabel "item:",
-        sprintf
-            "Expected an \"item:\" hint on line 431 (call has more than one argument, so \"item\"\
-             still helps disambiguate from \"index\"), got: %A"
-            onLine
-    )
-
-[<Test>]
-let ``textDocument/inlayHint never shows a type hint for an implicit lambda parameter`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // Implicit lambda-parameter type hints (the `(p: SomeType) => ...` style hint) were removed
-    // entirely -- see plans/inlay-hint-reduction.md. Real-world evidence showed this category is
-    // almost always redundant (spelled out by an immediately-preceding generic invocation,
-    // inferable from a property access one hop away, or simply repeated for the same type across
-    // multiple lambdas in one short fluent chain), and Visual Studio's own default configuration
-    // ships with all inline hints off by default.
-
-    // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- `x` infers to `int`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 144u |> hasHintWithLabel ": int",
-        "Expected no \": int\" implicit lambda-parameter type hint on line 144"
-    )
-
-    // line 460 (0-indexed): `repository.Query<Widget>().Where(p => p != null);` -- `p` infers to
-    // `Widget`, spelled out one call earlier at `Query<Widget>`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 460u |> hasHintWithLabel ": Widget",
-        "Expected no \": Widget\" implicit lambda-parameter type hint on line 460"
-    )
-
-    // line 466 (0-indexed): `chained.Where(p => p != null);` -- `p` also infers to `Widget`, but
-    // here the receiver isn't itself a generic invocation that spells the type out
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 466u |> hasHintWithLabel ": Widget",
-        "Expected no \": Widget\" implicit lambda-parameter type hint on line 466"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint for a string literal initializer`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 474 (0-indexed): `var greeting = "hi";`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 474u |> hasHintWithLabel ": string",
-        "Expected no \": string\" hint on line 474 (type is directly implied by the string literal)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 479 (0-indexed): `var count = 42;`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 479u |> hasHintWithLabel ": int",
-        "Expected no \": int\" hint on line 479 (type is directly implied by the numeric literal)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 484 (0-indexed): `var flag = true;`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 484u |> hasHintWithLabel ": bool",
-        "Expected no \": bool\" hint on line 484 (type is directly implied by the boolean literal)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 489 (0-indexed): `var negated = -1;` -- a PrefixUnaryExpressionSyntax, not itself a
-    // LiteralExpressionSyntax, so intentionally out of scope for the literal-initializer rule
-    ClassicAssert.IsTrue(
-        hints |> hintsOnLine 489u |> hasHintWithLabel ": int",
-        "Expected a \": int\" hint on line 489 (initializer is a unary expression, not a bare literal)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 498 (0-indexed): `var greeting = $"Hello, {name}";`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 498u |> hasHintWithLabel ": string",
-        "Expected no \": string\" hint on line 498 (interpolated string's natural type is always string)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 506 (0-indexed): `var widget = obj as Widget;`
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 506u |> hasHintWithLabel ": Widget",
-        "Expected no \": Widget\" hint on line 506 (type is already spelled out right after `as`)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in a fluent chain``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 551 (0-indexed): `var widgets = repository.Query<Widget>().Where(p => p != null).ToList();`
-    // -- mirrors the real `var orders = await db.Query<DBSalesOrder>().Where(o => ...).ToListAsync();`
-    // idiom cited in plans/inlay-hint-reduction.md: `Widget` is already spelled out earlier in the
-    // same chain, at `Query<Widget>()`, so the `: List<Widget>` hint on the materialized result is
-    // redundant.
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 551u |> hasHintWithLabel ": List<Widget>",
-        "Expected no \": List<Widget>\" hint on line 551 (element type is already spelled out\
-         earlier in the fluent chain, at Query<Widget>())"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 557 (0-indexed): `var widgets2 = partial.ToList();`
-    // -- the explicit `Query<Widget>()` generic invocation happened in a *previous* statement, not
-    // in this initializer's own invocation chain, so the type isn't "spelled out" from this hint's
-    // point of view and the hint should be kept.
-    ClassicAssert.IsTrue(
-        hints |> hintsOnLine 557u |> hasHintWithLabel ": List<Widget>",
-        "Expected a \": List<Widget>\" hint on line 557 (element type isn't spelled out anywhere\
-         in this initializer's own invocation chain)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in an awaited fluent chain``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 562 (0-indexed):
-    // `var widgets = await repository.Query<Widget>().Where(p => p != null).ToListAsync();`
-    // -- mirrors the real, `await`-wrapped shape from a follow-up spot-check cited in
-    // plans/inlay-hint-reduction.md (a second handler file in the same private codebase):
-    // `var masterOffices = await db.Query<DBOffice>().Where(...).FetchMany(...).ToListAsync();`.
-    // The synchronous version of this rule (tested above) doesn't unwrap an `AwaitExpressionSyntax`
-    // wrapping the whole invocation chain, so it missed this -- extremely common, since virtually
-    // every real NHibernate `...Async()` call site is awaited -- shape.
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 562u |> hasHintWithLabel ": List<Widget>",
-        "Expected no \": List<Widget>\" hint on line 562 (element type is already spelled out\
-         earlier in the fluent chain, at Query<Widget>(), even though the chain is awaited)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint suppresses a var type hint when an awaited generic invocation's type argument matches``
-    ()
-    =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 585 (0-indexed): `var result = await CreateAsync<Widget>();`
-    // -- mirrors the real, `await`-wrapped shape from a further follow-up spot-check cited in
-    // plans/inlay-hint-reduction.md: `var order = await db.GetAsync<DBOrder>(...);` (illustrative
-    // entity name). Unlike the previous test, this is rule #5's *original* shape
-    // (`isTypeSpelledOutInGenericInvocation`) -- the generic invocation whose type argument
-    // matches is the initializer's own single, outermost invocation, not an earlier call in a
-    // chain -- which, before this fix, didn't unwrap `await` either. The variable is deliberately
-    // named `result` (not `widget`) so this test isn't accidentally passing for the unrelated
-    // identifier-echoes-type-name reason (rule #6).
-    ClassicAssert.IsFalse(
-        hints |> hintsOnLine 585u |> hasHintWithLabel ": Widget",
-        "Expected no \": Widget\" hint on line 585 (type is already spelled out in the awaited\
-         invocation's explicit type argument)"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 603 (0-indexed): `var name = helper.ShortName;` -- infers `string`, well under the
-    // truncation threshold.
-    let onLine = hints |> hintsOnLine 603u
-    let typeHint = onLine |> Array.tryFind (fun h -> labelText h = ": string")
-
-    ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a \": string\" hint on line 603, got: %A" onLine)
-
-    ClassicAssert.IsTrue(
-        typeHint |> Option.bind tooltipText |> Option.isNone,
-        "Expected no tooltip on an untruncated, short type hint"
-    )
-
-[<Test>]
-let ``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/InlayHintTest.cs"
-
-    let hints = getHints client doc
-
-    // line 608 (0-indexed): `var summary = new { AlphaValue = ..., BravoValue = ..., ... };` --
-    // the anonymous type's rendered name (`<anonymous type: int AlphaValue, int BravoValue, ...>`)
-    // is far longer than the truncation threshold.
-    let onLine = hints |> hintsOnLine 608u
-    let typeHint = onLine |> Array.tryFind (fun h -> (labelText h).StartsWith(": "))
-
-    ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a type hint on line 608, got: %A" onLine)
-
-    let label = typeHint |> Option.map labelText |> Option.defaultValue ""
-
-    ClassicAssert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
-
-    // 2 for the ": " prefix, plus the truncation threshold itself.
-    ClassicAssert.IsTrue(
-        label.Length <= 2 + 40,
-        sprintf "Expected the truncated label to be short, got (%d chars): %s" label.Length label
-    )
-
-    let tooltip = typeHint |> Option.bind tooltipText
-
-    ClassicAssert.IsTrue(tooltip.IsSome, "Expected a tooltip carrying the full, untruncated type name")
-
-    ClassicAssert.IsTrue(
-        (tooltip |> Option.defaultValue "").Length > label.Length,
-        "Expected the tooltip's full type name to be longer than the truncated label"
-    )
-
-    ClassicAssert.IsFalse(
-        (tooltip |> Option.defaultValue "").Contains("..."),
-        "Expected the tooltip to hold the full, untruncated type name, not another truncated copy"
-    )
+[<TestFixture>]
+type InlayHintTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/InlayHintTest.cs")
+
+    [<Test>]
+    member this.``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 25 (0-indexed): `var count = GetCount();`
+        let onLine = hints |> hintsOnLine 25u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel ": int",
+            sprintf "Expected a \": int\" type hint on line 25, got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint shows parameter hints for a regular call with differently-named arguments`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 30 (0-indexed): `helper.Add(1, 2);`
+        let onLine = hints |> hintsOnLine 30u
+
+        ClassicAssert.IsTrue(onLine |> hasHintWithLabel "first:", sprintf "Expected a \"first:\" hint on line 30, got: %A" onLine)
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "second:",
+            sprintf "Expected a \"second:\" hint on line 30, got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a same-name single-line argument (regression guard)`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 36 (0-indexed): `helper.WithResource(resourceName, "other");`
+        let onLine = hints |> hintsOnLine 36u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "resourceName:",
+            sprintf "Expected no \"resourceName:\" hint on line 36 (argument matches parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "other:",
+            sprintf "Expected an \"other:\" hint on line 36 (argument doesn't match parameter name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a same-name argument on its own indented line`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // lines 42-44 (0-indexed):
+        //     helper.WithResource(
+        //         resourceName,
+        //         "other");
+        let onLine = hints |> hintsOnLine 43u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "resourceName:",
+            sprintf
+                "Expected no \"resourceName:\" hint on line 43 (argument matches parameter name, only\
+                 differs by leading whitespace/newline trivia), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a qualified member-access argument matching the parameter name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // lines 49-51 (0-indexed):
+        //     helper.WithResource(
+        //         this.ResourceName,
+        //         "other");
+        let onLine = hints |> hintsOnLine 50u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "resourceName:",
+            sprintf
+                "Expected no \"resourceName:\" hint on line 50 (this.ResourceName's last segment matches\
+                 the parameter name), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a hint when the argument name doesn't match the parameter name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 57 (0-indexed): `helper.WithResource(somethingElse, "other");`
+        let onLine = hints |> hintsOnLine 57u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "resourceName:",
+            sprintf "Expected a \"resourceName:\" hint on line 57 (argument doesn't match parameter name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a hint when a qualified member-access argument's last segment doesn't match the parameter name``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // lines 62-64 (0-indexed):
+        //     helper.WithResource(
+        //         this.OtherValue,
+        //         "other");
+        let onLine = hints |> hintsOnLine 63u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "resourceName:",
+            sprintf
+                "Expected a \"resourceName:\" hint on line 63 (this.OtherValue's last segment doesn't\
+                 match the parameter name), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 85 (0-indexed): `helper.SetX(5);` -- parameter is `x`
+        let onLine = hints |> hintsOnLine 85u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "x:",
+            sprintf "Expected no \"x:\" hint on line 85 (parameter name is too short to be informative), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 90 (0-indexed): `string.Format("{0} {1}", 1, 2);` -- parameters are `format`, `arg0`, `arg1`
+        let onLine = hints |> hintsOnLine 90u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "arg0:",
+            sprintf "Expected no \"arg0:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "arg1:",
+            sprintf "Expected no \"arg1:\" hint on line 90 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "format:",
+            sprintf "Expected a \"format:\" hint on line 90 (not a numbered-suffix parameter name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 95 (0-indexed): `System.Math.Min(1, 2);` -- parameters are `val1`, `val2`
+        let onLine = hints |> hintsOnLine 95u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "val1:",
+            sprintf "Expected no \"val1:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "val2:",
+            sprintf "Expected no \"val2:\" hint on line 95 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 100 (0-indexed): `System.Math.Round(1.23m, 2, System.MidpointRounding.AwayFromZero);`
+        // -- parameters are `d`, `decimals`, `mode`
+        let onLine = hints |> hintsOnLine 100u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "d:",
+            sprintf "Expected no \"d:\" hint on line 100 (parameter name is too short to be informative), got: %A" onLine
+        )
+
+        // `decimals`/`mode` aren't short or numbered-suffix, so the narrow mechanical rule
+        // intentionally doesn't suppress them (unlike `d`), even though they're arguably still
+        // low-information BCL names -- see plans/inlay-hint-reduction.md for the rationale.
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "decimals:",
+            sprintf "Expected a \"decimals:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "mode:",
+            sprintf "Expected a \"mode:\" hint on line 100 (not short or numbered-suffix), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 105 (0-indexed): `"hello".Substring(1, 2);` -- parameters are `startIndex`, `length`
+        let onLine = hints |> hintsOnLine 105u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "startIndex:",
+            sprintf "Expected a \"startIndex:\" hint on line 105, got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "length:",
+            sprintf "Expected a \"length:\" hint on line 105, got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 111 (0-indexed): `helper.WriteBuffer(data, 0, data.Length);`
+        // -- parameters are `buffer`, `offset`, `count`
+        let onLine = hints |> hintsOnLine 111u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "buffer:",
+            sprintf "Expected a \"buffer:\" hint on line 111, got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "offset:",
+            sprintf "Expected an \"offset:\" hint on line 111, got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(onLine |> hasHintWithLabel "count:", sprintf "Expected a \"count:\" hint on line 111, got: %A" onLine)
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- parameter is `predicate`
+        let onLine = hints |> hintsOnLine 144u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "predicate:",
+            sprintf
+                "Expected no \"predicate:\" hint on line 144 (sole lambda argument, method name conveys role), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 149 (0-indexed): `new FluentQuery().Fetch(x => x).ThenFetch(x => x);`
+        // -- both parameters are `relatedObjectSelector`
+        let onLine = hints |> hintsOnLine 149u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "relatedObjectSelector:",
+            sprintf
+                "Expected no \"relatedObjectSelector:\" hint on line 149 (sole lambda argument of each\
+                 call, method name conveys role), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps hints when a call takes more than one lambda argument`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 154 (0-indexed): `new FluentQuery().Combine(x => x, x => x);`
+        // -- parameters are `first`, `second`
+        let onLine = hints |> hintsOnLine 154u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "first:",
+            sprintf "Expected a \"first:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "second:",
+            sprintf "Expected a \"second:\" hint on line 154 (call has more than one lambda argument), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 159 (0-indexed): `new FluentQuery().Where(IsPositive);` -- parameter is `predicate`
+        let onLine = hints |> hintsOnLine 159u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "predicate:",
+            sprintf
+                "Expected a \"predicate:\" hint on line 159 (sole argument is a method group, not a lambda\
+                 expression -- out of scope for this rule), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses composite-format-string positional argument hints (rule #4, subsumed by rule #2)``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 177 (0-indexed): `new Logger().DebugFormat("{0}: {1} did {2}", 1, 2, 3);`
+        // -- parameters are `format`, `arg0`, `arg1`, `arg2` (mirrors log4net's real ILog.DebugFormat
+        // overload shapes). No dedicated implementation was needed for this: `arg0`/`arg1`/`arg2`
+        // already match rule #2's numbered-suffix pattern (`hasUninformativeParameterName`).
+        let onLine = hints |> hintsOnLine 177u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "format:",
+            sprintf "Expected a \"format:\" hint on line 177, got: %A" onLine
+        )
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "arg0:",
+            sprintf "Expected no \"arg0:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "arg1:",
+            sprintf "Expected no \"arg1:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "arg2:",
+            sprintf "Expected no \"arg2:\" hint on line 177 (numbered-suffix parameter name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for a single lambda argument followed by a trailing CancellationToken``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 205 (0-indexed): `new FluentQueryAsync().WhereAsync(x => x > 0, default);`
+        // -- parameters are `predicate`, `cancellationToken`
+        let onLine = hints |> hintsOnLine 205u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "predicate:",
+            sprintf
+                "Expected no \"predicate:\" hint on line 205 (sole non-CancellationToken argument is a\
+                 lambda, method name conveys role), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 210 (0-indexed): `new FluentQueryAsync().CombineAsync(x => x, x => x, default);`
+        // -- parameters are `first`, `second`, `cancellationToken`
+        let onLine = hints |> hintsOnLine 210u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "first:",
+            sprintf "Expected a \"first:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "second:",
+            sprintf "Expected a \"second:\" hint on line 210 (more than one non-CancellationToken argument), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when a qualified generic invocation's type argument matches``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 240 (0-indexed): `var widget = GenericFactory.Create<Widget>();`
+        let onLine = hints |> hintsOnLine 240u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": Widget",
+            sprintf
+                "Expected no \": Widget\" hint on line 240 (type is already spelled out in the\
+                 invocation's explicit type argument), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a var type hint when a generic invocation's type argument doesn't match the inferred type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 245 (0-indexed): `var description = GenericFactory.Describe<Widget>(new Widget());`
+        // -- `Describe<Widget>` returns `string`, not `Widget`
+        let onLine = hints |> hintsOnLine 245u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel ": string",
+            sprintf
+                "Expected a \": string\" hint on line 245 (inferred type doesn't match the invocation's\
+                 type argument), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when an unqualified generic invocation's type argument matches``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 250 (0-indexed): `var widget = CreateLocal<Widget>();`
+        let onLine = hints |> hintsOnLine 250u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": Widget",
+            sprintf
+                "Expected no \": Widget\" hint on line 250 (type is already spelled out in the\
+                 unqualified invocation's explicit type argument), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 255 (0-indexed): `var day = System.Enum.Parse<System.DayOfWeek>("Monday");`
+        let onLine = hints |> hintsOnLine 255u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": DayOfWeek",
+            sprintf
+                "Expected no \": DayOfWeek\" hint on line 255 (type is already spelled out in\
+                 Enum.Parse's explicit type argument), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 287 (0-indexed): `var resourceCondition = GetCondition();`
+        let onLine = hints |> hintsOnLine 287u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": ResourceCondition",
+            sprintf
+                "Expected no \": ResourceCondition\" hint on line 287 (identifier is a full\
+                 case-insensitive match of the inferred type name), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when the identifier's last word matches the inferred type's last word``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 292 (0-indexed): `var settingChangeCondition = GetCondition();`
+        let onLine = hints |> hintsOnLine 292u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": ResourceCondition",
+            sprintf
+                "Expected no \": ResourceCondition\" hint on line 292 (identifier's last word\
+                 \"Condition\" matches the inferred type's last word), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 297 (0-indexed): `var outcome = GetCondition();`
+        let onLine = hints |> hintsOnLine 297u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel ": ResourceCondition",
+            sprintf
+                "Expected a \": ResourceCondition\" hint on line 297 (identifier doesn't echo the\
+                 inferred type name), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a foreach variable's type hint when the identifier echoes the element type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 302 (0-indexed): `foreach (var widget in GetWidgets())`
+        let onLine = hints |> hintsOnLine 302u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": Widget",
+            sprintf
+                "Expected no \": Widget\" hint on line 302 (identifier is a full case-insensitive\
+                 match of the element type name), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a foreach variable's type hint when the identifier doesn't echo the element type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 309 (0-indexed): `foreach (var item in GetWidgets())`
+        let onLine = hints |> hintsOnLine 309u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel ": Widget",
+            sprintf "Expected a \": Widget\" hint on line 309 (identifier doesn't echo the element type), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a parameter-name hint when the parameter name echoes its own declared type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 316 (0-indexed): `Dispatch(null);` -- parameter is `MessageDispatcherAsync messageDispatcherAsync`
+        let onLine = hints |> hintsOnLine 316u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "messageDispatcherAsync:",
+            sprintf
+                "Expected no \"messageDispatcherAsync:\" hint on line 316 (parameter name is a\
+                 decapitalized echo of its own declared type), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a parameter-name hint when the parameter name doesn't echo its own declared type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 321 (0-indexed): `DispatchWithGenericName(null);` -- parameter is `MessageDispatcherAsync handler`
+        let onLine = hints |> hintsOnLine 321u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "handler:",
+            sprintf
+                "Expected a \"handler:\" hint on line 321 (parameter name doesn't echo its own declared type), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 342 (0-indexed): `helper.Save(5);` -- parameter is `object obj`
+        let onLine = hints |> hintsOnLine 342u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "obj:",
+            sprintf "Expected no \"obj:\" hint on line 342 (\"obj\" is a generic placeholder name), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 347 (0-indexed): `helper.Log("hi");` -- parameter is `string msg`
+        let onLine = hints |> hintsOnLine 347u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "msg:",
+            sprintf
+                "Expected a \"msg:\" hint on line 347 (\"msg\" isn't the generic \"obj\" exception, only\
+                 coincidentally the same length), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression spells out the type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 360 (0-indexed): `var widget = new Widget();`
+        let onLine = hints |> hintsOnLine 360u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": Widget",
+            sprintf
+                "Expected no \": Widget\" hint on line 360 (type is already spelled out right after `new`), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression with an initializer spells out the type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 365 (0-indexed): `var widget = new WidgetWithProperty { Value = 1 };`
+        let onLine = hints |> hintsOnLine 365u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": WidgetWithProperty",
+            sprintf
+                "Expected no \": WidgetWithProperty\" hint on line 365 (type is already spelled out\
+                 right after `new`, even with an object initializer), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 387 (0-indexed): `helper.Contains(5);` -- sole parameter is `value`
+        let onLine = hints |> hintsOnLine 387u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "value:",
+            sprintf "Expected no \"value:\" hint on line 387 (sole argument, method name conveys role), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 392 (0-indexed): `helper.Add(1, 2);` -- parameters are `key`, `value`
+        let onLine = hints |> hintsOnLine 392u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "key:",
+            sprintf "Expected a \"key:\" hint on line 392 (call has more than one argument), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "value:",
+            sprintf
+                "Expected a \"value:\" hint on line 392 (call has more than one argument, so \"value\"\
+                 still helps disambiguate from \"key\"), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when a static invocation's qualifier matches the return type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 400 (0-indexed): `var reason = string.Format("{0}", 1);`
+        let onLine = hints |> hintsOnLine 400u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel ": string",
+            sprintf
+                "Expected no \": string\" hint on line 400 (type is already spelled out as the\
+                 invocation's qualifier), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a var type hint when a static invocation's qualifier doesn't match the return type``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 405 (0-indexed): `var converted = System.Convert.ToInt32("5");`
+        // -- qualifier is `Convert`, return type is `int`
+        let onLine = hints |> hintsOnLine 405u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel ": int",
+            sprintf
+                "Expected a \": int\" hint on line 405 (invocation's qualifier doesn't match the\
+                 return type), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 426 (0-indexed): `helper.Add(5);` -- sole parameter is `item`
+        let onLine = hints |> hintsOnLine 426u
+
+        ClassicAssert.IsFalse(
+            onLine |> hasHintWithLabel "item:",
+            sprintf "Expected no \"item:\" hint on line 426 (sole argument, method name conveys role), got: %A" onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 431 (0-indexed): `helper.Insert(0, 5);` -- parameters are `index`, `item`
+        let onLine = hints |> hintsOnLine 431u
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "index:",
+            sprintf "Expected an \"index:\" hint on line 431 (call has more than one argument), got: %A" onLine
+        )
+
+        ClassicAssert.IsTrue(
+            onLine |> hasHintWithLabel "item:",
+            sprintf
+                "Expected an \"item:\" hint on line 431 (call has more than one argument, so \"item\"\
+                 still helps disambiguate from \"index\"), got: %A"
+                onLine
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint never shows a type hint for an implicit lambda parameter`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // Implicit lambda-parameter type hints (the `(p: SomeType) => ...` style hint) were removed
+        // entirely -- see plans/inlay-hint-reduction.md. Real-world evidence showed this category is
+        // almost always redundant (spelled out by an immediately-preceding generic invocation,
+        // inferable from a property access one hop away, or simply repeated for the same type across
+        // multiple lambdas in one short fluent chain), and Visual Studio's own default configuration
+        // ships with all inline hints off by default.
+
+        // line 144 (0-indexed): `new FluentQuery().Where(x => x > 0);` -- `x` infers to `int`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 144u |> hasHintWithLabel ": int",
+            "Expected no \": int\" implicit lambda-parameter type hint on line 144"
+        )
+
+        // line 460 (0-indexed): `repository.Query<Widget>().Where(p => p != null);` -- `p` infers to
+        // `Widget`, spelled out one call earlier at `Query<Widget>`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 460u |> hasHintWithLabel ": Widget",
+            "Expected no \": Widget\" implicit lambda-parameter type hint on line 460"
+        )
+
+        // line 466 (0-indexed): `chained.Where(p => p != null);` -- `p` also infers to `Widget`, but
+        // here the receiver isn't itself a generic invocation that spells the type out
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 466u |> hasHintWithLabel ": Widget",
+            "Expected no \": Widget\" implicit lambda-parameter type hint on line 466"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint for a string literal initializer`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 474 (0-indexed): `var greeting = "hi";`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 474u |> hasHintWithLabel ": string",
+            "Expected no \": string\" hint on line 474 (type is directly implied by the string literal)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 479 (0-indexed): `var count = 42;`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 479u |> hasHintWithLabel ": int",
+            "Expected no \": int\" hint on line 479 (type is directly implied by the numeric literal)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 484 (0-indexed): `var flag = true;`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 484u |> hasHintWithLabel ": bool",
+            "Expected no \": bool\" hint on line 484 (type is directly implied by the boolean literal)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 489 (0-indexed): `var negated = -1;` -- a PrefixUnaryExpressionSyntax, not itself a
+        // LiteralExpressionSyntax, so intentionally out of scope for the literal-initializer rule
+        ClassicAssert.IsTrue(
+            hints |> hintsOnLine 489u |> hasHintWithLabel ": int",
+            "Expected a \": int\" hint on line 489 (initializer is a unary expression, not a bare literal)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 498 (0-indexed): `var greeting = $"Hello, {name}";`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 498u |> hasHintWithLabel ": string",
+            "Expected no \": string\" hint on line 498 (interpolated string's natural type is always string)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 506 (0-indexed): `var widget = obj as Widget;`
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 506u |> hasHintWithLabel ": Widget",
+            "Expected no \": Widget\" hint on line 506 (type is already spelled out right after `as`)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in a fluent chain``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 551 (0-indexed): `var widgets = repository.Query<Widget>().Where(p => p != null).ToList();`
+        // -- mirrors the real `var orders = await db.Query<DBSalesOrder>().Where(o => ...).ToListAsync();`
+        // idiom cited in plans/inlay-hint-reduction.md: `Widget` is already spelled out earlier in the
+        // same chain, at `Query<Widget>()`, so the `: List<Widget>` hint on the materialized result is
+        // redundant.
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 551u |> hasHintWithLabel ": List<Widget>",
+            "Expected no \": List<Widget>\" hint on line 551 (element type is already spelled out\
+             earlier in the fluent chain, at Query<Widget>())"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 557 (0-indexed): `var widgets2 = partial.ToList();`
+        // -- the explicit `Query<Widget>()` generic invocation happened in a *previous* statement, not
+        // in this initializer's own invocation chain, so the type isn't "spelled out" from this hint's
+        // point of view and the hint should be kept.
+        ClassicAssert.IsTrue(
+            hints |> hintsOnLine 557u |> hasHintWithLabel ": List<Widget>",
+            "Expected a \": List<Widget>\" hint on line 557 (element type isn't spelled out anywhere\
+             in this initializer's own invocation chain)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in an awaited fluent chain``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 562 (0-indexed):
+        // `var widgets = await repository.Query<Widget>().Where(p => p != null).ToListAsync();`
+        // -- mirrors the real, `await`-wrapped shape from a follow-up spot-check cited in
+        // plans/inlay-hint-reduction.md (a second handler file in the same private codebase):
+        // `var masterOffices = await db.Query<DBOffice>().Where(...).FetchMany(...).ToListAsync();`.
+        // The synchronous version of this rule (tested above) doesn't unwrap an `AwaitExpressionSyntax`
+        // wrapping the whole invocation chain, so it missed this -- extremely common, since virtually
+        // every real NHibernate `...Async()` call site is awaited -- shape.
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 562u |> hasHintWithLabel ": List<Widget>",
+            "Expected no \": List<Widget>\" hint on line 562 (element type is already spelled out\
+             earlier in the fluent chain, at Query<Widget>(), even though the chain is awaited)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint suppresses a var type hint when an awaited generic invocation's type argument matches``
+        ()
+        =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 585 (0-indexed): `var result = await CreateAsync<Widget>();`
+        // -- mirrors the real, `await`-wrapped shape from a further follow-up spot-check cited in
+        // plans/inlay-hint-reduction.md: `var order = await db.GetAsync<DBOrder>(...);` (illustrative
+        // entity name). Unlike the previous test, this is rule #5's *original* shape
+        // (`isTypeSpelledOutInGenericInvocation`) -- the generic invocation whose type argument
+        // matches is the initializer's own single, outermost invocation, not an earlier call in a
+        // chain -- which, before this fix, didn't unwrap `await` either. The variable is deliberately
+        // named `result` (not `widget`) so this test isn't accidentally passing for the unrelated
+        // identifier-echoes-type-name reason (rule #6).
+        ClassicAssert.IsFalse(
+            hints |> hintsOnLine 585u |> hasHintWithLabel ": Widget",
+            "Expected no \": Widget\" hint on line 585 (type is already spelled out in the awaited\
+             invocation's explicit type argument)"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 603 (0-indexed): `var name = helper.ShortName;` -- infers `string`, well under the
+        // truncation threshold.
+        let onLine = hints |> hintsOnLine 603u
+        let typeHint = onLine |> Array.tryFind (fun h -> labelText h = ": string")
+
+        ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a \": string\" hint on line 603, got: %A" onLine)
+
+        ClassicAssert.IsTrue(
+            typeHint |> Option.bind tooltipText |> Option.isNone,
+            "Expected no tooltip on an untruncated, short type hint"
+        )
+
+    [<Test>]
+    member this.``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip`` () =
+        let client = this.Client
+        let doc = this.Doc
+
+        let hints = getHints client doc
+
+        // line 608 (0-indexed): `var summary = new { AlphaValue = ..., BravoValue = ..., ... };` --
+        // the anonymous type's rendered name (`<anonymous type: int AlphaValue, int BravoValue, ...>`)
+        // is far longer than the truncation threshold.
+        let onLine = hints |> hintsOnLine 608u
+        let typeHint = onLine |> Array.tryFind (fun h -> (labelText h).StartsWith(": "))
+
+        ClassicAssert.IsTrue(typeHint.IsSome, sprintf "Expected a type hint on line 608, got: %A" onLine)
+
+        let label = typeHint |> Option.map labelText |> Option.defaultValue ""
+
+        ClassicAssert.IsTrue(label.Contains("..."), sprintf "Expected the truncated label to contain an ellipsis, got: %s" label)
+
+        // 2 for the ": " prefix, plus the truncation threshold itself.
+        ClassicAssert.IsTrue(
+            label.Length <= 2 + 40,
+            sprintf "Expected the truncated label to be short, got (%d chars): %s" label.Length label
+        )
+
+        let tooltip = typeHint |> Option.bind tooltipText
+
+        ClassicAssert.IsTrue(tooltip.IsSome, "Expected a tooltip carrying the full, untruncated type name")
+
+        ClassicAssert.IsTrue(
+            (tooltip |> Option.defaultValue "").Length > label.Length,
+            "Expected the tooltip's full type name to be longer than the truncated label"
+        )
+
+        ClassicAssert.IsFalse(
+            (tooltip |> Option.defaultValue "").Contains("..."),
+            "Expected the tooltip to hold the full, untruncated type name, not another truncated copy"
+        )

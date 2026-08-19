@@ -284,3 +284,51 @@ y)` constraint model was out of scope for this change, the mechanical fix was:
   alongside the old one and F#'s lambda type inference can't disambiguate between them.
 
 Full suite (292 tests) passes after the upgrade.
+
+---
+
+## Round 2 (2026-08-19): shared read-only fixtures for InlayHint/FoldingRange tests
+
+### Problem
+
+`InlayHintTests.fs` alone called `activateFixture "genericProject"` 54 times — once per
+`[<Test>]` — each spinning up a brand-new `CSharpLanguageServer` process and reloading the
+whole solution (~2 s of `textDocument/didOpen` + MSBuildWorkspace load per test), just to
+issue a single read-only `textDocument/inlayHint` request against the same
+`Project/InlayHintTest.cs` file every time. `FoldingRangeTests.fs` had the same shape (12
+activations, 11 against the same file). Across the two files that's 65 redundant
+server-process + solution-load cycles.
+
+### Fix: `SharedReadOnlyFixture` base class (`Tooling.fs`)
+
+Added a class-based NUnit fixture base (`SharedReadOnlyFixture`) that:
+- Activates the client/solution and opens the document **once**, in `[<OneTimeSetUp>]`.
+- Exposes the shared `Client`/`Doc` to every `[<Test>]` member in the fixture.
+- Relies on NUnit's default "SingleInstance" fixture lifecycle (one instance of the class
+  for the whole fixture) plus NUnit's documented behavior of calling `Dispose()`
+  automatically once, after the last test in the fixture has run, when the fixture class
+  implements `IDisposable` — **no explicit `[<OneTimeTearDown>]` needed**.
+- Is explicitly scoped to **read-only** tests (no `Change`/`Save`/mutation) since the
+  client/document are shared, mutable state reused by every test method.
+
+`InlayHintTests.fs` and `FoldingRangeTests.fs` were mechanically rewritten from top-level
+`[<Test>] let ``name`` () = use client = activateFixture ...` functions into instance
+members of a `[<TestFixture>] type ...() = inherit SharedReadOnlyFixture(...)`, replacing
+the two `use client = ...` / `use doc = ...` lines with `let client = this.Client` /
+`let doc = this.Doc`. `FoldingRangeTests.fs` has one outlier test that opens a different
+file (`Project/Class.cs`); it was left as a standalone top-level `[<Test>] let` function
+since converting a single test wasn't worth a second fixture class.
+
+### Results
+
+| Suite | Before | After | Speedup |
+|-------|--------|-------|---------|
+| `InlayHintTests.fs` (54 tests) | 24.95 s | **~2 s** | ~12x |
+| `FoldingRangeTests.fs` (12 tests) | ~13 s (est., 1 activation/test) | **~1 s** | ~13x |
+| Full suite (292 tests) | 64 s | **42–44 s** | ~1.5x |
+
+This pattern generalizes to any other file with the "many `[<Test>]`s against one
+read-only file" shape (e.g. `DocumentSymbolTests.fs`, `SemanticTokenTests.fs`,
+`ImplementationTests.fs`, `CSharpMetadataTests.fs`) — those weren't converted in this
+round since their per-file win is much smaller (a handful of tests each vs. InlayHint's
+54), but the same `SharedReadOnlyFixture` base is available for them.

@@ -17,157 +17,161 @@ let private getRanges (client: LspTestClient) (doc: LspDocumentHandle) : Folding
 
     result |> Option.defaultValue Array.empty
 
-[<Test>]
-let ``textDocument/foldingRange returns Some result`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+[<TestFixture>]
+type FoldingRangeTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/FoldingRangeTest.cs")
 
-    let result: FoldingRange array option =
-        client.Request("textDocument/foldingRange", foldingRangeRequest doc)
+    [<Test>]
+    member this.``textDocument/foldingRange returns Some result`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    ClassicAssert.IsTrue(result.IsSome, "Expected Some result from textDocument/foldingRange")
+        let result: FoldingRange array option =
+            client.Request("textDocument/foldingRange", foldingRangeRequest doc)
 
-[<Test>]
-let ``textDocument/foldingRange includes a range for the namespace`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(result.IsSome, "Expected Some result from textDocument/foldingRange")
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes a range for the namespace`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "namespace Project.FoldingRangeTest { ... }" spans from line 3 to near end
-    let hasNamespace =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasNamespace, sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges)
+        // "namespace Project.FoldingRangeTest { ... }" spans from line 3 to near end
+        let hasNamespace =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange includes a range for the class`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasNamespace, sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes a range for the class`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "public class FoldingSubject" opens on line 8 (0-indexed) { ... }
-    let hasClass =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 8u && r.EndLine > 8u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasClass, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
+        // "public class FoldingSubject" opens on line 8 (0-indexed) { ... }
+        let hasClass =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 8u && r.EndLine > 8u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange includes a range for a method`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasClass, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes a range for a method`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "public string Greet()" opens on line 29 (0-indexed)
-    let hasMethod =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 29u && r.EndLine > 29u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasMethod, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
+        // "public string Greet()" opens on line 29 (0-indexed)
+        let hasMethod =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 29u && r.EndLine > 29u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange includes a range for a constructor`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasMethod, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes a range for a constructor`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // constructor "public FoldingRangeTestClass(...)" is on line 17
-    let hasConstructor =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasConstructor, sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges)
+        // constructor "public FoldingRangeTestClass(...)" is on line 17
+        let hasConstructor =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange includes a range for a property`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasConstructor, sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes a range for a property`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "public int Value { get; set; }" is on line 23
-    let hasProperty =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasProperty, sprintf "Expected a property folding range starting at line 23, got: %A" ranges)
+        // "public int Value { get; set; }" is on line 23
+        let hasProperty =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange includes imports range for multiple usings`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasProperty, sprintf "Expected a property folding range starting at line 23, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes imports range for multiple usings`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "using System;" is on line 0, "using System.Collections.Generic;" is on line 1
-    let hasImports =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 0u && r.EndLine = 1u && r.Kind = Some FoldingRangeKind.Imports)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasImports, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
+        // "using System;" is on line 0, "using System.Collections.Generic;" is on line 1
+        let hasImports =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 0u && r.EndLine = 1u && r.Kind = Some FoldingRangeKind.Imports)
 
-[<Test>]
-let ``textDocument/foldingRange includes region range`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasImports, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes region range`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "#region Fields" is on line 10 (0-indexed), "#endregion" is on line 15
-    let hasRegion =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 10u && r.EndLine = 15u && r.Kind = Some FoldingRangeKind.Region)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasRegion, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
+        // "#region Fields" is on line 10 (0-indexed), "#endregion" is on line 15
+        let hasRegion =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 10u && r.EndLine = 15u && r.Kind = Some FoldingRangeKind.Region)
 
-[<Test>]
-let ``textDocument/foldingRange includes multi-line comment range`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasRegion, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes multi-line comment range`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "/* This is a\n   multi-line comment */" is on lines 31-32 (0-indexed)
-    let hasComment =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 31u && r.EndLine = 32u && r.Kind = Some FoldingRangeKind.Comment)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasComment, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
+        // "/* This is a\n   multi-line comment */" is on lines 31-32 (0-indexed)
+        let hasComment =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 31u && r.EndLine = 32u && r.Kind = Some FoldingRangeKind.Comment)
 
-[<Test>]
-let ``textDocument/foldingRange includes interface range`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasComment, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange includes interface range`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    // "public interface IFoldable" is on line 43
-    let hasInterface =
-        ranges
-        |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
+        let ranges = getRanges client doc
 
-    ClassicAssert.IsTrue(hasInterface, sprintf "Expected an interface folding range starting at line 43, got: %A" ranges)
+        // "public interface IFoldable" is on line 43
+        let hasInterface =
+            ranges
+            |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
 
-[<Test>]
-let ``textDocument/foldingRange returns sorted ranges`` () =
-    use client = activateFixture "genericProject"
-    use doc = client.Open "Project/FoldingRangeTest.cs"
+        ClassicAssert.IsTrue(hasInterface, sprintf "Expected an interface folding range starting at line 43, got: %A" ranges)
 
-    let ranges = getRanges client doc
+    [<Test>]
+    member this.``textDocument/foldingRange returns sorted ranges`` () =
+        let client = this.Client
+        let doc = this.Doc
 
-    ClassicAssert.IsTrue(ranges.Length > 0, "Expected at least one folding range")
+        let ranges = getRanges client doc
 
-    let isSorted =
-        ranges
-        |> Array.pairwise
-        |> Array.forall (fun (a, b) -> a.StartLine <= b.StartLine)
+        ClassicAssert.IsTrue(ranges.Length > 0, "Expected at least one folding range")
 
-    ClassicAssert.IsTrue(isSorted, "Expected folding ranges to be sorted by StartLine")
+        let isSorted =
+            ranges
+            |> Array.pairwise
+            |> Array.forall (fun (a, b) -> a.StartLine <= b.StartLine)
+
+        ClassicAssert.IsTrue(isSorted, "Expected folding ranges to be sorted by StartLine")
 
 [<Test>]
 let ``textDocument/foldingRange on simple class file returns method ranges`` () =
