@@ -9,92 +9,96 @@ open CSharpLanguageServer.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<Test>]
-let ``test csharp/metadata works`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/Class.cs"
+[<TestFixture>]
+type CSharpMetadataTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/Class.cs")
 
-    let typeDefinitionParams0: TypeDefinitionParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 12u; Character = 16u }
-          WorkDoneToken = None
-          PartialResultToken = None }
+    [<Test>]
+    member this.``test csharp/metadata works``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let typeDefinition0: U2<Definition, DefinitionLink array> option =
-        client.Request("textDocument/typeDefinition", typeDefinitionParams0)
+        let typeDefinitionParams0: TypeDefinitionParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 12u; Character = 16u }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    let csharpUriForSystemString =
-        client.SolutionDir
-        |> Uri
-        |> string
-        |> _.Substring("file:///".Length)
-        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.String.cs"
+        let typeDefinition0: U2<Definition, DefinitionLink array> option =
+            client.Request("textDocument/typeDefinition", typeDefinitionParams0)
 
-    match typeDefinition0 with
-    | Some(U2.C1(U2.C2 ls)) ->
-        ClassicAssert.AreEqual(1, ls.Length)
-        ClassicAssert.AreEqual(csharpUriForSystemString, ls[0].Uri)
+        let csharpUriForSystemString =
+            client.SolutionDir
+            |> Uri
+            |> string
+            |> _.Substring("file:///".Length)
+            |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.String.cs"
 
-    | _ -> failwith "Some U2.C1 (U2.C2) was expected"
+        match typeDefinition0 with
+        | Some(U2.C1(U2.C2 ls)) ->
+            ClassicAssert.AreEqual(1, ls.Length)
+            ClassicAssert.AreEqual(csharpUriForSystemString, ls[0].Uri)
 
-    let metadataParams0: CSharpMetadataParams =
-        { TextDocument = { Uri = csharpUriForSystemString } }
+        | _ -> failwith "Some U2.C1 (U2.C2) was expected"
 
-    let metadata0: CSharpMetadataResponse =
-        match client.Request("csharp/metadata", metadataParams0) with
-        | Some response -> response
-        | None -> failwith "no response from csharp/metadata"
+        let metadataParams0: CSharpMetadataParams =
+            { TextDocument = { Uri = csharpUriForSystemString } }
 
-    ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
-    ClassicAssert.AreEqual("Project", metadata0.ProjectName)
-    ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
-    ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
+        let metadata0: CSharpMetadataResponse =
+            match client.Request("csharp/metadata", metadataParams0) with
+            | Some response -> response
+            | None -> failwith "no response from csharp/metadata"
 
-[<Test>]
-let ``test csharp/metadata works with no prior LSP request`` () =
-    use client = activateFixture "genericProject"
+        ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
+        ClassicAssert.AreEqual("Project", metadata0.ProjectName)
+        ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
+        ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
 
-    let csharpUriForSystemString =
-        client.SolutionDir
-        |> Uri
-        |> string
-        |> _.Substring("file:///".Length)
-        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.String.cs"
+    [<Test>]
+    member this.``test csharp/metadata works with no prior LSP request``() =
+        let client = this.Client
 
-    let metadataParams0: CSharpMetadataParams =
-        { TextDocument = { Uri = csharpUriForSystemString } }
+        let csharpUriForSystemString =
+            client.SolutionDir
+            |> Uri
+            |> string
+            |> _.Substring("file:///".Length)
+            |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.String.cs"
 
-    let metadata0: CSharpMetadataResponse =
-        match client.Request("csharp/metadata", metadataParams0) with
-        | Some response -> response
-        | None -> failwithf "no response from csharp/metadata for Uri=%s" csharpUriForSystemString
+        let metadataParams0: CSharpMetadataParams =
+            { TextDocument = { Uri = csharpUriForSystemString } }
 
-    ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
-    ClassicAssert.AreEqual("Project", metadata0.ProjectName)
-    ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
-    ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
+        let metadata0: CSharpMetadataResponse =
+            match client.Request("csharp/metadata", metadataParams0) with
+            | Some response -> response
+            | None -> failwithf "no response from csharp/metadata for Uri=%s" csharpUriForSystemString
 
-[<Test>]
-let ``csharp metadata preserves type names ending in suffix characters`` () =
-    use client = activateFixture "genericProject"
+        ClassicAssert.AreEqual("System.Runtime", metadata0.AssemblyName)
+        ClassicAssert.AreEqual("Project", metadata0.ProjectName)
+        ClassicAssert.AreEqual("System.String", metadata0.SymbolName)
+        ClassicAssert.IsTrue(metadata0.Source.StartsWith "using System")
 
-    let processMetadataUri =
-        client.SolutionDir
-        |> Uri
-        |> string
-        |> _.Substring("file:///".Length)
-        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Diagnostics.Process.cs"
+    [<Test>]
+    member this.``csharp metadata preserves type names ending in suffix characters``() =
+        let client = this.Client
 
-    let metadataParams: CSharpMetadataParams =
-        { TextDocument = { Uri = processMetadataUri } }
+        let processMetadataUri =
+            client.SolutionDir
+            |> Uri
+            |> string
+            |> _.Substring("file:///".Length)
+            |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Diagnostics.Process.cs"
 
-    let metadata: CSharpMetadataResponse =
-        match client.Request("csharp/metadata", metadataParams) with
-        | Some response -> response
-        | None -> failwithf "no response from csharp/metadata for Uri=%s" processMetadataUri
+        let metadataParams: CSharpMetadataParams =
+            { TextDocument = { Uri = processMetadataUri } }
 
-    ClassicAssert.AreEqual("System.Diagnostics.Process", metadata.SymbolName)
-    StringAssert.Contains("class Process", metadata.Source)
+        let metadata: CSharpMetadataResponse =
+            match client.Request("csharp/metadata", metadataParams) with
+            | Some response -> response
+            | None -> failwithf "no response from csharp/metadata for Uri=%s" processMetadataUri
+
+        ClassicAssert.AreEqual("System.Diagnostics.Process", metadata.SymbolName)
+        StringAssert.Contains("class Process", metadata.Source)
 
 [<Test>]
 let ``definition resolves members of nested metadata types`` () =

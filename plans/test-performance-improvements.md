@@ -332,3 +332,50 @@ read-only file" shape (e.g. `DocumentSymbolTests.fs`, `SemanticTokenTests.fs`,
 `ImplementationTests.fs`, `CSharpMetadataTests.fs`) — those weren't converted in this
 round since their per-file win is much smaller (a handful of tests each vs. InlayHint's
 54), but the same `SharedReadOnlyFixture` base is available for them.
+
+---
+
+## Round 3 (2026-08-19): `ImplementationTests.fs` / `CSharpMetadataTests.fs`
+
+### Survey
+
+Every other file calling `activateFixture`/`activateFixtureExt` was checked for the same
+"many tests, one read-only fixture+file" shape. Files that mutate state
+(`.Change`/`.Save`/watched-file writes: `DiagnosticTests.fs`, `DocumentSyncTests.fs`,
+`WorkspaceTests.fs`, `LocaleTests.fs`, `AnalyzerTests.fs`) or vary the client
+profile/TFM/solution per test (`SourceGeneratorTests.fs`, `ReconfigurationTests.fs`,
+`InitializationTests.fs`) were excluded — sharing a client across those would either be
+unsafe or defeat the point of the test. That left a handful of candidates
+(`ImplementationTests.fs`, `CSharpMetadataTests.fs`, `CodeActionTests.fs`,
+`DocumentSymbolTests.fs`, `CallHierarchyTests.fs`, `ReferenceTests.fs`,
+`CompletionTests.fs`), profiled with `dotnet test --logger trx` to rank by actual
+per-test duration before picking which to convert first.
+
+### Converted this round
+
+- **`ImplementationTests.fs`**: 4 of 5 tests share `genericProject` +
+  `Project/ClassAndInterfaceHierarchy.cs`, each taking 5.8–6.8 s (dominated by solution
+  load) — the single biggest win of the surveyed candidates. Converted to a
+  `[<TestFixture>] type ImplementationTests() = inherit SharedReadOnlyFixture(...)`.
+  `testImplementationOnConcreteBclMethodFallsBackToDecompilation` (uses `Class.cs`, not
+  the hierarchy file) stays a standalone top-level test.
+- **`CSharpMetadataTests.fs`**: 3 of 4 tests share `genericProject` + `Project/Class.cs`
+  (two of them don't even use the doc — they only need `client.SolutionDir` — but sharing
+  the fixture is harmless), each 5.9–6.9 s. `` `definition resolves members of nested
+  metadata types` `` opens `Class.cs` via `OpenWithText` with different-than-disk content,
+  so it must stay standalone — sharing it would mutate the doc other tests in the fixture
+  rely on.
+
+Not converted this round (smaller, lower-priority wins, left for a future pass):
+`CodeActionTests.fs` (3 shareable tests), `DocumentSymbolTests.fs` (2),
+`CallHierarchyTests.fs` (2), `ReferenceTests.fs` (2 for `genericProject`/`Class.cs`; its 2
+`aspnetProject` Razor tests are actually the most expensive remaining case but open 4 docs
+each, which needs a multi-doc `SharedReadOnlyFixture` variant, not just a mechanical
+conversion), `CompletionTests.fs` (2).
+
+### Results
+
+| Suite | Before | After |
+|-------|--------|-------|
+| `ImplementationTests.fs` + `CSharpMetadataTests.fs` (9 tests) | ~51 s summed test time (7 activations) | **~2 s wall time** (2 activations) |
+| Full suite (292 tests) | 42–44 s | **~45 s** (run-to-run noise; these two files' tests already overlapped with other parallel activations, so the wall-clock win is smaller than the summed-duration win) |
