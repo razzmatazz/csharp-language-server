@@ -170,7 +170,13 @@ module CallHierarchy =
                                     || n :? CSharp.Syntax.BaseObjectCreationExpressionSyntax
 
                                 for callNode in declNode.DescendantNodes() |> Seq.filter isCallNode do
-                                    let target = semanticModel.GetSymbolInfo(callNode, ct).Symbol |> Option.ofObj
+                                    // Normalize to the original definition so constructed
+                                    // generic instantiations (Echo<int>, Echo<string>)
+                                    // group as one target.
+                                    let target =
+                                        semanticModel.GetSymbolInfo(callNode, ct).Symbol
+                                        |> Option.ofObj
+                                        |> Option.map _.OriginalDefinition
 
                                     match target with
                                     | Some target when isCallableSymbol target ->
