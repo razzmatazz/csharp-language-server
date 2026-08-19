@@ -60,10 +60,12 @@ This restriction does not apply to the test body itself, which runs on a dedicat
 - Every handler in `Handlers/` must export `provider`, `registration`, and `handle`, and return `Async<LspResult<'T> * LspWorkspaceUpdate>`.
 - Tag every handler with the correct `RequestMode` (`ReadOnly`, `ReadWrite`, or `ReadOnlyBackground`) when registering in `Lsp/Server.fs`.
 - Test functions use top-level `[<Test>]` let bindings inside a module — not `[<TestFixture>]` classes.
-- Formatter: **Fantomas** (declared in `.config/dotnet-tools.json`). Set up with `dotnet tool restore`, then run on any F# files you modify before committing:
+- Formatter: **Fantomas** (declared in `.config/dotnet-tools.json`). Set up with `dotnet tool restore`, then run it on any `csharp-ls` source or test file you modify (`src/CSharpLanguageServer/`, `tests/`) before every commit:
   ```
   dotnet fantomas <file-or-dir>
   ```
+  Do **not** run Fantomas on the vendored `src/Ionide.LanguageServerProtocol/` code — it's
+  third-party source, not ours to reformat.
 
 ## Commit Messages
 

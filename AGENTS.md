@@ -55,6 +55,10 @@ There is no meaningful performance win from skipping the build step.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 
+Run `dotnet fantomas <file-or-dir>` on every `csharp-ls` source/test file you touch
+(`src/CSharpLanguageServer/`, `tests/`) before every commit — but never on the vendored
+`src/Ionide.LanguageServerProtocol/` code.
+
 Commit messages should be a short single-line summary — no bullet lists of individual changes.
 
 ## Key Docs
