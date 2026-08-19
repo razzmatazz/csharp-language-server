@@ -132,11 +132,77 @@ module CallHierarchy =
         }
 
     let outgoingCalls
-        (_context: RequestContext)
-        (_: CallHierarchyOutgoingCallsParams)
+        (context: RequestContext)
+        (p: CallHierarchyOutgoingCallsParams)
         : Async<LspResult<CallHierarchyOutgoingCall[] option> * LspWorkspaceUpdate> =
         async {
-            // TODO: There is no memthod of SymbolFinder which can find all outgoing calls of a specific symbol.
-            // Then how can we implement it? Parsing AST manually?
-            return None |> LspResult.success, LspWorkspaceUpdate.Empty
+            let! ct = Async.CancellationToken
+
+            let! wf, solution = p.Item.Uri |> context.LoadWorkspaceFolder
+
+            match wf, solution with
+            | Some wf, Some solution ->
+                let! symInfo = workspaceFolderDocumentSymbol AnyDocument p.Item.Uri p.Item.Range.Start wf
+
+                match symInfo with
+                | Some(symbol, _, _) when isCallableSymbol symbol ->
+                    // SymbolFinder has no outgoing counterpart to FindCallersAsync, so walk
+                    // every declaration body of the symbol (a partial method can have
+                    // several) and resolve each invocation / object creation through that
+                    // declaration's semantic model.
+                    let callSitesByTarget =
+                        System.Collections.Generic.Dictionary<ISymbol, ResizeArray<Ionide.LanguageServerProtocol.Types.Range>>(
+                            SymbolEqualityComparer.Default
+                        )
+
+                    for syntaxRef in symbol.DeclaringSyntaxReferences do
+                        match solution.GetDocument(syntaxRef.SyntaxTree) |> Option.ofObj with
+                        | None -> ()
+                        | Some doc ->
+                            let! semanticModel = doc.GetSemanticModelAsync(ct) |> Async.AwaitTask
+                            let! declNode = syntaxRef.GetSyntaxAsync(ct) |> Async.AwaitTask
+
+                            match semanticModel |> Option.ofObj with
+                            | None -> ()
+                            | Some(semanticModel: SemanticModel) ->
+                                let isCallNode (n: SyntaxNode) =
+                                    n :? CSharp.Syntax.InvocationExpressionSyntax
+                                    || n :? CSharp.Syntax.BaseObjectCreationExpressionSyntax
+
+                                for callNode in declNode.DescendantNodes() |> Seq.filter isCallNode do
+                                    let target = semanticModel.GetSymbolInfo(callNode, ct).Symbol |> Option.ofObj
+
+                                    match target with
+                                    | Some target when isCallableSymbol target ->
+                                        let range =
+                                            callNode.GetLocation().GetLineSpan().Span |> Range.fromLinePositionSpan
+
+                                        match callSitesByTarget.TryGetValue target with
+                                        | true, ranges -> ranges.Add range
+                                        | false, _ -> callSitesByTarget[target] <- ResizeArray [ range ]
+                                    | _ -> ()
+
+                    let wfPathToUri path = workspaceFolderPathToUri path wf
+
+                    // Targets without a source location (e.g. BCL symbols) are dropped,
+                    // mirroring what incomingCalls does for callers.
+                    let toOutgoingCall (KeyValue(target: ISymbol, ranges)) =
+                        target.Locations
+                        |> Seq.choose (Location.fromRoslynLocation wfPathToUri)
+                        |> Seq.tryHead
+                        |> Option.map (fun loc ->
+                            { To = CallHierarchyItem.fromSymbolAndLocation target loc
+                              FromRanges = ranges |> Seq.toArray })
+
+                    return
+                        callSitesByTarget
+                        |> Seq.choose toOutgoingCall
+                        |> Seq.toArray
+                        |> Some
+                        |> LspResult.success,
+                        LspWorkspaceUpdate.Empty
+
+                | _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
+
+            | _, _ -> return None |> LspResult.success, LspWorkspaceUpdate.Empty
         }
