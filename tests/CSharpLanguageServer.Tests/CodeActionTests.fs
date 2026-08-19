@@ -8,10 +8,14 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<TestCase("net10.0")>]
-[<TestCase("net8.0")>]
-let ``code action menu appears on request`` (tfm: string) =
-    let patchFixture = patchFixtureWithTfm tfm
+/// `genericProject`'s `Project.csproj` targets net10.0 by default, so this covers only the
+/// net8.0 variant -- which needs its own solution load with the TFM patched -- and can't
+/// share `CodeActionTests`'s fixture. The net10.0 variant is covered by
+/// `CodeActionTests.``code action menu appears on request```` below, which reuses the
+/// already-net10.0 shared fixture instead of a redundant patch + activation.
+[<Test>]
+let ``code action menu appears on request (net8.0)`` () =
+    let patchFixture = patchFixtureWithTfm "net8.0"
 
     use client =
         activateFixtureExt "genericProject" defaultClientProfile patchFixture id
@@ -40,11 +44,11 @@ let ``code action menu appears on request`` (tfm: string) =
         ClassicAssert.AreEqual(None, ca.Disabled)
         ClassicAssert.IsTrue(ca.Edit.IsSome)
 
-    match tfm, Environment.OSVersion.Platform with
-    | "net8.0", PlatformID.Win32NT -> () // this particular variant fails consistently as of Roslyn 5.0.0
-    | "net8.0", PlatformID.Unix -> () // this particular variant fails consistently as of Roslyn 5.0.0
+    match Environment.OSVersion.Platform with
+    | PlatformID.Win32NT -> () // this particular variant fails consistently as of Roslyn 5.0.0
+    | PlatformID.Unix -> () // this particular variant fails consistently as of Roslyn 5.0.0
 
-    | _, _ ->
+    | _ ->
         match caResult with
         | Some [| U2.C2 generateOverrides
                   U2.C2 extractInterface
@@ -59,138 +63,183 @@ let ``code action menu appears on request`` (tfm: string) =
 
         | _ -> failwith "Not all code actions were matched as expected"
 
-[<Test>]
-let ``extract base class request extracts base class`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open("Project/Class.cs")
+[<TestFixture>]
+type CodeActionTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/Class.cs")
 
-    let caParams0: CodeActionParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Range =
-            { Start = { Line = 2u; Character = 16u }
-              End = { Line = 2u; Character = 16u } }
-          Context =
-            { Diagnostics = [||]
-              Only = None
-              TriggerKind = None }
-          WorkDoneToken = None
-          PartialResultToken = None }
+    [<Test>]
+    member this.``code action menu appears on request``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let caResult: TextDocumentCodeActionResult option =
-        client.Request("textDocument/codeAction", caParams0)
+        let caParams: CodeActionParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Range =
+                { Start = { Line = 3u; Character = 0u }
+                  End = { Line = 3u; Character = 0u } }
+              Context =
+                { Diagnostics = [||]
+                  Only = None
+                  TriggerKind = None }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    match caResult with
-    | Some [| U2.C2 x |] -> ClassicAssert.AreEqual("Extract base class...", x.Title)
-    // TODO: match extract base class edit structure
+        let caResult: TextDocumentCodeActionResult option =
+            client.Request("textDocument/codeAction", caParams)
 
-    | _ -> failwith "Some [| U2.C2 x |] was expected"
+        let assertCodeActionHasTitle (ca: CodeAction, title: string) =
+            ClassicAssert.AreEqual(title, ca.Title)
+            ClassicAssert.AreEqual(None, ca.Kind)
+            ClassicAssert.AreEqual(None, ca.Diagnostics)
+            ClassicAssert.AreEqual(None, ca.Disabled)
+            ClassicAssert.IsTrue(ca.Edit.IsSome)
 
-[<Test>]
-let ``extract interface code action should extract an interface`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open("Project/Class.cs")
+        match caResult with
+        | Some [| U2.C2 generateOverrides
+                  U2.C2 extractInterface
+                  U2.C2 generateConstructor
+                  U2.C2 extractBaseClass
+                  U2.C2 addDebuggerDisplay |] ->
+            assertCodeActionHasTitle (generateOverrides, "Generate overrides...")
+            assertCodeActionHasTitle (extractInterface, "Extract interface...")
+            assertCodeActionHasTitle (generateConstructor, "Generate constructor 'Class()'")
+            assertCodeActionHasTitle (extractBaseClass, "Extract base class...")
+            assertCodeActionHasTitle (addDebuggerDisplay, "Add 'DebuggerDisplay' attribute")
 
-    let caArgs: CodeActionParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Range =
-            { Start = { Line = 2u; Character = 0u }
-              End = { Line = 2u; Character = 0u } }
-          Context =
-            { Diagnostics = [||]
-              Only = Some [| "refactor.extract.interface" |]
-              TriggerKind = Some CodeActionTriggerKind.Invoked }
-          WorkDoneToken = None
-          PartialResultToken = None }
+        | _ -> failwith "Not all code actions were matched as expected"
 
-    let caOptions: TextDocumentCodeActionResult option =
-        match client.Request("textDocument/codeAction", caArgs) with
-        | Some opts -> opts
-        | None -> failwith "Expected code actions"
+    [<Test>]
+    member this.``extract base class request extracts base class``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let codeAction =
-        match caOptions |> Option.bind (Array.tryItem 1) with
-        | Some(U2.C2 ca) ->
-            ClassicAssert.AreEqual("Extract interface...", ca.Title)
-            ca
-        | _ -> failwith "Extract interface action not found"
+        let caParams0: CodeActionParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Range =
+                { Start = { Line = 2u; Character = 16u }
+                  End = { Line = 2u; Character = 16u } }
+              Context =
+                { Diagnostics = [||]
+                  Only = None
+                  TriggerKind = None }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    let expectedImplementInterfaceEdits =
-        { Range =
-            { Start = { Line = 2u; Character = 11u }
-              End = { Line = 2u; Character = 11u } }
-          NewText = " : IClass" }
+        let caResult: TextDocumentCodeActionResult option =
+            client.Request("textDocument/codeAction", caParams0)
 
-    let expectedCreateInterfaceEdits =
-        { Range =
-            { Start = { Line = 0u; Character = 0u }
-              End = { Line = 0u; Character = 0u } }
-          NewText = "internal interface IClass\n{\n    void MethodA(string arg);\n    void MethodB(string arg);\n}" }
+        match caResult with
+        | Some [| U2.C2 x |] -> ClassicAssert.AreEqual("Extract base class...", x.Title)
+        // TODO: match extract base class edit structure
 
-    match codeAction.Edit with
-    | Some { DocumentChanges = Some [| U4.C1 create; U4.C1 implement |] } ->
-        match create.Edits, implement.Edits with
-        | [| U2.C1 createEdits |], [| U2.C1 implementEdits |] ->
-            ClassicAssert.AreEqual(expectedCreateInterfaceEdits, createEdits |> TextEdit.normalizeNewText)
+        | _ -> failwith "Some [| U2.C2 x |] was expected"
 
-            ClassicAssert.AreEqual(expectedImplementInterfaceEdits, implementEdits |> TextEdit.normalizeNewText)
+    [<Test>]
+    member this.``extract interface code action should extract an interface``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-        | _ -> failwith "Expected exactly one U2.C1 edit in both create/implement"
+        let caArgs: CodeActionParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Range =
+                { Start = { Line = 2u; Character = 0u }
+                  End = { Line = 2u; Character = 0u } }
+              Context =
+                { Diagnostics = [||]
+                  Only = Some [| "refactor.extract.interface" |]
+                  TriggerKind = Some CodeActionTriggerKind.Invoked }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    | _ -> failwith "Unexpected edit structure"
+        let caOptions: TextDocumentCodeActionResult option =
+            match client.Request("textDocument/codeAction", caArgs) with
+            | Some opts -> opts
+            | None -> failwith "Expected code actions"
 
-[<Test>]
-let ``code actions are listed when activated on a string literal`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/Class.cs"
+        let codeAction =
+            match caOptions |> Option.bind (Array.tryItem 1) with
+            | Some(U2.C2 ca) ->
+                ClassicAssert.AreEqual("Extract interface...", ca.Title)
+                ca
+            | _ -> failwith "Extract interface action not found"
 
-    let caParams: CodeActionParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Range =
-            { Start = { Line = 6u; Character = 20u }
-              End = { Line = 6u; Character = 20u } }
-          Context =
-            { Diagnostics = [||]
-              Only = None
-              TriggerKind = None }
-          WorkDoneToken = None
-          PartialResultToken = None }
+        let expectedImplementInterfaceEdits =
+            { Range =
+                { Start = { Line = 2u; Character = 11u }
+                  End = { Line = 2u; Character = 11u } }
+              NewText = " : IClass" }
 
-    let caResult: TextDocumentCodeActionResult =
-        match client.Request("textDocument/codeAction", caParams) with
-        | Some caResult -> caResult
-        | None -> failwith "Some TextDocumentCodeActionResult was expected"
+        let expectedCreateInterfaceEdits =
+            { Range =
+                { Start = { Line = 0u; Character = 0u }
+                  End = { Line = 0u; Character = 0u } }
+              NewText = "internal interface IClass\n{\n    void MethodA(string arg);\n    void MethodB(string arg);\n}" }
 
-    ClassicAssert.AreEqual(10, caResult.Length)
+        match codeAction.Edit with
+        | Some { DocumentChanges = Some [| U4.C1 create; U4.C1 implement |] } ->
+            match create.Edits, implement.Edits with
+            | [| U2.C1 createEdits |], [| U2.C1 implementEdits |] ->
+                ClassicAssert.AreEqual(expectedCreateInterfaceEdits, createEdits |> TextEdit.normalizeNewText)
 
-    match caResult with
-    | [| U2.C2 introduceConstant
-         U2.C2 introduceConstantForAllOccurences
-         U2.C2 introduceLocalConstant
-         U2.C2 introduceLocalConstantForAllOccurences
-         U2.C2 introduceParameterAndUpdateCallSitesDirectly
-         U2.C2 _
-         U2.C2 _
-         U2.C2 _
-         U2.C2 _
-         U2.C2 _ |] ->
-        let assertCAHasTitle (ca: CodeAction) title = ClassicAssert.AreEqual(title, ca.Title)
+                ClassicAssert.AreEqual(expectedImplementInterfaceEdits, implementEdits |> TextEdit.normalizeNewText)
 
-        assertCAHasTitle introduceConstant "Introduce constant - Introduce constant for '\"\"'"
+            | _ -> failwith "Expected exactly one U2.C1 edit in both create/implement"
 
-        assertCAHasTitle
-            introduceConstantForAllOccurences
-            "Introduce constant - Introduce constant for all occurrences of '\"\"'"
+        | _ -> failwith "Unexpected edit structure"
 
-        assertCAHasTitle introduceLocalConstant "Introduce constant - Introduce local constant for '\"\"'"
+    [<Test>]
+    member this.``code actions are listed when activated on a string literal``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-        assertCAHasTitle
-            introduceLocalConstantForAllOccurences
-            "Introduce constant - Introduce local constant for all occurrences of '\"\"'"
+        let caParams: CodeActionParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Range =
+                { Start = { Line = 6u; Character = 20u }
+                  End = { Line = 6u; Character = 20u } }
+              Context =
+                { Diagnostics = [||]
+                  Only = None
+                  TriggerKind = None }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-        assertCAHasTitle
-            introduceParameterAndUpdateCallSitesDirectly
-            "Introduce parameter for '\"\"' - and update call sites directly"
+        let caResult: TextDocumentCodeActionResult =
+            match client.Request("textDocument/codeAction", caParams) with
+            | Some caResult -> caResult
+            | None -> failwith "Some TextDocumentCodeActionResult was expected"
 
-    | _ -> failwith "Not all code actions were matched as expected"
+        ClassicAssert.AreEqual(10, caResult.Length)
 
-    ()
+        match caResult with
+        | [| U2.C2 introduceConstant
+             U2.C2 introduceConstantForAllOccurences
+             U2.C2 introduceLocalConstant
+             U2.C2 introduceLocalConstantForAllOccurences
+             U2.C2 introduceParameterAndUpdateCallSitesDirectly
+             U2.C2 _
+             U2.C2 _
+             U2.C2 _
+             U2.C2 _
+             U2.C2 _ |] ->
+            let assertCAHasTitle (ca: CodeAction) title = ClassicAssert.AreEqual(title, ca.Title)
+
+            assertCAHasTitle introduceConstant "Introduce constant - Introduce constant for '\"\"'"
+
+            assertCAHasTitle
+                introduceConstantForAllOccurences
+                "Introduce constant - Introduce constant for all occurrences of '\"\"'"
+
+            assertCAHasTitle introduceLocalConstant "Introduce constant - Introduce local constant for '\"\"'"
+
+            assertCAHasTitle
+                introduceLocalConstantForAllOccurences
+                "Introduce constant - Introduce local constant for all occurrences of '\"\"'"
+
+            assertCAHasTitle
+                introduceParameterAndUpdateCallSitesDirectly
+                "Introduce parameter for '\"\"' - and update call sites directly"
+
+        | _ -> failwith "Not all code actions were matched as expected"
+
+        ()

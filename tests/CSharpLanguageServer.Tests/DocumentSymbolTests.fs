@@ -49,63 +49,67 @@ let ``test textDocument/documentSymbol root has file range covering entire docum
     // SelectionRange should match Range for the root file symbol
     ClassicAssert.AreEqual(root.Range, root.SelectionRange, "SelectionRange should equal Range for root file symbol")
 
-[<Test>]
-let ``test textDocument/documentSymbol root has children`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
+[<TestFixture>]
+type DocumentSymbolTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/ClassAndInterfaceHierarchy.cs")
 
-    let docSymbolParams: DocumentSymbolParams =
-        { TextDocument = { Uri = classFile.Uri }
-          WorkDoneToken = None
-          PartialResultToken = None }
+    [<Test>]
+    member this.``test textDocument/documentSymbol root has children``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let result: U2<SymbolInformation[], DocumentSymbol[]> option =
-        client.Request("textDocument/documentSymbol", docSymbolParams)
+        let docSymbolParams: DocumentSymbolParams =
+            { TextDocument = { Uri = classFile.Uri }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    let symbols =
-        match result.Value with
-        | U2.C2 docSymbols -> docSymbols
-        | U2.C1 _ -> failwith "Expected DocumentSymbol[] (C2), got SymbolInformation[] (C1)"
+        let result: U2<SymbolInformation[], DocumentSymbol[]> option =
+            client.Request("textDocument/documentSymbol", docSymbolParams)
 
-    let root = symbols.[0]
-    ClassicAssert.AreEqual(SymbolKind.File, root.Kind)
+        let symbols =
+            match result.Value with
+            | U2.C2 docSymbols -> docSymbols
+            | U2.C1 _ -> failwith "Expected DocumentSymbol[] (C2), got SymbolInformation[] (C1)"
 
-    ClassicAssert.IsTrue(root.Children.IsSome, "Root symbol should have children")
-    ClassicAssert.IsTrue(root.Children.Value.Length > 0, "Root symbol should have at least one child")
+        let root = symbols.[0]
+        ClassicAssert.AreEqual(SymbolKind.File, root.Kind)
 
-    // The namespace symbol should be among the children
-    let nsSymbol =
-        root.Children.Value |> Array.tryFind (fun s -> s.Kind = SymbolKind.Namespace)
+        ClassicAssert.IsTrue(root.Children.IsSome, "Root symbol should have children")
+        ClassicAssert.IsTrue(root.Children.Value.Length > 0, "Root symbol should have at least one child")
 
-    ClassicAssert.IsTrue(nsSymbol.IsSome, "Expected a child symbol with kind Namespace")
+        // The namespace symbol should be among the children
+        let nsSymbol =
+            root.Children.Value |> Array.tryFind (fun s -> s.Kind = SymbolKind.Namespace)
 
-[<Test>]
-let ``test textDocument/documentSymbol root range covers file with namespace`` () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
+        ClassicAssert.IsTrue(nsSymbol.IsSome, "Expected a child symbol with kind Namespace")
 
-    let docSymbolParams: DocumentSymbolParams =
-        { TextDocument = { Uri = classFile.Uri }
-          WorkDoneToken = None
-          PartialResultToken = None }
+    [<Test>]
+    member this.``test textDocument/documentSymbol root range covers file with namespace``() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let result: U2<SymbolInformation[], DocumentSymbol[]> option =
-        client.Request("textDocument/documentSymbol", docSymbolParams)
+        let docSymbolParams: DocumentSymbolParams =
+            { TextDocument = { Uri = classFile.Uri }
+              WorkDoneToken = None
+              PartialResultToken = None }
 
-    let symbols =
-        match result.Value with
-        | U2.C2 docSymbols -> docSymbols
-        | U2.C1 _ -> failwith "Expected DocumentSymbol[] (C2), got SymbolInformation[] (C1)"
+        let result: U2<SymbolInformation[], DocumentSymbol[]> option =
+            client.Request("textDocument/documentSymbol", docSymbolParams)
 
-    let root = symbols.[0]
-    ClassicAssert.AreEqual(SymbolKind.File, root.Kind)
+        let symbols =
+            match result.Value with
+            | U2.C2 docSymbols -> docSymbols
+            | U2.C1 _ -> failwith "Expected DocumentSymbol[] (C2), got SymbolInformation[] (C1)"
 
-    // Root range should start at beginning of file
-    ClassicAssert.AreEqual(0u, root.Range.Start.Line)
-    ClassicAssert.AreEqual(0u, root.Range.Start.Character)
+        let root = symbols.[0]
+        ClassicAssert.AreEqual(SymbolKind.File, root.Kind)
 
-    // Root range should extend to end of file, not be empty
-    ClassicAssert.IsTrue(
-        root.Range.End.Line > 0u,
-        "Root range should cover the full file, not be an empty range at 0,0"
-    )
+        // Root range should start at beginning of file
+        ClassicAssert.AreEqual(0u, root.Range.Start.Line)
+        ClassicAssert.AreEqual(0u, root.Range.Start.Character)
+
+        // Root range should extend to end of file, not be empty
+        ClassicAssert.IsTrue(
+            root.Range.End.Line > 0u,
+            "Root range should cover the full file, not be an empty range at 0,0"
+        )

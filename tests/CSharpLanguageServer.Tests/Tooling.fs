@@ -1100,9 +1100,12 @@ let activateFixtureWithLoggingEnabled fixtureName =
 ///    since 3.7 `Dispose()` runs first — this class has no `OneTimeTearDown`, so the
 ///    ordering doesn't matter here.)
 [<AbstractClass>]
-type SharedReadOnlyFixture(fixtureName: string, docPath: string) =
+type SharedReadOnlyFixture(fixtureName: string, docPaths: string list) =
     let mutable clientOpt: LspTestClient option = None
-    let mutable docOpt: LspDocumentHandle option = None
+    let mutable docsOpt: Map<string, LspDocumentHandle> option = None
+
+    /// Convenience constructor for the common case of a single shared document.
+    new(fixtureName: string, docPath: string) = new SharedReadOnlyFixture(fixtureName, [ docPath ])
 
     /// The shared client, valid from `[<OneTimeSetUp>]` until the fixture is disposed.
     member __.Client: LspTestClient =
@@ -1110,22 +1113,42 @@ type SharedReadOnlyFixture(fixtureName: string, docPath: string) =
         | Some c -> c
         | None -> failwith "SharedReadOnlyFixture.Client accessed before OneTimeSetUp ran"
 
-    /// The shared, already-open document, valid from `[<OneTimeSetUp>]` until disposal.
-    member __.Doc: LspDocumentHandle =
-        match docOpt with
+    /// All shared, already-open documents, keyed by the path passed to the constructor.
+    /// Valid from `[<OneTimeSetUp>]` until disposal.
+    member __.Docs: Map<string, LspDocumentHandle> =
+        match docsOpt with
         | Some d -> d
-        | None -> failwith "SharedReadOnlyFixture.Doc accessed before OneTimeSetUp ran"
+        | None -> failwith "SharedReadOnlyFixture.Docs accessed before OneTimeSetUp ran"
+
+    /// The shared, already-open document, valid from `[<OneTimeSetUp>]` until disposal.
+    /// Only valid for fixtures constructed with a single doc path -- use `Docs.[path]` for
+    /// fixtures sharing more than one document.
+    member this.Doc: LspDocumentHandle =
+        match docPaths with
+        | [ path ] -> this.Docs.[path]
+        | _ ->
+            failwith
+                "SharedReadOnlyFixture.Doc is ambiguous for a fixture with multiple doc paths -- use Docs.[path] instead"
+
+    /// Hook run once, after every doc has been opened in `[<OneTimeSetUp>]`, for subclasses
+    /// that need extra one-time setup (e.g. a short delay to work around a known startup
+    /// race). No-op by default.
+    abstract member OnDocsOpened: unit -> unit
+    default __.OnDocsOpened() = ()
 
     [<OneTimeSetUp>]
-    member __.SharedReadOnlyFixtureSetUp() =
+    member this.SharedReadOnlyFixtureSetUp() =
         let client = activateFixture fixtureName
         clientOpt <- Some client
-        docOpt <- Some(client.Open docPath)
+        docsOpt <- Some(docPaths |> List.map (fun p -> p, client.Open p) |> Map.ofList)
+        this.OnDocsOpened()
 
     interface IDisposable with
         member __.Dispose() =
-            docOpt |> Option.iter (fun d -> (d :> IDisposable).Dispose())
-            docOpt <- None
+            docsOpt
+            |> Option.iter (fun docs -> docs |> Map.iter (fun _ d -> (d :> IDisposable).Dispose()))
+
+            docsOpt <- None
 
             clientOpt |> Option.iter (fun c -> (c :> IDisposable).Dispose())
             clientOpt <- None

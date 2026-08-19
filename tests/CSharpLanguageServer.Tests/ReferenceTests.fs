@@ -9,111 +9,115 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
-[<Test>]
-let testReferenceWorks () =
-    use client = activateFixture "genericProject"
-    use classFile = client.Open("Project/Class.cs")
+[<TestFixture>]
+type ReferenceTests() =
+    inherit SharedReadOnlyFixture("genericProject", "Project/Class.cs")
 
-    //
-    // try references request at `using` token in the file on line 0 -- should return 0 results
-    //
-    let referenceParams0: ReferenceParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 0u; Character = 0u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = false } }
+    [<Test>]
+    member this.testReferenceWorks() =
+        let client = this.Client
+        let classFile = this.Doc
 
-    let locations0: Location[] option =
-        client.Request("textDocument/references", referenceParams0)
+        //
+        // try references request at `using` token in the file on line 0 -- should return 0 results
+        //
+        let referenceParams0: ReferenceParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 0u; Character = 0u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = false } }
 
-    ClassicAssert.IsTrue(locations0.IsNone)
+        let locations0: Location[] option =
+            client.Request("textDocument/references", referenceParams0)
 
-    //
-    // try references request at MethodA declaration on line 2
-    //
-    let referenceParams1: ReferenceParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 16u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = false } }
+        ClassicAssert.IsTrue(locations0.IsNone)
 
-    let locations1: Location[] option =
-        client.Request("textDocument/references", referenceParams1)
+        //
+        // try references request at MethodA declaration on line 2
+        //
+        let referenceParams1: ReferenceParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 4u; Character = 16u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = false } }
 
-    let expectedLocations1: Location array =
-        [| { Uri = classFile.Uri
-             Range =
-               { Start = { Line = 12u; Character = 8u }
-                 End = { Line = 12u; Character = 15u } } } |]
+        let locations1: Location[] option =
+            client.Request("textDocument/references", referenceParams1)
 
-    ClassicAssert.AreEqual(expectedLocations1, locations1.Value)
+        let expectedLocations1: Location array =
+            [| { Uri = classFile.Uri
+                 Range =
+                   { Start = { Line = 12u; Character = 8u }
+                     End = { Line = 12u; Character = 15u } } } |]
 
-    //
-    // try references request at MethodA declaration on line 2
-    // (with IncludeDeclaration=true)
-    //
-    let referenceParams2: ReferenceParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 4u; Character = 16u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = true } }
+        ClassicAssert.AreEqual(expectedLocations1, locations1.Value)
 
-    let locations2: Location[] option =
-        client.Request("textDocument/references", referenceParams2)
+        //
+        // try references request at MethodA declaration on line 2
+        // (with IncludeDeclaration=true)
+        //
+        let referenceParams2: ReferenceParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 4u; Character = 16u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = true } }
 
-    let expectedLocations2: Location array =
-        [| { Uri = classFile.Uri
-             Range =
-               { Start = { Line = 4u; Character = 16u }
-                 End = { Line = 4u; Character = 23u } } }
+        let locations2: Location[] option =
+            client.Request("textDocument/references", referenceParams2)
 
-           { Uri = classFile.Uri
-             Range =
-               { Start = { Line = 12u; Character = 8u }
-                 End = { Line = 12u; Character = 15u } } } |]
+        let expectedLocations2: Location array =
+            [| { Uri = classFile.Uri
+                 Range =
+                   { Start = { Line = 4u; Character = 16u }
+                     End = { Line = 4u; Character = 23u } } }
 
-    ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
+               { Uri = classFile.Uri
+                 Range =
+                   { Start = { Line = 12u; Character = 8u }
+                     End = { Line = 12u; Character = 15u } } } |]
 
-[<Test>]
-let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
-    // Regression test: textDocument/references with IncludeDeclaration=true on a BCL
-    // method (Console.WriteLine) should include the decompiled definition location as a
-    // csharp: URI when useMetadataUris=true, just like textDocument/definition does.
-    use client = activateFixture "genericProject"
-    use classFile = client.Open "Project/Class.cs"
+        ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
 
-    // Class.cs line 7 (0-indexed): Console.WriteLine(str);
-    //                                       ^^^^^^^^^
-    //                                       char 16-25
-    let referenceParams: ReferenceParams =
-        { TextDocument = { Uri = classFile.Uri }
-          Position = { Line = 7u; Character = 16u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = true } }
+    [<Test>]
+    member this.testReferenceWithIncludeDeclarationDecompilesForBclSymbol() =
+        // Regression test: textDocument/references with IncludeDeclaration=true on a BCL
+        // method (Console.WriteLine) should include the decompiled definition location as a
+        // csharp: URI when useMetadataUris=true, just like textDocument/definition does.
+        let client = this.Client
+        let classFile = this.Doc
 
-    let locations: Location[] option =
-        client.Request("textDocument/references", referenceParams)
+        // Class.cs line 7 (0-indexed): Console.WriteLine(str);
+        //                                       ^^^^^^^^^
+        //                                       char 16-25
+        let referenceParams: ReferenceParams =
+            { TextDocument = { Uri = classFile.Uri }
+              Position = { Line = 7u; Character = 16u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = true } }
 
-    let expectedDefUri =
-        client.SolutionDir
-        |> Uri
-        |> string
-        |> _.Substring("file:///".Length)
-        |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Console.cs"
+        let locations: Location[] option =
+            client.Request("textDocument/references", referenceParams)
 
-    ClassicAssert.IsTrue(locations.IsSome, "Expected Some locations")
+        let expectedDefUri =
+            client.SolutionDir
+            |> Uri
+            |> string
+            |> _.Substring("file:///".Length)
+            |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Console.cs"
 
-    let defLocations =
-        locations.Value |> Array.filter (fun l -> l.Uri.StartsWith "csharp:")
+        ClassicAssert.IsTrue(locations.IsSome, "Expected Some locations")
 
-    ClassicAssert.IsTrue(defLocations.Length > 0, "Expected at least one decompiled definition location")
+        let defLocations =
+            locations.Value |> Array.filter (fun l -> l.Uri.StartsWith "csharp:")
 
-    for loc in defLocations do
-        ClassicAssert.AreEqual(expectedDefUri, loc.Uri)
+        ClassicAssert.IsTrue(defLocations.Length > 0, "Expected at least one decompiled definition location")
+
+        for loc in defLocations do
+            ClassicAssert.AreEqual(expectedDefUri, loc.Uri)
 
 [<Test>]
 let testReferenceWorksDotnet8 () =
@@ -183,168 +187,178 @@ let testReferenceWorksDotnet8 () =
 
     ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
 
-[<Test>]
-[<Retry(3)>]
-let testReferenceWorksToRazorPageReferencedValue () =
-    use client = activateFixture "aspnetProject"
+/// Shares one `aspnetProject` client/solution load and one open of each of the 4 Razor-adjacent
+/// documents across both tests below, instead of paying for two separate activations (each
+/// followed by the same `Thread.Sleep(250)` startup-race workaround).
+[<TestFixture>]
+type RazorReferenceTests() =
+    inherit
+        SharedReadOnlyFixture(
+            "aspnetProject",
+            [ "Project/Models/Test/IndexViewModel.cs"
+              "Project/Controllers/TestController.cs"
+              "Project/Views/Test/Index.cshtml"
+              "Project/Views/Test/CompletionTests.cshtml" ]
+        )
 
-    use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
-    use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
-    use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
+    override __.OnDocsOpened() = Thread.Sleep(250) // TODO: work around race for Razor support
 
-    use completionTestsCshtmlFile =
-        client.Open "Project/Views/Test/CompletionTests.cshtml"
+    [<Test>]
+    [<Retry(3)>]
+    member this.testReferenceWorksToRazorPageReferencedValue() =
+        let client = this.Client
+        let testIndexViewModelCsFile = this.Docs.["Project/Models/Test/IndexViewModel.cs"]
+        let testControllerCsFile = this.Docs.["Project/Controllers/TestController.cs"]
+        let indexCshtmlFile = this.Docs.["Project/Views/Test/Index.cshtml"]
 
-    Thread.Sleep(250) // TODO: work around race for Razor support
+        let completionTestsCshtmlFile =
+            this.Docs.["Project/Views/Test/CompletionTests.cshtml"]
 
-    let referenceParams0: ReferenceParams =
-        { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
-          Position = { Line = 3u; Character = 20u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = false } }
+        let referenceParams0: ReferenceParams =
+            { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
+              Position = { Line = 3u; Character = 20u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = false } }
 
-    let locations0: Location[] option =
-        client.Request("textDocument/references", referenceParams0)
+        let locations0: Location[] option =
+            client.Request("textDocument/references", referenceParams0)
 
-    ClassicAssert.IsTrue locations0.IsSome
-    ClassicAssert.AreEqual(3, locations0.Value.Length)
+        ClassicAssert.IsTrue locations0.IsSome
+        ClassicAssert.AreEqual(3, locations0.Value.Length)
 
-    let expectedLocations0: Location array =
-        [| { Uri = testControllerCsFile.Uri
-             Range =
-               { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } }
+        let expectedLocations0: Location array =
+            [| { Uri = testControllerCsFile.Uri
+                 Range =
+                   { Start = { Line = 11u; Character = 12u }
+                     End = { Line = 11u; Character = 18u } } }
 
-           { Uri = completionTestsCshtmlFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 13u }
-                 End = { Line = 3u; Character = 19u } } }
+               { Uri = completionTestsCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 13u }
+                     End = { Line = 3u; Character = 19u } } }
 
-           { Uri = indexCshtmlFile.Uri
-             Range =
-               { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } } |]
+               { Uri = indexCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 1u; Character = 7u }
+                     End = { Line = 1u; Character = 13u } } } |]
 
-    let sortedLocations0 =
-        locations0.Value
-        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
+        let sortedLocations0 =
+            locations0.Value
+            |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-    ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)
+        ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)
 
-    //
-    // do same but with IncludeDeclaration=true
-    //
-    let referenceParams1: ReferenceParams =
-        { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
-          Position = { Line = 3u; Character = 20u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = true } }
+        //
+        // do same but with IncludeDeclaration=true
+        //
+        let referenceParams1: ReferenceParams =
+            { TextDocument = { Uri = testIndexViewModelCsFile.Uri }
+              Position = { Line = 3u; Character = 20u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = true } }
 
-    let locations1: Location[] option =
-        client.Request("textDocument/references", referenceParams1)
+        let locations1: Location[] option =
+            client.Request("textDocument/references", referenceParams1)
 
-    ClassicAssert.IsTrue(locations1.IsSome)
-    ClassicAssert.AreEqual(6, locations1.Value.Length)
+        ClassicAssert.IsTrue(locations1.IsSome)
+        ClassicAssert.AreEqual(6, locations1.Value.Length)
 
-    let expectedLocations1: Location array =
-        [| { Uri = testControllerCsFile.Uri
-             Range =
-               { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } }
+        let expectedLocations1: Location array =
+            [| { Uri = testControllerCsFile.Uri
+                 Range =
+                   { Start = { Line = 11u; Character = 12u }
+                     End = { Line = 11u; Character = 18u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 19u }
-                 End = { Line = 3u; Character = 25u } } }
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 19u }
+                     End = { Line = 3u; Character = 25u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 28u }
-                 End = { Line = 3u; Character = 31u } } }
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 28u }
+                     End = { Line = 3u; Character = 31u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 33u }
-                 End = { Line = 3u; Character = 36u } } }
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 33u }
+                     End = { Line = 3u; Character = 36u } } }
 
-           { Uri = completionTestsCshtmlFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 13u }
-                 End = { Line = 3u; Character = 19u } } }
+               { Uri = completionTestsCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 13u }
+                     End = { Line = 3u; Character = 19u } } }
 
-           { Uri = indexCshtmlFile.Uri
-             Range =
-               { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } } |]
+               { Uri = indexCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 1u; Character = 7u }
+                     End = { Line = 1u; Character = 13u } } } |]
 
-    let sortedLocations1 =
-        locations1.Value
-        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
+        let sortedLocations1 =
+            locations1.Value
+            |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-    ClassicAssert.AreEqual(expectedLocations1, sortedLocations1)
+        ClassicAssert.AreEqual(expectedLocations1, sortedLocations1)
 
-[<Test>]
-[<Retry(3)>]
-let testReferenceWorksFromRazorPageReferencedValue () =
-    use client = activateFixture "aspnetProject"
+    [<Test>]
+    [<Retry(3)>]
+    member this.testReferenceWorksFromRazorPageReferencedValue() =
+        let client = this.Client
+        let testIndexViewModelCsFile = this.Docs.["Project/Models/Test/IndexViewModel.cs"]
+        let testControllerCsFile = this.Docs.["Project/Controllers/TestController.cs"]
+        let indexCshtmlFile = this.Docs.["Project/Views/Test/Index.cshtml"]
 
-    use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
-    use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
-    use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
+        let completionTestsCshtmlFile =
+            this.Docs.["Project/Views/Test/CompletionTests.cshtml"]
 
-    use completionTestsCshtmlFile =
-        client.Open "Project/Views/Test/CompletionTests.cshtml"
+        let referenceParams0: ReferenceParams =
+            { TextDocument = { Uri = indexCshtmlFile.Uri }
+              Position = { Line = 1u; Character = 7u }
+              WorkDoneToken = None
+              PartialResultToken = None
+              Context = { IncludeDeclaration = true } }
 
-    Thread.Sleep(250) // TODO: work around race for Razor support
+        let locations0: Location[] option =
+            client.Request("textDocument/references", referenceParams0)
 
-    let referenceParams0: ReferenceParams =
-        { TextDocument = { Uri = indexCshtmlFile.Uri }
-          Position = { Line = 1u; Character = 7u }
-          WorkDoneToken = None
-          PartialResultToken = None
-          Context = { IncludeDeclaration = true } }
+        ClassicAssert.IsTrue(locations0.IsSome)
+        ClassicAssert.AreEqual(6, locations0.Value.Length)
 
-    let locations0: Location[] option =
-        client.Request("textDocument/references", referenceParams0)
+        let expectedLocations0: Location array =
+            [| { Uri = testControllerCsFile.Uri
+                 Range =
+                   { Start = { Line = 11u; Character = 12u }
+                     End = { Line = 11u; Character = 18u } } }
 
-    ClassicAssert.IsTrue(locations0.IsSome)
-    ClassicAssert.AreEqual(6, locations0.Value.Length)
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 19u }
+                     End = { Line = 3u; Character = 25u } } }
 
-    let expectedLocations0: Location array =
-        [| { Uri = testControllerCsFile.Uri
-             Range =
-               { Start = { Line = 11u; Character = 12u }
-                 End = { Line = 11u; Character = 18u } } }
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 28u }
+                     End = { Line = 3u; Character = 31u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 19u }
-                 End = { Line = 3u; Character = 25u } } }
+               { Uri = testIndexViewModelCsFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 33u }
+                     End = { Line = 3u; Character = 36u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 28u }
-                 End = { Line = 3u; Character = 31u } } }
+               { Uri = completionTestsCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 3u; Character = 13u }
+                     End = { Line = 3u; Character = 19u } } }
 
-           { Uri = testIndexViewModelCsFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 33u }
-                 End = { Line = 3u; Character = 36u } } }
+               { Uri = indexCshtmlFile.Uri
+                 Range =
+                   { Start = { Line = 1u; Character = 7u }
+                     End = { Line = 1u; Character = 13u } } } |]
 
-           { Uri = completionTestsCshtmlFile.Uri
-             Range =
-               { Start = { Line = 3u; Character = 13u }
-                 End = { Line = 3u; Character = 19u } } }
+        let sortedLocations0 =
+            locations0.Value
+            |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-           { Uri = indexCshtmlFile.Uri
-             Range =
-               { Start = { Line = 1u; Character = 7u }
-                 End = { Line = 1u; Character = 13u } } } |]
-
-    let sortedLocations0 =
-        locations0.Value
-        |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
-
-    ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)
+        ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)
