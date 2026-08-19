@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Tests.FoldingRangeTests
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -29,7 +28,7 @@ type FoldingRangeTests() =
         let result: FoldingRange array option =
             client.Request("textDocument/foldingRange", foldingRangeRequest doc)
 
-        ClassicAssert.IsTrue(result.IsSome, "Expected Some result from textDocument/foldingRange")
+        Assert.That(result.IsSome, Is.True, "Expected Some result from textDocument/foldingRange")
 
     [<Test>]
     member this.``textDocument/foldingRange includes a range for the namespace``() =
@@ -43,8 +42,9 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 3u && r.EndLine > 40u && r.Kind = None)
 
-        ClassicAssert.IsTrue(
+        Assert.That(
             hasNamespace,
+            Is.True,
             sprintf "Expected a namespace folding range starting at line 3, got: %A" ranges
         )
 
@@ -60,7 +60,7 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 8u && r.EndLine > 8u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasClass, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
+        Assert.That(hasClass, Is.True, sprintf "Expected a class folding range starting at line 8, got: %A" ranges)
 
     [<Test>]
     member this.``textDocument/foldingRange includes a range for a method``() =
@@ -74,7 +74,7 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 29u && r.EndLine > 29u && r.Kind = None)
 
-        ClassicAssert.IsTrue(hasMethod, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
+        Assert.That(hasMethod, Is.True, sprintf "Expected a method folding range starting at line 29, got: %A" ranges)
 
     [<Test>]
     member this.``textDocument/foldingRange includes a range for a constructor``() =
@@ -88,8 +88,9 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 17u && r.EndLine > 17u && r.Kind = None)
 
-        ClassicAssert.IsTrue(
+        Assert.That(
             hasConstructor,
+            Is.True,
             sprintf "Expected a constructor folding range starting at line 17, got: %A" ranges
         )
 
@@ -105,8 +106,9 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 23u && r.EndLine > 23u && r.Kind = None)
 
-        ClassicAssert.IsTrue(
+        Assert.That(
             hasProperty,
+            Is.True,
             sprintf "Expected a property folding range starting at line 23, got: %A" ranges
         )
 
@@ -122,7 +124,7 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 0u && r.EndLine = 1u && r.Kind = Some FoldingRangeKind.Imports)
 
-        ClassicAssert.IsTrue(hasImports, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
+        Assert.That(hasImports, Is.True, sprintf "Expected an imports folding range from line 0 to 1, got: %A" ranges)
 
     [<Test>]
     member this.``textDocument/foldingRange includes region range``() =
@@ -136,7 +138,7 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 10u && r.EndLine = 15u && r.Kind = Some FoldingRangeKind.Region)
 
-        ClassicAssert.IsTrue(hasRegion, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
+        Assert.That(hasRegion, Is.True, sprintf "Expected a region folding range from line 10 to 15, got: %A" ranges)
 
     [<Test>]
     member this.``textDocument/foldingRange includes multi-line comment range``() =
@@ -150,7 +152,7 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 31u && r.EndLine = 32u && r.Kind = Some FoldingRangeKind.Comment)
 
-        ClassicAssert.IsTrue(hasComment, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
+        Assert.That(hasComment, Is.True, sprintf "Expected a comment folding range from line 31 to 32, got: %A" ranges)
 
     [<Test>]
     member this.``textDocument/foldingRange includes interface range``() =
@@ -164,8 +166,9 @@ type FoldingRangeTests() =
             ranges
             |> Array.exists (fun r -> r.StartLine = 43u && r.EndLine > 43u && r.Kind = None)
 
-        ClassicAssert.IsTrue(
+        Assert.That(
             hasInterface,
+            Is.True,
             sprintf "Expected an interface folding range starting at line 43, got: %A" ranges
         )
 
@@ -176,14 +179,14 @@ type FoldingRangeTests() =
 
         let ranges = getRanges client doc
 
-        ClassicAssert.IsTrue(ranges.Length > 0, "Expected at least one folding range")
+        Assert.That(ranges.Length > 0, Is.True, "Expected at least one folding range")
 
         let isSorted =
             ranges
             |> Array.pairwise
             |> Array.forall (fun (a, b) -> a.StartLine <= b.StartLine)
 
-        ClassicAssert.IsTrue(isSorted, "Expected folding ranges to be sorted by StartLine")
+        Assert.That(isSorted, Is.True, "Expected folding ranges to be sorted by StartLine")
 
 [<Test>]
 let ``textDocument/foldingRange on simple class file returns method ranges`` () =
@@ -200,6 +203,6 @@ let ``textDocument/foldingRange on simple class file returns method ranges`` () 
     let hasMethodB =
         ranges |> Array.exists (fun r -> r.StartLine = 10u && r.Kind = None)
 
-    ClassicAssert.IsTrue(hasClass, sprintf "Expected class range at line 2, got: %A" ranges)
-    ClassicAssert.IsTrue(hasMethodA, sprintf "Expected MethodA range at line 4, got: %A" ranges)
-    ClassicAssert.IsTrue(hasMethodB, sprintf "Expected MethodB range at line 10, got: %A" ranges)
+    Assert.That(hasClass, Is.True, sprintf "Expected class range at line 2, got: %A" ranges)
+    Assert.That(hasMethodA, Is.True, sprintf "Expected MethodA range at line 4, got: %A" ranges)
+    Assert.That(hasMethodB, Is.True, sprintf "Expected MethodB range at line 10, got: %A" ranges)
