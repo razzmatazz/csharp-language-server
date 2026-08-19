@@ -2,6 +2,7 @@ module CSharpLanguageServer.Tests.SemanticTokenTests
 
 open System
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Classification
@@ -83,11 +84,11 @@ let testSemanticTokens () =
             | U2.C1 c1 -> Some c1
             | _ -> None)
 
-    Assert.IsTrue semanticTokensOptions.IsSome
+    ClassicAssert.IsTrue semanticTokensOptions.IsSome
 
     let legend = semanticTokensOptions.Value.Legend
-    Assert.AreEqual([| "static" |], legend.TokenModifiers)
-    Assert.AreEqual(40, legend.TokenTypes.Length)
+    ClassicAssert.AreEqual([| "static" |], legend.TokenModifiers)
+    ClassicAssert.AreEqual(40, legend.TokenTypes.Length)
 
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
@@ -99,7 +100,7 @@ let testSemanticTokens () =
             | _ -> None)
         |> Option.defaultValue false
 
-    Assert.IsTrue haveFullSemanticTokenCapability
+    ClassicAssert.IsTrue haveFullSemanticTokenCapability
 
     use file = client.Open "Project/SemanticTokenTest.cs"
     let fileContentsLen = file.GetFileContents().Length
@@ -112,19 +113,19 @@ let testSemanticTokens () =
     let semanticToken: SemanticTokens =
         client.Request("textDocument/semanticTokens/full", semanticTokenParams)
 
-    Assert.IsTrue semanticToken.ResultId.IsNone
+    ClassicAssert.IsTrue semanticToken.ResultId.IsNone
 
     // Test if anything is out-of-bound (that might indicates an underflow)
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         semanticToken.Data
         |> Array.chunkBySize 5
         |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 fileContentsLen) false
     )
 
     let tokens = semanticToken |> decodeSemanticToken legend
-    Assert.AreEqual(129, tokens.Length)
+    ClassicAssert.AreEqual(129, tokens.Length)
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         [| { Line = 0u
              StartChar = 0u
              Length = 5u
@@ -181,7 +182,7 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
             | U2.C1 c1 -> Some c1
             | _ -> None)
 
-    Assert.IsTrue semanticTokensOptions.IsSome
+    ClassicAssert.IsTrue semanticTokensOptions.IsSome
 
     let legend = semanticTokensOptions.Value.Legend
 
@@ -210,7 +211,7 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
     let legendTokenTypes = legend.TokenTypes |> Set.ofArray
 
     for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
-        Assert.IsTrue(
+        ClassicAssert.IsTrue(
             legendTokenTypes.Contains expectedTokenType,
             sprintf "Expected '%s' in the semantic-token legend" expectedTokenType
         )
@@ -232,7 +233,7 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
         |> Set.ofArray
 
     for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
-        Assert.IsTrue(
+        ClassicAssert.IsTrue(
             actualTokenTypes.Contains expectedTokenType,
             sprintf
                 "Expected semantic token type '%s', got: %s"

@@ -5,6 +5,7 @@ open System.IO
 open System.Threading
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -67,9 +68,9 @@ let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
             |> Set.ofArray
 
         let codesStr = codes |> String.concat "; "
-        Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in pull diagnostics, got: {codesStr}")
-        Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in pull diagnostics, got: {codesStr}")
-        Assert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032 in pull diagnostics, got: {codesStr}")
+        ClassicAssert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in pull diagnostics, got: {codesStr}")
+        ClassicAssert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in pull diagnostics, got: {codesStr}")
+        ClassicAssert.IsTrue(codes.Contains("IDE0032"), $"Expected IDE0032 in pull diagnostics, got: {codesStr}")
 
     | _ -> failwith "U2.C1 (full report) was expected"
 
@@ -106,8 +107,8 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
         |> Set.ofArray
 
     let codesStr = codes |> String.concat "; "
-    Assert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codesStr}")
-    Assert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codesStr}")
+    ClassicAssert.IsTrue(codes.Contains("IDE0040"), $"Expected IDE0040 in push diagnostics, got: {codesStr}")
+    ClassicAssert.IsTrue(codes.Contains("IDE0051"), $"Expected IDE0051 in push diagnostics, got: {codesStr}")
 *)
 
 [<Test>]
@@ -142,7 +143,7 @@ let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
                 | _ -> [||])
             |> Set.ofArray
 
-        Assert.IsTrue(allCodes.Contains("IDE0040"), $"Expected IDE0040 in workspace diagnostics, got: {allCodes}")
+        ClassicAssert.IsTrue(allCodes.Contains("IDE0040"), $"Expected IDE0040 in workspace diagnostics, got: {allCodes}")
 
     | _ -> failwith "'Some' was expected"
 

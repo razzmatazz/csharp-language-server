@@ -259,3 +259,28 @@ The analyzer tests (`testPushDiagnosticsIncludeEditorConfigAnalyzerRules`,
 cluster (7–9 s each) are not caused by sleeps — they reflect real server work (loading the
 solution, running analyzers, compiling). Those can only be improved by speeding up the
 server itself or sharing solution state across tests.
+
+---
+
+## NUnit 4 upgrade (2026-08-19)
+
+Bumped `NUnit` 3.14.0 → **4.6.1** and `NUnit3TestAdapter` 4.6.0 → **6.2.0** in
+`Directory.Packages.props`.
+
+NUnit 4 moved the classic `Assert.AreEqual`/`IsTrue`/`IsFalse`/`Fail`/etc. (and
+`StringAssert`/`CollectionAssert`) out of `NUnit.Framework` into
+`NUnit.Framework.Legacy.ClassicAssert`/`StringAssert`/`CollectionAssert`. (NUnit 4.5+
+brings classic asserts back into the `Assert` class too, but only via a C# 14
+extension-member mechanism that isn't visible from F# — so that shortcut doesn't apply
+here.) Since rewriting ~700 assertions across 33 files to the `Assert.That(x, Is.EqualTo
+y)` constraint model was out of scope for this change, the mechanical fix was:
+- Add `open NUnit.Framework.Legacy` next to each file's `open NUnit.Framework`.
+- Rename all classic `Assert.<Method>(...)` call sites to `ClassicAssert.<Method>(...)`
+  (`Assert.That(...)`/`Assert.Multiple(...)` were left untouched — those stay on the
+  modern `Assert` class).
+- Two call sites (`RequestSchedulingTests.fs`, `ProgressReporterTests.fs`) needed an
+  explicit `System.Action`/`System.Func<Task>` wrapper around a lambda passed to
+  `ClassicAssert.DoesNotThrow(Async)`, since NUnit 4 added a non-obsolete delegate overload
+  alongside the old one and F#'s lambda type inference can't disambiguate between them.
+
+Full suite (292 tests) passes after the upgrade.

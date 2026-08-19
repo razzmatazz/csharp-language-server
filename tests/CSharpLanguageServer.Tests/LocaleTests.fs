@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.LocaleTests
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -45,7 +46,7 @@ let testLocaleEnvVar () =
 
     let msg = getMissingNamespaceDiagnosticMessage client classFile
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         msg.StartsWith(germanMissingNsPrefix),
         sprintf "Expected German diagnostic (starting with '%s') but got: %s" germanMissingNsPrefix msg
     )
@@ -62,7 +63,7 @@ let testLocaleCliArg () =
 
     let msg = getMissingNamespaceDiagnosticMessage client classFile
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         msg.StartsWith(germanMissingNsPrefix),
         sprintf "Expected German diagnostic (starting with '%s') but got: %s" germanMissingNsPrefix msg
     )
@@ -80,7 +81,7 @@ let testLocaleCliArgTakesPriority () =
 
     let msg = getMissingNamespaceDiagnosticMessage client classFile
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         msg.StartsWith(englishMissingNsPrefix),
         sprintf "Expected English diagnostic (starting with '%s') but got: %s" englishMissingNsPrefix msg
     )
@@ -108,7 +109,7 @@ let testLocaleSetting () =
 
     let msgAfter = getMissingNamespaceDiagnosticMessage client classFile
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         msgAfter.StartsWith(germanMissingNsPrefix),
         sprintf
             "Expected German diagnostic after locale change (starting with '%s') but got: %s (was: %s)"

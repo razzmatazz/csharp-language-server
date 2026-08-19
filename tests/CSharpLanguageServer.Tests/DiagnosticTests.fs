@@ -4,6 +4,7 @@ open System
 open System.Threading
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -16,7 +17,7 @@ let testHiddenDiagnosticSeverityIsHint () =
         CSharpLanguageServer.Roslyn.Conversions.DiagnosticSeverity.fromRoslynDiagnosticSeverity
             Microsoft.CodeAnalysis.DiagnosticSeverity.Hidden
 
-    Assert.AreEqual(DiagnosticSeverity.Hint, severity)
+    ClassicAssert.AreEqual(DiagnosticSeverity.Hint, severity)
 
 // This test documents a race: workspace/diagnostic is called while the solution is still
 // loading (simulated via a 3-second SolutionLoadDelay). The server should return no items
@@ -49,8 +50,8 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     // The server returns 0 items because the solution is not yet loaded — this assertion
     // intentionally fails to expose the race condition.
     match report with
-    | Some report -> Assert.AreEqual(1, report.Items.Length)
-    | None -> Assert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
+    | Some report -> ClassicAssert.AreEqual(1, report.Items.Length)
+    | None -> ClassicAssert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
 
 [<Test>]
 [<Retry(3)>]
@@ -67,24 +68,24 @@ let testPushDiagnosticsWork () =
 
     let state = client.GetState()
     let diag0 = state.PushDiagnostics |> Map.tryFind classFile.Uri
-    Assert.IsTrue(diag0.IsSome)
+    ClassicAssert.IsTrue(diag0.IsSome)
 
     let version0, diagnosticList0 = diag0.Value
-    Assert.AreEqual(None, version0)
-    Assert.AreEqual(3, diagnosticList0.Length)
+    ClassicAssert.AreEqual(None, version0)
+    ClassicAssert.AreEqual(3, diagnosticList0.Length)
 
     let diagnostic0 = diagnosticList0.[0]
-    Assert.AreEqual("Identifier expected", diagnostic0.Message)
-    Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
-    Assert.AreEqual(0, diagnostic0.Range.Start.Line)
-    Assert.AreEqual(3, diagnostic0.Range.Start.Character)
+    ClassicAssert.AreEqual("Identifier expected", diagnostic0.Message)
+    ClassicAssert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
+    ClassicAssert.AreEqual(0, diagnostic0.Range.Start.Line)
+    ClassicAssert.AreEqual(3, diagnostic0.Range.Start.Character)
 
     let diagnostic1 = diagnosticList0.[1]
-    Assert.AreEqual("; expected", diagnostic1.Message)
+    ClassicAssert.AreEqual("; expected", diagnostic1.Message)
 
     let diagnostic2 = diagnosticList0.[2]
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
         diagnostic2.Message
     )
@@ -106,9 +107,9 @@ let testPushDiagnosticsWork () =
     let state = client.GetState()
     let version1, diagnosticList1 = state.PushDiagnostics |> Map.find classFile.Uri
 
-    Assert.AreEqual(None, version1)
+    ClassicAssert.AreEqual(None, version1)
 
-    Assert.AreEqual(0, diagnosticList1.Length)
+    ClassicAssert.AreEqual(0, diagnosticList1.Length)
 
 [<Test>]
 let testPullDiagnosticsWork () =
@@ -127,27 +128,27 @@ let testPullDiagnosticsWork () =
 
     match report0 with
     | Some(U2.C1 report) ->
-        Assert.AreEqual("full", report.Kind)
-        Assert.IsTrue(report.ResultId.IsSome)
-        Assert.AreEqual(3, report.Items.Length)
+        ClassicAssert.AreEqual("full", report.Kind)
+        ClassicAssert.IsTrue(report.ResultId.IsSome)
+        ClassicAssert.AreEqual(3, report.Items.Length)
 
         let diagnostic0 = report.Items.[0]
-        Assert.AreEqual(0, diagnostic0.Range.Start.Line)
-        Assert.AreEqual(3, diagnostic0.Range.Start.Character)
-        Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
-        Assert.AreEqual("Identifier expected", diagnostic0.Message)
+        ClassicAssert.AreEqual(0, diagnostic0.Range.Start.Line)
+        ClassicAssert.AreEqual(3, diagnostic0.Range.Start.Character)
+        ClassicAssert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
+        ClassicAssert.AreEqual("Identifier expected", diagnostic0.Message)
 
-        Assert.AreEqual(
+        ClassicAssert.AreEqual(
             "https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1001)",
             diagnostic0.CodeDescription.Value.Href
         )
 
         let diagnostic1 = report.Items.[1]
-        Assert.AreEqual("; expected", diagnostic1.Message)
+        ClassicAssert.AreEqual("; expected", diagnostic1.Message)
 
         let diagnostic2 = report.Items.[2]
 
-        Assert.AreEqual(
+        ClassicAssert.AreEqual(
             "The type or namespace name 'XXX' could not be found (are you missing a using directive or an assembly reference?)",
             diagnostic2.Message
         )
@@ -163,9 +164,9 @@ let testPullDiagnosticsWork () =
 
     match report1 with
     | Some(U2.C1 report) ->
-        Assert.AreEqual("full", report.Kind)
-        Assert.IsTrue(report.ResultId.IsSome)
-        Assert.AreEqual(0, report.Items.Length)
+        ClassicAssert.AreEqual("full", report.Kind)
+        ClassicAssert.IsTrue(report.ResultId.IsSome)
+        ClassicAssert.AreEqual(0, report.Items.Length)
     | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
@@ -187,17 +188,17 @@ let testPullDiagnosticsWorkForRazorFiles () =
 
     match report0 with
     | Some(U2.C1 report) ->
-        Assert.AreEqual("full", report.Kind)
-        Assert.AreEqual(None, report.ResultId)
-        Assert.AreEqual(1, report.Items.Length)
+        ClassicAssert.AreEqual("full", report.Kind)
+        ClassicAssert.AreEqual(None, report.ResultId)
+        ClassicAssert.AreEqual(1, report.Items.Length)
 
         let reportItems = report.Items |> Array.sortBy _.Range
 
         let diagnostic0 = reportItems[0]
-        Assert.AreEqual(1, diagnostic0.Range.Start.Line)
-        Assert.AreEqual(7, diagnostic0.Range.Start.Character)
-        Assert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
-        Assert.IsTrue(diagnostic0.Message.StartsWith("'IndexViewModel' does not contain a definition for 'XXX' and no"))
+        ClassicAssert.AreEqual(1, diagnostic0.Range.Start.Line)
+        ClassicAssert.AreEqual(7, diagnostic0.Range.Start.Character)
+        ClassicAssert.AreEqual(Some DiagnosticSeverity.Error, diagnostic0.Severity)
+        ClassicAssert.IsTrue(diagnostic0.Message.StartsWith("'IndexViewModel' does not contain a definition for 'XXX' and no"))
 
     | _ -> failwith "U2.C1 was expected"
 
@@ -216,17 +217,17 @@ let testWorkspaceDiagnosticsWork () =
 
     match report0 with
     | Some report0 ->
-        Assert.AreEqual(1, report0.Items.Length)
+        ClassicAssert.AreEqual(1, report0.Items.Length)
 
         match report0.Items[0] with
         | U2.C1 fullReport ->
-            Assert.AreEqual("full", fullReport.Kind)
-            Assert.IsTrue(fullReport.ResultId.IsSome)
-            Assert.AreEqual(3, fullReport.Items.Length)
+            ClassicAssert.AreEqual("full", fullReport.Kind)
+            ClassicAssert.IsTrue(fullReport.ResultId.IsSome)
+            ClassicAssert.AreEqual(3, fullReport.Items.Length)
 
             let diagnostic0 = fullReport.Items[0]
-            Assert.AreEqual(true, diagnostic0.Code.IsSome)
-            Assert.AreEqual("Identifier expected", diagnostic0.Message)
+            ClassicAssert.AreEqual(true, diagnostic0.Code.IsSome)
+            ClassicAssert.AreEqual("Identifier expected", diagnostic0.Message)
 
         | _ -> failwith "'U2.C1' was expected"
 
@@ -252,28 +253,28 @@ let testWorkspaceDiagnosticsWorkWithStreaming () =
     // The actual diagnostic content was delivered via $/progress, not here.
     match report0 with
     | Some report0 ->
-        Assert.AreEqual(1, report0.Items.Length)
+        ClassicAssert.AreEqual(1, report0.Items.Length)
 
         match report0.Items[0] with
-        | U2.C2 stub -> Assert.AreEqual("unchanged", stub.Kind)
+        | U2.C2 stub -> ClassicAssert.AreEqual("unchanged", stub.Kind)
         | U2.C1 _ -> failwith "expected unchanged stub in final response body, got full report"
     | _ -> failwith "'Some' was expected"
 
     let progress = client.GetProgressParams partialResultToken
-    Assert.AreEqual(1, progress.Length)
+    ClassicAssert.AreEqual(1, progress.Length)
 
     let report0 = progress[0].Value |> deserialize<WorkspaceDiagnosticReport>
-    Assert.AreEqual(1, report0.Items.Length)
+    ClassicAssert.AreEqual(1, report0.Items.Length)
 
     match report0.Items[0] with
     | U2.C1 fullReport ->
-        Assert.AreEqual("full", fullReport.Kind)
-        Assert.IsTrue(fullReport.ResultId.IsSome)
-        Assert.AreEqual(3, fullReport.Items.Length)
+        ClassicAssert.AreEqual("full", fullReport.Kind)
+        ClassicAssert.IsTrue(fullReport.ResultId.IsSome)
+        ClassicAssert.AreEqual(3, fullReport.Items.Length)
 
         let diagnostic0 = fullReport.Items[0]
-        Assert.AreEqual(true, diagnostic0.Code.IsSome)
-        Assert.AreEqual("Identifier expected", diagnostic0.Message)
+        ClassicAssert.AreEqual(true, diagnostic0.Code.IsSome)
+        ClassicAssert.AreEqual("Identifier expected", diagnostic0.Message)
 
     | _ -> failwith "'U2.C1' was expected"
 
@@ -323,7 +324,7 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
                 |> List.ofArray
             | None -> [])
 
-    Assert.IsTrue(progressItems1.Length > 0, "expected $/progress items from first streaming poll")
+    ClassicAssert.IsTrue(progressItems1.Length > 0, "expected $/progress items from first streaming poll")
 
     // The final response body must now contain the resultId stubs so the client
     // can build previousResultIds — this is the assertion that fails before the fix.
@@ -339,10 +340,10 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
                         { Uri = unchanged.Uri
                           Value = unchanged.ResultId })
         | None ->
-            Assert.Fail("expected Some from first workspace/diagnostic")
+            ClassicAssert.Fail("expected Some from first workspace/diagnostic")
             Array.empty
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         previousResultIds.Length > 0,
         "expected the final response body to contain resultId stubs for each streamed document, \
          so the client can send previousResultIds on the next poll (busy-loop fix)"
@@ -377,13 +378,13 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPoll () =
                 |> List.ofArray
             | None -> [])
 
-    Assert.IsTrue(progressItems2.Length > 0, "expected $/progress items from second streaming poll")
+    ClassicAssert.IsTrue(progressItems2.Length > 0, "expected $/progress items from second streaming poll")
 
     for item in progressItems2 do
         match item with
-        | U2.C2 unchanged -> Assert.AreEqual("unchanged", unchanged.Kind)
+        | U2.C2 unchanged -> ClassicAssert.AreEqual("unchanged", unchanged.Kind)
         | U2.C1 full ->
-            Assert.Fail(
+            ClassicAssert.Fail(
                 sprintf
                     "expected Unchanged on second streaming poll but got full report for %s — \
                      server is not honouring previousResultIds in the streaming path"
@@ -419,7 +420,7 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPollWhenDocumentResultIdProvi
     let docResultId =
         match docReport with
         | Some(U2.C1 report) ->
-            Assert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
+            ClassicAssert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
             report.ResultId.Value
         | _ -> failwith "U2.C1 was expected from textDocument/diagnostic"
 
@@ -441,15 +442,15 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPollWhenDocumentResultIdProvi
         for item in report.Items do
             match item with
             | U2.C2 unchanged ->
-                Assert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
+                ClassicAssert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
             | U2.C1 full ->
-                Assert.Fail(
+                ClassicAssert.Fail(
                     sprintf
                         "expected Unchanged for %s but got full report — \
                          textDocument/diagnostic resultId does not match workspace/diagnostic resultId"
                         full.Uri
                 )
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport")
 
 [<Test>]
 let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResultIdProvided () =
@@ -471,7 +472,7 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
     let docResultId =
         match docReport with
         | Some(U2.C1 report) ->
-            Assert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
+            ClassicAssert.IsTrue(report.ResultId.IsSome, "textDocument/diagnostic must return a resultId")
             report.ResultId.Value
         | _ -> failwith "U2.C1 was expected from textDocument/diagnostic"
 
@@ -505,14 +506,14 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
                 |> List.ofArray
             | None -> [])
 
-    Assert.IsTrue(progressItems.Length > 0, "expected $/progress items")
+    ClassicAssert.IsTrue(progressItems.Length > 0, "expected $/progress items")
 
     for item in progressItems do
         match item with
         | U2.C2 unchanged ->
-            Assert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
+            ClassicAssert.AreEqual("unchanged", unchanged.Kind, sprintf "expected Unchanged for %s" unchanged.Uri)
         | U2.C1 full ->
-            Assert.Fail(
+            ClassicAssert.Fail(
                 sprintf
                     "expected Unchanged for %s but got full report — \
                      textDocument/diagnostic resultId does not match workspace/diagnostic resultId"
@@ -536,19 +537,19 @@ let testWorkspaceDiagnosticsReturnResultId () =
 
     match report with
     | Some report ->
-        Assert.IsTrue(report.Items.Length > 0, "expected at least one document in workspace diagnostic report")
+        ClassicAssert.IsTrue(report.Items.Length > 0, "expected at least one document in workspace diagnostic report")
 
         for item in report.Items do
             match item with
             | U2.C1 fullReport ->
-                Assert.IsTrue(
+                ClassicAssert.IsTrue(
                     fullReport.ResultId.IsSome,
                     sprintf "expected resultId to be populated for uri %s" fullReport.Uri
                 )
             | U2.C2 _ ->
                 // Unchanged is not valid on the first poll (no previousResultIds were sent)
-                Assert.Fail("expected full report on first poll, got Unchanged")
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport")
+                ClassicAssert.Fail("expected full report on first poll, got Unchanged")
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport")
 
 [<Test>]
 let testWorkspaceDiagnosticsReturnFullWhenCacheWarmButClientHasNoResultIds () =
@@ -570,8 +571,8 @@ let testWorkspaceDiagnosticsReturnFullWhenCacheWarmButClientHasNoResultIds () =
 
     // Sanity: first poll should succeed with full reports
     match warmupReport with
-    | Some report -> Assert.IsTrue(report.Items.Length > 0, "expected items from first poll to warm the cache")
-    | None -> Assert.Fail("expected first workspace/diagnostic to succeed")
+    | Some report -> ClassicAssert.IsTrue(report.Items.Length > 0, "expected items from first poll to warm the cache")
+    | None -> ClassicAssert.Fail("expected first workspace/diagnostic to succeed")
 
     // Second poll — deliberately empty previousResultIds, simulating a client that
     // does not hold any result IDs (even though the server cache is now warm)
@@ -586,23 +587,23 @@ let testWorkspaceDiagnosticsReturnFullWhenCacheWarmButClientHasNoResultIds () =
 
     match secondReport with
     | Some report ->
-        Assert.IsTrue(report.Items.Length > 0, "expected items from second poll")
+        ClassicAssert.IsTrue(report.Items.Length > 0, "expected items from second poll")
 
         for item in report.Items do
             match item with
             | U2.C1 fullReport ->
-                Assert.AreEqual("full", fullReport.Kind)
-                Assert.IsTrue(fullReport.ResultId.IsSome, sprintf "expected resultId for %s" fullReport.Uri)
+                ClassicAssert.AreEqual("full", fullReport.Kind)
+                ClassicAssert.IsTrue(fullReport.ResultId.IsSome, sprintf "expected resultId for %s" fullReport.Uri)
                 // The client asked for everything (no previousResultIds), so the full
                 // report must contain actual diagnostic items, not be empty
-                Assert.IsTrue(fullReport.Items.Length > 0, sprintf "expected diagnostics for %s" fullReport.Uri)
+                ClassicAssert.IsTrue(fullReport.Items.Length > 0, sprintf "expected diagnostics for %s" fullReport.Uri)
             | U2.C2 unchangedReport ->
-                Assert.Fail(
+                ClassicAssert.Fail(
                     sprintf
                         "expected full report for %s but got Unchanged — server should not return Unchanged when client sent empty previousResultIds"
                         unchangedReport.Uri
                 )
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
 
 [<Test>]
 let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
@@ -629,10 +630,10 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
                 | U2.C1 full -> full.ResultId |> Option.map (fun rid -> { Uri = full.Uri; Value = rid })
                 | U2.C2 _ -> None)
         | None ->
-            Assert.Fail("expected first workspace/diagnostic to succeed")
+            ClassicAssert.Fail("expected first workspace/diagnostic to succeed")
             Array.empty
 
-    Assert.IsTrue(previousResultIds.Length > 0, "expected resultIds from first poll")
+    ClassicAssert.IsTrue(previousResultIds.Length > 0, "expected resultIds from first poll")
 
     let secondParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -647,10 +648,10 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
     | Some report ->
         for item in report.Items do
             match item with
-            | U2.C2 unchangedReport -> Assert.AreEqual("unchanged", unchangedReport.Kind)
+            | U2.C2 unchangedReport -> ClassicAssert.AreEqual("unchanged", unchangedReport.Kind)
             | U2.C1 fullReport ->
-                Assert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+                ClassicAssert.Fail(sprintf "expected Unchanged on second poll but got full report for %s" fullReport.Uri)
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
 
 [<Test>]
 let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
@@ -698,7 +699,7 @@ let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
                 | U2.C2 _ -> None)
         | None -> failwith "expected first workspace/diagnostic to succeed"
 
-    Assert.IsTrue(firstResultIds.Length > 0, "expected resultIds from first poll (analyzers=true)")
+    ClassicAssert.IsTrue(firstResultIds.Length > 0, "expected resultIds from first poll (analyzers=true)")
 
     // Simulate toggling analyzers off: replace "/true" with "/false" in each resultId.
     // The server recomputes resultId as "V/true" (analyzers are still on in the test
@@ -729,7 +730,7 @@ let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
                     | U2.C1 full -> full.Uri = prevId.Uri
                     | U2.C2 unchanged -> unchanged.Uri = prevId.Uri)
 
-            Assert.IsTrue(
+            ClassicAssert.IsTrue(
                 item.IsSome,
                 sprintf
                     "URI %s was in previousResultIds but is absent from the second poll — \
@@ -740,11 +741,11 @@ let testWorkspaceDiagnosticsEmitEmptyFullReportForDocumentThatBecomesClean () =
 
             match item.Value with
             | U2.C2 _ ->
-                Assert.Fail(
+                ClassicAssert.Fail(
                     sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri
                 )
             | U2.C1 _ -> ()
-    | None -> Assert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
+    | None -> ClassicAssert.Fail("expected Some WorkspaceDiagnosticReport on second poll")
 
 [<Test>]
 let testWorkspaceDiagnosticsSecondPollIsUnchangedInMultiProjectSolution () =
@@ -808,7 +809,7 @@ let testWorkspaceDiagnosticsSecondPollIsUnchangedInMultiProjectSolution () =
                 false)
         "timed out waiting for at least ClassA.cs to appear in workspace/diagnostic"
 
-    Assert.IsTrue(previousResultIds.Length >= 1, "expected at least one resultId stub from warmup poll")
+    ClassicAssert.IsTrue(previousResultIds.Length >= 1, "expected at least one resultId stub from warmup poll")
 
     // Non-streaming poll 2: send back the resultIds from poll 1.
     //
@@ -829,16 +830,16 @@ let testWorkspaceDiagnosticsSecondPollIsUnchangedInMultiProjectSolution () =
     | Some report ->
         for item in report.Items do
             match item with
-            | U2.C2 unchanged -> Assert.AreEqual("unchanged", unchanged.Kind)
+            | U2.C2 unchanged -> ClassicAssert.AreEqual("unchanged", unchanged.Kind)
             | U2.C1 full ->
-                Assert.Fail(
+                ClassicAssert.Fail(
                     sprintf
                         "expected Unchanged on second poll for %s but got a full report — \
                          ProjectB's pass must not emit a full report for a URI it doesn't own \
                          (cross-project resultId poisoning, the 0→N→0 cycling bug)"
                         full.Uri
                 )
-    | None -> Assert.Fail("expected Some from second workspace/diagnostic")
+    | None -> ClassicAssert.Fail("expected Some from second workspace/diagnostic")
 
 [<Test>]
 let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesClean () =
@@ -881,7 +882,7 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
                           Value = unchanged.ResultId })
         | None -> failwith "expected first workspace/diagnostic to succeed"
 
-    Assert.IsTrue(firstResultIds.Length > 0, "expected resultId stubs from first poll")
+    ClassicAssert.IsTrue(firstResultIds.Length > 0, "expected resultId stubs from first poll")
 
     // Simulate toggling analyzers off by mutating the "/true" suffix to "/false"
     let previousResultIds =
@@ -917,7 +918,7 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
                 |> List.ofArray
             | None -> [])
 
-    Assert.IsTrue(progressItems.Length > 0, "expected $/progress items from second streaming poll")
+    ClassicAssert.IsTrue(progressItems.Length > 0, "expected $/progress items from second streaming poll")
 
     for prevId in previousResultIds do
         let item =
@@ -927,7 +928,7 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
                 | U2.C1 full -> full.Uri = prevId.Uri
                 | U2.C2 unchanged -> unchanged.Uri = prevId.Uri)
 
-        Assert.IsTrue(
+        ClassicAssert.IsTrue(
             item.IsSome,
             sprintf
                 "URI %s was in previousResultIds but absent from $/progress — \
@@ -939,5 +940,5 @@ let testWorkspaceDiagnosticsStreamingEmitEmptyFullReportForDocumentThatBecomesCl
 
         match item.Value with
         | U2.C2 _ ->
-            Assert.Fail(sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri)
+            ClassicAssert.Fail(sprintf "URI %s returned Unchanged but resultId changed — expected a full report" prevId.Uri)
         | U2.C1 _ -> ()

@@ -2,6 +2,7 @@ module CSharpLanguageServer.Tests.ImplementationTests
 
 open System
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -25,10 +26,10 @@ let testTextDocumentImplementationWorks () =
     // Should find implementations in Person (line 18) and Student (line 33)
     match implementation0 with
     | Some(U2.C1(U2.C2 locations)) ->
-        Assert.AreEqual(1, locations.Length)
+        ClassicAssert.AreEqual(1, locations.Length)
         // Verify first implementation (Person.GetGreeting)
-        Assert.AreEqual(semanticTokenFile.Uri, locations[0].Uri)
-        Assert.AreEqual(18u, locations[0].Range.Start.Line)
+        ClassicAssert.AreEqual(semanticTokenFile.Uri, locations[0].Uri)
+        ClassicAssert.AreEqual(18u, locations[0].Range.Start.Line)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string implementation0)
 
@@ -52,9 +53,9 @@ let testImplementationOnConcreteClassWorks () =
     // Should find Student (line 24) as the class derived from Person
     match result with
     | Some(U2.C1(U2.C2 locations)) ->
-        Assert.AreEqual(1, locations.Length)
-        Assert.AreEqual(hierarchyFile.Uri, locations[0].Uri)
-        Assert.AreEqual(24u, locations[0].Range.Start.Line)
+        ClassicAssert.AreEqual(1, locations.Length)
+        ClassicAssert.AreEqual(hierarchyFile.Uri, locations[0].Uri)
+        ClassicAssert.AreEqual(24u, locations[0].Range.Start.Line)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)
 
@@ -90,10 +91,10 @@ let testImplementationOnConcreteBclMethodFallsBackToDecompilation () =
 
     match result with
     | Some(U2.C1(U2.C2 locations)) ->
-        Assert.IsTrue(locations.Length > 0, "Expected at least one location")
+        ClassicAssert.IsTrue(locations.Length > 0, "Expected at least one location")
 
         for loc in locations do
-            Assert.AreEqual(expectedUri, loc.Uri)
+            ClassicAssert.AreEqual(expectedUri, loc.Uri)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)
 
@@ -117,9 +118,9 @@ let testImplementationOnAbstractClassWorks () =
     // Should find Dog (line 44) as the class derived from Animal
     match result with
     | Some(U2.C1(U2.C2 locations)) ->
-        Assert.AreEqual(1, locations.Length)
-        Assert.AreEqual(hierarchyFile.Uri, locations[0].Uri)
-        Assert.AreEqual(44u, locations[0].Range.Start.Line)
+        ClassicAssert.AreEqual(1, locations.Length)
+        ClassicAssert.AreEqual(hierarchyFile.Uri, locations[0].Uri)
+        ClassicAssert.AreEqual(44u, locations[0].Range.Start.Line)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)
 
@@ -146,7 +147,7 @@ let testImplementationOnInterfaceTypeWorks () =
     match result with
     | Some(U2.C1(U2.C2 locations)) ->
         let lines = locations |> Array.map (fun l -> l.Range.Start.Line) |> Array.sort
-        Assert.AreEqual(2, locations.Length)
-        Assert.AreEqual([| 9u; 24u |], lines)
+        ClassicAssert.AreEqual(2, locations.Length)
+        ClassicAssert.AreEqual([| 9u; 24u |], lines)
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)

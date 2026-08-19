@@ -4,6 +4,7 @@ open System
 open System.Threading
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -26,7 +27,7 @@ let testReferenceWorks () =
     let locations0: Location[] option =
         client.Request("textDocument/references", referenceParams0)
 
-    Assert.IsTrue(locations0.IsNone)
+    ClassicAssert.IsTrue(locations0.IsNone)
 
     //
     // try references request at MethodA declaration on line 2
@@ -47,7 +48,7 @@ let testReferenceWorks () =
                { Start = { Line = 12u; Character = 8u }
                  End = { Line = 12u; Character = 15u } } } |]
 
-    Assert.AreEqual(expectedLocations1, locations1.Value)
+    ClassicAssert.AreEqual(expectedLocations1, locations1.Value)
 
     //
     // try references request at MethodA declaration on line 2
@@ -74,7 +75,7 @@ let testReferenceWorks () =
                { Start = { Line = 12u; Character = 8u }
                  End = { Line = 12u; Character = 15u } } } |]
 
-    Assert.AreEqual(expectedLocations2, locations2.Value)
+    ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
 
 [<Test>]
 let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
@@ -104,15 +105,15 @@ let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
         |> _.Substring("file:///".Length)
         |> sprintf "csharp:/%s/Project/Project.csproj/decompiled/System.Console.cs"
 
-    Assert.IsTrue(locations.IsSome, "Expected Some locations")
+    ClassicAssert.IsTrue(locations.IsSome, "Expected Some locations")
 
     let defLocations =
         locations.Value |> Array.filter (fun l -> l.Uri.StartsWith "csharp:")
 
-    Assert.IsTrue(defLocations.Length > 0, "Expected at least one decompiled definition location")
+    ClassicAssert.IsTrue(defLocations.Length > 0, "Expected at least one decompiled definition location")
 
     for loc in defLocations do
-        Assert.AreEqual(expectedDefUri, loc.Uri)
+        ClassicAssert.AreEqual(expectedDefUri, loc.Uri)
 
 [<Test>]
 let testReferenceWorksDotnet8 () =
@@ -132,7 +133,7 @@ let testReferenceWorksDotnet8 () =
     let locations0: Location[] option =
         client.Request("textDocument/references", referenceParams0)
 
-    Assert.IsTrue(locations0.IsNone)
+    ClassicAssert.IsTrue(locations0.IsNone)
 
     //
     // try references request at MethodA declaration on line 2
@@ -153,7 +154,7 @@ let testReferenceWorksDotnet8 () =
                { Start = { Line = 8u; Character = 8u }
                  End = { Line = 8u; Character = 15u } } } |]
 
-    Assert.AreEqual(expectedLocations1, locations1.Value)
+    ClassicAssert.AreEqual(expectedLocations1, locations1.Value)
 
     //
     // try references request at MethodA declaration on line 2
@@ -180,7 +181,7 @@ let testReferenceWorksDotnet8 () =
                { Start = { Line = 8u; Character = 8u }
                  End = { Line = 8u; Character = 15u } } } |]
 
-    Assert.AreEqual(expectedLocations2, locations2.Value)
+    ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
 
 [<Test>]
 [<Retry(3)>]
@@ -206,8 +207,8 @@ let testReferenceWorksToRazorPageReferencedValue () =
     let locations0: Location[] option =
         client.Request("textDocument/references", referenceParams0)
 
-    Assert.IsTrue locations0.IsSome
-    Assert.AreEqual(3, locations0.Value.Length)
+    ClassicAssert.IsTrue locations0.IsSome
+    ClassicAssert.AreEqual(3, locations0.Value.Length)
 
     let expectedLocations0: Location array =
         [| { Uri = testControllerCsFile.Uri
@@ -229,7 +230,7 @@ let testReferenceWorksToRazorPageReferencedValue () =
         locations0.Value
         |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-    Assert.AreEqual(expectedLocations0, sortedLocations0)
+    ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)
 
     //
     // do same but with IncludeDeclaration=true
@@ -244,8 +245,8 @@ let testReferenceWorksToRazorPageReferencedValue () =
     let locations1: Location[] option =
         client.Request("textDocument/references", referenceParams1)
 
-    Assert.IsTrue(locations1.IsSome)
-    Assert.AreEqual(6, locations1.Value.Length)
+    ClassicAssert.IsTrue(locations1.IsSome)
+    ClassicAssert.AreEqual(6, locations1.Value.Length)
 
     let expectedLocations1: Location array =
         [| { Uri = testControllerCsFile.Uri
@@ -282,7 +283,7 @@ let testReferenceWorksToRazorPageReferencedValue () =
         locations1.Value
         |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-    Assert.AreEqual(expectedLocations1, sortedLocations1)
+    ClassicAssert.AreEqual(expectedLocations1, sortedLocations1)
 
 [<Test>]
 [<Retry(3)>]
@@ -308,8 +309,8 @@ let testReferenceWorksFromRazorPageReferencedValue () =
     let locations0: Location[] option =
         client.Request("textDocument/references", referenceParams0)
 
-    Assert.IsTrue(locations0.IsSome)
-    Assert.AreEqual(6, locations0.Value.Length)
+    ClassicAssert.IsTrue(locations0.IsSome)
+    ClassicAssert.AreEqual(6, locations0.Value.Length)
 
     let expectedLocations0: Location array =
         [| { Uri = testControllerCsFile.Uri
@@ -346,4 +347,4 @@ let testReferenceWorksFromRazorPageReferencedValue () =
         locations0.Value
         |> Array.sortBy (fun f -> f.Uri, f.Range.Start.Line, f.Range.Start.Character)
 
-    Assert.AreEqual(expectedLocations0, sortedLocations0)
+    ClassicAssert.AreEqual(expectedLocations0, sortedLocations0)

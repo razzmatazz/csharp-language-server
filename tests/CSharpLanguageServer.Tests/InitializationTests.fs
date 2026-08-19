@@ -3,6 +3,7 @@ module CSharpLanguageServer.Tests.InitializationTests
 open System
 
 open NUnit.Framework
+open NUnit.Framework.Legacy
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -23,8 +24,8 @@ let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
     match hover0 with
     | Some { Contents = U3.C1 markupContent
              Range = None } ->
-        Assert.AreEqual(MarkupKind.Markdown, markupContent.Kind)
-        Assert.AreEqual(expectedMarkupContent, markupContent.Value)
+        ClassicAssert.AreEqual(MarkupKind.Markdown, markupContent.Kind)
+        ClassicAssert.AreEqual(expectedMarkupContent, markupContent.Value)
 
     | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
 
@@ -41,11 +42,11 @@ let testServerRegistersCapabilitiesWithTheClient () =
         "workspace never reached Configured after initialized"
 
     let serverInfo = client.GetState().ServerInfo.Value
-    Assert.AreEqual("csharp-ls", serverInfo.Name)
+    ClassicAssert.AreEqual("csharp-ls", serverInfo.Name)
 
     let serverCaps = client.GetState().ServerCapabilities.Value
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { Change = Some TextDocumentSyncKind.Incremental
           OpenClose = Some true
           Save = Some(U2.C2 { IncludeText = Some true })
@@ -56,7 +57,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.TextDocumentSync
     )
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { WorkspaceFolders =
             Some
                 { Supported = Some true
@@ -66,20 +67,20 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.Workspace
     )
 
-    Assert.AreEqual(true |> U2<bool, HoverOptions>.C1 |> Some, serverCaps.HoverProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, HoverOptions>.C1 |> Some, serverCaps.HoverProvider)
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         true
         |> U3<bool, ImplementationOptions, ImplementationRegistrationOptions>.C1
         |> Some,
         serverCaps.ImplementationProvider
     )
 
-    Assert.AreEqual(true |> U2<bool, DocumentSymbolOptions>.C1 |> Some, serverCaps.DocumentSymbolProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, DocumentSymbolOptions>.C1 |> Some, serverCaps.DocumentSymbolProvider)
 
-    Assert.AreEqual(true |> U2<bool, DefinitionOptions>.C1 |> Some, serverCaps.DefinitionProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, DefinitionOptions>.C1 |> Some, serverCaps.DefinitionProvider)
 
-    Assert.AreEqual(null, serverCaps.InlineValueProvider)
+    ClassicAssert.AreEqual(null, serverCaps.InlineValueProvider)
 
     let expectedDocumentSelector =
         [| U2.C1
@@ -91,7 +92,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
                  Scheme = Some "file"
                  Pattern = Some "**/*.cshtml" } |]
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { DocumentSelector = Some expectedDocumentSelector
           WorkDoneProgress = None
           Identifier = None
@@ -103,9 +104,9 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.DiagnosticProvider
     )
 
-    Assert.AreEqual(true |> U2<bool, DocumentHighlightOptions>.C1 |> Some, serverCaps.DocumentHighlightProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, DocumentHighlightOptions>.C1 |> Some, serverCaps.DocumentHighlightProvider)
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { WorkDoneProgress = None
           TriggerCharacters = Some [| "."; "'" |]
           AllCommitCharacters = None
@@ -115,7 +116,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.CompletionProvider
     )
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { WorkDoneProgress = None
           CodeActionKinds = None
           ResolveProvider = Some true }
@@ -124,17 +125,17 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.CodeActionProvider
     )
 
-    Assert.AreEqual(true |> U2<bool, RenameOptions>.C1 |> Some, serverCaps.RenameProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, RenameOptions>.C1 |> Some, serverCaps.RenameProvider)
 
-    Assert.AreEqual(null, serverCaps.DeclarationProvider)
+    ClassicAssert.AreEqual(null, serverCaps.DeclarationProvider)
 
-    Assert.AreEqual(true |> U2<bool, DocumentFormattingOptions>.C1 |> Some, serverCaps.DocumentFormattingProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, DocumentFormattingOptions>.C1 |> Some, serverCaps.DocumentFormattingProvider)
 
-    Assert.AreEqual(true |> U2<bool, ReferenceOptions>.C1 |> Some, serverCaps.ReferencesProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, ReferenceOptions>.C1 |> Some, serverCaps.ReferencesProvider)
 
-    Assert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
+    ClassicAssert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         { WorkDoneProgress = None
           TriggerCharacters = Some [| "("; ","; "<"; "{"; "[" |]
           RetriggerCharacters = None }
@@ -142,24 +143,24 @@ let testServerRegistersCapabilitiesWithTheClient () =
         serverCaps.SignatureHelpProvider
     )
 
-    Assert.AreEqual(null, serverCaps.MonikerProvider)
+    ClassicAssert.AreEqual(null, serverCaps.MonikerProvider)
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         true
         |> U3<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>.C1
         |> Some,
         serverCaps.FoldingRangeProvider
     )
 
-    Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ClientDidSendNotification "initialized")
+    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
+    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
 
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
     use client = activateFixture "projectWithSlnx"
 
-    Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ClientDidSendNotification "initialized")
+    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
+    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
 
     assertHoverWorks
         client
@@ -167,7 +168,7 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.MethodA(string arg)\n```"
 
-    Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
+    ClassicAssert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
 
 [<Test>]
 let testMultiTargetProjectLoads () =
@@ -179,7 +180,7 @@ let testMultiTargetProjectLoads () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.Method(string arg)\n```"
 
-    Assert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
+    ClassicAssert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
 
 [<Test>]
 let testMultiTargetWorkspace () =
@@ -211,12 +212,12 @@ let testMultiTargetWorkspace () =
             updateInitializeParamsWithWorkspaceFolders
 
     (*
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         client.ServerProgressLogContains(fun str ->
             str.Contains("Finished loading workspace folder") && str.Contains("/folder0"))
     )
 
-    Assert.IsTrue(
+    ClassicAssert.IsTrue(
         client.ServerProgressLogContains(fun str ->
             str.Contains("Finished loading workspace folder") && str.Contains("/folder1"))
     )
@@ -242,11 +243,11 @@ let testMultiTargetWorkspace () =
         | Some hover ->
             match hover.Contents with
             | U3.C1 c ->
-                Assert.AreEqual(MarkupKind.Markdown, c.Kind)
-                Assert.AreEqual(sprintf "```csharp\n%s\n```" expectedMethodName, c.Value.ReplaceLineEndings("\n"))
+                ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
+                ClassicAssert.AreEqual(sprintf "```csharp\n%s\n```" expectedMethodName, c.Value.ReplaceLineEndings("\n"))
             | _ -> failwith "C1 was expected"
 
-            Assert.IsTrue(hover.Range.IsNone)
+            ClassicAssert.IsTrue(hover.Range.IsNone)
 
         | _ -> failwith "Some (U3.C1 c) was expected"
 
@@ -266,7 +267,7 @@ let testClientRegisterCapabilityIsNotSentWhenNoDynamicRegistrationsAreRequested 
             emptyFixturePatch
             id
 
-    Assert.IsFalse(
+    ClassicAssert.IsFalse(
         client.ServerDidInvoke "client/registerCapability",
         "server must not send client/registerCapability when all dynamicRegistration flags are absent"
     )
@@ -325,7 +326,7 @@ let testDynamicRegistrationsUsePulledWorkspaceConfiguration () =
     let expectedDocumentSelector: DocumentSelector =
         [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
 
-    Assert.AreEqual(expectedDocumentSelector, diagnosticOptions.DocumentSelector.Value)
+    ClassicAssert.AreEqual(expectedDocumentSelector, diagnosticOptions.DocumentSelector.Value)
 
 [<TestCase(false, TestName = "absent: not sent")>]
 [<TestCase(true, TestName = "Some true: sent")>]
@@ -350,7 +351,7 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
     let actualFlag = caps.Workspace |> Option.bind _.Configuration
     let actualSupported = actualFlag = Some true
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         configurationSupported,
         actualSupported,
         "test precondition failed: built ClientCapabilities does not match configurationSupported parameter"
@@ -366,7 +367,7 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
 
     client.Shutdown()
 
-    Assert.AreEqual(
+    ClassicAssert.AreEqual(
         configurationSupported,
         client.ServerDidInvoke "workspace/configuration",
         sprintf
@@ -438,13 +439,13 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
         "workspace never reached Ready phase after solution load completed"
 
     let debugInfoReady = client.GetDebugInfo()
-    Assert.AreEqual("Ready", debugInfoReady.workspace.phase, "phase after solution load")
+    ClassicAssert.AreEqual("Ready", debugInfoReady.workspace.phase, "phase after solution load")
 
     // ── ShuttingDown ─────────────────────────────────────────────────────────────
     client.SendShutdown()
 
     let debugInfoShuttingDown = client.GetDebugInfo()
-    Assert.AreEqual("ShuttingDown", debugInfoShuttingDown.workspace.phase, "phase after shutdown")
+    ClassicAssert.AreEqual("ShuttingDown", debugInfoShuttingDown.workspace.phase, "phase after shutdown")
 
     client.SendExit()
 
@@ -464,5 +465,5 @@ let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
     use client =
         activateFixtureExt "genericProject" defaultClientProfile emptyFixturePatch setInvalidRootPath
 
-    Assert.IsTrue(client.ServerDidRespondTo "initialize")
-    Assert.IsTrue(client.ClientDidSendNotification "initialized")
+    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
+    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
