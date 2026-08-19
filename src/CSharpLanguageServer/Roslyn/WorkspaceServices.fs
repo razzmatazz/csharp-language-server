@@ -300,6 +300,11 @@ type RemoteHostClientProviderInterceptor(_logMessage) =
 
 
 type WorkspaceServicesInterceptor() =
+    // A ProxyGenerator caches generated proxy *types* per instance; creating a
+    // fresh generator on every intercepted GetService call defeats that cache
+    // and emits a new (uncollectible) dynamic assembly per call.
+    static let generator = ProxyGenerator()
+
     let logger = Logging.getLoggerByName "WorkspaceServicesInterceptor"
 
     interface IInterceptor with
@@ -309,7 +314,6 @@ type WorkspaceServicesInterceptor() =
             if invocation.Method.Name = "GetService" && invocation.ReturnValue = null then
                 let updatedReturnValue =
                     let serviceType = invocation.GenericArguments[0]
-                    let generator = ProxyGenerator()
 
                     match serviceType.FullName with
                     | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
