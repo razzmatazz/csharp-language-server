@@ -99,7 +99,14 @@ let private readOnlyRequestMethods =
           // and it isn't on this list). Actually applying edits to a document still
           // requires `Change`/`Save`, which pooled document handles don't expose at all.
           "textDocument/prepareRename"
-          "textDocument/rename" ]
+          "textDocument/rename"
+          // Same reasoning as `rename` above: `codeAction` only returns `CodeAction[]`
+          // descriptions (each possibly carrying an unapplied `WorkspaceEdit`), and
+          // `formatting` only returns `TextEdit[]` — neither handler mutates the document
+          // or workspace itself, and pooled fixtures have no way to apply the result back
+          // (no `Change`/`Save`, no `workspace/applyEdit`, no `workspace/executeCommand`).
+          "textDocument/codeAction"
+          "textDocument/formatting" ]
 
 /// Deliberately a minority share of `activeClientsSemaphore`'s total budget (see
 /// `Tooling.fs`) — pooled instances stay alive for the whole test run once booted, so
