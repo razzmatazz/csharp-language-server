@@ -223,6 +223,10 @@ type PooledLspDocumentHandle internal (inner: LspDocumentHandle, onDispose: unit
     member __.FileName = inner.FileName
     member __.Uri = inner.Uri
 
+    /// The document's in-memory content as last opened/changed on this handle. Plain
+    /// read-only snapshot, not a mutation vector.
+    member __.GetFileContents() = inner.GetFileContents()
+
     interface IDisposable with
         member __.Dispose() =
             if not disposed then
@@ -245,6 +249,11 @@ type PooledLspTestClient internal (fixtureName: string, client: LspTestClient) =
     /// string, safe to pass through as-is — unlike `GetState()` (not exposed here), it
     /// carries no mutable/live handles (e.g. the server `Process`) a test could abuse.
     member __.SolutionDir = client.SolutionDir
+
+    /// The server's advertised capabilities, snapshotted at `initialize` time. A narrow
+    /// slice of `GetState()` rather than the full record — deliberately doesn't expose the
+    /// live server `Process` (or other mutable-ish fields) the way `GetState()` would.
+    member __.ServerCapabilities = client.GetState().ServerCapabilities
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         if not (readOnlyRequestMethods.Contains method) then
