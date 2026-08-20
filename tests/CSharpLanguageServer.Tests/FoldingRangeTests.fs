@@ -5,13 +5,14 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
-let private foldingRangeRequest (doc: LspDocumentHandle) : FoldingRangeParams =
+let private foldingRangeRequest (doc: PooledLspDocumentHandle) : FoldingRangeParams =
     { TextDocument = { Uri = doc.Uri }
       WorkDoneToken = None
       PartialResultToken = None }
 
-let private getRanges (client: LspTestClient) (doc: LspDocumentHandle) : FoldingRange array =
+let private getRanges (client: PooledLspTestClient) (doc: PooledLspDocumentHandle) : FoldingRange array =
     let result: FoldingRange array option =
         client.Request("textDocument/foldingRange", foldingRangeRequest doc)
 
@@ -19,7 +20,7 @@ let private getRanges (client: LspTestClient) (doc: LspDocumentHandle) : Folding
 
 [<Test>]
 let ``textDocument/foldingRange returns Some result`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let result: FoldingRange array option =
@@ -29,7 +30,7 @@ let ``textDocument/foldingRange returns Some result`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for the namespace`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -43,7 +44,7 @@ let ``textDocument/foldingRange includes a range for the namespace`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for the class`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -57,7 +58,7 @@ let ``textDocument/foldingRange includes a range for the class`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for a method`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -71,7 +72,7 @@ let ``textDocument/foldingRange includes a range for a method`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for a constructor`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -88,7 +89,7 @@ let ``textDocument/foldingRange includes a range for a constructor`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes a range for a property`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -102,7 +103,7 @@ let ``textDocument/foldingRange includes a range for a property`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes imports range for multiple usings`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -116,7 +117,7 @@ let ``textDocument/foldingRange includes imports range for multiple usings`` () 
 
 [<Test>]
 let ``textDocument/foldingRange includes region range`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -130,7 +131,7 @@ let ``textDocument/foldingRange includes region range`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes multi-line comment range`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -144,7 +145,7 @@ let ``textDocument/foldingRange includes multi-line comment range`` () =
 
 [<Test>]
 let ``textDocument/foldingRange includes interface range`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -161,7 +162,7 @@ let ``textDocument/foldingRange includes interface range`` () =
 
 [<Test>]
 let ``textDocument/foldingRange returns sorted ranges`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/FoldingRangeTest.cs"
 
     let ranges = getRanges client doc
@@ -177,7 +178,7 @@ let ``textDocument/foldingRange returns sorted ranges`` () =
 
 [<Test>]
 let ``textDocument/foldingRange on simple class file returns method ranges`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/Class.cs"
 
     let ranges = getRanges client doc
