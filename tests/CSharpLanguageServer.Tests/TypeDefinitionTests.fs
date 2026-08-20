@@ -7,10 +7,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let ``test textDocument/typeDefinition works`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let typeDefinitionParams0: TypeDefinitionParams =
