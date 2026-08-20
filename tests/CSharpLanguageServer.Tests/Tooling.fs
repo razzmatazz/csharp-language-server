@@ -1011,7 +1011,14 @@ let runDotnetBuild (dir: string) =
     dotnetBuildSemaphore.Wait()
 
     try
-        let psi = ProcessStartInfo("dotnet", "build")
+        // -nodeReuse:false / UseSharedCompilation=false: MSBuild worker nodes and
+        // the shared compiler server outlive the build and inherit the redirected
+        // stdout/stderr descriptors, so ReadToEndAsync never sees EOF even after
+        // `dotnet build` itself has exited (observed in CI hang dumps as a thread
+        // parked forever in Task.GetResultCore inside this function).
+        let psi =
+            ProcessStartInfo("dotnet", "build -nodeReuse:false -p:UseSharedCompilation=false")
+
         psi.WorkingDirectory <- dir
         psi.RedirectStandardOutput <- true
         psi.RedirectStandardError <- true
@@ -1030,15 +1037,22 @@ let runDotnetBuild (dir: string) =
         let exited = proc.WaitForExit(120_000)
 
         if not exited then
-            // Kill BEFORE reading the output tasks: ReadToEndAsync only
-            // completes once the child closes its pipes, so reading first
-            // would block forever on a hung build, the kill would never run
-            // and dotnetBuildSemaphore would be held for the rest of the run.
+            // Kill BEFORE reading the output tasks: reading first would block on
+            // a hung build, the kill would never run and dotnetBuildSemaphore
+            // would be held for the rest of the run.
             proc.Kill(entireProcessTree = true)
             proc.WaitForExit()
 
-        let stdout = stdoutTask.Result
-        let stderr = stderrTask.Result
+        // Belt and braces: even with the flags above, never block forever on a
+        // pipe some straggler child may still hold open.
+        let readOrGiveUp (t: Task<string>) =
+            if t.Wait(30_000) then
+                t.Result
+            else
+                "(build output unavailable: the pipe is still held open by a child process)"
+
+        let stdout = readOrGiveUp stdoutTask
+        let stderr = readOrGiveUp stderrTask
 
         if not exited then
             failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
