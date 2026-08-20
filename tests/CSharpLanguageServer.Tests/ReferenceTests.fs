@@ -8,10 +8,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testReferenceWorks () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -82,7 +83,7 @@ let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
     // Regression test: textDocument/references with IncludeDeclaration=true on a BCL
     // method (Console.WriteLine) should include the decompiled definition location as a
     // csharp: URI when useMetadataUris=true, just like textDocument/definition does.
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     // Class.cs line 7 (0-indexed): Console.WriteLine(str);
@@ -117,7 +118,7 @@ let testReferenceWithIncludeDeclarationDecompilesForBclSymbol () =
 
 [<Test>]
 let testReferenceWorksDotnet8 () =
-    use client = activateFixture "testReferenceWorksDotnet8"
+    use client = rentFixture "testReferenceWorksDotnet8"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -186,7 +187,7 @@ let testReferenceWorksDotnet8 () =
 [<Test>]
 [<Retry(3)>]
 let testReferenceWorksToRazorPageReferencedValue () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
     use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
@@ -288,7 +289,7 @@ let testReferenceWorksToRazorPageReferencedValue () =
 [<Test>]
 [<Retry(3)>]
 let testReferenceWorksFromRazorPageReferencedValue () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open "Project/Models/Test/IndexViewModel.cs"
     use testControllerCsFile = client.Open "Project/Controllers/TestController.cs"
