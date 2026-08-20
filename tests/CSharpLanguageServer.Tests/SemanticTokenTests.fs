@@ -10,6 +10,7 @@ open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 
 type DecodedToken =
@@ -74,10 +75,10 @@ let decodeSemanticToken legend (semanticToken: SemanticTokens) : DecodedToken[] 
 
 [<Test>]
 let testSemanticTokens () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     let semanticTokensOptions =
-        client.GetState().ServerCapabilities
+        client.ServerCapabilities
         |> Option.bind (fun c -> c.SemanticTokensProvider)
         |> Option.bind (fun s ->
             match s with
@@ -172,10 +173,10 @@ let testSemanticTokens () =
 
 [<Test>]
 let testStringSyntaxEmbeddedLanguageSemanticTokens () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     let semanticTokensOptions =
-        client.GetState().ServerCapabilities
+        client.ServerCapabilities
         |> Option.bind (fun c -> c.SemanticTokensProvider)
         |> Option.bind (fun s ->
             match s with
