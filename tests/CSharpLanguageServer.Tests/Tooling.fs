@@ -894,7 +894,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
         client.PostAndReply(fun rc -> GetState rc)
 
     /// Clears accumulated per-lease state (RPC log, push-diagnostics). Used by pooled
-    /// fixtures (see `FixturePool.fs`) on check-in, so one test's RPC history/diagnostics
+    /// fixtures (see `Fixtures.fs`) on check-in, so one test's RPC history/diagnostics
     /// don't leak into the next test that reuses this same warm instance.
     member __.ResetAccumulatedState() =
         client.Post(
@@ -1071,47 +1071,6 @@ let runDotnetBuild (dir: string) =
         proc.ExitCode, stdout, stderr
     finally
         dotnetBuildSemaphore.Release() |> ignore
-
-let activateFixtureExt
-    fixtureName
-    clientProfile
-    (patchFixtureDir: string -> unit)
-    (initializeParamsUpdate: InitializeParams -> InitializeParams)
-    =
-    let client = new LspTestClient(clientProfile)
-    client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
-    client
-
-let emptyFixturePatch _ = ()
-
-let patchFixtureWithTfm newTfm =
-    let updateTfmInSubdir (rootDir: string) =
-        let csprojs = Directory.GetFiles(rootDir, "*.csproj", SearchOption.AllDirectories)
-
-        for file in csprojs do
-            let doc = file |> XDocument.Load
-
-            let tfm =
-                doc.Descendants() |> Seq.tryFind (fun e -> e.Name.LocalName = "TargetFramework")
-
-            match tfm with
-            | Some elem ->
-                elem.Value <- newTfm
-                doc.Save file
-            | None -> ()
-
-    updateTfmInSubdir
-
-let activateFixture fixtureName =
-    activateFixtureExt fixtureName defaultClientProfile emptyFixturePatch id
-
-let activateFixtureWithLoggingEnabled fixtureName =
-    activateFixtureExt
-        fixtureName
-        { defaultClientProfile with
-            LoggingEnabled = true }
-        emptyFixturePatch
-        id
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =

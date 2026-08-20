@@ -36,7 +36,7 @@
 ///     against that, so there deliberately isn't one — any fixture name can be leased;
 ///     typos are still caught for free by `LoadSolution`'s existing "no such test data dir"
 ///     check the first time an instance for that name is booted.
-module CSharpLanguageServer.Tests.FixturePool
+module CSharpLanguageServer.Tests.Fixtures
 
 // `poolManager` and `bootWorker` below are defined as a mutually-recursive pair of
 // MailboxProcessor *values* (not functions), which triggers FS0040 ("recursive
@@ -49,10 +49,66 @@ module CSharpLanguageServer.Tests.FixturePool
 #nowarn "40"
 
 open System
+open System.IO
+open System.Xml.Linq
+
 open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+
+/// No-op fixture-dir patch, for use when `activateFixtureExt` doesn't need to modify the
+/// fixture's temp-copied files before the server starts.
+let emptyFixturePatch _ = ()
+
+/// Returns a `patchFixtureDir` callback (see `activateFixtureExt`) that rewrites
+/// `<TargetFramework>` in every `.csproj` under the fixture — used to run the same
+/// fixture against multiple target framework monikers.
+let patchFixtureWithTfm newTfm =
+    let updateTfmInSubdir (rootDir: string) =
+        let csprojs = Directory.GetFiles(rootDir, "*.csproj", SearchOption.AllDirectories)
+
+        for file in csprojs do
+            let doc = file |> XDocument.Load
+
+            let tfm =
+                doc.Descendants() |> Seq.tryFind (fun e -> e.Name.LocalName = "TargetFramework")
+
+            match tfm with
+            | Some elem ->
+                elem.Value <- newTfm
+                doc.Save file
+            | None -> ()
+
+    updateTfmInSubdir
+
+/// Full control: custom profile, fixture dir patch callback, InitializeParams transform.
+/// Lives here (rather than `Tooling.fs`) because the pool's own boot path (`tryBoot`
+/// below) calls `activateFixture`, which calls this — keeping the whole
+/// activation/pooling chain in one file avoids a forward reference across the two.
+let activateFixtureExt
+    fixtureName
+    clientProfile
+    (patchFixtureDir: string -> unit)
+    (initializeParamsUpdate: InitializeParams -> InitializeParams)
+    =
+    let client = new LspTestClient(clientProfile)
+    client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
+    client
+
+/// Simple: default profile, no fixture patching, no InitializeParams customization.
+let activateFixture fixtureName =
+    activateFixtureExt fixtureName defaultClientProfile emptyFixturePatch id
+
+/// Shorthand for `activateFixtureExt` with `LoggingEnabled = true`, for debugging a
+/// failing test — see AGENTS.md's "Debugging server-side data flow from tests" section.
+let activateFixtureWithLoggingEnabled fixtureName =
+    activateFixtureExt
+        fixtureName
+        { defaultClientProfile with
+            LoggingEnabled = true }
+        emptyFixturePatch
+        id
 
 /// LSP request methods considered safe to issue through a pooled client: read-only
 /// queries whose server-side handling doesn't mutate documents or workspace state.

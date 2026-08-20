@@ -10,6 +10,7 @@ open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let testHiddenDiagnosticSeverityIsHint () =

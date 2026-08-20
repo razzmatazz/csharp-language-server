@@ -5,7 +5,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 
 /// Requests inlay hints for the whole document. `Position.toLinePosition` clamps an
 /// out-of-range line to the document's last line, so a large End.Line is a convenient way to

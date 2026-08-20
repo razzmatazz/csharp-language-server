@@ -8,7 +8,7 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let ``test csharp/metadata works`` () =

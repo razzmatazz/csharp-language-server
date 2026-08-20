@@ -5,6 +5,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let ``loose document attaches to nearest containing project`` () =

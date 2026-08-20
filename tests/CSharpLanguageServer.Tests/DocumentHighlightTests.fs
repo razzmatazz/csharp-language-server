@@ -9,7 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let ``test textDocument/documentHighlight works in .cs file`` () =

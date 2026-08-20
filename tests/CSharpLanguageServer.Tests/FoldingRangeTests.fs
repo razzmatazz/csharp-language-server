@@ -5,7 +5,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 
 let private foldingRangeRequest (doc: PooledLspDocumentHandle) : FoldingRangeParams =
     { TextDocument = { Uri = doc.Uri }
