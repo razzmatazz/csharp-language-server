@@ -1028,11 +1028,19 @@ let runDotnetBuild (dir: string) =
         let stderrTask = proc.StandardError.ReadToEndAsync()
 
         let exited = proc.WaitForExit(120_000)
+
+        if not exited then
+            // Kill BEFORE reading the output tasks: ReadToEndAsync only
+            // completes once the child closes its pipes, so reading first
+            // would block forever on a hung build, the kill would never run
+            // and dotnetBuildSemaphore would be held for the rest of the run.
+            proc.Kill(entireProcessTree = true)
+            proc.WaitForExit()
+
         let stdout = stdoutTask.Result
         let stderr = stderrTask.Result
 
         if not exited then
-            proc.Kill(entireProcessTree = true)
             failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
 
         proc.ExitCode, stdout, stderr
