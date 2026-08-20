@@ -5,12 +5,13 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testWorkspaceSymbolWorks () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
-    let serverCaps = client.GetState().ServerCapabilities.Value
+    let serverCaps = client.ServerCapabilities.Value
     ClassicAssert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
 
     use classFile = client.Open("Project/Class.cs")
