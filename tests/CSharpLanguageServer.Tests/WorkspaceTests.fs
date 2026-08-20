@@ -11,6 +11,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 open CSharpLanguageServer.Lsp.Workspace
 
 /// Send a workspace/didChangeWatchedFiles notification for a single URI + change type.

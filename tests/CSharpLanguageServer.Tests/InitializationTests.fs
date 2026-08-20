@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 open CSharpLanguageServer.Types
 
 let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =

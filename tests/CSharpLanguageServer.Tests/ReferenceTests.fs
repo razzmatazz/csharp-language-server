@@ -8,7 +8,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let testReferenceWorks () =

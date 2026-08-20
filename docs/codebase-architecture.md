@@ -54,7 +54,8 @@ csharp-language-server/
 │
 └── tests/CSharpLanguageServer.Tests/  # ── Test project ──
     ├── CSharpLanguageServer.Tests.fsproj  # NUnit, net10.0, references main project
-    ├── Tooling.fs                         # Test harness (~1060 lines)
+    ├── Tooling.fs                         # Test harness (~1110 lines)
+    ├── Fixtures.fs                        # activateFixture(Ext)/(WithLoggingEnabled) + FixturePool
     ├── AssemblyInfo.fs                    # [<Parallelizable(ParallelScope.All)>]
     ├── Fixtures/                          # Sample C# projects for integration tests
     │   ├── genericProject/
@@ -413,9 +414,17 @@ file.Save()                                   // sends textDocument/didSave
 // Dispose sends textDocument/didClose
 ```
 
-### 7.4 Test Harness API (`Tooling.fs`)
+### 7.4 Test Harness API (`Tooling.fs` + `Fixtures.fs`)
 
-#### Client Activation Functions
+`Tooling.fs` defines the low-level harness (`LspTestClient`, `LspDocumentHandle`,
+`LspClientProfile`, `defaultClientProfile`, etc.), compiled first. `Fixtures.fs` (compiled
+right after it) defines the fixture-activation functions on top of that harness, plus a
+`FixturePool` of warm, reusable `LspTestClient` instances that read-only tests can lease via
+`rentFixture` instead of each paying for their own solution load — see the doc comment at
+the top of `Fixtures.fs` for the pool's design. Both live in the same file because the
+pool's own boot path calls `activateFixture`, and F# requires definition before use.
+
+#### Client Activation Functions (`Fixtures.fs`)
 
 ```fsharp
 // Simple: default profile, no fixture patching, no InitializeParams customization
@@ -476,15 +485,16 @@ let analyzerPullDiagProfile =
                             Diagnostics = Some { RefreshSupport = Some true } } } }
 ```
 
-#### Other Tooling Utilities
+#### Other Test Utilities
 
-- `patchFixtureWithTfm (newTfm: string)` — returns a `patchFixtureDir` callback that
-  rewrites `<TargetFramework>` in all `.csproj` files under the fixture
-- `activateFixtureWithLoggingEnabled` — shorthand for `activateFixtureExt` with
-  `LoggingEnabled = true`
-- `getWorkspaceDiagnosticsForUri` — helper to extract diagnostics for a specific URI from
-  a `WorkspaceDiagnosticReport`
-- `waitUntilOrTimeout` — polls a predicate with 50ms intervals, fails after timeout
+- `patchFixtureWithTfm (newTfm: string)` (`Fixtures.fs`) — returns a `patchFixtureDir`
+  callback that rewrites `<TargetFramework>` in all `.csproj` files under the fixture
+- `activateFixtureWithLoggingEnabled` (`Fixtures.fs`) — shorthand for `activateFixtureExt`
+  with `LoggingEnabled = true`
+- `getWorkspaceDiagnosticsForUri` (`Tooling.fs`) — helper to extract diagnostics for a
+  specific URI from a `WorkspaceDiagnosticReport`
+- `waitUntilOrTimeout` (`Tooling.fs`) — polls a predicate with 50ms intervals, fails after
+  timeout
 
 ### 7.5 Fixtures
 
@@ -554,8 +564,9 @@ Fixtures using this pattern:
   ```
 - **`.fsproj` compile order matters** — F# requires files in dependency order. New test
   files are added as `<Compile Include="SomeFeatureTests.fs" />` in the `<ItemGroup>`.
-  Test files come after `Tooling.fs` (which defines the harness). Place new entries near
-  related existing test files.
+  Test files come after `Tooling.fs` and `Fixtures.fs` (which define the harness and
+  fixture-activation/pooling functions). Place new entries near related existing test
+  files.
 - **Naming:** file name matches module suffix (e.g. `AnalyzerTests.fs` →
   `module CSharpLanguageServer.Tests.AnalyzerTests`)
 

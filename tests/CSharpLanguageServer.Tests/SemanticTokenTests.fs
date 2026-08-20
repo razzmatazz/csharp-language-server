@@ -10,7 +10,7 @@ open Microsoft.CodeAnalysis.Host
 open Microsoft.CodeAnalysis.Text
 
 open CSharpLanguageServer.Tests.Tooling
-open CSharpLanguageServer.Tests.FixturePool
+open CSharpLanguageServer.Tests.Fixtures
 open CSharpLanguageServer.Roslyn.WorkspaceServices
 
 type DecodedToken =

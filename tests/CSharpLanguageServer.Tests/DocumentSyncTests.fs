@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let testDidCloseNotificationWillRevertFileToStateOnDisk () =

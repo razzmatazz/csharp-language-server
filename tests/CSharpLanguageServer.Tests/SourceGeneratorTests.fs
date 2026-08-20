@@ -9,6 +9,7 @@ open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 /// Client profile with pull diagnostics enabled (both textDocument and workspace).
 let private pullDiagnosticsClientProfile =

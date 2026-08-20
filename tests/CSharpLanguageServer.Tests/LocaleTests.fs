@@ -6,6 +6,7 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.Fixtures
 
 /// Pull diagnostics for the open file and return the message of the third diagnostic,
 /// which is the "type or namespace not found" error from the testDiagnosticsWork fixture.
