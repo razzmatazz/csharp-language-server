@@ -31,6 +31,7 @@ module CSharpLanguageServer.Tests.FixturePool
 
 open System
 open NUnit.Framework
+open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
 
@@ -72,7 +73,14 @@ let private readOnlyRequestMethods =
           "textDocument/documentColor"
           "textDocument/colorPresentation"
           "textDocument/linkedEditingRange"
-          "csharp/metadata" ]
+          "csharp/metadata"
+          // `rename` only computes a `WorkspaceEdit` description; the server never applies
+          // it (that would require a separate `workspace/applyEdit` round trip, which
+          // pooled fixtures can't reach — only `PooledLspTestClient.Request` is exposed,
+          // and it isn't on this list). Actually applying edits to a document still
+          // requires `Change`/`Save`, which pooled document handles don't expose at all.
+          "textDocument/prepareRename"
+          "textDocument/rename" ]
 
 /// Deliberately a minority share of `activeClientsSemaphore`'s total budget (see
 /// `Tooling.fs`) — pooled instances stay alive for the whole test run once booted, so
@@ -226,6 +234,12 @@ type PooledLspDocumentHandle internal (inner: LspDocumentHandle, onDispose: unit
     /// The document's in-memory content as last opened/changed on this handle. Plain
     /// read-only snapshot, not a mutation vector.
     member __.GetFileContents() = inner.GetFileContents()
+
+    /// Applies `TextEdit`s to the in-memory content locally (a pure string transform, not
+    /// a server call) — used to check a computed edit (e.g. from `textDocument/rename`)
+    /// against an expected result without ever sending `Change`/`Save`.
+    member __.GetFileContentsWithTextEditsApplied(tes: TextEdit[]) =
+        inner.GetFileContentsWithTextEditsApplied(tes)
 
     interface IDisposable with
         member __.Dispose() =

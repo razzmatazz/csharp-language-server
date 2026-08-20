@@ -8,10 +8,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testRenameCanBeAppliedToALocalVariable () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     use classFile = client.Open "Project/Class.cs"
 
