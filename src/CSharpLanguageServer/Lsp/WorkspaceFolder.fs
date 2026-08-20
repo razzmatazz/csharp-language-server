@@ -424,8 +424,17 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
         let matchingUserDocumentMaybe =
             workspaceFolderUriToPath u wf
             |> Option.bind (fun path ->
-                match solution.GetDocumentIdsWithFilePath path |> List.ofSeq with
-                | [ docId ] -> solution.GetDocument docId |> Option.ofObj
+                // The ids can include non-source documents (additional /
+                // analyzer-config files, depending on the Roslyn version), so
+                // resolve through GetDocument first and require exactly one
+                // SOURCE document, matching the previous scan over
+                // project.Documents only.
+                match
+                    solution.GetDocumentIdsWithFilePath path
+                    |> Seq.choose (fun docId -> solution.GetDocument docId |> Option.ofObj)
+                    |> List.ofSeq
+                with
+                | [ doc ] -> Some doc
                 | _ -> None)
             |> Option.map (fun d -> d, UserDocument)
 
