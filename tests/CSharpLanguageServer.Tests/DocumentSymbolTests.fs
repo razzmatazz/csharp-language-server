@@ -5,10 +5,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let ``test textDocument/documentSymbol root has file range covering entire document`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let docSymbolParams: DocumentSymbolParams =
@@ -51,7 +52,7 @@ let ``test textDocument/documentSymbol root has file range covering entire docum
 
 [<Test>]
 let ``test textDocument/documentSymbol root has children`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     let docSymbolParams: DocumentSymbolParams =
@@ -81,7 +82,7 @@ let ``test textDocument/documentSymbol root has children`` () =
 
 [<Test>]
 let ``test textDocument/documentSymbol root range covers file with namespace`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     let docSymbolParams: DocumentSymbolParams =
