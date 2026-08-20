@@ -31,6 +31,9 @@ jobs:
       - name: Run Build
         run: dotnet build -c Debug
 
+      # --blame-hang-* detects a hung *individual* test after 3 minutes, kills it, takes
+      # a full process dump, and lets the run continue — instead of a hang silently
+      # consuming the whole `timeout-minutes: 15` job budget with zero diagnostics.
       - name: Run Tests
         if: ${{ matrix.os != 'windows-latest' }}
         run: |
@@ -41,7 +44,10 @@ jobs:
           fi
 
           echo "Total cores: $CORES, running tests with $WORKERS workers"
-          dotnet test --no-build -- NUnit.NumberOfTestWorkers=$WORKERS
+          dotnet test --no-build \
+            --blame-hang-timeout 3m --blame-hang-dump-type full \
+            --results-directory ./TestResults \
+            -- NUnit.NumberOfTestWorkers=$WORKERS
 
       - name: Run Tests
         if: ${{ matrix.os == 'windows-latest' }}
@@ -51,7 +57,19 @@ jobs:
           $workers = [Math]::Max(1, [Math]::Floor($cores / 2))
 
           Write-Host "Total cores: $cores, running tests with $workers workers"
-          dotnet test --no-build -- NUnit.NumberOfTestWorkers=$workers
+          dotnet test --no-build `
+            --blame-hang-timeout 3m --blame-hang-dump-type full `
+            --results-directory ./TestResults `
+            -- NUnit.NumberOfTestWorkers=$workers
+
+      - name: Upload test hang/crash diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics-${{ matrix.os }}
+          path: TestResults/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Run Fantomas check tests
         run: dotnet fantomas --check tests

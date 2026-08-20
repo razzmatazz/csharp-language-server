@@ -63,10 +63,14 @@ type CleanCodeGenOptionsProxy(logMessage) =
     member __.Create() =
         let interceptor = CleanCodeGenerationOptionsProviderInterceptor logMessage
 
+        // Castle's ProxyGenerator/ModuleScope has known thread-safety hazards around
+        // concurrent proxy type generation/instantiation (see castleproject/Core#390);
+        // `lock` is re-entrant per-thread so nested interceptor calls on the same
+        // thread won't self-deadlock the way a SemaphoreSlim(1,1) would.
         let proxyMaybe =
             cleanCodeGenOptionsProvTypeMaybe
             |> Option.map (fun cleanCodeGenOptionsProvType ->
-                generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor))
+                lock generator (fun () -> generator.CreateClassProxy(cleanCodeGenOptionsProvType, interceptor)))
 
         match proxyMaybe with
         | Some proxy -> proxy
@@ -315,41 +319,50 @@ type WorkspaceServicesInterceptor() =
                 let updatedReturnValue =
                     let serviceType = invocation.GenericArguments[0]
 
-                    match serviceType.FullName with
-                    | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
-                        let interceptor = LegacyWorkspaceOptionServiceInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                    // Castle's ProxyGenerator/ModuleScope has known thread-safety hazards
+                    // around concurrent proxy type generation/instantiation for distinct
+                    // types (see castleproject/Core#390). GetService can be invoked
+                    // concurrently from many Roslyn worker threads, so serialize access to
+                    // the shared generator. `lock` is re-entrant per-thread, so a nested
+                    // call on the same thread (e.g. via invocation.Proceed() further up, or
+                    // one interceptor constructing another) won't self-deadlock the way a
+                    // SemaphoreSlim(1,1) would.
+                    lock generator (fun () ->
+                        match serviceType.FullName with
+                        | "Microsoft.CodeAnalysis.Options.ILegacyGlobalOptionsWorkspaceService" ->
+                            let interceptor = LegacyWorkspaceOptionServiceInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.PickMembers.IPickMembersService" ->
-                        let interceptor = PickMembersServiceInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                        | "Microsoft.CodeAnalysis.PickMembers.IPickMembersService" ->
+                            let interceptor = PickMembersServiceInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.ExtractClass.IExtractClassOptionsService" ->
-                        let interceptor = ExtractClassOptionsServiceInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                        | "Microsoft.CodeAnalysis.ExtractClass.IExtractClassOptionsService" ->
+                            let interceptor = ExtractClassOptionsServiceInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.ExtractInterface.IExtractInterfaceOptionsService" ->
-                        let interceptor = ExtractInterfaceOptionsServiceInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                        | "Microsoft.CodeAnalysis.ExtractInterface.IExtractInterfaceOptionsService" ->
+                            let interceptor = ExtractInterfaceOptionsServiceInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
-                        let interceptor = MoveStaticMembersOptionsServiceInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                        | "Microsoft.CodeAnalysis.MoveStaticMembers.IMoveStaticMembersOptionsService" ->
+                            let interceptor = MoveStaticMembersOptionsServiceInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.Remote.IRemoteHostClientProvider" ->
-                        let interceptor = RemoteHostClientProviderInterceptor()
-                        generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
+                        | "Microsoft.CodeAnalysis.Remote.IRemoteHostClientProvider" ->
+                            let interceptor = RemoteHostClientProviderInterceptor()
+                            generator.CreateInterfaceProxyWithoutTarget(serviceType, interceptor)
 
-                    | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryCollectorWorkspaceService"
-                    | "Microsoft.CodeAnalysis.CodeRefactorings.PullMemberUp.Dialog.IPullMemberUpOptionsService"
-                    | "Microsoft.CodeAnalysis.Packaging.IPackageInstallerService"
-                    | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryReporterWorkspaceService" ->
-                        // supress "GetService failed" messages for these services
-                        null
+                        | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryCollectorWorkspaceService"
+                        | "Microsoft.CodeAnalysis.CodeRefactorings.PullMemberUp.Dialog.IPullMemberUpOptionsService"
+                        | "Microsoft.CodeAnalysis.Packaging.IPackageInstallerService"
+                        | "Microsoft.CodeAnalysis.SourceGeneratorTelemetry.ISourceGeneratorTelemetryReporterWorkspaceService" ->
+                            // supress "GetService failed" messages for these services
+                            null
 
-                    | _ ->
-                        logger.LogDebug("GetService failed for {serviceType}", serviceType.FullName)
-                        null
+                        | _ ->
+                            logger.LogDebug("GetService failed for {serviceType}", serviceType.FullName)
+                            null)
 
                 invocation.ReturnValue <- updatedReturnValue
 
