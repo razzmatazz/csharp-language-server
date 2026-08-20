@@ -9,10 +9,11 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let ``test textDocument/documentHighlight works in .cs file`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let highlightParams: DocumentHighlightParams =
@@ -39,7 +40,7 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
 
 [<Test>]
 let ``test textDocument/documentHighlight works in .cshtml file`` () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
     use indexCshtmlFile = client.Open "Project/Views/Test/Index.cshtml"
 
     Thread.Sleep(250) // TODO: work around race for Razor support
