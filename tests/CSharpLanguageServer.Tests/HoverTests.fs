@@ -7,10 +7,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testHoverWorksInCSharpFile () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     //
@@ -70,7 +71,7 @@ let testHoverWorksInCSharpFile () =
 [<Test>]
 [<Retry(3)>]
 let testHoverWorksInRazorFile () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     use indexCshtmlFile = client.Open("Project/Views/Test/Index.cshtml")
 
