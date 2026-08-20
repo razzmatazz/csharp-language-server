@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Speed up the per-request document lookup: resolve the request uri through Roslyn's indexed `Solution.GetDocumentIdsWithFilePath` instead of scanning every document of every project (~6x faster `textDocument/definition` on a large solution)
+  - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/414
 * Implement `callHierarchy/outgoingCalls`, previously a stub returning `null`; the handler resolves the prepared item back to its symbol, walks its declaration bodies for invocations and object creations, and resolves each through the semantic model
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/412
 * Fix `textDocument/references` and `callHierarchy/incomingCalls` leaking a dynamic assembly (and associated loader handles) on every request; `WorkspaceServicesInterceptor`'s `ProxyGenerator` is now created once (`static let`) instead of per-call
