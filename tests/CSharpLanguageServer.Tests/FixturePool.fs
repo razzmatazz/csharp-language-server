@@ -240,6 +240,11 @@ type PooledLspTestClient internal (fixtureName: string, client: LspTestClient) =
     let openHandles = ResizeArray<LspDocumentHandle>()
     let mutable disposed = false
 
+    /// The temp directory the pooled fixture's solution was loaded from. Plain read-only
+    /// string, safe to pass through as-is — unlike `GetState()` (not exposed here), it
+    /// carries no mutable/live handles (e.g. the server `Process`) a test could abuse.
+    member __.SolutionDir = client.SolutionDir
+
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
         if not (readOnlyRequestMethods.Contains method) then
             failwithf

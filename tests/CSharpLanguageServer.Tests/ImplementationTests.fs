@@ -6,10 +6,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testTextDocumentImplementationWorks () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use semanticTokenFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     // Test finding implementations of IGreetable.GetGreeting() interface method
@@ -37,7 +38,7 @@ let testTextDocumentImplementationWorks () =
 let testImplementationOnConcreteClassWorks () =
     // PR #360: FindDerivedClassesAsync is now called for class symbols.
     // Cursor on `Person` (concrete class) should return Student as a derived class.
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     // Line 9 (0-indexed), Character 6 is on "Person" in "class Person : IGreetable"
@@ -64,7 +65,7 @@ let testImplementationOnConcreteBclMethodFallsBackToDecompilation () =
     // Regression test: textDocument/implementation on a concrete BCL method (Console.WriteLine)
     // should fall back to the symbol's own declaration location. With useMetadataUris=true this
     // means decompilation is triggered and a csharp: URI is returned, just like textDocument/definition.
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     // Class.cs line 7 (0-indexed): Console.WriteLine(str);
@@ -102,7 +103,7 @@ let testImplementationOnConcreteBclMethodFallsBackToDecompilation () =
 let testImplementationOnAbstractClassWorks () =
     // PR #360: Cursor on an abstract class symbol should return all derived classes.
     // `Animal` (abstract, line 39) has one direct subclass: Dog (line 44).
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     // Line 39 (0-indexed), Character 15 is on "Animal" in "abstract class Animal"
@@ -128,7 +129,7 @@ let testImplementationOnAbstractClassWorks () =
 let testImplementationOnInterfaceTypeWorks () =
     // Regression check for PR #360: cursor on an interface type (not a method) should
     // still return the implementing class (Person), not break due to the new class-path.
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
 
     // Line 4 (0-indexed), Character 10 is on "IGreetable" in "interface IGreetable"
