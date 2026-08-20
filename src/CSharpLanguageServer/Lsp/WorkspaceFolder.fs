@@ -410,23 +410,24 @@ let workspaceFolderSymbolsLocations
     }
 
 let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) =
-    let uri = Uri(u.Replace("%3A", ":", true, null))
-
     match wf.Solution with
     | Uninitialized -> None
     | Loading -> None
     | Defunct _ -> None
     | Loaded(_, solution) ->
-        let matchingUserDocuments =
-            solution.Projects
-            |> Seq.collect _.Documents
-            |> Seq.filter (fun d -> Uri(d.FilePath, UriKind.Absolute) = uri)
-            |> List.ofSeq
-
+        // Indexed lookup instead of scanning every document of every project:
+        // this runs on every position-based request, so on a large solution
+        // the scan (which also allocated a Uri per document for the
+        // comparison) dominates the per-request cost. Multiple ids for one
+        // path (e.g. a multi-targeted or linked file) keep resolving to None,
+        // matching the previous exactly-one-match behavior.
         let matchingUserDocumentMaybe =
-            match matchingUserDocuments with
-            | [ d ] -> Some(d, UserDocument)
-            | _ -> None
+            workspaceFolderUriToPath u wf
+            |> Option.bind (fun path ->
+                match solution.GetDocumentIdsWithFilePath path |> List.ofSeq with
+                | [ docId ] -> solution.GetDocument docId |> Option.ofObj
+                | _ -> None)
+            |> Option.map (fun d -> d, UserDocument)
 
         let matchingDecompiledDocumentMaybe =
             match workspaceFolderParseCSharpDocumentUri u wf with
