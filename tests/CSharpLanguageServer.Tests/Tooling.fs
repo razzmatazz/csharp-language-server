@@ -893,6 +893,17 @@ type LspTestClient(clientProfile: LspClientProfile) =
     member __.GetState() =
         client.PostAndReply(fun rc -> GetState rc)
 
+    /// Clears accumulated per-lease state (RPC log, push-diagnostics). Used by pooled
+    /// fixtures (see `FixturePool.fs`) on check-in, so one test's RPC history/diagnostics
+    /// don't leak into the next test that reuses this same warm instance.
+    member __.ResetAccumulatedState() =
+        client.Post(
+            UpdateState(fun s ->
+                { s with
+                    RpcLog = []
+                    PushDiagnostics = Map.empty })
+        )
+
     member __.GetRpcLog() =
         client.PostAndReply(fun rc -> GetRpcLog rc)
 
