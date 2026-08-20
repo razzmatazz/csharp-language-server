@@ -151,7 +151,10 @@ module CallHierarchy =
                     // several) and resolve each invocation, object creation and
                     // constructor initializer through that declaration's semantic model.
                     let callSitesByTarget =
-                        System.Collections.Generic.Dictionary<ISymbol, ResizeArray<Ionide.LanguageServerProtocol.Types.Range>>(
+                        System.Collections.Generic.Dictionary<
+                            ISymbol,
+                            ResizeArray<Ionide.LanguageServerProtocol.Types.Range>
+                         >(
                             SymbolEqualityComparer.Default
                         )
 
