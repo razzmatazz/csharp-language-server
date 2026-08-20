@@ -7,6 +7,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 let private formattingOptionsProfile =
     { defaultClientProfile with
@@ -16,7 +17,7 @@ let private formattingOptionsProfile =
 
 [<Test>]
 let testEditorConfigFormatting () =
-    use client = activateFixture "projectWithEditorConfig"
+    use client = rentFixture "projectWithEditorConfig"
     use classFile = client.Open("Project/Class.cs")
 
     let docFormattingParams0: DocumentFormattingParams =
