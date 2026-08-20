@@ -5,10 +5,11 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let testDefinitionWorks () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let definitionParams0: DefinitionParams =
@@ -44,7 +45,7 @@ let testDefinitionWorks () =
 
 [<Test>]
 let testDefinitionWorksInAspNetProject () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     use testIndexViewModelCsFile = client.Open("Project/Models/Test/IndexViewModel.cs")
     use testControllerCsFile = client.Open("Project/Controllers/TestController.cs")
