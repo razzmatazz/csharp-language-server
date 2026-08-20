@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Implement `callHierarchy/outgoingCalls`, previously a stub returning `null`; the handler resolves the prepared item back to its symbol, walks its declaration bodies for invocations and object creations, and resolves each through the semantic model
+  - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/412
 * Fix `textDocument/references` and `callHierarchy/incomingCalls` leaking a dynamic assembly (and associated loader handles) on every request; `WorkspaceServicesInterceptor`'s `ProxyGenerator` is now created once (`static let`) instead of per-call
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/410
 * Re-enable Razor tests: upgrade Roslyn packages to 5.9.0 (now satisfies .NET SDK 10.0.400's Razor generator requirement) and fix Razor hover/references resolving to the wrong token under Roslyn's newer `#line` directive format
