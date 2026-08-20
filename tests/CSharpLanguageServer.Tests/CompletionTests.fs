@@ -9,15 +9,16 @@ open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let ``completion works in a .cs file`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     // resolve provider is necessary for lsp client to resolve
     // detail and documentation props for a completion item
     let haveResolveProvider =
-        client.GetState().ServerCapabilities
+        client.ServerCapabilities
         |> Option.bind _.CompletionProvider
         |> Option.bind _.ResolveProvider
         |> Option.defaultValue false
@@ -102,7 +103,7 @@ let ``completion works in a .cs file`` () =
 
 [<Test>]
 let ``completion works for extension methods`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     use classFile =
         client.Open("Project/ClassForCompletionTestsWithExtensionMethods.cs")
@@ -145,7 +146,7 @@ let ``completion works for extension methods`` () =
 [<Test>]
 [<Retry(5)>]
 let ``completion works in cshtml files`` () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     use cshtmlFile = client.Open "Project/Views/Test/CompletionTests.cshtml"
 
@@ -235,7 +236,7 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
     // This test constructs the offending payload as a raw JObject (bypassing the
     // F# type system, just as the editor does) and asserts the server responds
     // successfully rather than erroring.
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/ClassForCompletionTests.cs")
 
     // First get a real completion item so we have a valid Data/cache key.
