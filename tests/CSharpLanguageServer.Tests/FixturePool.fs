@@ -6,14 +6,23 @@
 /// mutate documents, many of them can safely take turns using a small number of shared,
 /// already-loaded server instances instead of each paying for their own.
 ///
-/// Implementation note: all pool bookkeeping (idle instances, pending waiters, per-fixture
-/// created counts) lives as plain immutable state inside a single `MailboxProcessor` actor
-/// — the same pattern `LspTestClient` itself already uses internally (see `Tooling.fs`).
-/// Because the actor processes messages strictly one at a time, no `SemaphoreSlim`,
-/// `Interlocked`, or explicit locks are needed anywhere: booting a fresh instance inline
-/// inside a message handler *is* the cross-fixture "don't boot two servers at once"
-/// serialization, for free, and handing an idle/newly-booted instance to the oldest
-/// pending renter is just sequential list manipulation.
+/// Implementation note: pool bookkeeping (idle instances, pending waiters, per-fixture
+/// created counts) lives as plain immutable state inside a `MailboxProcessor` actor,
+/// `poolManager` — the same pattern `LspTestClient` itself already uses internally (see
+/// `Tooling.fs`). Because it processes messages strictly one at a time, no
+/// `SemaphoreSlim`, `Interlocked`, or explicit locks are needed for that bookkeeping.
+///
+/// Booting a fresh instance, however, is *not* done inline inside `poolManager` — it's
+/// handed off to a second, dedicated actor, `bootWorker`. Booting blocks on
+/// `activeClientsSemaphore` (see `Tooling.fs`), which can legitimately take a while if
+/// other, unrelated ad-hoc `activateFixture` tests currently hold all the free slots. If
+/// that wait happened inside `poolManager`'s own message loop, the *entire* pool would
+/// freeze for its duration — no `CheckIn` could be processed, not even to return an
+/// already-idle instance of the very fixture something else is waiting to boot. Since
+/// `bootWorker` has its own single-threaded loop, it still serializes actual boots one at
+/// a time (preserving the "don't thundering-herd multiple solution loads at once" goal),
+/// but a slow boot only stalls `bootWorker`, never `poolManager`, which keeps servicing
+/// every other fixture and every check-in throughout.
 ///
 /// This module is deliberately narrow in scope:
 ///   - `PooledLspTestClient` / `PooledLspDocumentHandle` deliberately do not expose
@@ -28,6 +37,16 @@
 ///     typos are still caught for free by `LoadSolution`'s existing "no such test data dir"
 ///     check the first time an instance for that name is booted.
 module CSharpLanguageServer.Tests.FixturePool
+
+// `poolManager` and `bootWorker` below are defined as a mutually-recursive pair of
+// MailboxProcessor *values* (not functions), which triggers FS0040 ("recursive
+// references ... checked for initialization-soundness at runtime through a delayed
+// reference"). This is the standard, sound pattern for actors that post to each other:
+// neither actor's body touches the other until a message is actually processed, which
+// can only happen after both are fully constructed (nothing posts to either during
+// module initialization) — so the delayed-reference check FS0040 warns about always
+// succeeds here.
+#nowarn "40"
 
 open System
 open NUnit.Framework
@@ -85,9 +104,11 @@ let private readOnlyRequestMethods =
 /// Deliberately a minority share of `activeClientsSemaphore`'s total budget (see
 /// `Tooling.fs`) — pooled instances stay alive for the whole test run once booted, so
 /// this must leave headroom for every other file's ad-hoc `activateFixture` calls still
-/// running concurrently.
+/// running concurrently. Floor is 1, not 2: on a small CI runner (e.g. 4 cores) a floor of
+/// 2 would force the pool to permanently claim half the semaphore's entire budget, which
+/// starved the rest of the suite badly enough to hang in CI (4 cores, 2 NUnit workers).
 let private maxPoolSize () =
-    max 2 (min 4 (Environment.ProcessorCount / 4))
+    max 1 (min 4 (Environment.ProcessorCount / 4))
 
 let private isHealthy (client: LspTestClient) =
     match client.GetState().ServerProcess with
@@ -106,12 +127,23 @@ type private RentReply = Result<LspTestClient, exn>
 type private PoolMessage =
     | Rent of fixtureName: string * AsyncReplyChannel<RentReply>
     | CheckIn of fixtureName: string * LspTestClient
+    /// Reported by `bootWorker` once a boot it was asked to perform finishes (success or
+    /// failure). `poolManager` is the sole owner of `CreatedCount`/`Idle`/`Waiters`, so
+    /// even though `bootWorker` did the actual (slow) work, only `poolManager` applies its
+    /// outcome to state and replies to the original waiter.
+    | BootCompleted of fixtureName: string * AsyncReplyChannel<RentReply> * RentReply
     | DisposeAll of AsyncReplyChannel<unit>
 
+/// A single boot request handed off to `bootWorker`: which fixture to load, and the
+/// original `Rent` caller's reply channel to eventually satisfy (via `BootCompleted`).
+type private BootMessage = BootRequest of fixtureName: string * AsyncReplyChannel<RentReply>
+
 /// Per-fixture-name pool state. `CreatedCount` tracks how many live instances exist (idle
-/// + currently leased) so we never boot more than `MaxSize` concurrently for this fixture.
-/// `Waiters` holds reply channels for `Rent` calls that arrived while the pool was at
-/// capacity with no idle instance — satisfied in order as instances become available.
+/// + currently leased, *including* ones a `BootRequest` has been reserved for but hasn't
+/// finished booting yet) so we never kick off more than `MaxSize` concurrent boots for
+/// this fixture. `Waiters` holds reply channels for `Rent` calls that arrived while the
+/// pool had no idle instance and no room to grow — satisfied in order as instances become
+/// available.
 type private FixturePoolState =
     { Idle: LspTestClient list
       Waiters: AsyncReplyChannel<RentReply> list
@@ -129,10 +161,11 @@ let private tryBoot fixtureName : RentReply =
         Error ex
 
 /// After any change that might free up capacity or add an idle instance, satisfies as
-/// many pending waiters as possible: first from `Idle`, then by booting fresh instances
-/// (bounded by `MaxSize`) — this recursion is what actually boots a fresh server, and
-/// since it only ever runs on the single pool-actor thread, at most one boot is ever in
-/// flight at a time, across *all* fixture names.
+/// many pending waiters as possible from `Idle`. If none are idle but there's still room
+/// to grow (`CreatedCount < MaxSize`), reserves the slot immediately (so a burst of
+/// concurrent `Rent` calls can't over-request boots) and hands the actual boot off to
+/// `bootWorker` — this function itself never blocks, regardless of how long that boot
+/// ends up taking.
 let rec private drainWaiters fixtureName (fps: FixturePoolState) : FixturePoolState =
     match fps.Waiters, fps.Idle with
     | rc :: restWaiters, client :: restIdle ->
@@ -144,21 +177,16 @@ let rec private drainWaiters fixtureName (fps: FixturePoolState) : FixturePoolSt
                 Waiters = restWaiters
                 Idle = restIdle }
     | rc :: restWaiters, [] when fps.CreatedCount < maxPoolSize () ->
-        match tryBoot fixtureName with
-        | Ok client ->
-            rc.Reply(Ok client)
+        bootWorker.Post(BootRequest(fixtureName, rc))
 
-            drainWaiters
-                fixtureName
-                { fps with
-                    Waiters = restWaiters
-                    CreatedCount = fps.CreatedCount + 1 }
-        | Error ex ->
-            rc.Reply(Error ex)
-            drainWaiters fixtureName { fps with Waiters = restWaiters }
+        drainWaiters
+            fixtureName
+            { fps with
+                Waiters = restWaiters
+                CreatedCount = fps.CreatedCount + 1 }
     | _ -> fps
 
-let private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMessage) : Map<string, FixturePoolState> =
+and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMessage) : Map<string, FixturePoolState> =
     match msg with
     | Rent(fixtureName, rc) ->
         let fps =
@@ -187,6 +215,27 @@ let private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
 
         state |> Map.add fixtureName (fps |> drainWaiters fixtureName)
 
+    | BootCompleted(fixtureName, rc, result) ->
+        rc.Reply(result)
+
+        match result with
+        | Ok _ ->
+            // The slot was already reserved (CreatedCount bumped) when the boot was
+            // kicked off in `drainWaiters` — nothing further to update.
+            state
+        | Error _ ->
+            // The reserved slot never materialized; free it back up and let another
+            // still-pending waiter (if any) trigger a fresh boot attempt.
+            let fps =
+                state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+
+            let fps =
+                { fps with
+                    CreatedCount = fps.CreatedCount - 1 }
+                |> drainWaiters fixtureName
+
+            state |> Map.add fixtureName fps
+
     | DisposeAll rc ->
         for KeyValue(_, fps) in state do
             for client in fps.Idle do
@@ -195,7 +244,7 @@ let private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
         rc.Reply(())
         Map.empty
 
-let private poolManager =
+and private poolManager =
     MailboxProcessor<PoolMessage>.Start(fun inbox ->
         let rec loop (state: Map<string, FixturePoolState>) = async {
             let! msg = inbox.Receive()
@@ -209,6 +258,7 @@ let private poolManager =
                     // pre-message state.
                     match msg with
                     | Rent(_, rc) -> rc.Reply(Error ex)
+                    | BootCompleted(_, rc, _) -> rc.Reply(Error ex)
                     | DisposeAll rc -> rc.Reply(())
                     | CheckIn _ -> ()
 
@@ -218,6 +268,34 @@ let private poolManager =
         }
 
         loop Map.empty)
+
+/// Dedicated single-worker actor that performs the actual (slow, semaphore-gated) boot
+/// work requested by `drainWaiters`, strictly one at a time, entirely off `poolManager`'s
+/// thread. See the module doc comment for why this separation matters.
+///
+/// Explicit type annotation: `drainWaiters` (defined above, in the same `let rec ... and
+/// ...` group) calls `bootWorker.Post` before the compiler has otherwise inferred this
+/// binding's type from its own definition below — without the annotation that lookup is
+/// of indeterminate type (FS0072).
+and private bootWorker: MailboxProcessor<BootMessage> =
+    MailboxProcessor<BootMessage>.Start(fun inbox ->
+        let rec loop () = async {
+            let! BootRequest(fixtureName, rc) = inbox.Receive()
+
+            let result =
+                try
+                    tryBoot fixtureName
+                with ex ->
+                    // tryBoot already catches everything from activateFixture; this is
+                    // just an extra safety net so bootWorker's loop can never die and
+                    // silently stop accepting future boot requests.
+                    Error ex
+
+            poolManager.Post(BootCompleted(fixtureName, rc, result))
+            return! loop ()
+        }
+
+        loop ())
 
 let private checkIn fixtureName (client: LspTestClient) =
     poolManager.Post(CheckIn(fixtureName, client))
