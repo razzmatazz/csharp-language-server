@@ -7,6 +7,7 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<TestCase("net10.0")>]
 [<TestCase("net8.0")>]
@@ -61,7 +62,7 @@ let ``code action menu appears on request`` (tfm: string) =
 
 [<Test>]
 let ``extract base class request extracts base class`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let caParams0: CodeActionParams =
@@ -87,7 +88,7 @@ let ``extract base class request extracts base class`` () =
 
 [<Test>]
 let ``extract interface code action should extract an interface`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open("Project/Class.cs")
 
     let caArgs: CodeActionParams =
@@ -140,7 +141,7 @@ let ``extract interface code action should extract an interface`` () =
 
 [<Test>]
 let ``code actions are listed when activated on a string literal`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let caParams: CodeActionParams =
