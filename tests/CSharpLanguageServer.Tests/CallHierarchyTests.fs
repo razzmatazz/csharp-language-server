@@ -157,8 +157,7 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
         match outgoingCallsResult with
         | None -> ClassicAssert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
-            let byName =
-                outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
+            let byName = outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
 
             ClassicAssert.AreEqual(
                 [| "Helper(int)"; "LocalHelper()"; "Render()"; "Widget()" |],
@@ -209,8 +208,7 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
         match outgoingCallsResult with
         | None -> ClassicAssert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
-            let byName =
-                outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
+            let byName = outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
 
             // Echo<int> and Echo<string> are the SAME method: constructed
             // generics must group to one target under the original definition.
@@ -306,8 +304,7 @@ let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
         | Some outgoingCalls ->
             ClassicAssert.AreEqual(1, outgoingCalls.Length, "Both chain links call the same method")
 
-            let stepLines =
-                outgoingCalls[0].FromRanges |> Array.map _.Start.Line |> Array.sort
+            let stepLines = outgoingCalls[0].FromRanges |> Array.map _.Start.Line |> Array.sort
 
             ClassicAssert.AreEqual(
                 [| 72u; 73u |],
