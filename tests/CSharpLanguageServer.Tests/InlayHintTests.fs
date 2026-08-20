@@ -5,18 +5,19 @@ open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 /// Requests inlay hints for the whole document. `Position.toLinePosition` clamps an
 /// out-of-range line to the document's last line, so a large End.Line is a convenient way to
 /// cover "the whole file" without knowing its exact length.
-let private wholeDocumentInlayHintParams (doc: LspDocumentHandle) : InlayHintParams =
+let private wholeDocumentInlayHintParams (doc: PooledLspDocumentHandle) : InlayHintParams =
     { TextDocument = { Uri = doc.Uri }
       Range =
         { Start = { Line = 0u; Character = 0u }
           End = { Line = 1000000u; Character = 0u } }
       WorkDoneToken = None }
 
-let private getHints (client: LspTestClient) (doc: LspDocumentHandle) : InlayHint array =
+let private getHints (client: PooledLspTestClient) (doc: PooledLspDocumentHandle) : InlayHint array =
     let result: InlayHint array option =
         client.Request("textDocument/inlayHint", wholeDocumentInlayHintParams doc)
 
@@ -40,7 +41,7 @@ let private tooltipText (hint: InlayHint) : string option =
 
 [<Test>]
 let ``textDocument/inlayHint shows a type hint for a var declaration initialized from a method call`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -55,7 +56,7 @@ let ``textDocument/inlayHint shows a type hint for a var declaration initialized
 
 [<Test>]
 let ``textDocument/inlayHint shows parameter hints for a regular call with differently-named arguments`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -75,7 +76,7 @@ let ``textDocument/inlayHint shows parameter hints for a regular call with diffe
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a same-name single-line argument (regression guard)`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -95,7 +96,7 @@ let ``textDocument/inlayHint suppresses a same-name single-line argument (regres
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a same-name argument on its own indented line`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -116,7 +117,7 @@ let ``textDocument/inlayHint suppresses a same-name argument on its own indented
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a qualified member-access argument matching the parameter name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -137,7 +138,7 @@ let ``textDocument/inlayHint suppresses a qualified member-access argument match
 
 [<Test>]
 let ``textDocument/inlayHint keeps a hint when the argument name doesn't match the parameter name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -154,7 +155,7 @@ let ``textDocument/inlayHint keeps a hint when the argument name doesn't match t
 let ``textDocument/inlayHint keeps a hint when a qualified member-access argument's last segment doesn't match the parameter name``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -175,7 +176,7 @@ let ``textDocument/inlayHint keeps a hint when a qualified member-access argumen
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for a very short (1-character) parameter name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -190,7 +191,7 @@ let ``textDocument/inlayHint suppresses a hint for a very short (1-character) pa
 
 [<Test>]
 let ``textDocument/inlayHint suppresses numbered-suffix parameter names but keeps a normal one`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -215,7 +216,7 @@ let ``textDocument/inlayHint suppresses numbered-suffix parameter names but keep
 
 [<Test>]
 let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter names`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -235,7 +236,7 @@ let ``textDocument/inlayHint suppresses Math.Min's numbered-suffix parameter nam
 
 [<Test>]
 let ``textDocument/inlayHint suppresses Math.Round's short parameter name but keeps its longer, still-opaque ones`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -264,7 +265,7 @@ let ``textDocument/inlayHint suppresses Math.Round's short parameter name but ke
 
 [<Test>]
 let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disambiguating parameter names`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -284,7 +285,7 @@ let ``textDocument/inlayHint keeps hints for string.Substring's genuinely-disamb
 
 [<Test>]
 let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter names`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -310,7 +311,7 @@ let ``textDocument/inlayHint keeps hints for buffer/offset/count-style parameter
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a fluent LINQ-style call`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -327,7 +328,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole lambda argument of a
 
 [<Test>]
 let ``textDocument/inlayHint suppresses hints for the sole lambda argument of chained fluent ORM-style calls`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -346,7 +347,7 @@ let ``textDocument/inlayHint suppresses hints for the sole lambda argument of ch
 
 [<Test>]
 let ``textDocument/inlayHint keeps hints when a call takes more than one lambda argument`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -367,7 +368,7 @@ let ``textDocument/inlayHint keeps hints when a call takes more than one lambda 
 
 [<Test>]
 let ``textDocument/inlayHint keeps a hint when the sole argument is a method group rather than a lambda`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -387,7 +388,7 @@ let ``textDocument/inlayHint keeps a hint when the sole argument is a method gro
 let ``textDocument/inlayHint suppresses composite-format-string positional argument hints (rule #4, subsumed by rule #2)``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -422,7 +423,7 @@ let ``textDocument/inlayHint suppresses composite-format-string positional argum
 let ``textDocument/inlayHint suppresses a hint for a single lambda argument followed by a trailing CancellationToken``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -441,7 +442,7 @@ let ``textDocument/inlayHint suppresses a hint for a single lambda argument foll
 
 [<Test>]
 let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with a trailing CancellationToken`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -464,7 +465,7 @@ let ``textDocument/inlayHint keeps hints for multiple lambda arguments even with
 let ``textDocument/inlayHint suppresses a var type hint when a qualified generic invocation's type argument matches``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -484,7 +485,7 @@ let ``textDocument/inlayHint suppresses a var type hint when a qualified generic
 let ``textDocument/inlayHint keeps a var type hint when a generic invocation's type argument doesn't match the inferred type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -505,7 +506,7 @@ let ``textDocument/inlayHint keeps a var type hint when a generic invocation's t
 let ``textDocument/inlayHint suppresses a var type hint when an unqualified generic invocation's type argument matches``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -523,7 +524,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an unqualified gene
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<T> BCL example`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -541,7 +542,7 @@ let ``textDocument/inlayHint suppresses a var type hint for the real Enum.Parse<
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint when the identifier fully matches the inferred type name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -561,7 +562,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the identifier full
 let ``textDocument/inlayHint suppresses a var type hint when the identifier's last word matches the inferred type's last word``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -579,7 +580,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the identifier's la
 
 [<Test>]
 let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't echo the inferred type name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -599,7 +600,7 @@ let ``textDocument/inlayHint keeps a var type hint when the identifier doesn't e
 let ``textDocument/inlayHint suppresses a foreach variable's type hint when the identifier echoes the element type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -619,7 +620,7 @@ let ``textDocument/inlayHint suppresses a foreach variable's type hint when the 
 let ``textDocument/inlayHint keeps a foreach variable's type hint when the identifier doesn't echo the element type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -636,7 +637,7 @@ let ``textDocument/inlayHint keeps a foreach variable's type hint when the ident
 let ``textDocument/inlayHint suppresses a parameter-name hint when the parameter name echoes its own declared type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -656,7 +657,7 @@ let ``textDocument/inlayHint suppresses a parameter-name hint when the parameter
 let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name doesn't echo its own declared type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -673,7 +674,7 @@ let ``textDocument/inlayHint keeps a parameter-name hint when the parameter name
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the generic "obj" parameter name`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -688,7 +689,7 @@ let ``textDocument/inlayHint suppresses a hint for the generic "obj" parameter n
 
 [<Test>]
 let ``textDocument/inlayHint keeps a hint for a same-length parameter name that isn't "obj"`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -708,7 +709,7 @@ let ``textDocument/inlayHint keeps a hint for a same-length parameter name that 
 let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression spells out the type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -727,7 +728,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an explicit object-
 let ``textDocument/inlayHint suppresses a var type hint when an explicit object-creation expression with an initializer spells out the type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -745,7 +746,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an explicit object-
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of a call`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -760,7 +761,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "value" parameter of
 
 [<Test>]
 let ``textDocument/inlayHint keeps a "value" parameter hint when the call has more than one argument`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -785,7 +786,7 @@ let ``textDocument/inlayHint keeps a "value" parameter hint when the call has mo
 let ``textDocument/inlayHint suppresses a var type hint when a static invocation's qualifier matches the return type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -805,7 +806,7 @@ let ``textDocument/inlayHint suppresses a var type hint when a static invocation
 let ``textDocument/inlayHint keeps a var type hint when a static invocation's qualifier doesn't match the return type``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -824,7 +825,7 @@ let ``textDocument/inlayHint keeps a var type hint when a static invocation's qu
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of a call`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -839,7 +840,7 @@ let ``textDocument/inlayHint suppresses a hint for the sole "item" parameter of 
 
 [<Test>]
 let ``textDocument/inlayHint keeps an "item" parameter hint when the call has more than one argument`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -862,7 +863,7 @@ let ``textDocument/inlayHint keeps an "item" parameter hint when the call has mo
 
 [<Test>]
 let ``textDocument/inlayHint never shows a type hint for an implicit lambda parameter`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -896,7 +897,7 @@ let ``textDocument/inlayHint never shows a type hint for an implicit lambda para
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint for a string literal initializer`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -909,7 +910,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a string literal ini
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint for a numeric literal initializer`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -922,7 +923,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a numeric literal in
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint for a boolean literal initializer`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -935,7 +936,7 @@ let ``textDocument/inlayHint suppresses a var type hint for a boolean literal in
 
 [<Test>]
 let ``textDocument/inlayHint keeps a var type hint for a unary-negated numeric expression`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -949,7 +950,7 @@ let ``textDocument/inlayHint keeps a var type hint for a unary-negated numeric e
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint for an interpolated string initializer`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -962,7 +963,7 @@ let ``textDocument/inlayHint suppresses a var type hint for an interpolated stri
 
 [<Test>]
 let ``textDocument/inlayHint suppresses a var type hint when an "as" expression's target type matches`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -977,7 +978,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an "as" expression'
 let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in a fluent chain``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -995,7 +996,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
 
 [<Test>]
 let ``textDocument/inlayHint keeps a var type hint when the element type isn't spelled out in the same chain`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -1014,7 +1015,7 @@ let ``textDocument/inlayHint keeps a var type hint when the element type isn't s
 let ``textDocument/inlayHint suppresses a var type hint when the element type was spelled out earlier in an awaited fluent chain``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -1037,7 +1038,7 @@ let ``textDocument/inlayHint suppresses a var type hint when the element type wa
 let ``textDocument/inlayHint suppresses a var type hint when an awaited generic invocation's type argument matches``
     ()
     =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -1059,7 +1060,7 @@ let ``textDocument/inlayHint suppresses a var type hint when an awaited generic 
 
 [<Test>]
 let ``textDocument/inlayHint does not truncate a short type hint's label or add a tooltip`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
@@ -1078,7 +1079,7 @@ let ``textDocument/inlayHint does not truncate a short type hint's label or add 
 
 [<Test>]
 let ``textDocument/inlayHint middle-truncates a long anonymous-type hint and moves the full name to its tooltip`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use doc = client.Open "Project/InlayHintTest.cs"
 
     let hints = getHints client doc
