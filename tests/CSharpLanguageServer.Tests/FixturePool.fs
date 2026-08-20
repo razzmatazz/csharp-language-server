@@ -71,7 +71,8 @@ let private readOnlyRequestMethods =
           "workspaceSymbol/resolve"
           "textDocument/documentColor"
           "textDocument/colorPresentation"
-          "textDocument/linkedEditingRange" ]
+          "textDocument/linkedEditingRange"
+          "csharp/metadata" ]
 
 /// Deliberately a minority share of `activeClientsSemaphore`'s total budget (see
 /// `Tooling.fs`) — pooled instances stay alive for the whole test run once booted, so
@@ -256,6 +257,15 @@ type PooledLspTestClient internal (fixtureName: string, client: LspTestClient) =
 
     member __.Open(filename: string) : PooledLspDocumentHandle =
         let handle = client.Open(filename)
+        openHandles.Add handle
+        new PooledLspDocumentHandle(handle, (fun () -> openHandles.Remove handle |> ignore))
+
+    /// Opens `filename` with synthetic `text` instead of its on-disk contents — never
+    /// written to disk (no `.Save`), so the shared fixture's on-disk state stays
+    /// untouched; the server's in-memory view reverts to disk once this handle is closed
+    /// (tracked/force-closed the same way `Open` is).
+    member __.OpenWithText(filename: string, text: string) : PooledLspDocumentHandle =
+        let handle = client.OpenWithText(filename, text)
         openHandles.Add handle
         new PooledLspDocumentHandle(handle, (fun () -> openHandles.Remove handle |> ignore))
 

@@ -8,10 +8,11 @@ open Ionide.LanguageServerProtocol.Types
 open CSharpLanguageServer.Types
 
 open CSharpLanguageServer.Tests.Tooling
+open CSharpLanguageServer.Tests.FixturePool
 
 [<Test>]
 let ``test csharp/metadata works`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     let typeDefinitionParams0: TypeDefinitionParams =
@@ -52,7 +53,7 @@ let ``test csharp/metadata works`` () =
 
 [<Test>]
 let ``test csharp/metadata works with no prior LSP request`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     let csharpUriForSystemString =
         client.SolutionDir
@@ -76,7 +77,7 @@ let ``test csharp/metadata works with no prior LSP request`` () =
 
 [<Test>]
 let ``csharp metadata preserves type names ending in suffix characters`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     let processMetadataUri =
         client.SolutionDir
@@ -98,7 +99,7 @@ let ``csharp metadata preserves type names ending in suffix characters`` () =
 
 [<Test>]
 let ``definition resolves members of nested metadata types`` () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     use classFile =
         client.OpenWithText(
