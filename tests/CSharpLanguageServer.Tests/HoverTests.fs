@@ -69,7 +69,6 @@ let testHoverWorksInCSharpFile () =
     ClassicAssert.IsTrue(hover2.IsNone)
 
 [<Test>]
-[<Retry(3)>]
 let testHoverWorksInRazorFile () =
     use client = rentFixture "aspnetProject"
 

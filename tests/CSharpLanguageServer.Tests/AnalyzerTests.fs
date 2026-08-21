@@ -78,7 +78,6 @@ let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
 
 (*
 [<Test>]
-[<Retry(3)>]
 let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
     // Use a push-diagnostics profile (no Diagnostic capability) with analyzers on.
     let pushAnalyzerProfile =

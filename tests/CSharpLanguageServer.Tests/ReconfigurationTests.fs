@@ -10,7 +10,6 @@ open CSharpLanguageServer.Tests.Tooling
 open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
-[<Retry(3)>]
 let testReadyToReconfiguringToConfiguredPhaseTransition () =
     // Supply solutionPathOverride via workspace/configuration (ServerConfig) rather
     // than --solution CLI arg.  The InitializedGate ensures handleInitialized's
@@ -68,7 +67,6 @@ let testReadyToReconfiguringToConfiguredPhaseTransition () =
     ClassicAssert.AreEqual(0, diagsA1.Length)
 
 [<Test>]
-[<Retry(3)>]
 let testDidChangeConfigurationAloneTriggersSolutionReload () =
     // Regression test: workspace/didChangeConfiguration with a changed
     // solutionPathOverride must reload the solution WITHOUT requiring a

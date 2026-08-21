@@ -185,7 +185,6 @@ let testReferenceWorksDotnet8 () =
     ClassicAssert.AreEqual(expectedLocations2, locations2.Value)
 
 [<Test>]
-[<Retry(3)>]
 let testReferenceWorksToRazorPageReferencedValue () =
     use client = rentFixture "aspnetProject"
 
@@ -287,7 +286,6 @@ let testReferenceWorksToRazorPageReferencedValue () =
     ClassicAssert.AreEqual(expectedLocations1, sortedLocations1)
 
 [<Test>]
-[<Retry(3)>]
 let testReferenceWorksFromRazorPageReferencedValue () =
     use client = rentFixture "aspnetProject"
 

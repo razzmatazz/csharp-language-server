@@ -12,7 +12,6 @@ open CSharpLanguageServer.Tests.Tooling
 
 
 [<Test>]
-[<Retry(3)>]
 let testDiagnoseCommandWorks () =
     let fixtureDir = "genericProject"
 

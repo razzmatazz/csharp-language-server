@@ -771,7 +771,12 @@ let testActorRemainsHealthyAfterTimeout () =
             (Some(TimeSpan.FromMilliseconds 200.0))
         |> Async.StartAsTask
 
-    let timedOutCompleted = timedOutTask.Wait(TimeSpan.FromMilliseconds 500.0)
+    // The call itself times out after 200 ms; the outer wait here just needs to be
+    // comfortably longer than that so the assertion isn't racing the actor's own
+    // timeout-check timer under CPU contention (e.g. a busy, fully parallel test run)
+    // — it is not asserting anything about how fast the timeout fires, only that it
+    // eventually does.
+    let timedOutCompleted = timedOutTask.Wait(TimeSpan.FromSeconds 5.0)
     ClassicAssert.IsTrue(timedOutCompleted, "First call should have timed out")
 
     match timedOutTask.Result with

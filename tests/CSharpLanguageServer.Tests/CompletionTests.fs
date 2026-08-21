@@ -144,7 +144,6 @@ let ``completion works for extension methods`` () =
     | _ -> failwith "Some U2.C1 was expected"
 
 [<Test>]
-[<Retry(5)>]
 let ``completion works in cshtml files`` () =
     use client = rentFixture "aspnetProject"
 
