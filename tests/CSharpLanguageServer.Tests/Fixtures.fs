@@ -33,24 +33,29 @@
 ///     (`CheckIn`) -- closes the gap for a caller *already* blocked inside
 ///     `activeClientsSemaphore.WaitAsync` at that exact moment, which the boot-time check
 ///     above can't reach after the fact.
-///   - Proactively, on a TTL: a background sweep (`EvictExpiredIdle`, posted every
-///     `idleSweepInterval`) disposes any instance that's been idle longer than `idleTtl`,
-///     regardless of contention, so long idle stretches don't just hold processes/memory
-///     open for nothing.
+///   - Proactively, on a TTL: a `System.Threading.Timer` (`PoolState.SweepTimer`) posts
+///     `EvictExpiredIdle` every `idleSweepInterval`, disposing any instance that's been
+///     idle longer than `idleTtl` regardless of contention, so long idle stretches don't
+///     just hold processes/memory open for nothing. The timer's whole lifecycle --
+///     creation and disposal -- is itself owned by `poolManager`'s own state machine, via
+///     the `Initialize` (posted once, right after the actor starts) and `Shutdown`
+///     (posted once, from `disposeAll`, at the very end of the assembly's test run)
+///     messages, rather than a freestanding loop/resource outside the actor.
 ///
 /// Implementation note: pool bookkeeping (idle instances + their idle-since timestamp,
-/// pending waiters, per-fixture created counts) lives as plain immutable state inside a
-/// `MailboxProcessor` actor, `poolManager`. Because it processes messages strictly one at a
-/// time, no `SemaphoreSlim`, `Interlocked`, or explicit locks are needed for that
-/// bookkeeping. Booting itself is *not* awaited inline inside `poolManager`'s message loop
-/// (that would block every other fixture's `Rent`/`CheckIn` for as long as the boot takes,
-/// e.g. while waiting on a scarce semaphore permit) -- instead `startPooledBoot`/`AdHocBoot`
-/// fire the boot as a plain `Async.StartWithContinuations` and let `poolManager` continue
-/// servicing other messages; the boot reports its own outcome back via a `BootCompleted`/
-/// `AdHocBootCompleted` message once it finishes, whenever that ends up being. There's
-/// deliberately no separate actor/thread for this (an earlier version had one, `bootWorker`)
-/// -- a self-contained fire-and-post-back `Async` keeps all pool state in exactly one place
-/// or MailboxProcessor, easier to reason about than coordinating two.
+/// pending waiters, per-fixture created counts, and now the sweep timer handle -- all of
+/// it, see `PoolState`) lives as plain immutable state inside a `MailboxProcessor` actor,
+/// `poolManager`. Because it processes messages strictly one at a time, no `SemaphoreSlim`,
+/// `Interlocked`, or explicit locks are needed for that bookkeeping. Booting itself is
+/// *not* awaited inline inside `poolManager`'s message loop (that would block every other
+/// fixture's `Rent`/`CheckIn` for as long as the boot takes, e.g. while waiting on a scarce
+/// semaphore permit) -- instead `startPooledBoot`/`AdHocBoot` fire the boot as a plain
+/// `Async.StartWithContinuations` and let `poolManager` continue servicing other messages;
+/// the boot reports its own outcome back via a `BootCompleted`/`AdHocBootCompleted`
+/// message once it finishes, whenever that ends up being. There's deliberately no separate
+/// actor/thread for this (an earlier version had one, `bootWorker`) -- a self-contained
+/// fire-and-post-back `Async` keeps all pool state in exactly one place or MailboxProcessor,
+/// easier to reason about than coordinating two.
 ///
 /// This module is deliberately narrow in scope beyond that:
 ///   - `PooledLspTestClient` / `PooledLspDocumentHandle` deliberately do not expose
@@ -294,13 +299,25 @@ let private evictIfSaturated (state: Map<string, FixturePoolState>) : Map<string
     else
         state
 
+/// All state `poolManager` owns: the per-fixture pools plus the idle-TTL sweep timer's
+/// handle. `SweepTimer` is `None` until `Initialize` runs (right after the actor starts)
+/// and disposed/cleared again by `Shutdown` (at assembly teardown, via `disposeAll`) --
+/// see the module doc comment.
+type private PoolState =
+    { Fixtures: Map<string, FixturePoolState>
+      SweepTimer: Timer option }
+
+let private emptyPoolState = { Fixtures = Map.empty; SweepTimer = None }
+
 /// Every message `poolManager` handles. Ad-hoc boots (`AdHocBoot`/`AdHocBootCompleted`)
 /// are deliberately not `Rent`/`CheckIn`: a booted ad-hoc instance is never tracked in any
 /// `FixturePoolState` — it's leased exactly once and torn down for good by its caller, so
 /// there's nothing to check back in and no per-fixture bookkeeping needed for it, only the
 /// shared admission gate (`bootClientAsync`, possibly preceded by `evictIfSaturated`).
+/// `Initialize`/`Shutdown` own the sweep timer's setup/teardown (see `PoolState`).
 [<NoComparison; NoEquality>]
 type private PoolMessage =
+    | Initialize
     | Rent of fixtureName: string * AsyncReplyChannel<RentReply>
     | CheckIn of fixtureName: string * LspTestClient
     | BootCompleted of fixtureName: string * AsyncReplyChannel<RentReply> * RentReply
@@ -312,7 +329,7 @@ type private PoolMessage =
         AsyncReplyChannel<RentReply>
     | AdHocBootCompleted of AsyncReplyChannel<RentReply> * RentReply
     | EvictExpiredIdle
-    | DisposeAll of AsyncReplyChannel<unit>
+    | Shutdown of AsyncReplyChannel<unit>
 
 /// After any change that might free up capacity or add an idle instance, satisfies as
 /// many pending waiters as possible from `Idle`. If none are idle but there's still room
@@ -353,21 +370,35 @@ let rec private drainWaiters (fixtureName: string) (state: Map<string, FixturePo
                      CreatedCount = fps.CreatedCount + 1 })
     | _ -> state
 
-and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMessage) : Map<string, FixturePoolState> =
+and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
     match msg with
-    | Rent(fixtureName, rc) ->
-        let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+    | Initialize ->
+        match state.SweepTimer with
+        | Some _ -> state // already initialized; stay idempotent rather than leak a second timer
+        | None ->
+            let timer =
+                new Timer((fun _ -> poolManager.Post EvictExpiredIdle), null, idleSweepInterval, idleSweepInterval)
 
-        drainWaiters
-            fixtureName
-            (state
-             |> Map.add
-                 fixtureName
-                 { fps with
-                     Waiters = fps.Waiters @ [ rc ] })
+            { state with
+                SweepTimer = Some timer }
+
+    | Rent(fixtureName, rc) ->
+        let fps =
+            state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+
+        { state with
+            Fixtures =
+                drainWaiters
+                    fixtureName
+                    (state.Fixtures
+                     |> Map.add
+                         fixtureName
+                         { fps with
+                             Waiters = fps.Waiters @ [ rc ] }) }
 
     | CheckIn(fixtureName, client) ->
-        let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+        let fps =
+            state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
         let fps =
             if isHealthy client then
@@ -393,7 +424,8 @@ and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
                 { fps with
                     CreatedCount = fps.CreatedCount - 1 }
 
-        drainWaiters fixtureName (state |> Map.add fixtureName fps)
+        { state with
+            Fixtures = drainWaiters fixtureName (state.Fixtures |> Map.add fixtureName fps) }
 
     | BootCompleted(fixtureName, rc, result) ->
         rc.Reply(result)
@@ -406,18 +438,21 @@ and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
         | Error _ ->
             // The reserved slot never materialized; free it back up and let another
             // still-pending waiter (if any) trigger a fresh boot attempt.
-            let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+            let fps =
+                state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
-            drainWaiters
-                fixtureName
-                (state
-                 |> Map.add
-                     fixtureName
-                     { fps with
-                         CreatedCount = fps.CreatedCount - 1 })
+            { state with
+                Fixtures =
+                    drainWaiters
+                        fixtureName
+                        (state.Fixtures
+                         |> Map.add
+                             fixtureName
+                             { fps with
+                                 CreatedCount = fps.CreatedCount - 1 }) }
 
     | AdHocBoot(fixtureName, clientProfile, patchFixtureDir, initializeParamsUpdate, rc) ->
-        let state = evictIfSaturated state
+        let fixtures = evictIfSaturated state.Fixtures
 
         Async.StartWithContinuations(
             bootClientAsync fixtureName clientProfile patchFixtureDir initializeParamsUpdate,
@@ -426,7 +461,7 @@ and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
             (fun _ -> ())
         )
 
-        state
+        { state with Fixtures = fixtures }
 
     | AdHocBootCompleted(rc, result) ->
         rc.Reply(result)
@@ -435,53 +470,64 @@ and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
     | EvictExpiredIdle ->
         let now = DateTime.UtcNow
 
-        state
-        |> Map.map (fun _ fps ->
-            let expired, fresh =
-                fps.Idle |> List.partition (fun (_, since) -> now - since > idleTtl)
+        { state with
+            Fixtures =
+                state.Fixtures
+                |> Map.map (fun _ fps ->
+                    let expired, fresh =
+                        fps.Idle |> List.partition (fun (_, since) -> now - since > idleTtl)
 
-            for client, _ in expired do
-                disposeInBackground client
+                    for client, _ in expired do
+                        disposeInBackground client
 
-            { fps with
-                Idle = fresh
-                CreatedCount = fps.CreatedCount - expired.Length })
+                    { fps with
+                        Idle = fresh
+                        CreatedCount = fps.CreatedCount - expired.Length }) }
 
-    | DisposeAll rc ->
-        for KeyValue(_, fps) in state do
+    | Shutdown rc ->
+        state.SweepTimer |> Option.iter (fun t -> t.Dispose())
+
+        for KeyValue(_, fps) in state.Fixtures do
             for client, _ in fps.Idle do
                 (client :> IDisposable).Dispose()
 
         rc.Reply(())
-        Map.empty
+        emptyPoolState
 
 and private poolManager: MailboxProcessor<PoolMessage> =
-    MailboxProcessor<PoolMessage>.Start(fun inbox ->
-        let rec loop (state: Map<string, FixturePoolState>) = async {
-            let! msg = inbox.Receive()
+    let mp =
+        MailboxProcessor<PoolMessage>.Start(fun inbox ->
+            let rec loop (state: PoolState) = async {
+                let! msg = inbox.Receive()
 
-            let newState =
-                try
-                    processMessage state msg
-                with ex ->
-                    // Keep the actor alive even on an unexpected bug here: make sure a
-                    // pending caller doesn't hang forever, then carry on with the
-                    // pre-message state.
-                    match msg with
-                    | Rent(_, rc) -> rc.Reply(Error ex)
-                    | BootCompleted(_, rc, _) -> rc.Reply(Error ex)
-                    | AdHocBoot(_, _, _, _, rc) -> rc.Reply(Error ex)
-                    | AdHocBootCompleted(rc, _) -> rc.Reply(Error ex)
-                    | DisposeAll rc -> rc.Reply(())
-                    | CheckIn _
-                    | EvictExpiredIdle -> ()
+                let newState =
+                    try
+                        processMessage state msg
+                    with ex ->
+                        // Keep the actor alive even on an unexpected bug here: make sure a
+                        // pending caller doesn't hang forever, then carry on with the
+                        // pre-message state.
+                        match msg with
+                        | Rent(_, rc) -> rc.Reply(Error ex)
+                        | BootCompleted(_, rc, _) -> rc.Reply(Error ex)
+                        | AdHocBoot(_, _, _, _, rc) -> rc.Reply(Error ex)
+                        | AdHocBootCompleted(rc, _) -> rc.Reply(Error ex)
+                        | Shutdown rc -> rc.Reply(())
+                        | Initialize
+                        | CheckIn _
+                        | EvictExpiredIdle -> ()
 
-                    state
+                        state
 
-            return! loop newState
-        }
+                return! loop newState
+            }
 
-        loop Map.empty)
+            loop emptyPoolState)
+
+    // Kicks off the idle-TTL sweep timer (see `PoolState`/`Initialize` above) once the
+    // actor is up and processing messages.
+    mp.Post Initialize
+    mp
 
 /// Fires a pooled boot for `fixtureName` off `poolManager`'s thread and reports the
 /// outcome back via `BootCompleted` once it finishes (success or failure), whenever that
@@ -496,17 +542,6 @@ and private startPooledBoot (fixtureName: string) (rc: AsyncReplyChannel<RentRep
         (fun ex -> poolManager.Post(BootCompleted(fixtureName, rc, Error ex))),
         (fun _ -> ())
     )
-
-// Periodic idle-TTL sweep — see the module doc comment and `idleTtl`/`idleSweepInterval`.
-// Must be started after `poolManager` so it has something to post to.
-do
-    let rec sweep () = async {
-        do! Async.Sleep idleSweepInterval
-        poolManager.Post EvictExpiredIdle
-        return! sweep ()
-    }
-
-    Async.Start(sweep ())
 
 let private checkIn fixtureName (client: LspTestClient) =
     poolManager.Post(CheckIn(fixtureName, client))
@@ -640,12 +675,13 @@ let rentFixture (fixtureName: string) : PooledLspTestClient =
     | Ok client -> new PooledLspTestClient(fixtureName, client)
     | Error ex -> raise ex
 
-/// Disposes every idle pooled instance across all fixture pools. Called once from
-/// `PoolTeardown.OneTimeTearDown` after the whole assembly's tests have finished; by that
-/// point every `PooledLspTestClient` lease has already been disposed and checked its
-/// instance back in, so nothing should still be checked out.
+/// Disposes every idle pooled instance across all fixture pools, and the idle-TTL sweep
+/// timer (`Shutdown`, see `PoolState`). Called once from `PoolTeardown.OneTimeTearDown`
+/// after the whole assembly's tests have finished; by that point every
+/// `PooledLspTestClient` lease has already been disposed and checked its instance back
+/// in, so nothing should still be checked out.
 let disposeAll () =
-    poolManager.PostAndReply(fun rc -> DisposeAll rc)
+    poolManager.PostAndReply(fun rc -> Shutdown rc)
 
 /// Namespace-scoped `SetUpFixture` — NUnit applies it to every test in the
 /// `CSharpLanguageServer.Tests` namespace (i.e. every test module in this project, all of
