@@ -419,6 +419,10 @@ type PooledLspTestClient internal (fixtureName: string, client: LspTestClient) =
 
         client.Request<'Request, 'Response>(method, request)
 
+    interface ILspRequestClient with
+        member this.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
+            this.Request<'Request, 'Response>(method, request)
+
     member __.Open(filename: string) : PooledLspDocumentHandle =
         let handle = client.Open(filename)
         openHandles.Add handle
