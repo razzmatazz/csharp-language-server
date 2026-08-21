@@ -176,16 +176,18 @@ let private readOnlyRequestMethods =
           "textDocument/codeAction"
           "textDocument/formatting" ]
 
-/// Deliberately a minority share of `activeClientsSemaphore`'s total budget — pooled
-/// instances stay alive for a while once booted, so this must leave headroom for every
-/// other file's ad-hoc `activateFixture` calls still running concurrently. Floor is 1, not
-/// 2: on a small CI runner (e.g. 4 cores) a floor of 2 would force the pool to permanently
-/// claim half the semaphore's entire budget for just one fixture. Note this is no longer
-/// the only thing standing between the pool and starving the rest of the suite — see the
-/// module doc comment's "Idle instances are freed" section for the eviction machinery that
-/// backstops it even if this cap is exceeded across several distinct fixtures at once.
-let private maxPoolSize () =
-    max 1 (min 4 (Environment.ProcessorCount / 4))
+/// Deliberately generous: idle pooled instances cost memory/handles but essentially no
+/// CPU (they're just sitting there between leases), and `activeClientsSemaphore` is the
+/// actual, hard ceiling on how many instances (pooled *and* ad-hoc, across *every*
+/// fixture combined) can be alive at once regardless of what this returns -- so setting
+/// this above `Environment.ProcessorCount` doesn't let one fixture actually monopolize
+/// more concurrent processes than the semaphore allows, it just stops this per-fixture
+/// count from ever being the *binding* constraint on its own. And if one fixture's pool
+/// does grow large enough to pressure the semaphore, `evictIfSaturated`/the TTL sweep (see
+/// the module doc comment's "Idle instances are freed" section) reclaim capacity from it
+/// on demand — unlike when this was first written, permanently oversized pools are no
+/// longer a starvation/deadlock risk, just a bit of avoidable eviction churn.
+let private maxPoolSize () = 2 * Environment.ProcessorCount
 
 let private isHealthy (client: LspTestClient) =
     match client.GetState().ServerProcess with
@@ -307,7 +309,9 @@ type private PoolState =
     { Fixtures: Map<string, FixturePoolState>
       SweepTimer: Timer option }
 
-let private emptyPoolState = { Fixtures = Map.empty; SweepTimer = None }
+let private emptyPoolState =
+    { Fixtures = Map.empty
+      SweepTimer = None }
 
 /// Every message `poolManager` handles. Ad-hoc boots (`AdHocBoot`/`AdHocBootCompleted`)
 /// are deliberately not `Rent`/`CheckIn`: a booted ad-hoc instance is never tracked in any
@@ -338,8 +342,12 @@ type private PoolMessage =
 /// the semaphore looks saturated, and fires the actual boot off as a background `Async`
 /// that reports back via `BootCompleted` whenever it finishes — this function itself never
 /// blocks, regardless of how long that boot ends up taking.
-let rec private drainWaiters (fixtureName: string) (state: Map<string, FixturePoolState>) : Map<string, FixturePoolState> =
-    let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+let rec private drainWaiters
+    (fixtureName: string)
+    (state: Map<string, FixturePoolState>)
+    : Map<string, FixturePoolState> =
+    let fps =
+        state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
     match fps.Waiters, fps.Idle with
     | rc :: restWaiters, (client, _since) :: restIdle ->
@@ -379,12 +387,13 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
             let timer =
                 new Timer((fun _ -> poolManager.Post EvictExpiredIdle), null, idleSweepInterval, idleSweepInterval)
 
-            { state with
-                SweepTimer = Some timer }
+            { state with SweepTimer = Some timer }
 
     | Rent(fixtureName, rc) ->
         let fps =
-            state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+            state.Fixtures
+            |> Map.tryFind fixtureName
+            |> Option.defaultValue emptyFixturePoolState
 
         { state with
             Fixtures =
@@ -398,7 +407,9 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
 
     | CheckIn(fixtureName, client) ->
         let fps =
-            state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+            state.Fixtures
+            |> Map.tryFind fixtureName
+            |> Option.defaultValue emptyFixturePoolState
 
         let fps =
             if isHealthy client then
@@ -439,7 +450,9 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
             // The reserved slot never materialized; free it back up and let another
             // still-pending waiter (if any) trigger a fresh boot attempt.
             let fps =
-                state.Fixtures |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+                state.Fixtures
+                |> Map.tryFind fixtureName
+                |> Option.defaultValue emptyFixturePoolState
 
             { state with
                 Fixtures =
