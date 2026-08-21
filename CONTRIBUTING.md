@@ -65,6 +65,18 @@ This restriction does not apply to the test body itself, which runs on a dedicat
   dotnet fantomas <file-or-dir>
   ```
 
+## Git Hooks
+
+A pre-commit hook (`.githooks/pre-commit`) runs `dotnet fantomas --check` on staged F#
+files and blocks the commit if any aren't formatted. Opt in once per clone with:
+
+```
+git config core.hooksPath .githooks
+```
+
+Requires `dotnet tool restore` to have been run at least once. Skip it for a single
+commit with `git commit --no-verify`.
+
 ## Commit Messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) style:

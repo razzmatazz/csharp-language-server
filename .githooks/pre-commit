@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Pre-commit hook: checks that staged F# files are Fantomas-formatted.
+#
+# Not active by default -- git only looks in `.git/hooks` (untracked) unless told
+# otherwise. Enable it once per clone with:
+#
+#   git config core.hooksPath .githooks
+#
+# Bypass for a single commit with `git commit --no-verify`.
+
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Only files actually staged for this commit -- Added/Copied/Modified/Renamed, not
+# Deleted (nothing to format-check in a file that's going away). Built with a read loop
+# rather than `mapfile`/`readarray` (bash 4+ only) since macOS ships bash 3.2 by default.
+#
+# Excludes src/Ionide.LanguageServerProtocol, matching .github/workflows/test.yaml's
+# "Run Fantomas check" steps, which only check `tests` and `src/CSharpLanguageServer` --
+# that directory is a vendored LSP protocol library, not held to this project's style.
+files=()
+while IFS= read -r file; do
+    case "$file" in
+    src/Ionide.LanguageServerProtocol/*) continue ;;
+    esac
+    files+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.fs' '*.fsi' '*.fsx')
+
+if [ ${#files[@]} -eq 0 ]; then
+    exit 0
+fi
+
+if ! dotnet fantomas --version >/dev/null 2>&1; then
+    echo "error: 'dotnet fantomas' is not available -- run 'dotnet tool restore' first" >&2
+    exit 1
+fi
+
+if ! dotnet fantomas --check "${files[@]}"; then
+    echo >&2
+    echo "error: the F# file(s) above are not Fantomas-formatted. Fix with:" >&2
+    echo >&2
+    printf '  dotnet fantomas %s\n' "${files[@]}" >&2
+    echo >&2
+    echo "then re-stage and commit again (or use 'git commit --no-verify' to skip this check)." >&2
+    exit 1
+fi
