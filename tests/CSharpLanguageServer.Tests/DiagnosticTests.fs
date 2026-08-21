@@ -172,7 +172,7 @@ let testPullDiagnosticsWork () =
 
 [<Test>]
 let testPullDiagnosticsWorkForRazorFiles () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
     use cshtmlFile = client.Open("Project/Views/Test/ViewFileWithErrors.cshtml")
 
     Thread.Sleep(250) // TODO: work around race for Razor support
@@ -208,7 +208,7 @@ let testPullDiagnosticsWorkForRazorFiles () =
 
 [<Test>]
 let testWorkspaceDiagnosticsWork () =
-    use client = activateFixture "testDiagnosticsWork"
+    use client = rentFixture "testDiagnosticsWork"
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -407,7 +407,7 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPollWhenDocumentResultIdProvi
     // Fix: textDocument/diagnostic now returns the same resultId formula as the workspace
     // path (project.Version/analyzersEnabled), so the client can include it in
     // previousResultIds and receive Unchanged for that document on the next poll.
-    use client = activateFixture "testDiagnosticsWork"
+    use client = rentFixture "testDiagnosticsWork"
     use classFile = client.Open("Project/Class.cs")
 
     // Pull textDocument/diagnostic — simulates VS Code pulling on open
@@ -528,7 +528,7 @@ let testWorkspaceDiagnosticsStreamingReturnUnchangedOnSecondPollWhenDocumentResu
 let testWorkspaceDiagnosticsReturnResultId () =
     // Fix 1: the server must populate resultId on full reports so that VS Code
     // can send previousResultIds on subsequent polls and receive Unchanged responses.
-    use client = activateFixture "testDiagnosticsWork"
+    use client = rentFixture "testDiagnosticsWork"
 
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -561,7 +561,7 @@ let testWorkspaceDiagnosticsReturnFullWhenCacheWarmButClientHasNoResultIds () =
     // client sends empty previousResultIds (e.g. fresh client, or client discarded its
     // state), the server must return full reports — not unchanged.  The cache-hit path
     // must consult knownResultIds before deciding to emit unchanged.
-    use client = activateFixture "testDiagnosticsWork"
+    use client = rentFixture "testDiagnosticsWork"
 
     // First poll — warms the server-side diagnostics cache
     let warmupParams: WorkspaceDiagnosticParams =
@@ -614,7 +614,7 @@ let testWorkspaceDiagnosticsReturnUnchangedOnSecondPoll () =
     // Fix 1: a second poll that sends back the resultIds from the first poll should
     // receive WorkspaceUnchangedDocumentDiagnosticReport (U2.C2) for every document
     // that has not changed.
-    use client = activateFixture "testDiagnosticsWork"
+    use client = rentFixture "testDiagnosticsWork"
 
     let firstParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
@@ -776,7 +776,7 @@ let testWorkspaceDiagnosticsSecondPollIsUnchangedInMultiProjectSolution () =
     //
     // Fix: clientKnownUrisForProject is now restricted to URIs that belong to the
     // project being processed, so ProjectB never touches ClassA.cs.
-    use client = activateFixture "multiProjectDiagnosticCycle"
+    use client = rentFixture "multiProjectDiagnosticCycle"
 
     // Open ClassA.cs to trigger solution loading.
     use _classFile = client.Open("ProjectA/ClassA.cs")
