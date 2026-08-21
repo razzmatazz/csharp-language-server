@@ -692,6 +692,18 @@ let activeClientsSemaphore =
     let concurrency = Environment.ProcessorCount
     new SemaphoreSlim(concurrency, concurrency)
 
+/// Minimal shared contract for anything that can issue LSP requests test-side. Lets
+/// helpers (e.g. `getWorkspaceDiagnosticsForUri` below) work uniformly against both a
+/// full `LspTestClient` and a pooled, read-only `PooledLspTestClient` (see `Fixtures.fs`)
+/// without duplicating their logic for each — `Request` is the only member with an
+/// identical signature (and identical read-only-safe meaning) across both, so it's
+/// deliberately the only thing on this interface; everything else (`Open`, `GetState`,
+/// ...) differs enough between the two (return types, availability) that unifying it
+/// would blur the safety boundary `Fixtures.fs`'s doc comment describes, not remove
+/// duplication.
+type ILspRequestClient =
+    abstract member Request<'Request, 'Response> : method: string * request: 'Request -> 'Response
+
 type LspTestClient(clientProfile: LspClientProfile) =
     do activeClientsSemaphore.Wait()
 
@@ -1002,6 +1014,10 @@ type LspTestClient(clientProfile: LspClientProfile) =
         | Ok token -> token |> LSPAny.fromJsonElement |> deserialize<'Response>
         | Error err -> failwithf "request to method \"%s\" has failed with error: %s" method (string err)
 
+    interface ILspRequestClient with
+        member this.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
+            this.Request<'Request, 'Response>(method, request)
+
     member __.Open(filename: string) : LspDocumentHandle =
         let file = new LspDocumentHandle(rpcTransport (), solutionDir.Value, filename)
         file.OpenWithTextFromDisk()
@@ -1086,7 +1102,7 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
     if stopwatch.Elapsed >= timeout then
         ClassicAssert.Fail(failureMessage)
 
-let getWorkspaceDiagnosticsForUri (client: LspTestClient) uri =
+let getWorkspaceDiagnosticsForUri (client: ILspRequestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
           PartialResultToken = None
