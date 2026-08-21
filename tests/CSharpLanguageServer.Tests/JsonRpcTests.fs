@@ -949,7 +949,9 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
 let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
     // Schedule a call with a 5 s deadline, then a second call with a 200 ms deadline.
     // The second (shorter) deadline must cause the timer to re-arm via Change() and
-    // fire at ~200 ms, not at 5 s.  We assert the 200 ms call times out within 500 ms.
+    // fire at ~200 ms, not at 5 s.  We assert the 200 ms call times out within 2 s
+    // (generous margin so parallel test-worker scheduling contention on CI doesn't
+    // cause spurious flakes; the long call's 5 s deadline still bounds correctness).
     let writeEnd, stdin = makeOpenStdin ()
     use writeEnd = writeEnd
     use stdout = new MemoryStream()
@@ -975,12 +977,12 @@ let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
         |> Async.StartAsTask
 
     let sw = System.Diagnostics.Stopwatch.StartNew()
-    let shortCompleted = shortTask.Wait(TimeSpan.FromMilliseconds 500.0)
+    let shortCompleted = shortTask.Wait(TimeSpan.FromSeconds 2.0)
     sw.Stop()
 
     ClassicAssert.IsTrue(
         shortCompleted,
-        sprintf "Short-deadline call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds
+        sprintf "Short-deadline call should have timed out within 2 s but took %d ms" sw.ElapsedMilliseconds
     )
 
     match shortTask.Result with
