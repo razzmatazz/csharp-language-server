@@ -383,17 +383,23 @@ Tests do **not** use in-process hosting. Instead:
    feeds it via `rpcLogCallback` and `UpdateState` posts from notification handlers.
 
 3. **Concurrency control** — `activeClientsSemaphore` (`SemaphoreSlim` initialized to
-   `Environment.ProcessorCount`) throttles simultaneous server processes; analyzers are
-   disabled by default in tests so per-server CPU cost is low enough to run one process
-   per logical core safely
+   `Environment.ProcessorCount`), owned by `Fixtures.fs`, throttles simultaneous server
+   processes; analyzers are disabled by default in tests so per-server CPU cost is low
+   enough to run one process per logical core safely. `LspTestClient` itself (`Tooling.fs`)
+   doesn't know about the semaphore — its constructor takes a `releaseSlot: unit -> unit`
+   callback, invoked once from `Dispose`, so `Fixtures.fs` can gate/track admission for
+   both pooled and ad-hoc boots the same way (see 7.4)
 
 ### 7.3 Key Test Classes
 
 #### `LspTestClient` (primary test API)
 
+Test files never construct this directly — always go through `activateFixture(Ext)` or
+`rentFixture` (`Fixtures.fs`, see 7.4), which own admission (`activeClientsSemaphore`) and
+supply the `releaseSlot` callback:
+
 ```fsharp
-use client = new LspTestClient(clientProfile)
-client.LoadSolution(fixtureName, patchSolutionDir, initializeParamsUpdate)
+use client = activateFixture fixtureName
                         // copies fixture → temp dir, starts server, initialize + initialized,
                         // waits for "Finished loading workspace" progress event
 
@@ -417,12 +423,25 @@ file.Save()                                   // sends textDocument/didSave
 ### 7.4 Test Harness API (`Tooling.fs` + `Fixtures.fs`)
 
 `Tooling.fs` defines the low-level harness (`LspTestClient`, `LspDocumentHandle`,
-`LspClientProfile`, `defaultClientProfile`, etc.), compiled first. `Fixtures.fs` (compiled
-right after it) defines the fixture-activation functions on top of that harness, plus a
-`FixturePool` of warm, reusable `LspTestClient` instances that read-only tests can lease via
-`rentFixture` instead of each paying for their own solution load — see the doc comment at
-the top of `Fixtures.fs` for the pool's design. Both live in the same file because the
-pool's own boot path calls `activateFixture`, and F# requires definition before use.
+`LspClientProfile`, `defaultClientProfile`, etc.), compiled first — but deliberately does
+*not* own concurrency admission: `LspTestClient`'s constructor takes a `releaseSlot: unit
+-> unit` callback (called once, from `Dispose`) instead of touching a semaphore itself.
+
+`Fixtures.fs` (compiled right after it) owns `activeClientsSemaphore` and is the *only*
+place in the assembly that constructs an `LspTestClient` (`bootClientAsync`, the sole
+caller of `new LspTestClient`). It defines the fixture-activation functions
+(`activateFixture(Ext)`) on top of that harness, plus a pool of warm, reusable
+`LspTestClient` instances that read-only tests can lease via `rentFixture` instead of each
+paying for their own solution load. Crucially, `activateFixture(Ext)` — used by ordinary,
+single-use (possibly mutating) tests — also routes through the pool's actor
+(`poolManager`, an `AdHocBoot` message) rather than constructing directly: this gives the
+pool visibility into *every* boot, pooled or not, which it needs to evict an idle pooled
+instance on demand and guarantee a semaphore permit is available, rather than a caller
+blocking forever behind pooled instances that would otherwise sit idle indefinitely. See
+the doc comment at the top of `Fixtures.fs` for the full design (including idle-TTL and
+saturation-triggered eviction). Both live in the same file because the pool's own boot
+path needs `defaultClientProfile`/`emptyFixturePatch` from `Tooling.fs`, and F# requires
+definition before use.
 
 #### Client Activation Functions (`Fixtures.fs`)
 
