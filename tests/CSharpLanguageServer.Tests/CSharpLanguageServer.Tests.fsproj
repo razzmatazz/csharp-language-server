@@ -51,6 +51,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
+    <!-- Expecto migration pilot (InternalTests.fs) — coexists with NUnit3TestAdapter above;
+         both are VSTest adapters discovered together by `dotnet test`. -->
+    <PackageReference Include="Expecto" />
+    <PackageReference Include="YoloDev.Expecto.TestSdk" />
     <PackageReference Include="coverlet.collector">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
