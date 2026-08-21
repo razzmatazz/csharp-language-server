@@ -6,25 +6,53 @@
 /// mutate documents, many of them can safely take turns using a small number of shared,
 /// already-loaded server instances instead of each paying for their own.
 ///
-/// Implementation note: pool bookkeeping (idle instances, pending waiters, per-fixture
-/// created counts) lives as plain immutable state inside a `MailboxProcessor` actor,
-/// `poolManager` — the same pattern `LspTestClient` itself already uses internally (see
-/// `Tooling.fs`). Because it processes messages strictly one at a time, no
-/// `SemaphoreSlim`, `Interlocked`, or explicit locks are needed for that bookkeeping.
+/// Ownership: this module owns `activeClientsSemaphore`, the sole gate on how many
+/// `LspTestClient` server processes may be alive (booting, leased out, or idle-pooled) at
+/// once. `bootClientAsync` below is the *only* place in the whole test assembly that
+/// constructs an `LspTestClient` (see its `releaseSlot` callback, which is how `Dispose`
+/// -- in `Tooling.fs` -- reports a slot free again without `Tooling.fs` needing to know
+/// what a "slot" is). Crucially, *every* boot goes through this same admission path --
+/// including plain, single-use, ad-hoc activations (`activateFixture`/`activateFixtureExt`,
+/// used e.g. by tests that mutate documents and so can never be pooled). Previously those
+/// bypassed the pool entirely and raced it for semaphore permits with zero visibility into
+/// each other; since pooled instances are designed to sit alive+idle for arbitrarily long
+/// stretches, that let the pool alone starve every ad-hoc caller permanently once it had
+/// claimed enough distinct fixtures to exhaust the semaphore (a real deadlock: nothing
+/// would ever `Release()` again until the whole assembly's teardown, which itself can't
+/// run until the stuck ad-hoc test finishes). Funnelling both paths through the same actor
+/// closes that gap: it can see every idle instance across every fixture at once and evict
+/// one on demand to make room, something a stuck caller blocked on a raw `SemaphoreSlim`
+/// never could.
 ///
-/// Booting a fresh instance, however, is *not* done inline inside `poolManager` — it's
-/// handed off to a second, dedicated actor, `bootWorker`. Booting blocks on
-/// `activeClientsSemaphore` (see `Tooling.fs`), which can legitimately take a while if
-/// other, unrelated ad-hoc `activateFixture` tests currently hold all the free slots. If
-/// that wait happened inside `poolManager`'s own message loop, the *entire* pool would
-/// freeze for its duration — no `CheckIn` could be processed, not even to return an
-/// already-idle instance of the very fixture something else is waiting to boot. Since
-/// `bootWorker` has its own single-threaded loop, it still serializes actual boots one at
-/// a time (preserving the "don't thundering-herd multiple solution loads at once" goal),
-/// but a slow boot only stalls `bootWorker`, never `poolManager`, which keeps servicing
-/// every other fixture and every check-in throughout.
+/// Idle instances are freed (semaphore permit released) two ways:
+///   - Reactively, right before any new boot is committed to (`evictIfSaturated`, called
+///     from `drainWaiters`'s boot branch and from `AdHocBoot`) if the semaphore currently
+///     has zero free permits: the globally-oldest idle instance (any fixture) is evicted
+///     to guarantee the upcoming boot won't wait forever. Also checked once more, from the
+///     other direction, right when an instance would otherwise become newly idle
+///     (`CheckIn`) -- closes the gap for a caller *already* blocked inside
+///     `activeClientsSemaphore.WaitAsync` at that exact moment, which the boot-time check
+///     above can't reach after the fact.
+///   - Proactively, on a TTL: a background sweep (`EvictExpiredIdle`, posted every
+///     `idleSweepInterval`) disposes any instance that's been idle longer than `idleTtl`,
+///     regardless of contention, so long idle stretches don't just hold processes/memory
+///     open for nothing.
 ///
-/// This module is deliberately narrow in scope:
+/// Implementation note: pool bookkeeping (idle instances + their idle-since timestamp,
+/// pending waiters, per-fixture created counts) lives as plain immutable state inside a
+/// `MailboxProcessor` actor, `poolManager`. Because it processes messages strictly one at a
+/// time, no `SemaphoreSlim`, `Interlocked`, or explicit locks are needed for that
+/// bookkeeping. Booting itself is *not* awaited inline inside `poolManager`'s message loop
+/// (that would block every other fixture's `Rent`/`CheckIn` for as long as the boot takes,
+/// e.g. while waiting on a scarce semaphore permit) -- instead `startPooledBoot`/`AdHocBoot`
+/// fire the boot as a plain `Async.StartWithContinuations` and let `poolManager` continue
+/// servicing other messages; the boot reports its own outcome back via a `BootCompleted`/
+/// `AdHocBootCompleted` message once it finishes, whenever that ends up being. There's
+/// deliberately no separate actor/thread for this (an earlier version had one, `bootWorker`)
+/// -- a self-contained fire-and-post-back `Async` keeps all pool state in exactly one place
+/// or MailboxProcessor, easier to reason about than coordinating two.
+///
+/// This module is deliberately narrow in scope beyond that:
 ///   - `PooledLspTestClient` / `PooledLspDocumentHandle` deliberately do not expose
 ///     `Change`/`Save` — pooled fixtures must stay read-only, since the same instance is
 ///     handed to many tests in sequence.
@@ -36,20 +64,27 @@
 ///     against that, so there deliberately isn't one — any fixture name can be leased;
 ///     typos are still caught for free by `LoadSolution`'s existing "no such test data dir"
 ///     check the first time an instance for that name is booted.
+///   - Ad-hoc (`activateFixture`/`activateFixtureExt`) instances are never added to any
+///     fixture's `Idle` list — they're leased exactly once, to exactly one caller, and torn
+///     down for good (never checked back in) by that caller's own `Dispose`, same as before
+///     this module took over booting them. Only their *admission* (getting a semaphore
+///     permit, possibly evicting an idle pooled instance to get one) goes through the pool.
 module CSharpLanguageServer.Tests.Fixtures
 
-// `poolManager` and `bootWorker` below are defined as a mutually-recursive pair of
-// MailboxProcessor *values* (not functions), which triggers FS0040 ("recursive
-// references ... checked for initialization-soundness at runtime through a delayed
-// reference"). This is the standard, sound pattern for actors that post to each other:
-// neither actor's body touches the other until a message is actually processed, which
-// can only happen after both are fully constructed (nothing posts to either during
-// module initialization) — so the delayed-reference check FS0040 warns about always
-// succeeds here.
+// `drainWaiters`/`processMessage`/`poolManager`/`startPooledBoot` below are a mutually
+// recursive group of `let rec ... and ...` bindings (some of them MailboxProcessor
+// *values*, not functions), which triggers FS0040 ("recursive references ... checked for
+// initialization-soundness at runtime through a delayed reference"). This is the standard,
+// sound pattern for actors/helpers that post to each other: none of their bodies touch
+// `poolManager` until a message is actually processed, which can only happen after the
+// whole group is fully constructed (nothing posts to `poolManager` during module
+// initialization) — so the delayed-reference check FS0040 warns about always succeeds here.
 #nowarn "40"
 
 open System
 open System.IO
+open System.Threading
+open System.Threading.Tasks
 open System.Xml.Linq
 
 open NUnit.Framework
@@ -81,34 +116,6 @@ let patchFixtureWithTfm newTfm =
             | None -> ()
 
     updateTfmInSubdir
-
-/// Full control: custom profile, fixture dir patch callback, InitializeParams transform.
-/// Lives here (rather than `Tooling.fs`) because the pool's own boot path (`tryBoot`
-/// below) calls `activateFixture`, which calls this — keeping the whole
-/// activation/pooling chain in one file avoids a forward reference across the two.
-let activateFixtureExt
-    fixtureName
-    clientProfile
-    (patchFixtureDir: string -> unit)
-    (initializeParamsUpdate: InitializeParams -> InitializeParams)
-    =
-    let client = new LspTestClient(clientProfile)
-    client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
-    client
-
-/// Simple: default profile, no fixture patching, no InitializeParams customization.
-let activateFixture fixtureName =
-    activateFixtureExt fixtureName defaultClientProfile emptyFixturePatch id
-
-/// Shorthand for `activateFixtureExt` with `LoggingEnabled = true`, for debugging a
-/// failing test — see AGENTS.md's "Debugging server-side data flow from tests" section.
-let activateFixtureWithLoggingEnabled fixtureName =
-    activateFixtureExt
-        fixtureName
-        { defaultClientProfile with
-            LoggingEnabled = true }
-        emptyFixturePatch
-        id
 
 /// LSP request methods considered safe to issue through a pooled client: read-only
 /// queries whose server-side handling doesn't mutate documents or workspace state.
@@ -164,12 +171,14 @@ let private readOnlyRequestMethods =
           "textDocument/codeAction"
           "textDocument/formatting" ]
 
-/// Deliberately a minority share of `activeClientsSemaphore`'s total budget (see
-/// `Tooling.fs`) — pooled instances stay alive for the whole test run once booted, so
-/// this must leave headroom for every other file's ad-hoc `activateFixture` calls still
-/// running concurrently. Floor is 1, not 2: on a small CI runner (e.g. 4 cores) a floor of
-/// 2 would force the pool to permanently claim half the semaphore's entire budget, which
-/// starved the rest of the suite badly enough to hang in CI (4 cores, 2 NUnit workers).
+/// Deliberately a minority share of `activeClientsSemaphore`'s total budget — pooled
+/// instances stay alive for a while once booted, so this must leave headroom for every
+/// other file's ad-hoc `activateFixture` calls still running concurrently. Floor is 1, not
+/// 2: on a small CI runner (e.g. 4 cores) a floor of 2 would force the pool to permanently
+/// claim half the semaphore's entire budget for just one fixture. Note this is no longer
+/// the only thing standing between the pool and starving the rest of the suite — see the
+/// module doc comment's "Idle instances are freed" section for the eviction machinery that
+/// backstops it even if this cap is exceeded across several distinct fixtures at once.
 let private maxPoolSize () =
     max 1 (min 4 (Environment.ProcessorCount / 4))
 
@@ -182,33 +191,67 @@ let private isHealthy (client: LspTestClient) =
             false
     | None -> false
 
-/// Reply payload for a `Rent` request: either a checked-out client, or the exception that
-/// occurred while trying to boot one (so a boot failure surfaces on the caller's thread
-/// instead of hanging `PostAndReply` forever or killing the pool actor).
+/// How long a pooled instance may sit idle before the periodic sweep (`EvictExpiredIdle`)
+/// disposes it, releasing its `activeClientsSemaphore` permit. Reactive eviction
+/// (`evictIfSaturated`/the `CheckIn` check) already rules out outright deadlock regardless
+/// of this value; the TTL exists to free processes/memory sooner during long idle
+/// stretches, not just once something else is actively contending for a permit.
+let private idleTtl = TimeSpan.FromMinutes 2.0
+let private idleSweepInterval = TimeSpan.FromSeconds 30.0
+
+/// The sole admission gate for every `LspTestClient` this assembly ever constructs — both
+/// pooled boots (`startPooledBoot`) and ad-hoc ones (`activateFixtureExt`, via `AdHocBoot`)
+/// go through `bootClientAsync` below, which is the only place that calls `new LspTestClient`.
+let private activeClientsSemaphore =
+    // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
+    // per-test CPU cost is low enough to run one server per logical core safely.
+    let concurrency = Environment.ProcessorCount
+    new SemaphoreSlim(concurrency, concurrency)
+
+/// Reply payload for a boot: either a fresh client, or the exception that occurred while
+/// trying to boot one (so a boot failure surfaces on the caller's thread instead of
+/// hanging `PostAndReply` forever or killing the pool actor).
 type private RentReply = Result<LspTestClient, exn>
 
-type private PoolMessage =
-    | Rent of fixtureName: string * AsyncReplyChannel<RentReply>
-    | CheckIn of fixtureName: string * LspTestClient
-    /// Reported by `bootWorker` once a boot it was asked to perform finishes (success or
-    /// failure). `poolManager` is the sole owner of `CreatedCount`/`Idle`/`Waiters`, so
-    /// even though `bootWorker` did the actual (slow) work, only `poolManager` applies its
-    /// outcome to state and replies to the original waiter.
-    | BootCompleted of fixtureName: string * AsyncReplyChannel<RentReply> * RentReply
-    | DisposeAll of AsyncReplyChannel<unit>
+/// Acquires a permit, then constructs and loads a fresh `LspTestClient` — the only place
+/// in this assembly that does either. On failure (including a `LoadSolution` failure after
+/// the client was already constructed) the client's own `Dispose` releases the permit via
+/// `releaseSlot`, so callers never need to release it themselves.
+let private bootClientAsync
+    (fixtureName: string)
+    (clientProfile: LspClientProfile)
+    (patchFixtureDir: string -> unit)
+    (initializeParamsUpdate: InitializeParams -> InitializeParams)
+    : Async<RentReply> =
+    async {
+        do! activeClientsSemaphore.WaitAsync() |> Async.AwaitTask
 
-/// A single boot request handed off to `bootWorker`: which fixture to load, and the
-/// original `Rent` caller's reply channel to eventually satisfy (via `BootCompleted`).
-type private BootMessage = BootRequest of fixtureName: string * AsyncReplyChannel<RentReply>
+        let client =
+            new LspTestClient(clientProfile, (fun () -> activeClientsSemaphore.Release() |> ignore))
+
+        try
+            client.LoadSolution(fixtureName, patchFixtureDir, initializeParamsUpdate)
+            return Ok client
+        with ex ->
+            (client :> IDisposable).Dispose()
+            return Error ex
+    }
+
+/// Tears a client down off the calling thread — used for eviction, where we want to free
+/// the semaphore permit for someone else without making `poolManager`'s single-threaded
+/// message loop wait on the teardown IPC (server stop request, process kill, etc.).
+let private disposeInBackground (client: LspTestClient) =
+    Async.Start(async { (client :> IDisposable).Dispose() })
 
 /// Per-fixture-name pool state. `CreatedCount` tracks how many live instances exist (idle
-/// + currently leased, *including* ones a `BootRequest` has been reserved for but hasn't
-/// finished booting yet) so we never kick off more than `MaxSize` concurrent boots for
-/// this fixture. `Waiters` holds reply channels for `Rent` calls that arrived while the
-/// pool had no idle instance and no room to grow — satisfied in order as instances become
-/// available.
+/// + currently leased, *including* ones a boot has been reserved for but hasn't finished
+/// yet) so we never kick off more than `maxPoolSize ()` concurrent boots for this fixture.
+/// `Idle` instances carry the `DateTime` they became idle at, used both by TTL eviction and
+/// to pick the globally-oldest instance to evict under pressure (`evictOldestIdle`).
+/// `Waiters` holds reply channels for `Rent` calls that arrived while the pool had no idle
+/// instance and no room to grow — satisfied in order as instances become available.
 type private FixturePoolState =
-    { Idle: LspTestClient list
+    { Idle: (LspTestClient * DateTime) list
       Waiters: AsyncReplyChannel<RentReply> list
       CreatedCount: int }
 
@@ -217,66 +260,140 @@ let private emptyFixturePoolState =
       Waiters = []
       CreatedCount = 0 }
 
-let private tryBoot fixtureName : RentReply =
-    try
-        Ok(activateFixture fixtureName)
-    with ex ->
-        Error ex
+/// Evicts the single globally-oldest idle instance across *every* fixture's pool (not just
+/// one particular fixture) — frees exactly one `activeClientsSemaphore` permit, eventually
+/// (`disposeInBackground` doesn't block on it). No-op if nothing is currently idle anywhere.
+let private evictOldestIdle (state: Map<string, FixturePoolState>) : Map<string, FixturePoolState> =
+    let oldest =
+        state
+        |> Map.toSeq
+        |> Seq.collect (fun (name, fps) -> fps.Idle |> Seq.map (fun (client, since) -> name, client, since))
+        |> Seq.sortBy (fun (_, _, since) -> since)
+        |> Seq.tryHead
+
+    match oldest with
+    | None -> state
+    | Some(fixtureName, client, _) ->
+        disposeInBackground client
+
+        state
+        |> Map.change
+            fixtureName
+            (Option.map (fun fps ->
+                { fps with
+                    Idle = fps.Idle |> List.filter (fun (c, _) -> not (obj.ReferenceEquals(c, client)))
+                    CreatedCount = fps.CreatedCount - 1 }))
+
+/// Evicts one idle instance (any fixture) iff `activeClientsSemaphore` currently has zero
+/// free permits — called right before committing to any new boot, pooled or ad-hoc, so
+/// that boot's `WaitAsync` is guaranteed not to wait forever on a semaphore that's fully
+/// (and, absent this, permanently) claimed by other idle pooled instances.
+let private evictIfSaturated (state: Map<string, FixturePoolState>) : Map<string, FixturePoolState> =
+    if activeClientsSemaphore.CurrentCount = 0 then
+        evictOldestIdle state
+    else
+        state
+
+/// Every message `poolManager` handles. Ad-hoc boots (`AdHocBoot`/`AdHocBootCompleted`)
+/// are deliberately not `Rent`/`CheckIn`: a booted ad-hoc instance is never tracked in any
+/// `FixturePoolState` — it's leased exactly once and torn down for good by its caller, so
+/// there's nothing to check back in and no per-fixture bookkeeping needed for it, only the
+/// shared admission gate (`bootClientAsync`, possibly preceded by `evictIfSaturated`).
+[<NoComparison; NoEquality>]
+type private PoolMessage =
+    | Rent of fixtureName: string * AsyncReplyChannel<RentReply>
+    | CheckIn of fixtureName: string * LspTestClient
+    | BootCompleted of fixtureName: string * AsyncReplyChannel<RentReply> * RentReply
+    | AdHocBoot of
+        fixtureName: string *
+        clientProfile: LspClientProfile *
+        patchFixtureDir: (string -> unit) *
+        initializeParamsUpdate: (InitializeParams -> InitializeParams) *
+        AsyncReplyChannel<RentReply>
+    | AdHocBootCompleted of AsyncReplyChannel<RentReply> * RentReply
+    | EvictExpiredIdle
+    | DisposeAll of AsyncReplyChannel<unit>
 
 /// After any change that might free up capacity or add an idle instance, satisfies as
 /// many pending waiters as possible from `Idle`. If none are idle but there's still room
-/// to grow (`CreatedCount < MaxSize`), reserves the slot immediately (so a burst of
-/// concurrent `Rent` calls can't over-request boots) and hands the actual boot off to
-/// `bootWorker` — this function itself never blocks, regardless of how long that boot
-/// ends up taking.
-let rec private drainWaiters fixtureName (fps: FixturePoolState) : FixturePoolState =
+/// to grow (`CreatedCount < maxPoolSize ()`), reserves the slot immediately (so a burst of
+/// concurrent `Rent` calls can't over-request boots), evicts an idle instance elsewhere if
+/// the semaphore looks saturated, and fires the actual boot off as a background `Async`
+/// that reports back via `BootCompleted` whenever it finishes — this function itself never
+/// blocks, regardless of how long that boot ends up taking.
+let rec private drainWaiters (fixtureName: string) (state: Map<string, FixturePoolState>) : Map<string, FixturePoolState> =
+    let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+
     match fps.Waiters, fps.Idle with
-    | rc :: restWaiters, client :: restIdle ->
+    | rc :: restWaiters, (client, _since) :: restIdle ->
         rc.Reply(Ok client)
 
         drainWaiters
             fixtureName
-            { fps with
-                Waiters = restWaiters
-                Idle = restIdle }
+            (state
+             |> Map.add
+                 fixtureName
+                 { fps with
+                     Waiters = restWaiters
+                     Idle = restIdle })
     | rc :: restWaiters, [] when fps.CreatedCount < maxPoolSize () ->
-        bootWorker.Post(BootRequest(fixtureName, rc))
+        // Evict here, right before committing to the boot -- not any earlier -- so it can
+        // never cannibalize an idle instance this very fixture could otherwise have handed
+        // straight to `rc` in the branch above.
+        let state = evictIfSaturated state
+        startPooledBoot fixtureName rc
 
         drainWaiters
             fixtureName
-            { fps with
-                Waiters = restWaiters
-                CreatedCount = fps.CreatedCount + 1 }
-    | _ -> fps
+            (state
+             |> Map.add
+                 fixtureName
+                 { fps with
+                     Waiters = restWaiters
+                     CreatedCount = fps.CreatedCount + 1 })
+    | _ -> state
 
 and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMessage) : Map<string, FixturePoolState> =
     match msg with
     | Rent(fixtureName, rc) ->
-        let fps =
-            state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+        let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
-        let fps =
-            { fps with
-                Waiters = fps.Waiters @ [ rc ] }
-            |> drainWaiters fixtureName
-
-        state |> Map.add fixtureName fps
+        drainWaiters
+            fixtureName
+            (state
+             |> Map.add
+                 fixtureName
+                 { fps with
+                     Waiters = fps.Waiters @ [ rc ] })
 
     | CheckIn(fixtureName, client) ->
-        let fps =
-            state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+        let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
         let fps =
             if isHealthy client then
                 client.ResetAccumulatedState()
-                { fps with Idle = client :: fps.Idle }
+
+                if activeClientsSemaphore.CurrentCount = 0 then
+                    // Fully saturated right now: don't let this instance sit idle holding
+                    // a permit nobody else can get at -- free it immediately instead. A
+                    // caller already blocked inside `WaitAsync` at this exact moment isn't
+                    // reachable by `evictIfSaturated` (which only runs when *starting* a
+                    // new boot) or by the TTL sweep (which only runs periodically) -- this
+                    // closes that specific gap.
+                    disposeInBackground client
+
+                    { fps with
+                        CreatedCount = fps.CreatedCount - 1 }
+                else
+                    { fps with
+                        Idle = (client, DateTime.UtcNow) :: fps.Idle }
             else
-                (client :> IDisposable).Dispose()
+                disposeInBackground client
 
                 { fps with
                     CreatedCount = fps.CreatedCount - 1 }
 
-        state |> Map.add fixtureName (fps |> drainWaiters fixtureName)
+        drainWaiters fixtureName (state |> Map.add fixtureName fps)
 
     | BootCompleted(fixtureName, rc, result) ->
         rc.Reply(result)
@@ -289,25 +406,56 @@ and private processMessage (state: Map<string, FixturePoolState>) (msg: PoolMess
         | Error _ ->
             // The reserved slot never materialized; free it back up and let another
             // still-pending waiter (if any) trigger a fresh boot attempt.
-            let fps =
-                state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+            let fps = state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
 
-            let fps =
-                { fps with
-                    CreatedCount = fps.CreatedCount - 1 }
-                |> drainWaiters fixtureName
+            drainWaiters
+                fixtureName
+                (state
+                 |> Map.add
+                     fixtureName
+                     { fps with
+                         CreatedCount = fps.CreatedCount - 1 })
 
-            state |> Map.add fixtureName fps
+    | AdHocBoot(fixtureName, clientProfile, patchFixtureDir, initializeParamsUpdate, rc) ->
+        let state = evictIfSaturated state
+
+        Async.StartWithContinuations(
+            bootClientAsync fixtureName clientProfile patchFixtureDir initializeParamsUpdate,
+            (fun result -> poolManager.Post(AdHocBootCompleted(rc, result))),
+            (fun ex -> poolManager.Post(AdHocBootCompleted(rc, Error ex))),
+            (fun _ -> ())
+        )
+
+        state
+
+    | AdHocBootCompleted(rc, result) ->
+        rc.Reply(result)
+        state
+
+    | EvictExpiredIdle ->
+        let now = DateTime.UtcNow
+
+        state
+        |> Map.map (fun _ fps ->
+            let expired, fresh =
+                fps.Idle |> List.partition (fun (_, since) -> now - since > idleTtl)
+
+            for client, _ in expired do
+                disposeInBackground client
+
+            { fps with
+                Idle = fresh
+                CreatedCount = fps.CreatedCount - expired.Length })
 
     | DisposeAll rc ->
         for KeyValue(_, fps) in state do
-            for client in fps.Idle do
+            for client, _ in fps.Idle do
                 (client :> IDisposable).Dispose()
 
         rc.Reply(())
         Map.empty
 
-and private poolManager =
+and private poolManager: MailboxProcessor<PoolMessage> =
     MailboxProcessor<PoolMessage>.Start(fun inbox ->
         let rec loop (state: Map<string, FixturePoolState>) = async {
             let! msg = inbox.Receive()
@@ -322,8 +470,11 @@ and private poolManager =
                     match msg with
                     | Rent(_, rc) -> rc.Reply(Error ex)
                     | BootCompleted(_, rc, _) -> rc.Reply(Error ex)
+                    | AdHocBoot(_, _, _, _, rc) -> rc.Reply(Error ex)
+                    | AdHocBootCompleted(rc, _) -> rc.Reply(Error ex)
                     | DisposeAll rc -> rc.Reply(())
-                    | CheckIn _ -> ()
+                    | CheckIn _
+                    | EvictExpiredIdle -> ()
 
                     state
 
@@ -332,36 +483,67 @@ and private poolManager =
 
         loop Map.empty)
 
-/// Dedicated single-worker actor that performs the actual (slow, semaphore-gated) boot
-/// work requested by `drainWaiters`, strictly one at a time, entirely off `poolManager`'s
-/// thread. See the module doc comment for why this separation matters.
-///
+/// Fires a pooled boot for `fixtureName` off `poolManager`'s thread and reports the
+/// outcome back via `BootCompleted` once it finishes (success or failure), whenever that
+/// ends up being — see the module doc comment for why this must never block the caller.
 /// Explicit type annotation: `drainWaiters` (defined above, in the same `let rec ... and
-/// ...` group) calls `bootWorker.Post` before the compiler has otherwise inferred this
-/// binding's type from its own definition below — without the annotation that lookup is
-/// of indeterminate type (FS0072).
-and private bootWorker: MailboxProcessor<BootMessage> =
-    MailboxProcessor<BootMessage>.Start(fun inbox ->
-        let rec loop () = async {
-            let! BootRequest(fixtureName, rc) = inbox.Receive()
+/// ...` group) calls this before the compiler has otherwise inferred its type from its own
+/// definition here — without the annotation that lookup is of indeterminate type (FS0072).
+and private startPooledBoot (fixtureName: string) (rc: AsyncReplyChannel<RentReply>) : unit =
+    Async.StartWithContinuations(
+        bootClientAsync fixtureName defaultClientProfile emptyFixturePatch id,
+        (fun result -> poolManager.Post(BootCompleted(fixtureName, rc, result))),
+        (fun ex -> poolManager.Post(BootCompleted(fixtureName, rc, Error ex))),
+        (fun _ -> ())
+    )
 
-            let result =
-                try
-                    tryBoot fixtureName
-                with ex ->
-                    // tryBoot already catches everything from activateFixture; this is
-                    // just an extra safety net so bootWorker's loop can never die and
-                    // silently stop accepting future boot requests.
-                    Error ex
+// Periodic idle-TTL sweep — see the module doc comment and `idleTtl`/`idleSweepInterval`.
+// Must be started after `poolManager` so it has something to post to.
+do
+    let rec sweep () = async {
+        do! Async.Sleep idleSweepInterval
+        poolManager.Post EvictExpiredIdle
+        return! sweep ()
+    }
 
-            poolManager.Post(BootCompleted(fixtureName, rc, result))
-            return! loop ()
-        }
-
-        loop ())
+    Async.Start(sweep ())
 
 let private checkIn fixtureName (client: LspTestClient) =
     poolManager.Post(CheckIn(fixtureName, client))
+
+/// Full control: custom profile, fixture dir patch callback, InitializeParams transform.
+/// Routed through `poolManager` (`AdHocBoot`) exactly like a pooled boot is — see the
+/// module doc comment for why ad-hoc, single-use activations need to share the pool's
+/// admission control (and its eviction machinery) rather than racing it independently for
+/// `activeClientsSemaphore` permits. The returned instance is never added to any fixture's
+/// `Idle` list; disposing it (a plain `LspTestClient.Dispose`, not routed back through the
+/// pool) tears it down and releases its slot for good — it's a "spoiled", single-use lease.
+let activateFixtureExt
+    fixtureName
+    clientProfile
+    (patchFixtureDir: string -> unit)
+    (initializeParamsUpdate: InitializeParams -> InitializeParams)
+    : LspTestClient =
+    match
+        poolManager.PostAndReply(fun rc ->
+            AdHocBoot(fixtureName, clientProfile, patchFixtureDir, initializeParamsUpdate, rc))
+    with
+    | Ok client -> client
+    | Error ex -> raise ex
+
+/// Simple: default profile, no fixture patching, no InitializeParams customization.
+let activateFixture fixtureName =
+    activateFixtureExt fixtureName defaultClientProfile emptyFixturePatch id
+
+/// Shorthand for `activateFixtureExt` with `LoggingEnabled = true`, for debugging a
+/// failing test — see AGENTS.md's "Debugging server-side data flow from tests" section.
+let activateFixtureWithLoggingEnabled fixtureName =
+    activateFixtureExt
+        fixtureName
+        { defaultClientProfile with
+            LoggingEnabled = true }
+        emptyFixturePatch
+        id
 
 /// A document handle leased from a `PooledLspTestClient`. Deliberately narrower than
 /// `LspDocumentHandle` — no `Change`/`Save` — since pooled fixtures are shared by many

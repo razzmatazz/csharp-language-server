@@ -686,12 +686,6 @@ type LspDocumentHandle(rpcTransport: MailboxProcessor<JsonRpcTransportEvent>, pr
 
         tes |> Array.rev |> Array.fold applyTextEdit fileContents.Value
 
-let activeClientsSemaphore =
-    // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
-    // per-test CPU cost is low enough to run one server per logical core safely.
-    let concurrency = Environment.ProcessorCount
-    new SemaphoreSlim(concurrency, concurrency)
-
 /// Minimal shared contract for anything that can issue LSP requests test-side. Lets
 /// helpers (e.g. `getWorkspaceDiagnosticsForUri` below) work uniformly against both a
 /// full `LspTestClient` and a pooled, read-only `PooledLspTestClient` (see `Fixtures.fs`)
@@ -704,9 +698,12 @@ let activeClientsSemaphore =
 type ILspRequestClient =
     abstract member Request<'Request, 'Response> : method: string * request: 'Request -> 'Response
 
-type LspTestClient(clientProfile: LspClientProfile) =
-    do activeClientsSemaphore.Wait()
-
+/// `releaseSlot` is invoked exactly once, from `Dispose`, whichever concurrency-limiting
+/// resource the caller acquired before constructing this instance (see `Fixtures.fs`'s
+/// `activeClientsSemaphore` — its sole caller — for the actual admission-control policy;
+/// this type deliberately doesn't know or care what "a slot" means, only that it must
+/// release whatever `releaseSlot` closes over exactly once it's done with the process).
+type LspTestClient(clientProfile: LspClientProfile, releaseSlot: unit -> unit) =
     let client = MailboxProcessor.Start(clientEventLoop initialClientState)
 
     let mutable solutionDir: string option = None
@@ -777,7 +774,7 @@ type LspTestClient(clientProfile: LspClientProfile) =
                 deleteDirectory solutionDir
             | _ -> ()
 
-            activeClientsSemaphore.Release() |> ignore
+            releaseSlot ()
 
     member __.SolutionDir: string = solutionDir.Value
 
