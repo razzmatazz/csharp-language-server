@@ -54,7 +54,7 @@ let testCallHierarchyIncomingCallsWorks () =
 
 [<Test>]
 let testCallHierarchyOutgoingCallsWorks () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     // Step 1: Prepare call hierarchy for MethodB (line 10, char 16 is where "MethodB" is)
@@ -98,7 +98,7 @@ let testCallHierarchyOutgoingCallsWorks () =
 
 [<Test>]
 let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use classFile = client.Open "Project/Class.cs"
 
     // MethodA (line 4, char 16) only calls Console.WriteLine, which lives in
@@ -129,7 +129,7 @@ let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
 
 [<Test>]
 let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use testFile = client.Open "Project/OutgoingCallsTest.cs"
 
     // Prepare on Orchestrator (line 4, char 16), whose body mixes call shapes:
@@ -182,7 +182,7 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
 
 [<Test>]
 let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethods () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use testFile = client.Open "Project/OutgoingCallsTest.cs"
 
     // CallsBoth (line 34, char 16) invokes Echo<T> twice with different type
@@ -230,7 +230,7 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
 
 [<Test>]
 let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use testFile = client.Open "Project/OutgoingCallsTest.cs"
 
     let outgoingFor (line: uint32) (character: uint32) =
@@ -271,7 +271,7 @@ let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
 
 [<Test>]
 let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
     use testFile = client.Open "Project/OutgoingCallsTest.cs"
 
     // Start (line 69, char 23) is a multi-line fluent chain:
