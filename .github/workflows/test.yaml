@@ -34,6 +34,11 @@ jobs:
       # --blame-hang-* detects a hung *individual* test after 3 minutes, kills it, takes
       # a full process dump, and lets the run continue — instead of a hang silently
       # consuming the whole `timeout-minutes: 15` job budget with zero diagnostics.
+      #
+      # This single `dotnet test` invocation exercises BOTH the NUnit and the (gradually
+      # growing) Expecto test variants together, since NUnit3TestAdapter and
+      # YoloDev.Expecto.TestSdk are both VSTest adapters registered in the same test
+      # project — see tests/CSharpLanguageServer.Tests/InternalTests.fs for the pilot file.
       - name: Run Tests
         if: ${{ matrix.os != 'windows-latest' }}
         run: |

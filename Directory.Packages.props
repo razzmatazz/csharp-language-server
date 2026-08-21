@@ -19,6 +19,15 @@
     <PackageVersion Include="Castle.Core" Version="5.2.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
+    <!-- Expecto: gradual NUnit -> Expecto test migration pilot (see InternalTests.fs).
+         YoloDev.Expecto.TestSdk lets Expecto tests be discovered by `dotnet test` via the
+         same VSTest adapter mechanism NUnit3TestAdapter uses, so both frameworks coexist
+         and run together in a single `dotnet test` invocation within the same project. -->
+    <!-- Pinned to the 10.x line: YoloDev.Expecto.TestSdk 0.15.5 constrains to
+         Expecto >=10.2.2 <11.0.0 (its VSTest adapter isn't yet verified against v11's
+         API changes) — bump both together once a compatible TestSdk release ships. -->
+    <PackageVersion Include="Expecto" Version="10.2.3" />
+    <PackageVersion Include="YoloDev.Expecto.TestSdk" Version="0.15.5" />
     <PackageVersion Include="FSharp.Control.AsyncSeq" Version="3.2.1" />
     <PackageVersion Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
     <PackageVersion Include="Ionide.KeepAChangelog.Tasks" Version="0.1.8" />

@@ -46,6 +46,17 @@ a server process, filter by category:
 dotnet test --filter "FullyQualifiedName~RequestScheduling|FullyQualifiedName~JsonRpc|FullyQualifiedName~ProgressReporter"
 ```
 
+### Gradual Expecto migration
+
+The test project is being migrated from NUnit to [Expecto](https://github.com/haf/expecto)
+one file at a time, starting with `InternalTests.fs` as the pilot. Both frameworks coexist
+in the *same* test project: `NUnit3TestAdapter` and `YoloDev.Expecto.TestSdk` are both VSTest
+adapters, so a single `dotnet test` (or `make test`) invocation discovers and runs tests from
+both side by side, with no separate project or custom entry point required. When porting a
+file, factor the assertion logic into a shared private function called from both the NUnit
+`[<Test>]`/`[<TestCase>]` functions and a new Expecto `[<Tests>]` `testList`, so the two
+variants can't silently drift apart while both exist.
+
 ## Test Guidelines
 
 Inside `async {}` handler lambdas passed to the transport or scheduler, never use
