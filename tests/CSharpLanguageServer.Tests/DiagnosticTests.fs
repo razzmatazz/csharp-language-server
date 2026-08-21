@@ -55,7 +55,6 @@ let testWorkspaceDiagnosticsWhileSolutionIsLoading () =
     | None -> ClassicAssert.Fail("Expected Some WorkspaceDiagnosticReport but got None")
 
 [<Test>]
-[<Retry(3)>]
 let testPushDiagnosticsWork () =
     use client = activateFixture "testDiagnosticsWork"
 

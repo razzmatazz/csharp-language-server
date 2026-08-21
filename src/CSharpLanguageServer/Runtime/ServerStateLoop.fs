@@ -512,6 +512,21 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
 
         postServerEvent ProcessRequestQueue
 
+        // Deterministically kick off loading for any folder that was just reset to
+        // Uninitialized above (FolderReconfiguration/WorkspaceReload), instead of
+        // relying on some future request happening to call ctx.LoadWorkspaceFolder
+        // again. Without this, reload was only ever (re-)started as a side effect of
+        // the next LoadWorkspaceFolder call (see ProcessSolutionAwaiters' only other
+        // poster, the LoadWorkspaceFolder handler above) — and under heavy scheduling
+        // contention a request already in flight when draining began (see the
+        // ApplyRequestWorkspaceUpdate accumulate comment above) can resolve
+        // LoadWorkspaceFolder against the *old* workspace before this teardown, so
+        // once the new, empty folder is installed nothing is left to trigger its
+        // load: the workspace gets stuck in Configured/Uninitialized forever
+        // (observed as testDidChangeConfigurationAloneTriggersSolutionReload timing
+        // out under parallel test load).
+        postServerEvent ProcessSolutionAwaiters
+
         return
             { state with
                 Workspace = finalWorkspace
