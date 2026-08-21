@@ -9,7 +9,7 @@ open CSharpLanguageServer.Tests.Fixtures
 
 [<Test>]
 let ``loose document attaches to nearest containing project`` () =
-    use client = activateFixture "nestedProjects"
+    use client = rentFixture "nestedProjects"
     use looseDocument = client.Open("App/Tests/Scratch.cs")
 
     let definitionParams: DefinitionParams =

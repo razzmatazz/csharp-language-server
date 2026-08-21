@@ -259,7 +259,7 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
 [<Test>]
 let testOpeningAndClosingNonExistingCsFileRemovesItFromSolution () =
-    use client = activateFixture "genericProject"
+    use client = rentFixture "genericProject"
 
     let diagnosticsWaitTimeout = TimeSpan.FromSeconds(int64 10)
 
@@ -290,7 +290,7 @@ let testOpeningAndClosingNonExistingCsFileRemovesItFromSolution () =
 
 [<Test>]
 let testOpeningAndClosingNonExistingCshtmlFileRemovesItFromSolution () =
-    use client = activateFixture "aspnetProject"
+    use client = rentFixture "aspnetProject"
 
     let diagnosticsWaitTimeout = TimeSpan.FromSeconds(int64 10)
 
