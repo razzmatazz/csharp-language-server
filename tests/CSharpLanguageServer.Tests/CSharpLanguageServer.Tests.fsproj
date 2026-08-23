@@ -2,7 +2,12 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <!-- We supply our own entry point (Program.fs) instead of the VSTest-generated one,
+         so that `dotnet run`/the built executable can invoke Expecto's own test runner
+         directly (see Program.fs and `make test-expecto`). `dotnet test` still works
+         unaffected: VSTest loads this assembly by reflection and never calls Main. -->
     <GenerateProgramFile>false</GenerateProgramFile>
+    <OutputType>Exe</OutputType>
     <NoWarn>FS0988</NoWarn>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -45,6 +50,8 @@
     <Compile Include="InlayHintTests.fs" />
     <Compile Include="SourceGeneratorTests.fs" />
     <Compile Include="JsonRpcTests.fs" />
+    <!-- Must be last: defines the custom entry point (see GenerateProgramFile above). -->
+    <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
