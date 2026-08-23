@@ -1,17 +1,17 @@
 TEST_PROJECT := tests/CSharpLanguageServer.Tests
 
-space :=
-space +=
-
 # The test project is being migrated from NUnit to Expecto one file at a time (see
 # CONTRIBUTING.md's "Gradual Expecto migration"). Both frameworks' tests live in the same
 # assembly and are both discovered by the YoloDev.Expecto.TestSdk / NUnit3TestAdapter
 # VSTest adapters, so `test-nunit` must exclude every Expecto-migrated test list by name
 # (its `[<Tests>]` testList name) to avoid running it twice: once here via VSTest, once in
-# `test-expecto` via Expecto's own runner. Add the new test list's top-level name here
+# `test-expecto` via Expecto's own runner.
+#
+# Kept as a single literal (rather than built up from a list) because VSTest's --filter
+# operand joining (via `&`) behaved inconsistently across `make` versions/platforms when
+# generated with $(subst)/$(foreach) — see git history. Append `&FullyQualifiedName!~<Name>`
 # whenever another file is ported to Expecto.
-EXPECTO_TEST_LISTS := InternalTests
-EXPECTO_EXCLUDE_FILTER := $(subst $(space),&,$(foreach t,$(EXPECTO_TEST_LISTS),FullyQualifiedName!~$(t)))
+EXPECTO_EXCLUDE_FILTER := FullyQualifiedName!~InternalTests
 
 # Extra args appended to the `dotnet test` / `dotnet run` invocations below, e.g. from CI
 # to add `--no-build`, blame-hang options, a --results-directory, or (after a literal `--`)
