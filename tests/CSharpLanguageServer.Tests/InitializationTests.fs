@@ -545,3 +545,82 @@ let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
 
     Assert.That(client.ServerDidRespondTo "initialize", Is.True)
     Assert.That(client.ClientDidSendNotification "initialized", Is.True)
+
+[<Test>]
+let testSolutionLoadReportsPerProjectProgress () =
+    use client = activateFixture "nestedProjects"
+    use scratchDocument = client.Open("App/Tests/Scratch.cs")
+
+    // any position request blocks until the workspace load completes,
+    // so once it answers the full load progress is in the rpc log
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = scratchDocument.Uri }
+          Position = { Line = 0u; Character = 17u }
+          WorkDoneToken = None }
+
+    let _hover: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    let reports =
+        client.GetRpcLog()
+        |> Seq.filter (fun m ->
+            m.Source = Server
+            && (Some m.Message |> jeStringProp "method") = Some "$/progress")
+        |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> indexJE "value")
+        |> Seq.filter (fun v -> (v |> jeStringProp "kind") = Some "report")
+        |> Seq.map (fun v ->
+            (v |> jeStringProp "message" |> Option.defaultValue ""),
+            (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
+        |> List.ofSeq
+
+    // the fixture solution has two projects, so the load reports two
+    // per-project completions with rising percentages
+    let projectReports = reports |> List.filter (fun (msg, _) -> msg.EndsWith "/2)")
+
+    Assert.That(List.length projectReports, Is.EqualTo(2), sprintf "all report-kind progress seen: %A" reports)
+
+    let percentages = projectReports |> List.choose snd
+
+    Assert.That((percentages = List.sort percentages), Is.True, "percentages should be monotonic")
+    Assert.That(percentages |> List.forall (fun p -> p <= 100u), Is.True)
+    Assert.That(List.last percentages, Is.EqualTo(100u))
+
+[<Test>]
+let testSolutionLoadProgressStaysWithinBoundsWithOutOfSolutionReferences () =
+    // The solution lists one project, but it references another project that
+    // is not a solution member; LoadMetadataForReferencedProjects makes the
+    // workspace load that one too, so more projects load than the solution
+    // file declares. Progress must still stay monotonic and within 100%.
+    use client = activateFixture "solutionWithOutOfSlnReference"
+    use programDocument = client.Open("App/Program.cs")
+
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = programDocument.Uri }
+          Position = { Line = 4u; Character = 26u }
+          WorkDoneToken = None }
+
+    let _hover: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    let reports =
+        client.GetRpcLog()
+        |> Seq.filter (fun m ->
+            m.Source = Server
+            && (Some m.Message |> jeStringProp "method") = Some "$/progress")
+        |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> indexJE "value")
+        |> Seq.filter (fun v -> (v |> jeStringProp "kind") = Some "report")
+        |> Seq.map (fun v ->
+            (v |> jeStringProp "message" |> Option.defaultValue ""),
+            (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
+        |> List.ofSeq
+
+    let projectReports = reports |> List.filter (fun (msg, _) -> msg.Contains "/")
+
+    Assert.That(List.length projectReports, Is.GreaterThanOrEqualTo(2), sprintf "reports seen: %A" reports)
+
+    let percentages = projectReports |> List.choose snd
+    Assert.That((percentages = List.sort percentages), Is.True, "percentages should be monotonic")
+
+    Assert.That(
+        percentages |> List.forall (fun p -> p <= 100u),
+        Is.True,
+        sprintf "percentages should never exceed 100, got %A" percentages
+    )
