@@ -1,33 +1,32 @@
 module CSharpLanguageServer.Tests.InternalTests
 
 open System
-open Expecto
+open NUnit.Framework
+open NUnit.Framework.Legacy
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 
 open CSharpLanguageServer.Roslyn.Solution
 
-let private workspaceTargetFrameworkCases: (string * (string | null)) list =
-    [ "1.csproj:net8.0", "net8.0"
-      "1.csproj:net8.0,net10.0", "net10.0"
-      "1.csproj:net8.0,netstandard2.0", "net8.0"
-      "1.csproj:netstandard1.0,netstandard2.0", "netstandard2.0"
-      "1.csproj:net40,net462,net6.0,net8.0,netcoreapp3.1,netstandard2.0", "net8.0"
-      "1.csproj:net40,net462,net6.0,net8.0,net8.0-windows,netcoreapp3.1,netstandard2.0", "net8.0-windows"
-      "1.csproj:net40,net462", "net462"
-      "1.csproj:net8.0 2.csproj:net8.0", "net8.0"
-      "1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", null
-      "1.csproj:net8.0,net10.0 2.csproj:net8.0,net10.0", "net10.0"
-      "1.csproj:net8.0 2.csproj:net8.0,net10.0", "net8.0"
-      // A TFM that only some projects declare must never become a workspace-global MSBuild
-      // property: it would override the other projects' own TargetFramework and invalidate
-      // their restore output.  See https://github.com/razzmatazz/csharp-language-server/issues/405
-      "1.csproj:net8.0 2.csproj:net9.0-windows", null
-      "1.csproj:net9.0 2.csproj:net9.0-windows", null
-      "1.csproj:net10.0 2.csproj:net10.0-windows", null
-      "1.csproj:net10.0,net10.0-windows 2.csproj:net10.0", "net10.0" ]
-
-let private testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string | null) =
+[<TestCase("1.csproj:net8.0", "net8.0")>]
+[<TestCase("1.csproj:net8.0,net10.0", "net10.0")>]
+[<TestCase("1.csproj:net8.0,netstandard2.0", "net8.0")>]
+[<TestCase("1.csproj:netstandard1.0,netstandard2.0", "netstandard2.0")>]
+[<TestCase("1.csproj:net40,net462,net6.0,net8.0,netcoreapp3.1,netstandard2.0", "net8.0")>]
+[<TestCase("1.csproj:net40,net462,net6.0,net8.0,net8.0-windows,netcoreapp3.1,netstandard2.0", "net8.0-windows")>]
+[<TestCase("1.csproj:net40,net462", "net462")>]
+[<TestCase("1.csproj:net8.0 2.csproj:net8.0", "net8.0")>]
+[<TestCase("1.csproj:net8.0,net10.0 2.csproj:netstandard2.0,net462", null)>]
+[<TestCase("1.csproj:net8.0,net10.0 2.csproj:net8.0,net10.0", "net10.0")>]
+[<TestCase("1.csproj:net8.0 2.csproj:net8.0,net10.0", "net8.0")>]
+// A TFM that only some projects declare must never become a workspace-global MSBuild
+// property: it would override the other projects' own TargetFramework and invalidate
+// their restore output.  See https://github.com/razzmatazz/csharp-language-server/issues/405
+[<TestCase("1.csproj:net8.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net9.0 2.csproj:net9.0-windows", null)>]
+[<TestCase("1.csproj:net10.0 2.csproj:net10.0-windows", null)>]
+[<TestCase("1.csproj:net10.0,net10.0-windows 2.csproj:net10.0", "net10.0")>]
+let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string | null) =
 
     let parseTfmList (projectEntry: string) : string * list<string> =
         let parts = projectEntry.Split(':')
@@ -45,9 +44,10 @@ let private testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm:
         |> Array.map parseTfmList
         |> Map.ofArray
 
-    Expect.equal (workspaceTargetFramework tfmsPerProject) (expectedTfm |> Option.ofObj) "workspaceTargetFramework"
+    ClassicAssert.AreEqual(expectedTfm |> Option.ofObj, workspaceTargetFramework tfmsPerProject)
 
-let private testSymbolGetMetadataNameForGlobalNamespaceType () =
+[<Test>]
+let testSymbolGetMetadataNameForGlobalNamespaceType () =
     // Regression test: symbolGetMetadataName' had a loop with `doContinue = true`
     // initialised unconditionally, so it always executed at least one iteration.
     // For a type in the global namespace the first iteration is correct, but it
@@ -70,20 +70,9 @@ let private testSymbolGetMetadataNameForGlobalNamespaceType () =
     let globalType = compilation.GetTypeByMetadataName("GlobalType")
 
     match globalType |> Option.ofObj with
-    | None -> failwith "GlobalType should be resolvable"
+    | None -> ClassicAssert.Fail("GlobalType should be resolvable")
     | Some globalType ->
         let result = CSharpLanguageServer.Roslyn.Symbol.symbolGetMetadataName globalType
         // Before fix: returns ".GlobalType" (spurious leading dot from the empty global ns name)
         // After fix:  returns "GlobalType"
-        Expect.equal result "GlobalType" "symbolGetMetadataName"
-
-[<Tests>]
-let tests =
-    testList
-        "InternalTests"
-        [ testList
-              "testApplyWorkspaceTargetFrameworkProp"
-              (workspaceTargetFrameworkCases
-               |> List.map (fun (tfmList, expectedTfm) ->
-                   testCase tfmList (fun () -> testApplyWorkspaceTargetFrameworkProp (tfmList, expectedTfm))))
-          testCase "testSymbolGetMetadataNameForGlobalNamespaceType" testSymbolGetMetadataNameForGlobalNamespaceType ]
+        ClassicAssert.AreEqual("GlobalType", result)

@@ -46,33 +46,6 @@ a server process, filter by category:
 dotnet test --filter "FullyQualifiedName~RequestScheduling|FullyQualifiedName~JsonRpc|FullyQualifiedName~ProgressReporter"
 ```
 
-### Gradual Expecto migration
-
-The test project is being migrated from NUnit to [Expecto](https://github.com/haf/expecto)
-one file at a time, starting with `InternalTests.fs` as the pilot. Both frameworks coexist
-in the *same* test project: `NUnit3TestAdapter` and `YoloDev.Expecto.TestSdk` are both VSTest
-adapters, so a single `dotnet test` (or `make test`) invocation discovers and runs tests from
-both side by side, with no separate project or custom entry point required. When porting a
-file, factor the assertion logic into a shared private function called from both the NUnit
-`[<Test>]`/`[<TestCase>]` functions and a new Expecto `[<Tests>]` `testList`, so the two
-variants can't silently drift apart while both exist.
-
-The `Makefile` runs the two frameworks separately instead, so Expecto-migrated suites get
-Expecto's own (more concurrent) test runner rather than going through VSTest:
-
-```
-make test          # test-nunit, then test-expecto
-make test-nunit     # NUnit suite via `dotnet test` (VSTest), excluding migrated suites
-make test-expecto   # Expecto-migrated suites via `dotnet run` (Expecto's own runner)
-```
-
-`test-nunit` excludes each Expecto-migrated test list (by its `testList` name) via
-`--filter`, listed in `EXPECTO_TEST_LISTS` at the top of the `Makefile` — update it whenever
-another file is ported to Expecto, or `test-nunit` and `test-expecto` will run it twice.
-`test-expecto` needs no such list: Expecto discovers every `[<Tests>]` value in the assembly
-by reflection when invoked via its own `main` (`tests/CSharpLanguageServer.Tests/Program.fs`),
-and NUnit `[<Test>]` functions are invisible to that discovery.
-
 ## Test Guidelines
 
 Inside `async {}` handler lambdas passed to the transport or scheduler, never use

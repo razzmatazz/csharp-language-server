@@ -2,12 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
-    <!-- We supply our own entry point (Program.fs) instead of the VSTest-generated one,
-         so that `dotnet run`/the built executable can invoke Expecto's own test runner
-         directly (see Program.fs and `make test-expecto`). `dotnet test` still works
-         unaffected: VSTest loads this assembly by reflection and never calls Main. -->
     <GenerateProgramFile>false</GenerateProgramFile>
-    <OutputType>Exe</OutputType>
     <NoWarn>FS0988</NoWarn>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -50,18 +45,12 @@
     <Compile Include="InlayHintTests.fs" />
     <Compile Include="SourceGeneratorTests.fs" />
     <Compile Include="JsonRpcTests.fs" />
-    <!-- Must be last: defines the custom entry point (see GenerateProgramFile above). -->
-    <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
-    <!-- Expecto migration pilot (InternalTests.fs) — coexists with NUnit3TestAdapter above;
-         both are VSTest adapters discovered together by `dotnet test`. -->
-    <PackageReference Include="Expecto" />
-    <PackageReference Include="YoloDev.Expecto.TestSdk" />
     <PackageReference Include="coverlet.collector">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
