@@ -2,7 +2,6 @@ module CSharpLanguageServer.Tests.ProgressReporterTests
 
 open System
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.JsonRpc
@@ -113,12 +112,12 @@ let ``ProgressReporter Report and End are no-ops when capability not supported``
     reporter.Begin("Test Title") |> Async.RunSynchronously
 
     // Report and End should not throw
-    ClassicAssert.DoesNotThrowAsync(
+    Assert.DoesNotThrowAsync(
         System.Func<System.Threading.Tasks.Task>(fun () ->
             reporter.Report(message = "Progress") |> Async.StartAsTask :> System.Threading.Tasks.Task)
     )
 
-    ClassicAssert.DoesNotThrowAsync(
+    Assert.DoesNotThrowAsync(
         System.Func<System.Threading.Tasks.Task>(fun () ->
             reporter.End(message = "Done") |> Async.StartAsTask :> System.Threading.Tasks.Task)
     )

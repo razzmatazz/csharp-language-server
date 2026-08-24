@@ -7,7 +7,6 @@ open System.Text.RegularExpressions
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Text
 open NUnit.Framework
-open NUnit.Framework.Legacy
 
 open CSharpLanguageServer.Lsp.WorkspaceFolder
 
@@ -50,8 +49,8 @@ let ``document resolves by its file uri`` () =
     let wf = makeWorkspaceFolder solution
 
     match workspaceFolderDocument AnyDocument (fileUri path) wf with
-    | Some doc -> ClassicAssert.AreEqual(path, doc.FilePath)
-    | None -> ClassicAssert.Fail("document should resolve by its own uri")
+    | Some doc -> Assert.That(doc.FilePath, Is.EqualTo(path))
+    | None -> Assert.Fail("document should resolve by its own uri")
 
 [<Test>]
 let ``document resolves by a vscode style uri with an encoded drive colon`` () =
@@ -61,8 +60,8 @@ let ``document resolves by a vscode style uri with an encoded drive colon`` () =
     let wf = makeWorkspaceFolder solution
 
     match workspaceFolderDocument AnyDocument (vsCodeStyleUri path) wf with
-    | Some doc -> ClassicAssert.AreEqual(path, doc.FilePath)
-    | None -> ClassicAssert.Fail("document should resolve from a %3A-encoded uri")
+    | Some doc -> Assert.That(doc.FilePath, Is.EqualTo(path))
+    | None -> Assert.Fail("document should resolve from a %3A-encoded uri")
 
 [<Test>]
 let ``document resolves from a differently cased uri`` () =
@@ -76,8 +75,8 @@ let ``document resolves from a differently cased uri`` () =
     let wf = makeWorkspaceFolder solution
 
     match workspaceFolderDocument AnyDocument (fileUri (path.ToUpperInvariant())) wf with
-    | Some doc -> ClassicAssert.AreEqual(path, doc.FilePath)
-    | None -> ClassicAssert.Fail("document should resolve regardless of path casing")
+    | Some doc -> Assert.That(doc.FilePath, Is.EqualTo(path))
+    | None -> Assert.Fail("document should resolve regardless of path casing")
 
 [<Test>]
 let ``a path shared by two projects resolves to none`` () =
@@ -92,8 +91,9 @@ let ``a path shared by two projects resolves to none`` () =
     let solution = addSourceDocument solution otherProject.Id "Linked.cs" path
     let wf = makeWorkspaceFolder solution
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         (workspaceFolderDocument AnyDocument (fileUri path) wf).IsNone,
+        Is.True,
         "an ambiguous path (linked into two projects) should resolve to None"
     )
 
@@ -117,8 +117,8 @@ let ``a path that is also an additional document still resolves to the source do
     let wf = makeWorkspaceFolder solution
 
     match workspaceFolderDocument AnyDocument (fileUri path) wf with
-    | Some doc -> ClassicAssert.AreEqual(path, doc.FilePath)
-    | None -> ClassicAssert.Fail("the source document should win over a same-path additional document")
+    | Some doc -> Assert.That(doc.FilePath, Is.EqualTo(path))
+    | None -> Assert.Fail("the source document should win over a same-path additional document")
 
 [<Test>]
 let ``an additional-document-only path resolves to none`` () =
@@ -135,7 +135,8 @@ let ``an additional-document-only path resolves to none`` () =
 
     let wf = makeWorkspaceFolder solution
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         (workspaceFolderDocument AnyDocument (fileUri path) wf).IsNone,
+        Is.True,
         "a path known only as an additional document is not a source document"
     )

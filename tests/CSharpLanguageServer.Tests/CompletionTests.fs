@@ -4,7 +4,6 @@ open System.Threading
 open System.Text.Json.Nodes
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -23,7 +22,7 @@ let ``completion works in a .cs file`` () =
         |> Option.bind _.ResolveProvider
         |> Option.defaultValue false
 
-    ClassicAssert.IsTrue(haveResolveProvider)
+    Assert.That(haveResolveProvider, Is.True)
 
     use classFile = client.Open("Project/ClassForCompletionTests.cs")
 
@@ -39,60 +38,60 @@ let ``completion works in a .cs file`` () =
 
     match completion0 with
     | Some(U2.C2 cl) ->
-        ClassicAssert.IsTrue(cl.IsIncomplete)
-        ClassicAssert.IsFalse(cl.ItemDefaults.IsSome)
-        ClassicAssert.AreEqual(6, cl.Items.Length)
+        Assert.That(cl.IsIncomplete, Is.True)
+        Assert.That(cl.ItemDefaults.IsSome, Is.False)
+        Assert.That(cl.Items.Length, Is.EqualTo(6))
 
         let methodAItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodA")
 
         match methodAItem with
         | None -> failwith "an item with Label 'MethodA' was expected for completion at this position"
         | Some item ->
-            ClassicAssert.AreEqual(item.Label, "MethodA")
-            ClassicAssert.IsFalse(item.Detail.IsSome)
-            ClassicAssert.IsFalse(item.Documentation.IsSome)
-            ClassicAssert.IsFalse(item.Tags.IsSome)
-            ClassicAssert.AreEqual(item.InsertText, Some "MethodA")
-            ClassicAssert.AreEqual(Some CompletionItemKind.Method, item.Kind)
-            ClassicAssert.AreEqual(Some "MethodA", item.SortText)
-            ClassicAssert.AreEqual(Some "MethodA", item.FilterText)
-            ClassicAssert.AreEqual(None, item.InsertTextFormat)
-            ClassicAssert.IsFalse(item.CommitCharacters.IsSome)
-            ClassicAssert.IsFalse(item.TextEdit.IsSome)
-            ClassicAssert.IsTrue(item.Data.IsSome)
+            Assert.That(item.Label, Is.EqualTo("MethodA"))
+            Assert.That(item.Detail.IsSome, Is.False)
+            Assert.That(item.Documentation.IsSome, Is.False)
+            Assert.That(item.Tags.IsSome, Is.False)
+            Assert.That(item.InsertText, Is.EqualTo(Some "MethodA"))
+            Assert.That(item.Kind, Is.EqualTo(Some CompletionItemKind.Method))
+            Assert.That(item.SortText, Is.EqualTo(Some "MethodA"))
+            Assert.That(item.FilterText, Is.EqualTo(Some "MethodA"))
+            Assert.That(item.InsertTextFormat, Is.EqualTo(None))
+            Assert.That(item.CommitCharacters.IsSome, Is.False)
+            Assert.That(item.TextEdit.IsSome, Is.False)
+            Assert.That(item.Data.IsSome, Is.True)
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            ClassicAssert.AreEqual(itemResolved.Detail, Some "void ClassForCompletion.MethodA(string arg)")
-            ClassicAssert.IsFalse(itemResolved.Documentation.IsSome)
+            Assert.That(itemResolved.Detail, Is.EqualTo(Some "void ClassForCompletion.MethodA(string arg)"))
+            Assert.That(itemResolved.Documentation.IsSome, Is.False)
 
         let getHashCodeItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "GetHashCode")
 
         match getHashCodeItem with
         | None -> failwith "an item with Label 'GetHashCode' was expected for completion at this position"
         | Some item ->
-            ClassicAssert.AreEqual(item.Label, "GetHashCode")
-            ClassicAssert.IsFalse(item.Detail.IsSome)
-            ClassicAssert.IsFalse(item.Documentation.IsSome)
-            ClassicAssert.IsFalse(item.Tags.IsSome)
-            ClassicAssert.AreEqual(item.InsertText, Some "GetHashCode")
-            ClassicAssert.AreEqual(Some CompletionItemKind.Method, item.Kind)
-            ClassicAssert.AreEqual(Some "GetHashCode", item.SortText)
-            ClassicAssert.AreEqual(Some "GetHashCode", item.FilterText)
-            ClassicAssert.AreEqual(None, item.InsertTextFormat)
-            ClassicAssert.IsFalse(item.CommitCharacters.IsSome)
-            ClassicAssert.IsFalse(item.TextEdit.IsSome)
-            ClassicAssert.IsTrue(item.Data.IsSome)
+            Assert.That(item.Label, Is.EqualTo("GetHashCode"))
+            Assert.That(item.Detail.IsSome, Is.False)
+            Assert.That(item.Documentation.IsSome, Is.False)
+            Assert.That(item.Tags.IsSome, Is.False)
+            Assert.That(item.InsertText, Is.EqualTo(Some "GetHashCode"))
+            Assert.That(item.Kind, Is.EqualTo(Some CompletionItemKind.Method))
+            Assert.That(item.SortText, Is.EqualTo(Some "GetHashCode"))
+            Assert.That(item.FilterText, Is.EqualTo(Some "GetHashCode"))
+            Assert.That(item.InsertTextFormat, Is.EqualTo(None))
+            Assert.That(item.CommitCharacters.IsSome, Is.False)
+            Assert.That(item.TextEdit.IsSome, Is.False)
+            Assert.That(item.Data.IsSome, Is.True)
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            ClassicAssert.AreEqual(itemResolved.Detail, Some "int object.GetHashCode()")
-            ClassicAssert.IsTrue(itemResolved.Documentation.IsSome)
+            Assert.That(itemResolved.Detail, Is.EqualTo(Some "int object.GetHashCode()"))
+            Assert.That(itemResolved.Documentation.IsSome, Is.True)
 
             match itemResolved.Documentation with
             | Some(U2.C2 markup) ->
-                ClassicAssert.AreEqual(MarkupKind.PlainText, markup.Kind)
-                ClassicAssert.AreEqual("Serves as the default hash function.", markup.Value)
+                Assert.That(markup.Kind, Is.EqualTo(MarkupKind.PlainText))
+                Assert.That(markup.Value, Is.EqualTo("Serves as the default hash function."))
             | _ -> failwith "Documentation w/ Kind=Markdown was expected for GetHashCode"
 
             ()
@@ -120,26 +119,26 @@ let ``completion works for extension methods`` () =
 
     match completion0 with
     | Some(U2.C2 cl) ->
-        ClassicAssert.AreEqual(7, cl.Items.Length)
+        Assert.That(cl.Items.Length, Is.EqualTo(7))
 
         let methodBItem = cl.Items |> Seq.tryFind (fun i -> i.Label = "MethodB")
 
         match methodBItem with
         | None -> failwith "an item with Label 'MethodB' was expected for completion at this position"
         | Some item ->
-            ClassicAssert.AreEqual("MethodB", item.Label)
-            ClassicAssert.IsFalse(item.Detail.IsSome)
-            ClassicAssert.IsFalse(item.Documentation.IsSome)
-            ClassicAssert.AreEqual(Some CompletionItemKind.Method, item.Kind)
+            Assert.That(item.Label, Is.EqualTo("MethodB"))
+            Assert.That(item.Detail.IsSome, Is.False)
+            Assert.That(item.Documentation.IsSome, Is.False)
+            Assert.That(item.Kind, Is.EqualTo(Some CompletionItemKind.Method))
 
             let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-            ClassicAssert.AreEqual(
+            Assert.That(
                 itemResolved.Detail,
-                Some "(extension) string ClassForCompletionWithExtensionMethods.MethodB()"
+                Is.EqualTo(Some "(extension) string ClassForCompletionWithExtensionMethods.MethodB()")
             )
 
-            ClassicAssert.IsFalse(itemResolved.Documentation.IsSome)
+            Assert.That(itemResolved.Documentation.IsSome, Is.False)
 
     | _ -> failwith "Some U2.C1 was expected"
 
@@ -156,8 +155,8 @@ let ``completion works in cshtml files`` () =
         character
         expectedLabel
         expectedCompletionItemKind
-        expectedDetail
-        documentationTestFn
+        (expectedDetail: string)
+        (documentationTestFn: U2<string, MarkupContent> option -> bool)
         =
         let completionParams0: CompletionParams =
             { TextDocument = { Uri = cshtmlFile.Uri }
@@ -176,15 +175,15 @@ let ``completion works in cshtml files`` () =
             match expectedItem with
             | None -> failwithf "an item with Label '%s' was expected for completion at this position" expectedLabel
             | Some item ->
-                ClassicAssert.AreEqual(expectedLabel, item.Label)
-                ClassicAssert.IsFalse(item.Detail.IsSome)
-                ClassicAssert.IsFalse(item.Documentation.IsSome)
-                ClassicAssert.AreEqual(Some expectedCompletionItemKind, item.Kind)
+                Assert.That(item.Label, Is.EqualTo(expectedLabel))
+                Assert.That(item.Detail.IsSome, Is.False)
+                Assert.That(item.Documentation.IsSome, Is.False)
+                Assert.That(item.Kind, Is.EqualTo(Some expectedCompletionItemKind))
 
                 let itemResolved: CompletionItem = client.Request("completionItem/resolve", item)
 
-                ClassicAssert.AreEqual(Some expectedDetail, itemResolved.Detail)
-                ClassicAssert.IsTrue(documentationTestFn itemResolved.Documentation)
+                Assert.That(itemResolved.Detail, Is.EqualTo(Some expectedDetail))
+                Assert.That(documentationTestFn itemResolved.Documentation, Is.True)
 
         | _ -> failwith "Some U2.C1 was expected"
 
@@ -280,4 +279,4 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
     // This must not throw (i.e. the server must not return a -32603 error).
     let resolved: CompletionItem = client.Request("completionItem/resolve", itemJson)
 
-    ClassicAssert.AreEqual(Some "void ClassForCompletion.MethodA(string arg)", resolved.Detail)
+    Assert.That(resolved.Detail, Is.EqualTo(Some "void ClassForCompletion.MethodA(string arg)"))

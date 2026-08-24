@@ -6,7 +6,6 @@ open System.Text
 open System.Threading
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -49,7 +48,11 @@ let testDidChangeWatchedFilesChangedCsFileReloadsDocument () =
             report.Items
             |> Array.filter (fun d -> d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-        ClassicAssert.AreEqual(0, errorItems.Length, "Expected no compiler errors on baseline")
+        Assert.That(
+            errorItems.Length,
+            Is.EqualTo(0),
+            System.Func<string>(fun () -> "Expected no compiler errors on baseline")
+        )
     | _ -> failwith "U2.C1 is expected"
 
     // Overwrite the file on disk with broken C# and notify the server
@@ -120,7 +123,7 @@ let testDidChangeWatchedFilesCreatedCsFileAddsDocument () =
 
     // Verify the new file is not yet in the solution
     let itemsBefore = newFileUri |> getWorkspaceDiagnosticsForUri client
-    ClassicAssert.AreEqual(0, itemsBefore.Length)
+    Assert.That(itemsBefore.Length, Is.EqualTo(0))
 
     // Write a broken C# file to disk and send Created notification.
     // Using a file with errors means the server will emit a diagnostic entry,
@@ -163,7 +166,7 @@ let testDidChangeWatchedFilesChangedCshtmlFileReloadsDocument () =
         client.Request("textDocument/diagnostic", diagnosticParams)
 
     match report0 with
-    | Some(U2.C1 report) -> ClassicAssert.AreEqual(0, report.Items.Length)
+    | Some(U2.C1 report) -> Assert.That(report.Items.Length, Is.EqualTo(0))
     | _ -> failwith "U2.C1 is expected"
 
     // Overwrite the .cshtml file with invalid Razor referencing a missing property
@@ -244,5 +247,5 @@ let testWorkspaceFolderRoutingUsesContainmentAndLongestRoot () =
     let nested =
         workspace |> workspaceFolder "file:///workspace/application/src/Program.cs"
 
-    ClassicAssert.AreEqual(Some "parent", sibling |> Option.map _.Name)
-    ClassicAssert.AreEqual(Some "nested", nested |> Option.map _.Name)
+    Assert.That(sibling |> Option.map _.Name, Is.EqualTo(Some "parent"))
+    Assert.That(nested |> Option.map _.Name, Is.EqualTo(Some "nested"))

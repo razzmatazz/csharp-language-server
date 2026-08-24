@@ -3,7 +3,6 @@ module CSharpLanguageServer.Tests.ReconfigurationTests
 open System
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -36,7 +35,7 @@ let testReadyToReconfiguringToConfiguredPhaseTransition () =
 
     // SolutionA has a "hello_A" diagnostic
     let diagsA0 = getWorkspaceDiagnosticsForUri client projectAUri
-    ClassicAssert.IsTrue(diagsA0 |> List.exists (fun d -> d.Message.Contains "hello_A"))
+    Assert.That(diagsA0 |> List.exists (fun d -> d.Message.Contains "hello_A"), Is.True)
 
     // Switch to SolutionB
     client.Notify(
@@ -61,10 +60,10 @@ let testReadyToReconfiguringToConfiguredPhaseTransition () =
 
     // SolutionB has a "42_B" diagnostic; ProjectA has none
     let diagsB = getWorkspaceDiagnosticsForUri client projectBUri
-    ClassicAssert.IsTrue(diagsB |> List.exists (fun d -> d.Message.Contains "42_B"))
+    Assert.That(diagsB |> List.exists (fun d -> d.Message.Contains "42_B"), Is.True)
 
     let diagsA1 = getWorkspaceDiagnosticsForUri client projectAUri
-    ClassicAssert.AreEqual(0, diagsA1.Length)
+    Assert.That(diagsA1.Length, Is.EqualTo(0))
 
 [<Test>]
 let testDidChangeConfigurationAloneTriggersSolutionReload () =
@@ -92,7 +91,7 @@ let testDidChangeConfigurationAloneTriggersSolutionReload () =
 
     // SolutionA has a "hello_A" diagnostic
     let diagsA0 = getWorkspaceDiagnosticsForUri client projectAUri
-    ClassicAssert.IsTrue(diagsA0 |> List.exists (fun d -> d.Message.Contains "hello_A"))
+    Assert.That(diagsA0 |> List.exists (fun d -> d.Message.Contains "hello_A"), Is.True)
 
     // Switch to SolutionB via didChangeConfiguration ONLY — no didChangeWorkspaceFolders
     client.Notify(
@@ -110,10 +109,10 @@ let testDidChangeConfigurationAloneTriggersSolutionReload () =
 
     // SolutionB has a "42_B" diagnostic; ProjectA has none
     let diagsB = getWorkspaceDiagnosticsForUri client projectBUri
-    ClassicAssert.IsTrue(diagsB |> List.exists (fun d -> d.Message.Contains "42_B"))
+    Assert.That(diagsB |> List.exists (fun d -> d.Message.Contains "42_B"), Is.True)
 
     let diagsA1 = getWorkspaceDiagnosticsForUri client projectAUri
-    ClassicAssert.AreEqual(0, diagsA1.Length)
+    Assert.That(diagsA1.Length, Is.EqualTo(0))
 
 [<Test>]
 let testRemovingFinalWorkspaceFolderLeavesResponsiveConfiguredWorkspace () =
@@ -139,5 +138,5 @@ let testRemovingFinalWorkspaceFolderLeavesResponsiveConfiguredWorkspace () =
     let _: Hover option = client.Request("textDocument/hover", hoverParams)
 
     let workspace = client.GetDebugInfo().workspace
-    ClassicAssert.AreEqual("Configured", workspace.phase)
-    ClassicAssert.IsTrue(workspace.folders.IsEmpty)
+    Assert.That(workspace.phase, Is.EqualTo("Configured"))
+    Assert.That(workspace.folders.IsEmpty, Is.True)

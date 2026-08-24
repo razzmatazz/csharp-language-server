@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Tests.CallHierarchyTests
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -22,13 +21,13 @@ let testCallHierarchyIncomingCallsWorks () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodA")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for MethodA")
     | Some items ->
-        ClassicAssert.AreEqual(1, items.Length)
+        Assert.That(items.Length, Is.EqualTo(1))
 
         let methodAItem = items[0]
-        ClassicAssert.AreEqual("MethodA(string)", methodAItem.Name)
-        ClassicAssert.AreEqual(SymbolKind.Method, methodAItem.Kind)
+        Assert.That(methodAItem.Name, Is.EqualTo("MethodA(string)"))
+        Assert.That(methodAItem.Kind, Is.EqualTo(SymbolKind.Method))
 
         // Step 2: Get incoming calls for MethodA - should find MethodB as caller
         let incomingCallsParams: CallHierarchyIncomingCallsParams =
@@ -40,17 +39,17 @@ let testCallHierarchyIncomingCallsWorks () =
             client.Request("callHierarchy/incomingCalls", incomingCallsParams)
 
         match incomingCallsResult with
-        | None -> ClassicAssert.Fail("incomingCalls should return a result")
+        | None -> Assert.Fail("incomingCalls should return a result")
         | Some incomingCalls ->
-            ClassicAssert.AreEqual(1, incomingCalls.Length)
+            Assert.That(incomingCalls.Length, Is.EqualTo(1))
 
             let incomingCall = incomingCalls[0]
-            ClassicAssert.AreEqual("MethodB(string)", incomingCall.From.Name)
-            ClassicAssert.AreEqual(SymbolKind.Method, incomingCall.From.Kind)
+            Assert.That(incomingCall.From.Name, Is.EqualTo("MethodB(string)"))
+            Assert.That(incomingCall.From.Kind, Is.EqualTo(SymbolKind.Method))
 
             // FromRanges should point to the location where MethodA is called in MethodB (line 12)
-            ClassicAssert.AreEqual(1, incomingCall.FromRanges.Length, "Should have one call site")
-            ClassicAssert.AreEqual(12u, incomingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
+            Assert.That(incomingCall.FromRanges.Length, Is.EqualTo(1), "Should have one call site")
+            Assert.That(incomingCall.FromRanges[0].Start.Line, Is.EqualTo(12u), "Call site should be on line 12")
 
 [<Test>]
 let testCallHierarchyOutgoingCallsWorks () =
@@ -67,12 +66,12 @@ let testCallHierarchyOutgoingCallsWorks () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodB")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for MethodB")
     | Some items ->
-        ClassicAssert.AreEqual(1, items.Length)
+        Assert.That(items.Length, Is.EqualTo(1))
 
         let methodBItem = items[0]
-        ClassicAssert.AreEqual("MethodB(string)", methodBItem.Name)
+        Assert.That(methodBItem.Name, Is.EqualTo("MethodB(string)"))
 
         // Step 2: Get outgoing calls for MethodB - should find the call to MethodA
         let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
@@ -84,17 +83,17 @@ let testCallHierarchyOutgoingCallsWorks () =
             client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
 
         match outgoingCallsResult with
-        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | None -> Assert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
-            ClassicAssert.AreEqual(1, outgoingCalls.Length)
+            Assert.That(outgoingCalls.Length, Is.EqualTo(1))
 
             let outgoingCall = outgoingCalls[0]
-            ClassicAssert.AreEqual("MethodA(string)", outgoingCall.To.Name)
-            ClassicAssert.AreEqual(SymbolKind.Method, outgoingCall.To.Kind)
+            Assert.That(outgoingCall.To.Name, Is.EqualTo("MethodA(string)"))
+            Assert.That(outgoingCall.To.Kind, Is.EqualTo(SymbolKind.Method))
 
             // FromRanges should point to the call site of MethodA inside MethodB (line 12)
-            ClassicAssert.AreEqual(1, outgoingCall.FromRanges.Length, "Should have one call site")
-            ClassicAssert.AreEqual(12u, outgoingCall.FromRanges[0].Start.Line, "Call site should be on line 12")
+            Assert.That(outgoingCall.FromRanges.Length, Is.EqualTo(1), "Should have one call site")
+            Assert.That(outgoingCall.FromRanges[0].Start.Line, Is.EqualTo(12u), "Call site should be on line 12")
 
 [<Test>]
 let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
@@ -113,7 +112,7 @@ let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for MethodA")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for MethodA")
     | Some items ->
         let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
             { Item = items[0]
@@ -124,8 +123,8 @@ let testCallHierarchyOutgoingCallsReturnsEmptyNotNullWhenNoVisibleTargets () =
             client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
 
         match outgoingCallsResult with
-        | None -> ClassicAssert.Fail("outgoingCalls should return [] for a callable symbol, not null")
-        | Some outgoingCalls -> ClassicAssert.AreEqual(0, outgoingCalls.Length)
+        | None -> Assert.Fail("outgoingCalls should return [] for a callable symbol, not null")
+        | Some outgoingCalls -> Assert.That(outgoingCalls.Length, Is.EqualTo(0))
 
 [<Test>]
 let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
@@ -145,7 +144,7 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for Orchestrator")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for Orchestrator")
     | Some items ->
         let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
             { Item = items[0]
@@ -156,13 +155,13 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
             client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
 
         match outgoingCallsResult with
-        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | None -> Assert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
             let byName = outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
 
-            ClassicAssert.AreEqual(
-                [| "Helper(int)"; "LocalHelper()"; "Render()"; "Widget()" |],
+            Assert.That(
                 byName |> Array.map fst,
+                Is.EqualTo(box [| "Helper(int)"; "LocalHelper()"; "Render()"; "Widget()" |]),
                 "Expected the ctor, the lambda/local-function targets and the instance call; delegate Invoke has no source and is dropped"
             )
 
@@ -174,11 +173,11 @@ let testCallHierarchyOutgoingCallsCoverComplexCallSites () =
             let helperLines =
                 (call "Helper(int)").FromRanges |> Array.map _.Start.Line |> Array.sort
 
-            ClassicAssert.AreEqual([| 7u; 14u |], helperLines)
+            Assert.That(helperLines, Is.EqualTo(box [| 7u; 14u |]))
 
-            ClassicAssert.AreEqual(6u, (call "Widget()").FromRanges[0].Start.Line, "ctor call site")
-            ClassicAssert.AreEqual(8u, (call "LocalHelper()").FromRanges[0].Start.Line, "local function call site")
-            ClassicAssert.AreEqual(10u, (call "Render()").FromRanges[0].Start.Line, "instance call site")
+            Assert.That((call "Widget()").FromRanges[0].Start.Line, Is.EqualTo(6u), "ctor call site")
+            Assert.That((call "LocalHelper()").FromRanges[0].Start.Line, Is.EqualTo(8u), "local function call site")
+            Assert.That((call "Render()").FromRanges[0].Start.Line, Is.EqualTo(10u), "instance call site")
 
 [<Test>]
 let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethods () =
@@ -196,7 +195,7 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for CallsBoth")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for CallsBoth")
     | Some items ->
         let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
             { Item = items[0]
@@ -207,15 +206,15 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
             client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
 
         match outgoingCallsResult with
-        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | None -> Assert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
             let byName = outgoingCalls |> Array.map (fun c -> c.To.Name, c) |> Array.sortBy fst
 
             // Echo<int> and Echo<string> are the SAME method: constructed
             // generics must group to one target under the original definition.
-            ClassicAssert.AreEqual(
-                [| "Echo<T>(T)"; "Shout()" |],
+            Assert.That(
                 byName |> Array.map fst,
+                Is.EqualTo(box [| "Echo<T>(T)"; "Shout()" |]),
                 "Constructed generic instantiations should group to one target; the extension method should be found"
             )
 
@@ -225,8 +224,8 @@ let testCallHierarchyOutgoingCallsGroupConstructedGenericsAndFindExtensionMethod
             let echoLines =
                 (call "Echo<T>(T)").FromRanges |> Array.map _.Start.Line |> Array.sort
 
-            ClassicAssert.AreEqual([| 36u; 37u |], echoLines, "Both instantiations' call sites should be present")
-            ClassicAssert.AreEqual(38u, (call "Shout()").FromRanges[0].Start.Line, "extension method call site")
+            Assert.That(echoLines, Is.EqualTo(box [| 36u; 37u |]), "Both instantiations' call sites should be present")
+            Assert.That((call "Shout()").FromRanges[0].Start.Line, Is.EqualTo(38u), "extension method call site")
 
 [<Test>]
 let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
@@ -259,15 +258,15 @@ let testCallHierarchyOutgoingCallsIncludeConstructorInitializers () =
 
     // ChainDerived() : this(5) - the chained ctor is an outgoing call (line 58)
     let fromParameterless = outgoingFor 58u 11u
-    ClassicAssert.AreEqual(1, fromParameterless.Length)
-    ClassicAssert.AreEqual("ChainDerived(int)", fromParameterless[0].To.Name)
-    ClassicAssert.AreEqual(58u, fromParameterless[0].FromRanges[0].Start.Line, "this(5) call site")
+    Assert.That(fromParameterless.Length, Is.EqualTo(1))
+    Assert.That(fromParameterless[0].To.Name, Is.EqualTo("ChainDerived(int)"))
+    Assert.That(fromParameterless[0].FromRanges[0].Start.Line, Is.EqualTo(58u), "this(5) call site")
 
     // ChainDerived(int) : base(size) - the base ctor is an outgoing call (line 62)
     let fromSized = outgoingFor 62u 11u
-    ClassicAssert.AreEqual(1, fromSized.Length)
-    ClassicAssert.AreEqual("ChainBase(int)", fromSized[0].To.Name)
-    ClassicAssert.AreEqual(62u, fromSized[0].FromRanges[0].Start.Line, "base(size) call site")
+    Assert.That(fromSized.Length, Is.EqualTo(1))
+    Assert.That(fromSized[0].To.Name, Is.EqualTo("ChainBase(int)"))
+    Assert.That(fromSized[0].FromRanges[0].Start.Line, Is.EqualTo(62u), "base(size) call site")
 
 [<Test>]
 let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
@@ -290,7 +289,7 @@ let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | None -> ClassicAssert.Fail("prepareCallHierarchy should return a result for Start")
+    | None -> Assert.Fail("prepareCallHierarchy should return a result for Start")
     | Some items ->
         let outgoingCallsParams: CallHierarchyOutgoingCallsParams =
             { Item = items[0]
@@ -301,15 +300,15 @@ let testCallHierarchyOutgoingCallsAnchorAtTheCalleeNameToken () =
             client.Request("callHierarchy/outgoingCalls", outgoingCallsParams)
 
         match outgoingCallsResult with
-        | None -> ClassicAssert.Fail("outgoingCalls should return a result")
+        | None -> Assert.Fail("outgoingCalls should return a result")
         | Some outgoingCalls ->
-            ClassicAssert.AreEqual(1, outgoingCalls.Length, "Both chain links call the same method")
+            Assert.That(outgoingCalls.Length, Is.EqualTo(1), "Both chain links call the same method")
 
             let stepLines = outgoingCalls[0].FromRanges |> Array.map _.Start.Line |> Array.sort
 
-            ClassicAssert.AreEqual(
-                [| 72u; 73u |],
+            Assert.That(
                 stepLines,
+                Is.EqualTo(box [| 72u; 73u |]),
                 "Each chained call should anchor on its own callee name line"
             )
 
@@ -328,5 +327,5 @@ let testCallHierarchyPrepareReturnsNoneForNonCallableSymbol () =
         client.Request("textDocument/prepareCallHierarchy", prepareParams)
 
     match prepareResult with
-    | Some _ -> ClassicAssert.Fail("prepareCallHierarchy should return None for non-callable symbols")
+    | Some _ -> Assert.Fail("prepareCallHierarchy should return None for non-callable symbols")
     | None -> ()

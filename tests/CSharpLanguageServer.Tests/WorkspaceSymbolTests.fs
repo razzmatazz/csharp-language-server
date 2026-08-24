@@ -1,7 +1,6 @@
 module CSharpLanguageServer.Tests.WorkspaceSymbolTests
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -12,7 +11,7 @@ let testWorkspaceSymbolWorks () =
     use client = rentFixture "genericProject"
 
     let serverCaps = client.ServerCapabilities.Value
-    ClassicAssert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
+    Assert.That(serverCaps.WorkspaceSymbolProvider, Is.EqualTo(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some))
 
     use classFile = client.Open("Project/Class.cs")
 
@@ -26,14 +25,14 @@ let testWorkspaceSymbolWorks () =
 
     match symbols0 with
     | Some(U2.C1 sis) ->
-        ClassicAssert.AreEqual(4, sis.Length)
+        Assert.That(sis.Length, Is.EqualTo(4))
 
         let sym0 = sis[0]
-        ClassicAssert.AreEqual("Class", sym0.Name)
-        ClassicAssert.AreEqual(SymbolKind.Class, sym0.Kind)
-        ClassicAssert.IsFalse(sym0.Tags.IsSome)
-        ClassicAssert.IsFalse(sym0.ContainerName.IsSome)
-        ClassicAssert.AreEqual(classFile.Uri, sym0.Location.Uri)
+        Assert.That(sym0.Name, Is.EqualTo("Class"))
+        Assert.That(sym0.Kind, Is.EqualTo(SymbolKind.Class))
+        Assert.That(sym0.Tags.IsSome, Is.False)
+        Assert.That(sym0.ContainerName.IsSome, Is.False)
+        Assert.That(sym0.Location.Uri, Is.EqualTo(classFile.Uri))
         ()
 
     | _ -> failwith "Some U2.C1 was expected"

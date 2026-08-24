@@ -3,7 +3,6 @@ module CSharpLanguageServer.Tests.CodeActionTests
 open System
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 
 open CSharpLanguageServer.Tests.Tooling
@@ -35,11 +34,11 @@ let ``code action menu appears on request`` (tfm: string) =
         client.Request("textDocument/codeAction", caParams)
 
     let assertCodeActionHasTitle (ca: CodeAction, title: string) =
-        ClassicAssert.AreEqual(title, ca.Title)
-        ClassicAssert.AreEqual(None, ca.Kind)
-        ClassicAssert.AreEqual(None, ca.Diagnostics)
-        ClassicAssert.AreEqual(None, ca.Disabled)
-        ClassicAssert.IsTrue(ca.Edit.IsSome)
+        Assert.That(ca.Title, Is.EqualTo(title))
+        Assert.That(ca.Kind, Is.EqualTo(None))
+        Assert.That(ca.Diagnostics, Is.EqualTo(None))
+        Assert.That(ca.Disabled, Is.EqualTo(None))
+        Assert.That(ca.Edit.IsSome, Is.True)
 
     match tfm, Environment.OSVersion.Platform with
     | "net8.0", PlatformID.Win32NT -> () // this particular variant fails consistently as of Roslyn 5.0.0
@@ -81,7 +80,7 @@ let ``extract base class request extracts base class`` () =
         client.Request("textDocument/codeAction", caParams0)
 
     match caResult with
-    | Some [| U2.C2 x |] -> ClassicAssert.AreEqual("Extract base class...", x.Title)
+    | Some [| U2.C2 x |] -> Assert.That(x.Title, Is.EqualTo("Extract base class..."))
     // TODO: match extract base class edit structure
 
     | _ -> failwith "Some [| U2.C2 x |] was expected"
@@ -111,7 +110,7 @@ let ``extract interface code action should extract an interface`` () =
     let codeAction =
         match caOptions |> Option.bind (Array.tryItem 1) with
         | Some(U2.C2 ca) ->
-            ClassicAssert.AreEqual("Extract interface...", ca.Title)
+            Assert.That(ca.Title, Is.EqualTo("Extract interface..."))
             ca
         | _ -> failwith "Extract interface action not found"
 
@@ -131,9 +130,9 @@ let ``extract interface code action should extract an interface`` () =
     | Some { DocumentChanges = Some [| U4.C1 create; U4.C1 implement |] } ->
         match create.Edits, implement.Edits with
         | [| U2.C1 createEdits |], [| U2.C1 implementEdits |] ->
-            ClassicAssert.AreEqual(expectedCreateInterfaceEdits, createEdits |> TextEdit.normalizeNewText)
+            Assert.That(createEdits |> TextEdit.normalizeNewText, Is.EqualTo(expectedCreateInterfaceEdits))
 
-            ClassicAssert.AreEqual(expectedImplementInterfaceEdits, implementEdits |> TextEdit.normalizeNewText)
+            Assert.That(implementEdits |> TextEdit.normalizeNewText, Is.EqualTo(expectedImplementInterfaceEdits))
 
         | _ -> failwith "Expected exactly one U2.C1 edit in both create/implement"
 
@@ -161,7 +160,7 @@ let ``code actions are listed when activated on a string literal`` () =
         | Some caResult -> caResult
         | None -> failwith "Some TextDocumentCodeActionResult was expected"
 
-    ClassicAssert.AreEqual(10, caResult.Length)
+    Assert.That(caResult.Length, Is.EqualTo(10))
 
     match caResult with
     | [| U2.C2 introduceConstant
@@ -174,7 +173,8 @@ let ``code actions are listed when activated on a string literal`` () =
          U2.C2 _
          U2.C2 _
          U2.C2 _ |] ->
-        let assertCAHasTitle (ca: CodeAction) title = ClassicAssert.AreEqual(title, ca.Title)
+        let assertCAHasTitle (ca: CodeAction) (title: string) =
+            Assert.That(ca.Title, Is.EqualTo(title))
 
         assertCAHasTitle introduceConstant "Introduce constant - Introduce constant for '\"\"'"
 

@@ -7,7 +7,6 @@ open System.Text.Json
 open System.Threading
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 
 open CSharpLanguageServer.Runtime.JsonRpc
 
@@ -141,25 +140,25 @@ let testBasicMethodInvocationReturnsResponse () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a response but got None")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a response but got None")
 
     let response = responseOpt.Value
-    ClassicAssert.AreEqual("2.0", response.GetProperty("jsonrpc").GetString())
-    ClassicAssert.AreEqual(1, response.GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual("hello", response.GetProperty("result").GetProperty("echo").GetString())
+    Assert.That(response.GetProperty("jsonrpc").GetString(), Is.EqualTo("2.0"))
+    Assert.That(response.GetProperty("id").GetInt32(), Is.EqualTo(1))
+    Assert.That(response.GetProperty("result").GetProperty("echo").GetString(), Is.EqualTo("hello"))
 
     // After the handler has completed and the response is written the transport
     // should be quiescent: no running inbound requests and no queued writes.
     let stats = getJsonRpcStats _server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Active", stats.Phase)
+    Assert.That(stats.Phase, Is.EqualTo("Active"))
 
-    ClassicAssert.AreEqual(
-        0,
+    Assert.That(
         stats.RunningInboundRequestCount,
+        Is.EqualTo(0),
         "No inbound requests should be running after handler completes"
     )
 
-    ClassicAssert.AreEqual(0, stats.WriteQueueLength, "Write queue should be empty after response is flushed")
+    Assert.That(stats.WriteQueueLength, Is.EqualTo(0), "Write queue should be empty after response is flushed")
 
     shutdownJsonRpcTransport _server |> Async.RunSynchronously
 
@@ -180,21 +179,22 @@ let testWriteFailureStopsTransportAndFailsPendingOutboundCall () =
         sendJsonRpcCall server "test/write-failure" (JsonSerializer.SerializeToElement({| |}))
         |> Async.StartAsTask
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         replyTask.Wait(TimeSpan.FromSeconds 5.0),
+        Is.True,
         "A failed transport write should complete the pending outbound call"
     )
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32())
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected a transport error after the stdout write failed")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099))
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected a transport error after the stdout write failed")
 
     let stats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Stopped", stats.Phase)
-    ClassicAssert.AreEqual(0, stats.PendingOutboundCallCount)
-    ClassicAssert.AreEqual(0, stats.WriteQueueLength)
+    Assert.That(stats.Phase, Is.EqualTo("Stopped"))
+    Assert.That(stats.PendingOutboundCallCount, Is.EqualTo(0))
+    Assert.That(stats.WriteQueueLength, Is.EqualTo(0))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -219,8 +219,8 @@ let testHandlerReturningEmptyResultProducesResponse () =
         startJsonRpcTransport stdin stdout None (fun _ -> requestHandlings, Map.empty)
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a response")
-    ClassicAssert.AreEqual(2, responseOpt.Value.GetProperty("id").GetInt32())
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a response")
+    Assert.That(responseOpt.Value.GetProperty("id").GetInt32(), Is.EqualTo(2))
 
 [<Test>]
 let testUnregisteredMethodReturnsMethodNotFoundError () =
@@ -241,16 +241,17 @@ let testUnregisteredMethodReturnsMethodNotFoundError () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected an error response")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected an error response")
 
     let response = responseOpt.Value
-    ClassicAssert.AreEqual(3, response.GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual(-32601, response.GetProperty("error").GetProperty("code").GetInt32())
+    Assert.That(response.GetProperty("id").GetInt32(), Is.EqualTo(3))
+    Assert.That(response.GetProperty("error").GetProperty("code").GetInt32(), Is.EqualTo(-32601))
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         response.GetProperty("error").GetProperty("message").GetString()
         |> nonNull "error message"
-        |> _.Contains("Method not found")
+        |> _.Contains("Method not found"),
+        Is.True
     )
 
 [<Test>]
@@ -286,13 +287,13 @@ let testMultipleRequestsAreHandledSequentially () =
 
     let responses = waitForMessages stdout 2 5000
 
-    ClassicAssert.AreEqual(2, responses.Length, "Expected 2 responses")
+    Assert.That(responses.Length, Is.EqualTo(2), "Expected 2 responses")
 
-    ClassicAssert.AreEqual(10, responses.[0].GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual(20, responses.[0].GetProperty("result").GetProperty("doubled").GetInt32())
+    Assert.That(responses.[0].GetProperty("id").GetInt32(), Is.EqualTo(10))
+    Assert.That(responses.[0].GetProperty("result").GetProperty("doubled").GetInt32(), Is.EqualTo(20))
 
-    ClassicAssert.AreEqual(20, responses.[1].GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual(40, responses.[1].GetProperty("result").GetProperty("doubled").GetInt32())
+    Assert.That(responses.[1].GetProperty("id").GetInt32(), Is.EqualTo(20))
+    Assert.That(responses.[1].GetProperty("result").GetProperty("doubled").GetInt32(), Is.EqualTo(40))
 
 [<Test>]
 let testContentLengthFramingIsCorrect () =
@@ -322,8 +323,8 @@ let testContentLengthFramingIsCorrect () =
     let rawBytes = stdout.ToArray()
     let rawString = Encoding.UTF8.GetString(rawBytes)
 
-    ClassicAssert.IsTrue(rawString.StartsWith("Content-Length: "), "Response should start with Content-Length header")
-    ClassicAssert.IsTrue(rawString.Contains("\r\n\r\n"), "Response should contain header/body separator")
+    Assert.That(rawString.StartsWith("Content-Length: "), Is.True, "Response should start with Content-Length header")
+    Assert.That(rawString.Contains("\r\n\r\n"), Is.True, "Response should contain header/body separator")
 
     // Verify the Content-Length value matches the actual body length
     let headerEnd = rawString.IndexOf("\r\n\r\n")
@@ -332,12 +333,12 @@ let testContentLengthFramingIsCorrect () =
     let bodyString = rawString.Substring(headerEnd + 4)
     let bodyBytes = Encoding.UTF8.GetBytes(bodyString)
 
-    ClassicAssert.AreEqual(clValue, bodyBytes.Length, "Content-Length should match actual body byte length")
+    Assert.That(bodyBytes.Length, Is.EqualTo(clValue), "Content-Length should match actual body byte length")
 
     // Verify body parses as valid JSON with expected content
     let parsed = JsonDocument.Parse(bodyString).RootElement
-    ClassicAssert.AreEqual(42, parsed.GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual("pong", parsed.GetProperty("result").GetString())
+    Assert.That(parsed.GetProperty("id").GetInt32(), Is.EqualTo(42))
+    Assert.That(parsed.GetProperty("result").GetString(), Is.EqualTo("pong"))
 
 [<Test>]
 let testMessageWithIdButNoMethodIsTreatedAsResponseAndDroppedIfUnmatched () =
@@ -353,7 +354,7 @@ let testMessageWithIdButNoMethodIsTreatedAsResponseAndDroppedIfUnmatched () =
         startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0L, stdout.Length, "Expected no output for unmatched response")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Expected no output for unmatched response")
 
 [<Test>]
 let testMessageWithNoMethodOrIdIsIgnored () =
@@ -367,7 +368,7 @@ let testMessageWithNoMethodOrIdIsIgnored () =
         startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0L, stdout.Length, "Expected no output for message with no method or id")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Expected no output for message with no method or id")
 
 // ---- Notification tests ----
 
@@ -400,9 +401,9 @@ let testNotificationIsDispatchedToHandler () =
     // Wait for the notification to be processed
     waitUntil 5000 (fun () -> received.Value) |> ignore
 
-    ClassicAssert.IsTrue(received.Value, "Notification handler should have been invoked")
-    ClassicAssert.AreEqual("test/notify", receivedMethod.Value)
-    ClassicAssert.AreEqual(0L, stdout.Length, "Notifications should produce no output on stdout")
+    Assert.That(received.Value, Is.True, "Notification handler should have been invoked")
+    Assert.That(receivedMethod.Value, Is.EqualTo("test/notify"))
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Notifications should produce no output on stdout")
 
 [<Test>]
 let testNotificationHandlerReceivesCorrectParams () =
@@ -431,7 +432,7 @@ let testNotificationHandlerReceivesCorrectParams () =
 
     waitUntil 5000 (fun () -> capturedParams.Value <> "") |> ignore
 
-    ClassicAssert.AreEqual("hello world", capturedParams.Value)
+    Assert.That(capturedParams.Value, Is.EqualTo("hello world"))
 
 [<Test>]
 let testUnregisteredNotificationDoesNotCrash () =
@@ -450,7 +451,7 @@ let testUnregisteredNotificationDoesNotCrash () =
         startJsonRpcTransport stdin stdout None (fun _ -> Map.empty, Map.empty)
 
     Async.Sleep 500 |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0L, stdout.Length, "Expected no output for unregistered notification")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Expected no output for unregistered notification")
 
 [<Test>]
 let testMixedRequestsAndNotificationsWork () =
@@ -487,14 +488,14 @@ let testMixedRequestsAndNotificationsWork () =
 
     // Wait for the request response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a response for the request")
-    ClassicAssert.AreEqual(1, responseOpt.Value.GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual("ok", responseOpt.Value.GetProperty("result").GetString())
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a response for the request")
+    Assert.That(responseOpt.Value.GetProperty("id").GetInt32(), Is.EqualTo(1))
+    Assert.That(responseOpt.Value.GetProperty("result").GetString(), Is.EqualTo("ok"))
 
     // Wait for the notification to be processed
     waitUntil 5000 (fun () -> notificationReceived.Value) |> ignore
 
-    ClassicAssert.IsTrue(notificationReceived.Value, "Notification handler should have been invoked")
+    Assert.That(notificationReceived.Value, Is.True, "Notification handler should have been invoked")
 
 [<Test>]
 let testNotificationWithIdIsRoutedAsRequest () =
@@ -528,10 +529,11 @@ let testNotificationWithIdIsRoutedAsRequest () =
 
     waitUntil 5000 (fun () -> requestHandlerCalled.Value) |> ignore
 
-    ClassicAssert.IsTrue(requestHandlerCalled.Value, "Request handler should be called for message with 'id'")
+    Assert.That(requestHandlerCalled.Value, Is.True, "Request handler should be called for message with 'id'")
 
-    ClassicAssert.IsFalse(
+    Assert.That(
         notificationHandlerCalled.Value,
+        Is.False,
         "Notification handler should NOT be called for message with 'id'"
     )
 
@@ -588,9 +590,9 @@ let testWriteQueueDrainsAllResponses () =
 
     let responses = waitForMessages stdout requestCount 10000
 
-    ClassicAssert.AreEqual(
-        requestCount,
+    Assert.That(
         responses.Length,
+        Is.EqualTo(requestCount),
         sprintf "Expected %d responses but got %d" requestCount responses.Length
     )
 
@@ -598,14 +600,14 @@ let testWriteQueueDrainsAllResponses () =
         responses |> List.map (fun r -> r.GetProperty("id").GetInt32()) |> Set.ofList
 
     for i in 1..requestCount do
-        ClassicAssert.IsTrue(receivedIds.Contains(i), sprintf "Missing response for id %d" i)
+        Assert.That(receivedIds.Contains(i), Is.True, sprintf "Missing response for id %d" i)
 
     // After all responses are flushed the transport should be fully quiescent.
     let finalStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Active", finalStats.Phase)
-    ClassicAssert.AreEqual(0, finalStats.RunningInboundRequestCount, "No handlers should still be running")
-    ClassicAssert.AreEqual(0, finalStats.WriteQueueLength, "Write queue should be empty after all responses are sent")
-    ClassicAssert.AreEqual(0, finalStats.PendingOutboundCallCount, "No pending outbound calls expected")
+    Assert.That(finalStats.Phase, Is.EqualTo("Active"))
+    Assert.That(finalStats.RunningInboundRequestCount, Is.EqualTo(0), "No handlers should still be running")
+    Assert.That(finalStats.WriteQueueLength, Is.EqualTo(0), "Write queue should be empty after all responses are sent")
+    Assert.That(finalStats.PendingOutboundCallCount, Is.EqualTo(0), "No pending outbound calls expected")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -633,13 +635,13 @@ let testSendNotificationWritesProperJsonRpcNotification () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a notification to be written to stdout")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a notification to be written to stdout")
 
     let msg = responseOpt.Value
-    ClassicAssert.AreEqual("2.0", msg.GetProperty("jsonrpc").GetString())
-    ClassicAssert.AreEqual("window/logMessage", msg.GetProperty("method").GetString())
-    ClassicAssert.AreEqual("hello from server", msg.GetProperty("params").GetProperty("message").GetString())
-    ClassicAssert.IsFalse(msg.TryGetProperty("id") |> fst, "Notification should not have an 'id' field")
+    Assert.That(msg.GetProperty("jsonrpc").GetString(), Is.EqualTo("2.0"))
+    Assert.That(msg.GetProperty("method").GetString(), Is.EqualTo("window/logMessage"))
+    Assert.That(msg.GetProperty("params").GetProperty("message").GetString(), Is.EqualTo("hello from server"))
+    Assert.That(msg.TryGetProperty("id") |> fst, Is.False, "Notification should not have an 'id' field")
 
 [<Test>]
 let testSendMultipleNotificationsAllWritten () =
@@ -659,9 +661,9 @@ let testSendMultipleNotificationsAllWritten () =
 
     let messages = waitForMessages stdout notifCount 5000
 
-    ClassicAssert.AreEqual(
-        notifCount,
+    Assert.That(
         messages.Length,
+        Is.EqualTo(notifCount),
         sprintf "Expected %d notifications but got %d" notifCount messages.Length
     )
 
@@ -693,21 +695,21 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
     // Wait for the outbound request to appear on stdout
     let outboundMessages = waitForMessages stdout 1 5000
 
-    ClassicAssert.AreEqual(1, outboundMessages.Length, "Expected an outbound request on stdout")
+    Assert.That(outboundMessages.Length, Is.EqualTo(1), "Expected an outbound request on stdout")
 
     let outbound = outboundMessages.[0]
-    ClassicAssert.AreEqual("2.0", outbound.GetProperty("jsonrpc").GetString())
-    ClassicAssert.AreEqual("workspace/configuration", outbound.GetProperty("method").GetString())
-    ClassicAssert.IsTrue(outbound.TryGetProperty("id") |> fst, "Request should have an 'id' field")
+    Assert.That(outbound.GetProperty("jsonrpc").GetString(), Is.EqualTo("2.0"))
+    Assert.That(outbound.GetProperty("method").GetString(), Is.EqualTo("workspace/configuration"))
+    Assert.That(outbound.TryGetProperty("id") |> fst, Is.True, "Request should have an 'id' field")
 
     let outboundId = outbound.GetProperty("id").GetInt32()
 
     // While the call is still in flight, stats must show exactly one pending outbound
     // call and no timer (sendJsonRpcCall carries no timeout).
     let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Active", pendingStats.Phase)
-    ClassicAssert.AreEqual(1, pendingStats.PendingOutboundCallCount, "One outbound call should be pending")
-    ClassicAssert.AreEqual(false, pendingStats.TimerArmed, "Timer must not be armed for an untimed call")
+    Assert.That(pendingStats.Phase, Is.EqualTo("Active"))
+    Assert.That(pendingStats.PendingOutboundCallCount, Is.EqualTo(1), "One outbound call should be pending")
+    Assert.That(pendingStats.TimerArmed, Is.EqualTo(false), "Timer must not be armed for an untimed call")
 
     // Now simulate the client sending a response back through stdin
     let clientResponse =
@@ -723,21 +725,21 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     // Wait for the reply to come back
     let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed, "SendRequest should have received a reply")
+    Assert.That(completed, Is.True, "SendRequest should have received a reply")
 
     match replyTask.Result with
     | Ok reply ->
         let arr = reply.EnumerateArray() |> Seq.toArray
-        ClassicAssert.AreEqual("config1", arr.[0].GetString())
-        ClassicAssert.AreEqual("config2", arr.[1].GetString())
-    | Error err -> ClassicAssert.Fail(sprintf "Expected Ok response but got Error: %s" (string err))
+        Assert.That(arr.[0].GetString(), Is.EqualTo("config1"))
+        Assert.That(arr.[1].GetString(), Is.EqualTo("config2"))
+    | Error err -> Assert.Fail(sprintf "Expected Ok response but got Error: %s" (string err))
 
     // Pending call resolved — count must drop back to zero before we shut down.
     let resolvedStats = getJsonRpcStats server |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual(
-        0,
+    Assert.That(
         resolvedStats.PendingOutboundCallCount,
+        Is.EqualTo(0),
         "Pending call count should be zero after response received"
     )
 
@@ -745,7 +747,7 @@ let testSendRequestWritesRequestAndResolvesOnResponse () =
 
     // Transport must be in the Stopped phase after a clean shutdown.
     let stoppedStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Stopped", stoppedStats.Phase)
+    Assert.That(stoppedStats.Phase, Is.EqualTo("Stopped"))
 
 [<Test>]
 let testActorRemainsHealthyAfterTimeout () =
@@ -777,16 +779,16 @@ let testActorRemainsHealthyAfterTimeout () =
     // — it is not asserting anything about how fast the timeout fires, only that it
     // eventually does.
     let timedOutCompleted = timedOutTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(timedOutCompleted, "First call should have timed out")
+    Assert.That(timedOutCompleted, Is.True, "First call should have timed out")
 
     match timedOutTask.Result with
-    | Error err -> ClassicAssert.AreEqual(-32000, err.GetProperty("code").GetInt32())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32000) for first (timed-out) call")
+    | Error err -> Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32000))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for first (timed-out) call")
 
     // Second call — this time we feed a real response back.
     // Wait for the outbound request to appear on stdout first.
     let outboundMessages = waitForMessages stdout 1 3000
-    ClassicAssert.AreEqual(1, outboundMessages.Length, "Expected 1 outbound message (first call's request)")
+    Assert.That(outboundMessages.Length, Is.EqualTo(1), "Expected 1 outbound message (first call's request)")
 
     // NOTE: the first call's outbound request is already on stdout. Send a second call
     // and immediately respond to it.
@@ -803,7 +805,7 @@ let testActorRemainsHealthyAfterTimeout () =
     Thread.Sleep 50
     stdout.Position <- 0L
     let allOutbound = waitForMessages stdout 2 1000
-    ClassicAssert.AreEqual(2, allOutbound.Length, "Expected 2 outbound requests total")
+    Assert.That(allOutbound.Length, Is.EqualTo(2), "Expected 2 outbound requests total")
 
     let secondRequestId = allOutbound.[1].GetProperty("id").GetInt32()
 
@@ -820,11 +822,11 @@ let testActorRemainsHealthyAfterTimeout () =
     clientToServer.Flush()
 
     let healthyCompleted = healthyTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(healthyCompleted, "Second call should have received a reply")
+    Assert.That(healthyCompleted, Is.True, "Second call should have received a reply")
 
     match healthyTask.Result with
-    | Ok reply -> ClassicAssert.AreEqual(true, reply.GetProperty("alive").GetBoolean())
-    | Error err -> ClassicAssert.Fail(sprintf "Expected Ok for second call but got Error: %s" (string err))
+    | Ok reply -> Assert.That(reply.GetProperty("alive").GetBoolean(), Is.EqualTo(true))
+    | Error err -> Assert.Fail(sprintf "Expected Ok for second call but got Error: %s" (string err))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -869,11 +871,11 @@ let testReplyBeforeDeadlineReturnsOk () =
     clientToServer.Flush()
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds 3.0)
-    ClassicAssert.IsTrue(completed, "Call should resolve before the 5 s deadline")
+    Assert.That(completed, Is.True, "Call should resolve before the 5 s deadline")
 
     match replyTask.Result with
-    | Ok reply -> ClassicAssert.AreEqual(99, reply.GetProperty("value").GetInt32())
-    | Error err -> ClassicAssert.Fail(sprintf "Expected Ok but got Error: %s" (string err))
+    | Ok reply -> Assert.That(reply.GetProperty("value").GetInt32(), Is.EqualTo(99))
+    | Error err -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string err))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -908,38 +910,38 @@ let testTwoConcurrentCallsWithNearEqualDeadlinesBothTimeout () =
     // and the shared timer armed for the earlier of the two deadlines.
     waitForMessages stdout 2 3000 |> ignore // ensure both requests hit the wire first
     let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual(2, pendingStats.PendingOutboundCallCount, "Both outbound calls should be pending")
-    ClassicAssert.AreEqual(true, pendingStats.TimerArmed, "Timer must be armed when timed calls are pending")
+    Assert.That(pendingStats.PendingOutboundCallCount, Is.EqualTo(2), "Both outbound calls should be pending")
+    Assert.That(pendingStats.TimerArmed, Is.EqualTo(true), "Timer must be armed when timed calls are pending")
 
     // Both must complete well within 1 s
     let completed1 = task1.Wait(TimeSpan.FromSeconds 1.0)
     let completed2 = task2.Wait(TimeSpan.FromSeconds 1.0)
 
-    ClassicAssert.IsTrue(completed1, "First call should have timed out within 1 s")
-    ClassicAssert.IsTrue(completed2, "Second call should have timed out within 1 s")
+    Assert.That(completed1, Is.True, "First call should have timed out within 1 s")
+    Assert.That(completed2, Is.True, "Second call should have timed out within 1 s")
 
     for task, label in [ task1, "first"; task2, "second" ] do
         match task.Result with
         | Error err ->
-            ClassicAssert.AreEqual(
-                -32000,
+            Assert.That(
                 err.GetProperty("code").GetInt32(),
+                Is.EqualTo(-32000),
                 sprintf "Expected -32000 for %s call" label
             )
 
-            ClassicAssert.AreEqual("Call timed out", err.GetProperty("message").GetString())
-        | Ok _ -> ClassicAssert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
+            Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Call timed out"))
+        | Ok _ -> Assert.Fail(sprintf "Expected Error(-32000) for %s call, got Ok" label)
 
     // After both timeouts fire: no pending calls, timer disarmed, and both IDs stamped
     // into RecentlyTimedOutCalls so that late responses can be distinguished from
     // genuine unknown-id violations.
     let afterStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0, afterStats.PendingOutboundCallCount, "All pending calls should be gone after timeout")
-    ClassicAssert.AreEqual(false, afterStats.TimerArmed, "Timer should be disarmed once no timed calls remain")
+    Assert.That(afterStats.PendingOutboundCallCount, Is.EqualTo(0), "All pending calls should be gone after timeout")
+    Assert.That(afterStats.TimerArmed, Is.EqualTo(false), "Timer should be disarmed once no timed calls remain")
 
-    ClassicAssert.AreEqual(
-        2,
+    Assert.That(
         afterStats.RecentlyTimedOutCallCount,
+        Is.EqualTo(2),
         "Both timed-out IDs should be in RecentlyTimedOutCalls"
     )
 
@@ -980,27 +982,28 @@ let testEarlierDeadlineArrivingMidArmFiresAtCorrectTime () =
     let shortCompleted = shortTask.Wait(TimeSpan.FromSeconds 2.0)
     sw.Stop()
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         shortCompleted,
+        Is.True,
         sprintf "Short-deadline call should have timed out within 2 s but took %d ms" sw.ElapsedMilliseconds
     )
 
     match shortTask.Result with
-    | Error err -> ClassicAssert.AreEqual(-32000, err.GetProperty("code").GetInt32())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32000) for the short-deadline call")
+    | Error err -> Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32000))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for the short-deadline call")
 
     // Long call should still be pending (not yet timed out after ~200 ms wall time)
-    ClassicAssert.IsFalse(longTask.IsCompleted, "Long-deadline call should still be pending after ~200 ms")
+    Assert.That(longTask.IsCompleted, Is.False, "Long-deadline call should still be pending after ~200 ms")
 
     // Clean up — shutdown will fail the long call with -32099
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
     let longCompleted = longTask.Wait(TimeSpan.FromSeconds 3.0)
-    ClassicAssert.IsTrue(longCompleted, "Long-deadline call should be failed on shutdown")
+    Assert.That(longCompleted, Is.True, "Long-deadline call should be failed on shutdown")
 
     match longTask.Result with
-    | Error err -> ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32099) for long-deadline call after shutdown")
+    | Error err -> Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) for long-deadline call after shutdown")
 
 [<Test>]
 let testShutdownDisposesTimerAndFailsPendingTimedCall () =
@@ -1033,18 +1036,18 @@ let testShutdownDisposesTimerAndFailsPendingTimedCall () =
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds 3.0)
-    ClassicAssert.IsTrue(completed, "Pending timed call should be unblocked by shutdown")
+    Assert.That(completed, Is.True, "Pending timed call should be unblocked by shutdown")
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(
-            -32099,
+        Assert.That(
             err.GetProperty("code").GetInt32(),
+            Is.EqualTo(-32099),
             "Shutdown must return -32099, not the timer's -32000"
         )
 
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32099) after shutdown, got Ok")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) after shutdown, got Ok")
 
 [<Test>]
 let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
@@ -1081,11 +1084,11 @@ let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
 
     // Let the 100 ms deadline fire and the call be failed
     let timedOut = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
-    ClassicAssert.IsTrue(timedOut, "Call should have timed out")
+    Assert.That(timedOut, Is.True, "Call should have timed out")
 
     match replyTask.Result with
-    | Error err -> ClassicAssert.AreEqual(-32000, err.GetProperty("code").GetInt32())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32000)")
+    | Error err -> Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32000))
+    | Ok _ -> Assert.Fail("Expected Error(-32000)")
 
     // Now feed back the late response (300 ms after the timeout fired)
     Thread.Sleep 300
@@ -1121,10 +1124,11 @@ let testLateResponseAfterTimeoutLogsRpcWarnNotRpcError () =
             | RpcError msg -> msg.Contains(idStr) && msg.Contains("unknown")
             | _ -> false)
 
-    ClassicAssert.IsTrue(lateWarn, "Expected an RpcWarn entry about a late response for the timed-out call id")
+    Assert.That(lateWarn, Is.True, "Expected an RpcWarn entry about a late response for the timed-out call id")
 
-    ClassicAssert.IsFalse(
+    Assert.That(
         spuriousError,
+        Is.False,
         "Must NOT receive an RpcError for the late response (id is in RecentlyTimedOutCalls)"
     )
 
@@ -1148,17 +1152,17 @@ let testUntimedCallDoesNotTimeOut () =
     // Give 500 ms — more than enough for a timer-based timeout to fire if one were armed
     let completedEarly = replyTask.Wait(TimeSpan.FromMilliseconds 500.0)
 
-    ClassicAssert.IsFalse(completedEarly, "An untimed call against a non-responding peer must not complete on its own")
+    Assert.That(completedEarly, Is.False, "An untimed call against a non-responding peer must not complete on its own")
 
     // Clean up: shut down the transport so the call is released
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
     let completedAfterShutdown = replyTask.Wait(TimeSpan.FromSeconds 3.0)
-    ClassicAssert.IsTrue(completedAfterShutdown, "Untimed call should be released by shutdown")
+    Assert.That(completedAfterShutdown, Is.True, "Untimed call should be released by shutdown")
 
     match replyTask.Result with
-    | Error err -> ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32099) from shutdown, got Ok")
+    | Error err -> Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099))
+    | Ok _ -> Assert.Fail("Expected Error(-32099) from shutdown, got Ok")
 
 /// Helper: write a framed JSON-RPC message into a writable pipe stream.
 let private writeMessageToPipe (pipe: IO.Pipes.AnonymousPipeServerStream) (msg: string) =
@@ -1203,25 +1207,26 @@ let testShutdownWaitsForRunningHandlerToFinish () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Kick off shutdown asynchronously — it must block until the handler completes
     let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
 
     // Shutdown should not complete while the handler is still blocked
-    ClassicAssert.IsFalse(
+    Assert.That(
         shutdownTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        Is.False,
         "Shutdown should not complete while handler is still running"
     )
 
-    ClassicAssert.IsFalse(handlerFinished.Value, "Handler should not have finished yet")
+    Assert.That(handlerFinished.Value, Is.False, "Handler should not have finished yet")
 
     // Let the handler proceed
     handlerMayFinish.Set()
 
     let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Shutdown should complete after handler finishes")
-    ClassicAssert.IsTrue(handlerFinished.Value, "Handler should have finished before shutdown returned")
+    Assert.That(completed, Is.True, "Shutdown should complete after handler finishes")
+    Assert.That(handlerFinished.Value, Is.True, "Handler should have finished before shutdown returned")
 
 [<Test>]
 let testShutdownCancelsRunningHandlerAndThenReturns () =
@@ -1255,17 +1260,17 @@ let testShutdownCancelsRunningHandlerAndThenReturns () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Shutdown should cancel the handler and return within a few seconds
     let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
     let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Shutdown should return after cancelling the in-flight handler")
+    Assert.That(completed, Is.True, "Shutdown should return after cancelling the in-flight handler")
 
     // The response on the wire should be the -32800 cancellation error
     let msgs = waitForMessages stdout 1 1000
-    ClassicAssert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
-    ClassicAssert.AreEqual(-32800, msgs.[0].GetProperty("error").GetProperty("code").GetInt32())
+    Assert.That(msgs.Length, Is.EqualTo(1), "Expected exactly one response (the cancellation error)")
+    Assert.That(msgs.[0].GetProperty("error").GetProperty("code").GetInt32(), Is.EqualTo(-32800))
 
 [<Test>]
 let testShutdownWithNoRunningHandlersReturnsImmediately () =
@@ -1277,7 +1282,7 @@ let testShutdownWithNoRunningHandlersReturnsImmediately () =
 
     let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
     let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Shutdown with no running handlers should return immediately")
+    Assert.That(completed, Is.True, "Shutdown with no running handlers should return immediately")
 
 [<Test>]
 let testShutdownDrainsAllConcurrentHandlers () =
@@ -1317,39 +1322,40 @@ let testShutdownDrainsAllConcurrentHandlers () =
                    ``params`` = {| |} |}
             ))
 
-    ClassicAssert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
+    Assert.That(allStarted.Wait(10000), Is.True, "All handlers should have started")
 
     let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
 
-    ClassicAssert.IsFalse(
+    Assert.That(
         shutdownTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        Is.False,
         "Shutdown should not complete while handlers are running"
     )
 
     // During the drain the transport must report ShuttingDown and all three handlers
     // still occupying RunningInboundRequests.
     let drainingStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("ShuttingDown", drainingStats.Phase)
+    Assert.That(drainingStats.Phase, Is.EqualTo("ShuttingDown"))
 
-    ClassicAssert.AreEqual(
-        count,
+    Assert.That(
         drainingStats.RunningInboundRequestCount,
+        Is.EqualTo(count),
         "All handlers should be listed as running during drain"
     )
 
     mayFinishTcs.SetResult(())
 
     let completed = shutdownTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Shutdown should complete after all handlers finish")
-    ClassicAssert.AreEqual(count, finishedCount.Value, "All handlers should have finished")
+    Assert.That(completed, Is.True, "Shutdown should complete after all handlers finish")
+    Assert.That(finishedCount.Value, Is.EqualTo(count), "All handlers should have finished")
 
     // Once fully stopped, the phase must flip to Stopped and the map be empty.
     let stoppedStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Stopped", stoppedStats.Phase)
+    Assert.That(stoppedStats.Phase, Is.EqualTo("Stopped"))
 
-    ClassicAssert.AreEqual(
-        0,
+    Assert.That(
         stoppedStats.RunningInboundRequestCount,
+        Is.EqualTo(0),
         "No handlers should remain after shutdown completes"
     )
 
@@ -1372,9 +1378,9 @@ let testSendNotificationAfterShutdownIsDropped () =
     sendJsonRpcNotification server "window/logMessage" (JsonSerializer.SerializeToElement({| message = "late" |}))
     |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual(
-        bytesBeforeSend,
+    Assert.That(
         stdout.Length,
+        Is.EqualTo(bytesBeforeSend),
         "No bytes should be written for a post-shutdown notification"
     )
 
@@ -1394,9 +1400,9 @@ let testSendCallAfterShutdownReturnsError () =
 
     match result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error -32099 for post-shutdown sendJsonRpcCall, got Ok")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for post-shutdown sendJsonRpcCall, got Ok")
 
 [<Test>]
 let testSendCallDuringShutdownDrainReturnsError () =
@@ -1435,7 +1441,7 @@ let testSendCallDuringShutdownDrainReturnsError () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Begin shutdown — the actor will immediately fire cancellations on all handlers
     let shutdownTask = shutdownJsonRpcTransport server |> Async.StartAsTask
@@ -1450,18 +1456,18 @@ let testSendCallDuringShutdownDrainReturnsError () =
         |> Async.StartAsTask
 
     let lateCompleted = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(lateCompleted, "Late sendJsonRpcCall should return immediately during drain")
+    Assert.That(lateCompleted, Is.True, "Late sendJsonRpcCall should return immediately during drain")
 
     match lateCallTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error -32099 for call made during shutdown drain")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for call made during shutdown drain")
 
     // Unblock the handler so the drain completes and shutdown returns
     mayFinishTcs.SetResult(())
 
-    ClassicAssert.IsTrue(shutdownTask.Wait(TimeSpan.FromSeconds 5.0), "Shutdown should complete after handler finishes")
+    Assert.That(shutdownTask.Wait(TimeSpan.FromSeconds 5.0), Is.True, "Shutdown should complete after handler finishes")
 
 // ---- Pending outbound call shutdown tests ----
 
@@ -1492,13 +1498,13 @@ let testShutdownFailsPendingOutboundCall () =
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed, "Pending sendJsonRpcCall should have unblocked after shutdown")
+    Assert.That(completed, Is.True, "Pending sendJsonRpcCall should have unblocked after shutdown")
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error -32099 but got Ok")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
 let testShutdownFailsMultiplePendingOutboundCalls () =
@@ -1531,15 +1537,15 @@ let testShutdownFailsMultiplePendingOutboundCalls () =
     let completed1 = reply1Task.Wait(TimeSpan.FromSeconds(5.0))
     let completed2 = reply2Task.Wait(TimeSpan.FromSeconds(5.0))
 
-    ClassicAssert.IsTrue(completed1, "First pending call should have unblocked after shutdown")
-    ClassicAssert.IsTrue(completed2, "Second pending call should have unblocked after shutdown")
+    Assert.That(completed1, Is.True, "First pending call should have unblocked after shutdown")
+    Assert.That(completed2, Is.True, "Second pending call should have unblocked after shutdown")
 
     for replyTask in [ reply1Task; reply2Task ] do
         match replyTask.Result with
         | Error err ->
-            ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-            ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-        | Ok _ -> ClassicAssert.Fail("Expected Error -32099 but got Ok")
+            Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+            Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+        | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
 let testEofFailsPendingOutboundCall () =
@@ -1567,13 +1573,13 @@ let testEofFailsPendingOutboundCall () =
     clientToServer.Dispose()
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed, "Pending sendJsonRpcCall should have unblocked after EOF")
+    Assert.That(completed, Is.True, "Pending sendJsonRpcCall should have unblocked after EOF")
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error -32099 but got Ok")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error -32099 but got Ok")
 
 [<Test>]
 let testEofCancelsRunningHandler () =
@@ -1607,16 +1613,16 @@ let testEofCancelsRunningHandler () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Close the write end of the pipe — triggers EOF on stdin
     clientToServer.Dispose()
 
     // The handler should be cancelled and the -32800 response written
     let msgs = waitForMessages stdout 1 5000
-    ClassicAssert.AreEqual(1, msgs.Length, "Expected exactly one response (the cancellation error)")
-    ClassicAssert.AreEqual(1, msgs.[0].GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual(-32800, msgs.[0].GetProperty("error").GetProperty("code").GetInt32())
+    Assert.That(msgs.Length, Is.EqualTo(1), "Expected exactly one response (the cancellation error)")
+    Assert.That(msgs.[0].GetProperty("id").GetInt32(), Is.EqualTo(1))
+    Assert.That(msgs.[0].GetProperty("error").GetProperty("code").GetInt32(), Is.EqualTo(-32800))
 
 [<Test>]
 let testEofLateCallReturnsError () =
@@ -1651,7 +1657,7 @@ let testEofLateCallReturnsError () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Trigger EOF; give the actor a moment to process it and move to ShuttingDown
     clientToServer.Dispose()
@@ -1663,13 +1669,13 @@ let testEofLateCallReturnsError () =
         |> Async.StartAsTask
 
     let completed = lateCallTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Late sendJsonRpcCall after EOF should return immediately")
+    Assert.That(completed, Is.True, "Late sendJsonRpcCall after EOF should return immediately")
 
     match lateCallTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32099, err.GetProperty("code").GetInt32(), "Expected error code -32099")
-        ClassicAssert.AreEqual("Transport shut down", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error -32099 for call made after EOF")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32099), "Expected error code -32099")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Transport shut down"))
+    | Ok _ -> Assert.Fail("Expected Error -32099 for call made after EOF")
 
     // Unblock the handler so the drain completes cleanly
     mayFinishTcs.SetResult(())
@@ -1711,7 +1717,7 @@ let testEofDrainsAllConcurrentHandlers () =
                    ``params`` = {| |} |}
             ))
 
-    ClassicAssert.IsTrue(allStarted.Wait(10000), "All handlers should have started")
+    Assert.That(allStarted.Wait(10000), Is.True, "All handlers should have started")
 
     // Register a shutdown waiter before triggering EOF
     let awaitTask = awaitJsonRpcTransportShutdown server |> Async.StartAsTask
@@ -1720,8 +1726,9 @@ let testEofDrainsAllConcurrentHandlers () =
     clientToServer.Dispose()
 
     // awaitShutdown should not return while handlers are still blocked
-    ClassicAssert.IsFalse(
+    Assert.That(
         awaitTask.Wait(TimeSpan.FromMilliseconds 500.0),
+        Is.False,
         "awaitJsonRpcTransportShutdown should not return while handlers are running"
     )
 
@@ -1729,7 +1736,7 @@ let testEofDrainsAllConcurrentHandlers () =
     mayFinishTcs.SetResult(())
 
     let completed = awaitTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "awaitJsonRpcTransportShutdown should complete after all handlers finish")
+    Assert.That(completed, Is.True, "awaitJsonRpcTransportShutdown should complete after all handlers finish")
 
 [<Test>]
 let testAlreadyResolvedCallIsUnaffectedByShutdown () =
@@ -1767,11 +1774,11 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
     clientToServer.Flush()
 
     let resolvedBeforeShutdown = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(resolvedBeforeShutdown, "Call should have resolved before shutdown")
+    Assert.That(resolvedBeforeShutdown, Is.True, "Call should have resolved before shutdown")
 
     match replyTask.Result with
-    | Ok reply -> ClassicAssert.AreEqual(42, reply.GetProperty("value").GetInt32())
-    | Error _ -> ClassicAssert.Fail("Expected Ok response, not an error")
+    | Ok reply -> Assert.That(reply.GetProperty("value").GetInt32(), Is.EqualTo(42))
+    | Error _ -> Assert.Fail("Expected Ok response, not an error")
 
     // Now shut down — the already-resolved call must not be touched
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -1779,8 +1786,8 @@ let testAlreadyResolvedCallIsUnaffectedByShutdown () =
     // Result must still be Ok with the original value
     match replyTask.Result with
     | Ok reply ->
-        ClassicAssert.AreEqual(42, reply.GetProperty("value").GetInt32(), "Result should be unchanged after shutdown")
-    | Error _ -> ClassicAssert.Fail("Shutdown should not have overwritten an already-resolved Ok result")
+        Assert.That(reply.GetProperty("value").GetInt32(), Is.EqualTo(42), "Result should be unchanged after shutdown")
+    | Error _ -> Assert.Fail("Shutdown should not have overwritten an already-resolved Ok result")
 
 [<Test>]
 let testSendRequestAssignsIncrementingIds () =
@@ -1804,7 +1811,7 @@ let testSendRequestAssignsIncrementingIds () =
 
     writeEnd.Dispose()
 
-    ClassicAssert.AreEqual(2, requests.Length, "Expected 2 outbound requests")
+    Assert.That(requests.Length, Is.EqualTo(2), "Expected 2 outbound requests")
 
     let req1 = requests.[0]
     let req2 = requests.[1]
@@ -1812,7 +1819,7 @@ let testSendRequestAssignsIncrementingIds () =
     let id1 = req1.GetProperty("id").GetInt32()
     let id2 = req2.GetProperty("id").GetInt32()
 
-    ClassicAssert.AreEqual(id1 + 1, id2, "Outbound request IDs should be sequential")
+    Assert.That(id2, Is.EqualTo(id1 + 1), "Outbound request IDs should be sequential")
 
 [<Test>]
 let testInboundResponseForUnknownIdIsHandledGracefully () =
@@ -1832,7 +1839,7 @@ let testInboundResponseForUnknownIdIsHandledGracefully () =
 
     // Should not crash and should produce no output
     Async.Sleep 500 |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0L, stdout.Length, "Expected no output for response with unknown id")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Expected no output for response with unknown id")
 
 [<Test>]
 let testSendCallReturnsErrorOnMethodNotFound () =
@@ -1870,18 +1877,19 @@ let testSendCallReturnsErrorOnMethodNotFound () =
     clientToServer.Flush()
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed, "SendCall should have received a reply")
+    Assert.That(completed, Is.True, "SendCall should have received a reply")
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32601, err.GetProperty("code").GetInt32())
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32601))
 
-        ClassicAssert.IsTrue(
+        Assert.That(
             err.GetProperty("message").GetString()
             |> nonNull "error message"
-            |> _.Contains("Method not found")
+            |> _.Contains("Method not found"),
+            Is.True
         )
-    | Ok _ -> ClassicAssert.Fail("Expected Error but got Ok")
+    | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -1923,15 +1931,15 @@ let testSendCallReturnsErrorWithData () =
     clientToServer.Flush()
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed, "SendCall should have received a reply")
+    Assert.That(completed, Is.True, "SendCall should have received a reply")
 
     match replyTask.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32603, err.GetProperty("code").GetInt32())
-        ClassicAssert.AreEqual("Internal error", err.GetProperty("message").GetString())
-        ClassicAssert.AreEqual("something went wrong", err.GetProperty("data").GetProperty("details").GetString())
-        ClassicAssert.AreEqual(false, err.GetProperty("data").GetProperty("retry").GetBoolean())
-    | Ok _ -> ClassicAssert.Fail("Expected Error but got Ok")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32603))
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Internal error"))
+        Assert.That(err.GetProperty("data").GetProperty("details").GetString(), Is.EqualTo("something went wrong"))
+        Assert.That(err.GetProperty("data").GetProperty("retry").GetBoolean(), Is.EqualTo(false))
+    | Ok _ -> Assert.Fail("Expected Error but got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -1958,7 +1966,7 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
         |> Async.StartAsTask
 
     let outboundMessages = waitForMessages stdout 2 5000
-    ClassicAssert.AreEqual(2, outboundMessages.Length, "Expected 2 outbound requests")
+    Assert.That(outboundMessages.Length, Is.EqualTo(2), "Expected 2 outbound requests")
 
     let id1 = outboundMessages.[0].GetProperty("id").GetInt32()
     let id2 = outboundMessages.[1].GetProperty("id").GetInt32()
@@ -1989,17 +1997,17 @@ let testSendCallSuccessAndErrorForDifferentRequests () =
 
     let completed1 = reply1Task.Wait(TimeSpan.FromSeconds(5.0))
     let completed2 = reply2Task.Wait(TimeSpan.FromSeconds(5.0))
-    ClassicAssert.IsTrue(completed1 && completed2, "Both calls should have received replies")
+    Assert.That(completed1 && completed2, Is.True, "Both calls should have received replies")
 
     match reply1Task.Result with
-    | Ok reply -> ClassicAssert.AreEqual("ok", reply.GetProperty("status").GetString())
-    | Error _ -> ClassicAssert.Fail("Expected Ok for first call")
+    | Ok reply -> Assert.That(reply.GetProperty("status").GetString(), Is.EqualTo("ok"))
+    | Error _ -> Assert.Fail("Expected Ok for first call")
 
     match reply2Task.Result with
     | Error err ->
-        ClassicAssert.AreEqual(-32600, err.GetProperty("code").GetInt32())
-        ClassicAssert.AreEqual("Invalid request", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error for second call")
+        Assert.That(err.GetProperty("code").GetInt32(), Is.EqualTo(-32600))
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Invalid request"))
+    | Ok _ -> Assert.Fail("Expected Error for second call")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2039,21 +2047,21 @@ let testMixedInboundRequestsAndOutboundNotifications () =
     // Wait for both messages to be written (response + notification)
     let allMsgs = waitForMessages stdout 2 5000
 
-    ClassicAssert.AreEqual(2, allMsgs.Length, "Expected 2 messages on stdout (1 response + 1 notification)")
+    Assert.That(allMsgs.Length, Is.EqualTo(2), "Expected 2 messages on stdout (1 response + 1 notification)")
 
     let responses = allMsgs |> List.filter (fun m -> m.TryGetProperty("result") |> fst)
 
     let notifications =
         allMsgs |> List.filter (fun m -> m.TryGetProperty("method") |> fst)
 
-    ClassicAssert.AreEqual(1, responses.Length, "Expected 1 response")
-    ClassicAssert.AreEqual(1, notifications.Length, "Expected 1 notification")
+    Assert.That(responses.Length, Is.EqualTo(1), "Expected 1 response")
+    Assert.That(notifications.Length, Is.EqualTo(1), "Expected 1 notification")
 
-    ClassicAssert.AreEqual(1, responses.[0].GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual("handled", responses.[0].GetProperty("result").GetString())
+    Assert.That(responses.[0].GetProperty("id").GetInt32(), Is.EqualTo(1))
+    Assert.That(responses.[0].GetProperty("result").GetString(), Is.EqualTo("handled"))
 
-    ClassicAssert.AreEqual("window/logMessage", notifications.[0].GetProperty("method").GetString())
-    ClassicAssert.AreEqual("info", notifications.[0].GetProperty("params").GetProperty("kind").GetString())
+    Assert.That(notifications.[0].GetProperty("method").GetString(), Is.EqualTo("window/logMessage"))
+    Assert.That(notifications.[0].GetProperty("params").GetProperty("kind").GetString(), Is.EqualTo("info"))
 
 // ---- $/cancelRequest tests ----
 
@@ -2095,7 +2103,7 @@ let testCancelRequestCancelsRunningHandler () =
     writeMessageToPipe clientToServer request
 
     // Wait for the handler to start
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Send $/cancelRequest
     let cancelNotification =
@@ -2110,21 +2118,22 @@ let testCancelRequestCancelsRunningHandler () =
     // Wait for the cancellation error response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a cancellation error response")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a cancellation error response")
 
     let response = responseOpt.Value
-    ClassicAssert.AreEqual(1, response.GetProperty("id").GetInt32())
+    Assert.That(response.GetProperty("id").GetInt32(), Is.EqualTo(1))
 
-    ClassicAssert.AreEqual(
-        -32800,
+    Assert.That(
         response.GetProperty("error").GetProperty("code").GetInt32(),
+        Is.EqualTo(-32800),
         "Expected RequestCancelled error code (-32800)"
     )
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         response.GetProperty("error").GetProperty("message").GetString()
         |> nonNull "error message"
-        |> _.Contains("cancel", StringComparison.OrdinalIgnoreCase)
+        |> _.Contains("cancel", StringComparison.OrdinalIgnoreCase),
+        Is.True
     )
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
@@ -2153,7 +2162,7 @@ let testCancelRequestForUnknownIdIsIgnored () =
     writeMessageToPipe clientToServer cancelNotification
 
     Async.Sleep 500 |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0L, stdout.Length, "Expected no output for cancel of unknown request id")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Expected no output for cancel of unknown request id")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2188,9 +2197,9 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
 
     // Wait for the response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a response")
-    ClassicAssert.AreEqual(42, responseOpt.Value.GetProperty("id").GetInt32())
-    ClassicAssert.AreEqual("done", responseOpt.Value.GetProperty("result").GetString())
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a response")
+    Assert.That(responseOpt.Value.GetProperty("id").GetInt32(), Is.EqualTo(42))
+    Assert.That(responseOpt.Value.GetProperty("result").GetString(), Is.EqualTo("done"))
 
     // Now send $/cancelRequest for the same ID — should be silently ignored
     let cancelNotification =
@@ -2209,9 +2218,9 @@ let testCancelRequestForAlreadyCompletedRequestIsIgnored () =
     stdout.Position <- 0L
     let allMessages = waitForMessages stdout 1 1000
 
-    ClassicAssert.AreEqual(
-        1,
+    Assert.That(
         allMessages.Length,
+        Is.EqualTo(1),
         "Expected exactly 1 message (the original response, not a cancellation error)"
     )
 
@@ -2262,7 +2271,7 @@ let testHandlerObservesCancellationToken () =
 
     writeMessageToPipe clientToServer request
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     // Cancel
     let cancelNotification =
@@ -2277,11 +2286,11 @@ let testHandlerObservesCancellationToken () =
     // Wait for the cancellation error response
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected a cancellation error response")
-    ClassicAssert.AreEqual(-32800, responseOpt.Value.GetProperty("error").GetProperty("code").GetInt32())
+    Assert.That(responseOpt.IsSome, Is.True, "Expected a cancellation error response")
+    Assert.That(responseOpt.Value.GetProperty("error").GetProperty("code").GetInt32(), Is.EqualTo(-32800))
 
     // Verify the handler's CancellationToken was actually cancelled
-    ClassicAssert.IsTrue(tokenWasCancelled.Wait(2000), "Handler's CancellationToken should have been cancelled")
+    Assert.That(tokenWasCancelled.Wait(2000), Is.True, "Handler's CancellationToken should have been cancelled")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2323,7 +2332,7 @@ let testOtherRequestsStillWorkAfterCancellation () =
 
     writeMessageToPipe clientToServer slowRequest
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Slow handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Slow handler should have started")
 
     // Cancel the slow request
     let cancelNotification =
@@ -2337,8 +2346,8 @@ let testOtherRequestsStillWorkAfterCancellation () =
 
     // Wait for the cancellation response
     let cancelResponse = waitForResponse stdout 5000 |> Async.RunSynchronously
-    ClassicAssert.IsTrue(cancelResponse.IsSome, "Expected cancellation response")
-    ClassicAssert.AreEqual(-32800, cancelResponse.Value.GetProperty("error").GetProperty("code").GetInt32())
+    Assert.That(cancelResponse.IsSome, Is.True, "Expected cancellation response")
+    Assert.That(cancelResponse.Value.GetProperty("error").GetProperty("code").GetInt32(), Is.EqualTo(-32800))
 
     // Now send a fast request — should complete normally
     let fastRequest =
@@ -2364,8 +2373,8 @@ let testOtherRequestsStillWorkAfterCancellation () =
         allMessages
         |> List.tryFind (fun m -> m.TryGetProperty("id") |> fst && m.GetProperty("id").GetInt32() = 2)
 
-    ClassicAssert.IsTrue(fastResponse.IsSome, "Expected a response for the fast request (id=2)")
-    ClassicAssert.AreEqual("ok", fastResponse.Value.GetProperty("result").GetString())
+    Assert.That(fastResponse.IsSome, Is.True, "Expected a response for the fast request (id=2)")
+    Assert.That(fastResponse.Value.GetProperty("result").GetString(), Is.EqualTo("ok"))
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2391,14 +2400,14 @@ let testRequestWithMissingJsonRpcFieldReturnsInvalidRequest () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected an error response for missing jsonrpc field")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected an error response for missing jsonrpc field")
 
     let response = responseOpt.Value
-    ClassicAssert.AreEqual(1, response.GetProperty("id").GetInt32(), "Error response must echo the request id")
+    Assert.That(response.GetProperty("id").GetInt32(), Is.EqualTo(1), "Error response must echo the request id")
 
-    ClassicAssert.AreEqual(
-        -32600,
+    Assert.That(
         response.GetProperty("error").GetProperty("code").GetInt32(),
+        Is.EqualTo(-32600),
         "Expected -32600 Invalid Request"
     )
 
@@ -2421,14 +2430,14 @@ let testRequestWithWrongJsonRpcVersionReturnsInvalidRequest () =
 
     let responseOpt = waitForResponse stdout 5000 |> Async.RunSynchronously
 
-    ClassicAssert.IsTrue(responseOpt.IsSome, "Expected an error response for wrong jsonrpc version")
+    Assert.That(responseOpt.IsSome, Is.True, "Expected an error response for wrong jsonrpc version")
 
     let response = responseOpt.Value
-    ClassicAssert.AreEqual(2, response.GetProperty("id").GetInt32(), "Error response must echo the request id")
+    Assert.That(response.GetProperty("id").GetInt32(), Is.EqualTo(2), "Error response must echo the request id")
 
-    ClassicAssert.AreEqual(
-        -32600,
+    Assert.That(
         response.GetProperty("error").GetProperty("code").GetInt32(),
+        Is.EqualTo(-32600),
         "Expected -32600 Invalid Request"
     )
 
@@ -2456,8 +2465,8 @@ let testNotificationWithMissingJsonRpcFieldIsSilentlyDropped () =
 
     Async.Sleep 500 |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual(0L, stdout.Length, "Dropped notification must produce no output")
-    ClassicAssert.IsFalse(handlerCalled.Value, "Handler must not be called for invalid notification")
+    Assert.That(stdout.Length, Is.EqualTo(0L), "Dropped notification must produce no output")
+    Assert.That(handlerCalled.Value, Is.False, "Handler must not be called for invalid notification")
 
 // ---- Per-call timeout tests ----
 
@@ -2486,21 +2495,22 @@ let testSingleCallTimeoutWithNoResponseReturnsError () =
 
     sw.Stop()
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         completed,
+        Is.True,
         sprintf "Call should have timed out within 500 ms but took %d ms" sw.ElapsedMilliseconds
     )
 
     match result.Result with
     | Error err ->
-        ClassicAssert.AreEqual(
-            -32000,
+        Assert.That(
             err.GetProperty("code").GetInt32(),
+            Is.EqualTo(-32000),
             "Expected error code -32000 (Call timed out)"
         )
 
-        ClassicAssert.AreEqual("Call timed out", err.GetProperty("message").GetString())
-    | Ok _ -> ClassicAssert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
+        Assert.That(err.GetProperty("message").GetString(), Is.EqualTo("Call timed out"))
+    | Ok _ -> Assert.Fail("Expected Error(-32000) for a timed-out call, got Ok")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2518,18 +2528,18 @@ let testGetRpcStatsIdleTransportIsActiveWithEmptyCounters () =
 
     let stats = getJsonRpcStats server |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual("Active", stats.Phase)
-    ClassicAssert.AreEqual(0, stats.WriteQueueLength, "Idle transport should have empty write queue")
-    ClassicAssert.AreEqual(0, stats.PendingOutboundCallCount, "Idle transport should have no pending outbound calls")
+    Assert.That(stats.Phase, Is.EqualTo("Active"))
+    Assert.That(stats.WriteQueueLength, Is.EqualTo(0), "Idle transport should have empty write queue")
+    Assert.That(stats.PendingOutboundCallCount, Is.EqualTo(0), "Idle transport should have no pending outbound calls")
 
-    ClassicAssert.AreEqual(
-        0,
+    Assert.That(
         stats.RunningInboundRequestCount,
+        Is.EqualTo(0),
         "Idle transport should have no running inbound requests"
     )
 
-    ClassicAssert.AreEqual(false, stats.TimerArmed, "Timer should not be armed when there are no timed calls")
-    ClassicAssert.AreEqual(0, stats.RecentlyTimedOutCallCount, "No recently timed-out calls on a fresh transport")
+    Assert.That(stats.TimerArmed, Is.EqualTo(false), "Timer should not be armed when there are no timed calls")
+    Assert.That(stats.RecentlyTimedOutCallCount, Is.EqualTo(0), "No recently timed-out calls on a fresh transport")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously
 
@@ -2568,25 +2578,25 @@ let testGetRpcStatsRunningHandlerIsVisible () =
                ``params`` = {| |} |}
         ))
 
-    ClassicAssert.IsTrue(handlerStarted.Wait(5000), "Handler should have started")
+    Assert.That(handlerStarted.Wait(5000), Is.True, "Handler should have started")
 
     let duringStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual("Active", duringStats.Phase)
-    ClassicAssert.AreEqual(1, duringStats.RunningInboundRequestCount, "Exactly one handler should be running")
-    ClassicAssert.AreEqual(0, duringStats.PendingOutboundCallCount)
+    Assert.That(duringStats.Phase, Is.EqualTo("Active"))
+    Assert.That(duringStats.RunningInboundRequestCount, Is.EqualTo(1), "Exactly one handler should be running")
+    Assert.That(duringStats.PendingOutboundCallCount, Is.EqualTo(0))
 
     // Unblock the handler, then wait for its response to appear in stdout before
     // checking the counters — this ensures HandlerCompleted has been processed.
     handlerMayFinish.Set()
     let gotResponse = waitForMessages stdout 1 5000
-    ClassicAssert.AreEqual(1, gotResponse.Length, "Handler should have produced a response")
+    Assert.That(gotResponse.Length, Is.EqualTo(1), "Handler should have produced a response")
     Thread.Sleep 50 // let the actor process HandlerCompleted
 
     let afterStats = getJsonRpcStats server |> Async.RunSynchronously
 
-    ClassicAssert.AreEqual(
-        0,
+    Assert.That(
         afterStats.RunningInboundRequestCount,
+        Is.EqualTo(0),
         "Running count should be zero after handler finishes"
     )
 
@@ -2617,11 +2627,11 @@ let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
 
     // Wait for the outbound request so the call is registered in PendingOutboundCalls.
     let outbound = waitForMessages stdout 1 3000
-    ClassicAssert.AreEqual(1, outbound.Length)
+    Assert.That(outbound.Length, Is.EqualTo(1))
 
     let pendingStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual(1, pendingStats.PendingOutboundCallCount, "One timed call should be pending")
-    ClassicAssert.AreEqual(true, pendingStats.TimerArmed, "Timer must be armed for a timed call")
+    Assert.That(pendingStats.PendingOutboundCallCount, Is.EqualTo(1), "One timed call should be pending")
+    Assert.That(pendingStats.TimerArmed, Is.EqualTo(true), "Timer must be armed for a timed call")
 
     // Feed back a success response — the call resolves and the timer should be disarmed.
     let outboundId = outbound.[0].GetProperty("id").GetInt32()
@@ -2636,17 +2646,17 @@ let testGetRpcStatsTimedCallArmsAndDisarmsTimer () =
     writeMessageToPipe clientToServer response
 
     let completed = replyTask.Wait(TimeSpan.FromSeconds 5.0)
-    ClassicAssert.IsTrue(completed, "Call should have resolved")
+    Assert.That(completed, Is.True, "Call should have resolved")
 
     match replyTask.Result with
-    | Ok v -> ClassicAssert.AreEqual("ok", v.GetString())
-    | Error e -> ClassicAssert.Fail(sprintf "Expected Ok but got Error: %s" (string e))
+    | Ok v -> Assert.That(v.GetString(), Is.EqualTo("ok"))
+    | Error e -> Assert.Fail(sprintf "Expected Ok but got Error: %s" (string e))
 
     // Give the actor a beat to process the response and reschedule the timer.
     Thread.Sleep 50
 
     let resolvedStats = getJsonRpcStats server |> Async.RunSynchronously
-    ClassicAssert.AreEqual(0, resolvedStats.PendingOutboundCallCount, "Call should be gone from PendingOutboundCalls")
-    ClassicAssert.AreEqual(false, resolvedStats.TimerArmed, "Timer must be disarmed after all timed calls resolve")
+    Assert.That(resolvedStats.PendingOutboundCallCount, Is.EqualTo(0), "Call should be gone from PendingOutboundCalls")
+    Assert.That(resolvedStats.TimerArmed, Is.EqualTo(false), "Timer must be disarmed after all timed calls resolve")
 
     shutdownJsonRpcTransport server |> Async.RunSynchronously

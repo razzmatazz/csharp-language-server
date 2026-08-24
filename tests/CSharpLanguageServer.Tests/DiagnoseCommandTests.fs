@@ -6,7 +6,6 @@ open System.Diagnostics
 open System.Threading.Tasks
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 
 open CSharpLanguageServer.Tests.Tooling
 
@@ -46,9 +45,9 @@ let testDiagnoseCommandWorks () =
     Task.WaitAll(stdoutTask, stderrTask)
 
     let stdout: string = stdoutTask.Result
-    ClassicAssert.IsEmpty(stdout)
+    Assert.That(stdout, Is.Empty)
 
     let stderr: string = stderrTask.Result
-    ClassicAssert.IsTrue(stderr.Contains("diagnose: loading solution.."))
-    ClassicAssert.IsTrue(stderr.Contains("csharp-ls: Loading solution"))
-    ClassicAssert.IsTrue(stderr.Contains("diagnose: done"))
+    Assert.That(stderr, Does.Contain("diagnose: loading solution.."))
+    Assert.That(stderr, Does.Contain("csharp-ls: Loading solution"))
+    Assert.That(stderr, Does.Contain("diagnose: done"))

@@ -4,7 +4,6 @@ open System
 open System.Threading
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -40,7 +39,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
 
         match report0 with
         | Some(U2.C1 report) ->
-            ClassicAssert.AreEqual("full", report.Kind)
+            Assert.That(report.Kind, Is.EqualTo("full"))
             // Capture baseline — may be non-zero if SDK analyzers emit warnings on this file.
             // We assert no compiler errors (no Error-severity items), not zero total items.
             let errorItems =
@@ -48,7 +47,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
                 |> Array.filter (fun d ->
                     d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-            ClassicAssert.AreEqual(0, errorItems.Length, "Expected no compiler errors on baseline")
+            Assert.That(errorItems.Length, Is.EqualTo(0), "Expected no compiler errors on baseline")
             baselineCount <- report.Items.Length
         | _ -> failwith "U2.C1 is expected"
 
@@ -67,7 +66,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
                 |> Array.filter (fun d ->
                     d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-            ClassicAssert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after change to 'xxx'")
+            Assert.That(errorItems.Length, Is.EqualTo(3), "Expected 3 compiler errors after change to 'xxx'")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -80,9 +79,9 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
 
         match report2 with
         | Some(U2.C1 report) ->
-            ClassicAssert.AreEqual(
-                baselineCount,
+            Assert.That(
                 report.Items.Length,
+                Is.EqualTo(baselineCount),
                 "Expected diagnostics to revert to baseline after didClose"
             )
         | _ -> failwith "U2.C1 is expected"
@@ -96,7 +95,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
 
         match report3 with
         | Some(U2.C1 report) ->
-            ClassicAssert.AreEqual(baselineCount, report.Items.Length, "Expected baseline diagnostics on re-open")
+            Assert.That(report.Items.Length, Is.EqualTo(baselineCount), "Expected baseline diagnostics on re-open")
         | _ -> failwith "U2.C1 is expected"
 
         // now change file to contain "xxx" to trigger diagnostics
@@ -114,7 +113,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
                 |> Array.filter (fun d ->
                     d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-            ClassicAssert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after second change to 'xxx'")
+            Assert.That(errorItems.Length, Is.EqualTo(3), "Expected 3 compiler errors after second change to 'xxx'")
         | _ -> failwith "U2.C1 is expected"
 
         classFile.Save()
@@ -131,7 +130,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
                 |> Array.filter (fun d ->
                     d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-            ClassicAssert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after save of broken file")
+            Assert.That(errorItems.Length, Is.EqualTo(3), "Expected 3 compiler errors after save of broken file")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -147,7 +146,7 @@ let testDidCloseNotificationWillRevertFileToStateOnDisk () =
                 |> Array.filter (fun d ->
                     d.Severity = Some Ionide.LanguageServerProtocol.Types.DiagnosticSeverity.Error)
 
-            ClassicAssert.AreEqual(3, errorItems.Length, "Expected 3 compiler errors after save (post-close state)")
+            Assert.That(errorItems.Length, Is.EqualTo(3), "Expected 3 compiler errors after save (post-close state)")
         | _ -> failwith "U2.C1 is expected"
 
 [<Test>]
@@ -177,8 +176,8 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report0 with
         | Some(U2.C1 report) ->
-            ClassicAssert.AreEqual("full", report.Kind)
-            ClassicAssert.AreEqual(0, report.Items.Length)
+            Assert.That(report.Kind, Is.EqualTo("full"))
+            Assert.That(report.Items.Length, Is.EqualTo(0))
         | _ -> failwith "U2.C1 is expected"
 
         // now change file to contain invalid razor code to trigger diagnostics
@@ -191,7 +190,7 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report1 with
         | Some(U2.C1 report) ->
-            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
+            Assert.That(report.Items.Length, Is.GreaterThanOrEqualTo(1), "Expected at least 1 diagnostic error")
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -203,7 +202,7 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report2 with
-        | Some(U2.C1 report) -> ClassicAssert.AreEqual(0, report.Items.Length)
+        | Some(U2.C1 report) -> Assert.That(report.Items.Length, Is.EqualTo(0))
         | _ -> failwith "U2.C1 is expected"
 
     // ok, now open the file again and do save the file to disk this time
@@ -214,7 +213,7 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
             client.Request("textDocument/diagnostic", diagnosticParams)
 
         match report3 with
-        | Some(U2.C1 report) -> ClassicAssert.AreEqual(0, report.Items.Length)
+        | Some(U2.C1 report) -> Assert.That(report.Items.Length, Is.EqualTo(0))
         | _ -> failwith "U2.C1 is expected"
 
         // now change file to contain invalid razor code to trigger diagnostics
@@ -227,7 +226,7 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report4 with
         | Some(U2.C1 report) ->
-            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error")
+            Assert.That(report.Items.Length, Is.GreaterThanOrEqualTo(1), "Expected at least 1 diagnostic error")
         | _ -> failwith "U2.C1 is expected"
 
         cshtmlFile.Save()
@@ -239,7 +238,11 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report5 with
         | Some(U2.C1 report) ->
-            ClassicAssert.GreaterOrEqual(report.Items.Length, 1, "Expected at least 1 diagnostic error after save")
+            Assert.That(
+                report.Items.Length,
+                Is.GreaterThanOrEqualTo(1),
+                "Expected at least 1 diagnostic error after save"
+            )
         | _ -> failwith "U2.C1 is expected"
 
     Thread.Sleep(250)
@@ -250,9 +253,9 @@ let testDidCloseNotificationWillRevertCshtmlFileToStateOnDisk () =
 
         match report6 with
         | Some(U2.C1 report) ->
-            ClassicAssert.GreaterOrEqual(
+            Assert.That(
                 report.Items.Length,
-                1,
+                Is.GreaterThanOrEqualTo(1),
                 "Expected at least 1 diagnostic error after file close"
             )
         | _ -> failwith "U2.C1 is expected"
@@ -267,7 +270,7 @@ let testOpeningAndClosingNonExistingCsFileRemovesItFromSolution () =
         "Project/BrokenClass.cs" |> fileUriForProjectDir client.SolutionDir
 
     let diagItems = brokenClassFileUri |> getWorkspaceDiagnosticsForUri client
-    ClassicAssert.AreEqual(0, diagItems.Length)
+    Assert.That(diagItems.Length, Is.EqualTo(0))
 
     // Open a non-existing .cs file with invalid C# code and then check
     // diagnostics to verify it was actually added to solution
@@ -299,7 +302,7 @@ let testOpeningAndClosingNonExistingCshtmlFileRemovesItFromSolution () =
         |> fileUriForProjectDir client.SolutionDir
 
     let diagItems = brokenCshtmlFileUri |> getWorkspaceDiagnosticsForUri client
-    ClassicAssert.AreEqual(0, diagItems.Length)
+    Assert.That(diagItems.Length, Is.EqualTo(0))
 
     // Open a non-existing .cshtml file with invalid Razor code and then check
     // diagnostics to verify it was actually added to solution

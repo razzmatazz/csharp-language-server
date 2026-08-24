@@ -3,7 +3,6 @@ module CSharpLanguageServer.Tests.InitializationTests
 open System
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 
 open Ionide.LanguageServerProtocol.Server
 open Ionide.LanguageServerProtocol.Types
@@ -12,7 +11,7 @@ open CSharpLanguageServer.Tests.Tooling
 open CSharpLanguageServer.Tests.Fixtures
 open CSharpLanguageServer.Types
 
-let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
+let assertHoverWorks (client: LspTestClient) file pos (expectedMarkupContent: string) =
     use classFile = client.Open(file)
 
     let hover0Params: HoverParams =
@@ -25,8 +24,8 @@ let assertHoverWorks (client: LspTestClient) file pos expectedMarkupContent =
     match hover0 with
     | Some { Contents = U3.C1 markupContent
              Range = None } ->
-        ClassicAssert.AreEqual(MarkupKind.Markdown, markupContent.Kind)
-        ClassicAssert.AreEqual(expectedMarkupContent, markupContent.Value)
+        Assert.That(markupContent.Kind, Is.EqualTo(MarkupKind.Markdown))
+        Assert.That(markupContent.Value, Is.EqualTo(expectedMarkupContent))
 
     | x -> failwithf "'{ Contents = U3.C1 markupContent; Range = None }' was expected but '%s' received" (string x)
 
@@ -43,45 +42,51 @@ let testServerRegistersCapabilitiesWithTheClient () =
         "workspace never reached Configured after initialized"
 
     let serverInfo = client.GetState().ServerInfo.Value
-    ClassicAssert.AreEqual("csharp-ls", serverInfo.Name)
+    Assert.That(serverInfo.Name, Is.EqualTo("csharp-ls"))
 
     let serverCaps = client.GetState().ServerCapabilities.Value
 
-    ClassicAssert.AreEqual(
-        { Change = Some TextDocumentSyncKind.Incremental
-          OpenClose = Some true
-          Save = Some(U2.C2 { IncludeText = Some true })
-          WillSave = None
-          WillSaveWaitUntil = None }
-        |> U2<TextDocumentSyncOptions, TextDocumentSyncKind>.C1
-        |> Some,
-        serverCaps.TextDocumentSync
+    Assert.That(
+        serverCaps.TextDocumentSync,
+        Is.EqualTo(
+            { Change = Some TextDocumentSyncKind.Incremental
+              OpenClose = Some true
+              Save = Some(U2.C2 { IncludeText = Some true })
+              WillSave = None
+              WillSaveWaitUntil = None }
+            |> U2<TextDocumentSyncOptions, TextDocumentSyncKind>.C1
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(
-        { WorkspaceFolders =
-            Some
-                { Supported = Some true
-                  ChangeNotifications = U2.C2 true |> Some }
-          FileOperations = None }
-        |> Some,
-        serverCaps.Workspace
+    Assert.That(
+        serverCaps.Workspace,
+        Is.EqualTo(
+            { WorkspaceFolders =
+                Some
+                    { Supported = Some true
+                      ChangeNotifications = U2.C2 true |> Some }
+              FileOperations = None }
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(true |> U2<bool, HoverOptions>.C1 |> Some, serverCaps.HoverProvider)
+    Assert.That(serverCaps.HoverProvider, Is.EqualTo(true |> U2<bool, HoverOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(
-        true
-        |> U3<bool, ImplementationOptions, ImplementationRegistrationOptions>.C1
-        |> Some,
-        serverCaps.ImplementationProvider
+    Assert.That(
+        serverCaps.ImplementationProvider,
+        Is.EqualTo(
+            true
+            |> U3<bool, ImplementationOptions, ImplementationRegistrationOptions>.C1
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(true |> U2<bool, DocumentSymbolOptions>.C1 |> Some, serverCaps.DocumentSymbolProvider)
+    Assert.That(serverCaps.DocumentSymbolProvider, Is.EqualTo(true |> U2<bool, DocumentSymbolOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(true |> U2<bool, DefinitionOptions>.C1 |> Some, serverCaps.DefinitionProvider)
+    Assert.That(serverCaps.DefinitionProvider, Is.EqualTo(true |> U2<bool, DefinitionOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(null, serverCaps.InlineValueProvider)
+    Assert.That(serverCaps.InlineValueProvider, Is.EqualTo(null))
 
     let expectedDocumentSelector =
         [| U2.C1
@@ -93,78 +98,88 @@ let testServerRegistersCapabilitiesWithTheClient () =
                  Scheme = Some "file"
                  Pattern = Some "**/*.cshtml" } |]
 
-    ClassicAssert.AreEqual(
-        { DocumentSelector = Some expectedDocumentSelector
-          WorkDoneProgress = None
-          Identifier = None
-          InterFileDependencies = false
-          WorkspaceDiagnostics = true
-          Id = None }
-        |> U2<DiagnosticOptions, DiagnosticRegistrationOptions>.C2
-        |> Some,
-        serverCaps.DiagnosticProvider
+    Assert.That(
+        serverCaps.DiagnosticProvider,
+        Is.EqualTo(
+            { DocumentSelector = Some expectedDocumentSelector
+              WorkDoneProgress = None
+              Identifier = None
+              InterFileDependencies = false
+              WorkspaceDiagnostics = true
+              Id = None }
+            |> U2<DiagnosticOptions, DiagnosticRegistrationOptions>.C2
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(true |> U2<bool, DocumentHighlightOptions>.C1 |> Some, serverCaps.DocumentHighlightProvider)
+    Assert.That(serverCaps.DocumentHighlightProvider, Is.EqualTo(true |> U2<bool, DocumentHighlightOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(
-        { WorkDoneProgress = None
-          TriggerCharacters = Some [| "."; "'" |]
-          AllCommitCharacters = None
-          ResolveProvider = Some true
-          CompletionItem = None }
-        |> Some,
-        serverCaps.CompletionProvider
+    Assert.That(
+        serverCaps.CompletionProvider,
+        Is.EqualTo(
+            { WorkDoneProgress = None
+              TriggerCharacters = Some [| "."; "'" |]
+              AllCommitCharacters = None
+              ResolveProvider = Some true
+              CompletionItem = None }
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(
-        { WorkDoneProgress = None
-          CodeActionKinds = None
-          ResolveProvider = Some true }
-        |> U2<bool, CodeActionOptions>.C2
-        |> Some,
-        serverCaps.CodeActionProvider
+    Assert.That(
+        serverCaps.CodeActionProvider,
+        Is.EqualTo(
+            { WorkDoneProgress = None
+              CodeActionKinds = None
+              ResolveProvider = Some true }
+            |> U2<bool, CodeActionOptions>.C2
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(true |> U2<bool, RenameOptions>.C1 |> Some, serverCaps.RenameProvider)
+    Assert.That(serverCaps.RenameProvider, Is.EqualTo(true |> U2<bool, RenameOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(null, serverCaps.DeclarationProvider)
+    Assert.That(serverCaps.DeclarationProvider, Is.EqualTo(null))
 
-    ClassicAssert.AreEqual(
-        true |> U2<bool, DocumentFormattingOptions>.C1 |> Some,
-        serverCaps.DocumentFormattingProvider
+    Assert.That(
+        serverCaps.DocumentFormattingProvider,
+        Is.EqualTo(true |> U2<bool, DocumentFormattingOptions>.C1 |> Some)
     )
 
-    ClassicAssert.AreEqual(true |> U2<bool, ReferenceOptions>.C1 |> Some, serverCaps.ReferencesProvider)
+    Assert.That(serverCaps.ReferencesProvider, Is.EqualTo(true |> U2<bool, ReferenceOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some, serverCaps.WorkspaceSymbolProvider)
+    Assert.That(serverCaps.WorkspaceSymbolProvider, Is.EqualTo(true |> U2<bool, WorkspaceSymbolOptions>.C1 |> Some))
 
-    ClassicAssert.AreEqual(
-        { WorkDoneProgress = None
-          TriggerCharacters = Some [| "("; ","; "<"; "{"; "[" |]
-          RetriggerCharacters = None }
-        |> Some,
-        serverCaps.SignatureHelpProvider
+    Assert.That(
+        serverCaps.SignatureHelpProvider,
+        Is.EqualTo(
+            { WorkDoneProgress = None
+              TriggerCharacters = Some [| "("; ","; "<"; "{"; "[" |]
+              RetriggerCharacters = None }
+            |> Some
+        )
     )
 
-    ClassicAssert.AreEqual(null, serverCaps.MonikerProvider)
+    Assert.That(serverCaps.MonikerProvider, Is.EqualTo(null))
 
-    ClassicAssert.AreEqual(
-        true
-        |> U3<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>.C1
-        |> Some,
-        serverCaps.FoldingRangeProvider
+    Assert.That(
+        serverCaps.FoldingRangeProvider,
+        Is.EqualTo(
+            true
+            |> U3<bool, FoldingRangeOptions, FoldingRangeRegistrationOptions>.C1
+            |> Some
+        )
     )
 
-    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
-    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
+    Assert.That(client.ServerDidRespondTo "initialize", Is.True)
+    Assert.That(client.ClientDidSendNotification "initialized", Is.True)
 
 [<Test>]
 let testSlnxSolutionFileWillBeFoundAndLoaded () =
     use client = activateFixture "projectWithSlnx"
 
-    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
-    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
+    Assert.That(client.ServerDidRespondTo "initialize", Is.True)
+    Assert.That(client.ClientDidSendNotification "initialized", Is.True)
 
     assertHoverWorks
         client
@@ -172,7 +187,7 @@ let testSlnxSolutionFileWillBeFoundAndLoaded () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.MethodA(string arg)\n```"
 
-    ClassicAssert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"))
+    Assert.That(client.ServerMessageLogContains(fun m -> m.Contains "1 solution(s) found"), Is.True)
 
 [<Test>]
 let testMultiTargetProjectLoads () =
@@ -184,7 +199,7 @@ let testMultiTargetProjectLoads () =
         { Line = 2u; Character = 16u }
         "```csharp\nvoid Class.Method(string arg)\n```"
 
-    ClassicAssert.IsTrue(client.ServerMessageLogContains(fun m -> m.Contains "loading project"))
+    Assert.That(client.ServerMessageLogContains(fun m -> m.Contains "loading project"), Is.True)
 
 /// Regression test for https://github.com/razzmatazz/csharp-language-server/issues/405:
 /// a solution mixing a plain net10.0 project with a net10.0-windows one used to have the
@@ -235,7 +250,7 @@ let testPlatformSpecificTfmDoesNotBreakSiblingProjects () =
 
         let errorsStr = errors |> Array.map _.Message |> String.concat "; "
 
-        ClassicAssert.AreEqual(0, errors.Length, $"expected no errors on Project/Class.cs, got: {errorsStr}")
+        Assert.That(errors.Length, Is.EqualTo(0), $"expected no errors on Project/Class.cs, got: {errorsStr}")
     | _ -> failwith "U2.C1 (full report) was expected"
 
 [<Test>]
@@ -268,14 +283,16 @@ let testMultiTargetWorkspace () =
             updateInitializeParamsWithWorkspaceFolders
 
     (*
-    ClassicAssert.IsTrue(
+    Assert.That(
         client.ServerProgressLogContains(fun str ->
-            str.Contains("Finished loading workspace folder") && str.Contains("/folder0"))
+            str.Contains("Finished loading workspace folder") && str.Contains("/folder0")),
+        Is.True
     )
 
-    ClassicAssert.IsTrue(
+    Assert.That(
         client.ServerProgressLogContains(fun str ->
-            str.Contains("Finished loading workspace folder") && str.Contains("/folder1"))
+            str.Contains("Finished loading workspace folder") && str.Contains("/folder1")),
+        Is.True
     )
 *)
 
@@ -299,15 +316,15 @@ let testMultiTargetWorkspace () =
         | Some hover ->
             match hover.Contents with
             | U3.C1 c ->
-                ClassicAssert.AreEqual(MarkupKind.Markdown, c.Kind)
+                Assert.That(c.Kind, Is.EqualTo(MarkupKind.Markdown))
 
-                ClassicAssert.AreEqual(
-                    sprintf "```csharp\n%s\n```" expectedMethodName,
-                    c.Value.ReplaceLineEndings("\n")
+                Assert.That(
+                    c.Value.ReplaceLineEndings("\n"),
+                    Is.EqualTo(sprintf "```csharp\n%s\n```" expectedMethodName)
                 )
             | _ -> failwith "C1 was expected"
 
-            ClassicAssert.IsTrue(hover.Range.IsNone)
+            Assert.That(hover.Range.IsNone, Is.True)
 
         | _ -> failwith "Some (U3.C1 c) was expected"
 
@@ -327,8 +344,9 @@ let testClientRegisterCapabilityIsNotSentWhenNoDynamicRegistrationsAreRequested 
             emptyFixturePatch
             id
 
-    ClassicAssert.IsFalse(
+    Assert.That(
         client.ServerDidInvoke "client/registerCapability",
+        Is.False,
         "server must not send client/registerCapability when all dynamicRegistration flags are absent"
     )
 
@@ -386,7 +404,7 @@ let testDynamicRegistrationsUsePulledWorkspaceConfiguration () =
     let expectedDocumentSelector: DocumentSelector =
         [| csharpDocumentFilter |> U2.C1; razorCsharpDocumentFilter |> U2.C1 |]
 
-    ClassicAssert.AreEqual(expectedDocumentSelector, diagnosticOptions.DocumentSelector.Value)
+    Assert.That(diagnosticOptions.DocumentSelector.Value, Is.EqualTo(box expectedDocumentSelector))
 
 [<TestCase(false, TestName = "absent: not sent")>]
 [<TestCase(true, TestName = "Some true: sent")>]
@@ -411,9 +429,9 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
     let actualFlag = caps.Workspace |> Option.bind _.Configuration
     let actualSupported = actualFlag = Some true
 
-    ClassicAssert.AreEqual(
-        configurationSupported,
+    Assert.That(
         actualSupported,
+        Is.EqualTo(configurationSupported),
         "test precondition failed: built ClientCapabilities does not match configurationSupported parameter"
     )
 
@@ -427,9 +445,9 @@ let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =
 
     client.Shutdown()
 
-    ClassicAssert.AreEqual(
-        configurationSupported,
+    Assert.That(
         client.ServerDidInvoke "workspace/configuration",
+        Is.EqualTo(configurationSupported),
         sprintf
             "workspace/configuration invocation expected=%b when Workspace.Configuration=%A"
             configurationSupported
@@ -499,13 +517,13 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
         "workspace never reached Ready phase after solution load completed"
 
     let debugInfoReady = client.GetDebugInfo()
-    ClassicAssert.AreEqual("Ready", debugInfoReady.workspace.phase, "phase after solution load")
+    Assert.That(debugInfoReady.workspace.phase, Is.EqualTo("Ready"), "phase after solution load")
 
     // ── ShuttingDown ─────────────────────────────────────────────────────────────
     client.SendShutdown()
 
     let debugInfoShuttingDown = client.GetDebugInfo()
-    ClassicAssert.AreEqual("ShuttingDown", debugInfoShuttingDown.workspace.phase, "phase after shutdown")
+    Assert.That(debugInfoShuttingDown.workspace.phase, Is.EqualTo("ShuttingDown"), "phase after shutdown")
 
     client.SendExit()
 
@@ -525,5 +543,5 @@ let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
     use client =
         activateFixtureExt "genericProject" defaultClientProfile emptyFixturePatch setInvalidRootPath
 
-    ClassicAssert.IsTrue(client.ServerDidRespondTo "initialize")
-    ClassicAssert.IsTrue(client.ClientDidSendNotification "initialized")
+    Assert.That(client.ServerDidRespondTo "initialize", Is.True)
+    Assert.That(client.ClientDidSendNotification "initialized", Is.True)

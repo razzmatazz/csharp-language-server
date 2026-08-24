@@ -4,7 +4,6 @@ open System
 open System.IO
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 
@@ -199,7 +198,7 @@ Exceptions:
 - ``(unspecified)``: https://aka.ms/cosmosdb-dot-net-exceptions#typed-api""")>]
 let testFormatDocXml (inputXml, expectedMD: string) =
     let resultMd = String.Join("\n", formatDocXml inputXml)
-    ClassicAssert.AreEqual(expectedMD.Replace("\r\n", "\n"), resultMd)
+    Assert.That(resultMd, Is.EqualTo(expectedMD.Replace("\r\n", "\n")))
 
 
 let private createDocumentationCompilation
@@ -253,7 +252,7 @@ public class Derived : Base
         |> _.GetMembers("M")
         |> Seq.exactlyOne
 
-    ClassicAssert.AreEqual("Inherited documentation.", markdownDocForSymbol compilation method)
+    Assert.That(markdownDocForSymbol compilation method, Is.EqualTo("Inherited documentation."))
 
 
 [<Test>]
@@ -291,6 +290,6 @@ public class C
             |> _.GetMembers("M")
             |> Seq.exactlyOne
 
-        ClassicAssert.AreEqual("Included documentation.", markdownDocForSymbol compilation method)
+        Assert.That(markdownDocForSymbol compilation method, Is.EqualTo("Included documentation."))
     finally
         Directory.Delete(directory, true)

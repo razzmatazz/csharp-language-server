@@ -4,7 +4,6 @@ open System
 open System.Threading
 
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -36,7 +35,7 @@ let ``test textDocument/documentHighlight works in .cs file`` () =
                 End = { Line = 12u; Character = 15u } }
             Kind = Some DocumentHighlightKind.Read } ]
 
-    ClassicAssert.AreEqual(Some expectedHighlights, highlights |> Option.map List.ofArray)
+    Assert.That(highlights |> Option.map List.ofArray, Is.EqualTo(Some expectedHighlights))
 
 [<Test>]
 let ``test textDocument/documentHighlight works in .cshtml file`` () =
@@ -60,4 +59,4 @@ let ``test textDocument/documentHighlight works in .cshtml file`` () =
                 End = { Line = 1u; Character = 6u } }
             Kind = Some DocumentHighlightKind.Read } ]
 
-    ClassicAssert.AreEqual(Some expectedHighlights, highlights |> Option.map List.ofArray)
+    Assert.That(highlights |> Option.map List.ofArray, Is.EqualTo(Some expectedHighlights))

@@ -2,7 +2,6 @@ module CSharpLanguageServer.Tests.SemanticTokenTests
 
 open System
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Classification
@@ -85,11 +84,11 @@ let testSemanticTokens () =
             | U2.C1 c1 -> Some c1
             | _ -> None)
 
-    ClassicAssert.IsTrue semanticTokensOptions.IsSome
+    Assert.That(semanticTokensOptions.IsSome, Is.True)
 
     let legend = semanticTokensOptions.Value.Legend
-    ClassicAssert.AreEqual([| "static" |], legend.TokenModifiers)
-    ClassicAssert.AreEqual(40, legend.TokenTypes.Length)
+    Assert.That(legend.TokenModifiers, Is.EqualTo(box [| "static" |]))
+    Assert.That(legend.TokenTypes.Length, Is.EqualTo(40))
 
     // Make sure the server exposes the capability.
     let haveFullSemanticTokenCapability =
@@ -101,7 +100,7 @@ let testSemanticTokens () =
             | _ -> None)
         |> Option.defaultValue false
 
-    ClassicAssert.IsTrue haveFullSemanticTokenCapability
+    Assert.That(haveFullSemanticTokenCapability, Is.True)
 
     use file = client.Open "Project/SemanticTokenTest.cs"
     let fileContentsLen = file.GetFileContents().Length
@@ -114,60 +113,64 @@ let testSemanticTokens () =
     let semanticToken: SemanticTokens =
         client.Request("textDocument/semanticTokens/full", semanticTokenParams)
 
-    ClassicAssert.IsTrue semanticToken.ResultId.IsNone
+    Assert.That(semanticToken.ResultId.IsNone, Is.True)
 
     // Test if anything is out-of-bound (that might indicates an underflow)
-    ClassicAssert.IsFalse(
+    Assert.That(
         semanticToken.Data
         |> Array.chunkBySize 5
-        |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 fileContentsLen) false
+        |> Array.fold (fun st -> fun datum -> st || datum[2] > uint32 fileContentsLen) false,
+        Is.False
     )
 
     let tokens = semanticToken |> decodeSemanticToken legend
-    ClassicAssert.AreEqual(129, tokens.Length)
+    Assert.That(tokens.Length, Is.EqualTo(129))
 
-    ClassicAssert.AreEqual(
-        [| { Line = 0u
-             StartChar = 0u
-             Length = 5u
-             TokenType = "keyword"
-             TokenModifiers = [||] }
-           { Line = 0u
-             StartChar = 6u
-             Length = 6u
-             TokenType = "namespace"
-             TokenModifiers = [||] }
-           { Line = 2u
-             StartChar = 0u
-             Length = 9u
-             TokenType = "keyword"
-             TokenModifiers = [||] }
-           { Line = 2u
-             StartChar = 10u
-             Length = 7u
-             TokenType = "namespace"
-             TokenModifiers = [||] }
-           { Line = 4u
-             StartChar = 4u
-             Length = 9u
-             TokenType = "keyword"
-             TokenModifiers = [||] }
-           { Line = 4u
-             StartChar = 14u
-             Length = 10u
-             TokenType = "interface"
-             TokenModifiers = [||] }
-           { Line = 6u
-             StartChar = 8u
-             Length = 6u
-             TokenType = "keyword"
-             TokenModifiers = [||] }
-           { Line = 6u
-             StartChar = 15u
-             Length = 11u
-             TokenType = "method"
-             TokenModifiers = [||] } |],
-        tokens |> Array.take 8
+    Assert.That(
+        tokens |> Array.take 8,
+        Is.EqualTo(
+            box
+                [| { Line = 0u
+                     StartChar = 0u
+                     Length = 5u
+                     TokenType = "keyword"
+                     TokenModifiers = [||] }
+                   { Line = 0u
+                     StartChar = 6u
+                     Length = 6u
+                     TokenType = "namespace"
+                     TokenModifiers = [||] }
+                   { Line = 2u
+                     StartChar = 0u
+                     Length = 9u
+                     TokenType = "keyword"
+                     TokenModifiers = [||] }
+                   { Line = 2u
+                     StartChar = 10u
+                     Length = 7u
+                     TokenType = "namespace"
+                     TokenModifiers = [||] }
+                   { Line = 4u
+                     StartChar = 4u
+                     Length = 9u
+                     TokenType = "keyword"
+                     TokenModifiers = [||] }
+                   { Line = 4u
+                     StartChar = 14u
+                     Length = 10u
+                     TokenType = "interface"
+                     TokenModifiers = [||] }
+                   { Line = 6u
+                     StartChar = 8u
+                     Length = 6u
+                     TokenType = "keyword"
+                     TokenModifiers = [||] }
+                   { Line = 6u
+                     StartChar = 15u
+                     Length = 11u
+                     TokenType = "method"
+                     TokenModifiers = [||] } |]
+        )
     )
 
 
@@ -183,7 +186,7 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
             | U2.C1 c1 -> Some c1
             | _ -> None)
 
-    ClassicAssert.IsTrue semanticTokensOptions.IsSome
+    Assert.That(semanticTokensOptions.IsSome, Is.True)
 
     let legend = semanticTokensOptions.Value.Legend
 
@@ -212,8 +215,9 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
     let legendTokenTypes = legend.TokenTypes |> Set.ofArray
 
     for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
-        ClassicAssert.IsTrue(
-            legendTokenTypes.Contains expectedTokenType,
+        Assert.That(
+            legendTokenTypes,
+            Does.Contain expectedTokenType,
             sprintf "Expected '%s' in the semantic-token legend" expectedTokenType
         )
 
@@ -234,8 +238,9 @@ let testStringSyntaxEmbeddedLanguageSemanticTokens () =
         |> Set.ofArray
 
     for expectedTokenType in expectedEmbeddedLanguageTokenTypes do
-        ClassicAssert.IsTrue(
-            actualTokenTypes.Contains expectedTokenType,
+        Assert.That(
+            actualTokenTypes,
+            Does.Contain expectedTokenType,
             sprintf
                 "Expected semantic token type '%s', got: %s"
                 expectedTokenType

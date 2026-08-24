@@ -2,7 +2,6 @@ module CSharpLanguageServer.Tests.InternalTests
 
 open System
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
 
@@ -44,7 +43,7 @@ let testApplyWorkspaceTargetFrameworkProp (tfmList: string, expectedTfm: string 
         |> Array.map parseTfmList
         |> Map.ofArray
 
-    ClassicAssert.AreEqual(expectedTfm |> Option.ofObj, workspaceTargetFramework tfmsPerProject)
+    Assert.That(workspaceTargetFramework tfmsPerProject, Is.EqualTo(expectedTfm |> Option.ofObj))
 
 [<Test>]
 let testSymbolGetMetadataNameForGlobalNamespaceType () =
@@ -70,9 +69,9 @@ let testSymbolGetMetadataNameForGlobalNamespaceType () =
     let globalType = compilation.GetTypeByMetadataName("GlobalType")
 
     match globalType |> Option.ofObj with
-    | None -> ClassicAssert.Fail("GlobalType should be resolvable")
+    | None -> Assert.Fail("GlobalType should be resolvable")
     | Some globalType ->
         let result = CSharpLanguageServer.Roslyn.Symbol.symbolGetMetadataName globalType
         // Before fix: returns ".GlobalType" (spurious leading dot from the empty global ns name)
         // After fix:  returns "GlobalType"
-        ClassicAssert.AreEqual("GlobalType", result)
+        Assert.That(result, Is.EqualTo("GlobalType"))

@@ -13,7 +13,6 @@ open System.Xml.Linq
 
 open System.Text.Json
 open NUnit.Framework
-open NUnit.Framework.Legacy
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
@@ -1097,7 +1096,7 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
         Thread.Sleep(50)
 
     if stopwatch.Elapsed >= timeout then
-        ClassicAssert.Fail(failureMessage)
+        Assert.Fail(failureMessage)
 
 let getWorkspaceDiagnosticsForUri (client: ILspRequestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =
