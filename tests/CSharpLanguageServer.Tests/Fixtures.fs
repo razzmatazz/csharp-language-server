@@ -211,20 +211,8 @@ let private idleSweepInterval = TimeSpan.FromSeconds 30.0
 /// go through `bootClientAsync` below, which is the only place that calls `new LspTestClient`.
 let private activeClientsSemaphore =
     // Analyzers are disabled by default in tests (see buildConfigurationResponse), so the
-    // per-test CPU cost is low enough to run one server per logical core safely -- on CI
-    // runners prone to more contention per core than that (observed on Windows, where each
-    // concurrently-loading Roslyn/MSBuild workspace can itself use several cores), the
-    // workflow can lower this via CSHARP_LS_TEST_MAX_CONCURRENT_CLIENTS instead of also
-    // cutting NUnit's own test parallelism (NUnit.NumberOfTestWorkers).
-    let concurrency =
-        Environment.GetEnvironmentVariable("CSHARP_LS_TEST_MAX_CONCURRENT_CLIENTS")
-        |> Option.ofObj
-        |> Option.bind (fun v ->
-            match Int32.TryParse v with
-            | true, n when n > 0 -> Some n
-            | _ -> None)
-        |> Option.defaultValue Environment.ProcessorCount
-
+    // per-test CPU cost is low enough to run one server per logical core safely.
+    let concurrency = Environment.ProcessorCount
     new SemaphoreSlim(concurrency, concurrency)
 
 /// Reply payload for a boot: either a fresh client, or the exception that occurred while
