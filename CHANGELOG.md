@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.27.0] - 2026-08-24 / Vartai
 * Speed up the per-request document lookup: resolve the request uri through Roslyn's indexed `Solution.GetDocumentIdsWithFilePath` instead of scanning every document of every project (~6x faster `textDocument/definition` on a large solution)
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/414
 * Implement `callHierarchy/outgoingCalls`, previously a stub returning `null`; the handler resolves the prepared item back to its symbol, walks its declaration bodies for invocations and object creations, and resolves each through the semantic model
@@ -36,7 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Add Nix packaging and development flow
   - By @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/pull/381
 
-**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.26.0...main
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.26.0...0.27.0
 
 ## [0.26.0] - 2026-07-15 / Dūmiškės
 * Reduce superfluous `textDocument/inlayHint` noise: suppress redundant parameter-name and `var` type hints, and remove implicit lambda-parameter type hints entirely
