@@ -148,11 +148,20 @@ let workspaceFoldersReplaced (workspaceFolders: WorkspaceFolder list) (workspace
         Folders = folders
         Phase = LspWorkspacePhase.Configured }
 
+// Windows filesystems are case-insensitive, so two uris differing only in
+// casing name the same file there (a client may e.g. send a lowercase drive
+// letter while the workspace root was announced with an uppercase one); on
+// other platforms casing stays significant.
+let private uriComparison =
+    match Environment.OSVersion.Platform with
+    | PlatformID.Win32NT -> StringComparison.OrdinalIgnoreCase
+    | _ -> StringComparison.Ordinal
+
 let private uriIsWithin (baseUri: string) (uri: string) =
     let baseUri = baseUri.TrimEnd('/')
 
-    uri.Equals(baseUri, StringComparison.Ordinal)
-    || uri.StartsWith(baseUri + "/", StringComparison.Ordinal)
+    uri.Equals(baseUri, uriComparison)
+    || uri.StartsWith(baseUri + "/", uriComparison)
 
 let workspaceFolder (uri: string) (workspace: LspWorkspace) =
     let workspaceFolderMatchesUri wf =

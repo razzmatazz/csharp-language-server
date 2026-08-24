@@ -140,3 +140,29 @@ let ``an additional-document-only path resolves to none`` () =
         Is.True,
         "a path known only as an additional document is not a source document"
     )
+
+[<Test>]
+let ``workspace folder routing matches a differently cased uri on windows`` () =
+    let workspace =
+        { CSharpLanguageServer.Lsp.Workspace.LspWorkspace.Empty with
+            Folders =
+                [ { LspWorkspaceFolder.Empty with
+                      Uri = "file:///C:/Temp/CasingRoot" } ] }
+
+    let resolved =
+        workspace
+        |> CSharpLanguageServer.Lsp.Workspace.workspaceFolder "file:///c:/temp/casingroot/File.cs"
+
+    match Environment.OSVersion.Platform with
+    | PlatformID.Win32NT ->
+        Assert.That(
+            resolved.IsSome,
+            Is.True,
+            "windows filesystems are case-insensitive, so routing should match a differently cased uri"
+        )
+    | _ ->
+        Assert.That(
+            resolved.IsNone,
+            Is.True,
+            "path casing is significant on non-windows filesystems, so routing should not match"
+        )

@@ -90,3 +90,40 @@ let testHoverWorksInRazorFile () =
         Assert.That(c.Value.ReplaceLineEndings("\n"), Is.EqualTo("```csharp\nstring? IndexViewModel.Output\n```"))
 
     | _ -> failwith "Some (U3.C1 c) was expected"
+
+[<Test>]
+let testHoverWorksWithLowercasedDriveLetterUri () =
+    use client = activateFixture "genericProject"
+    use classFile = client.Open("Project/Class.cs")
+
+    // A client may send a lowercase drive letter while the workspace root was
+    // announced with an uppercase one; on windows both name the same file.
+    // On non-windows paths (no drive letter) the rewrite is a no-op.
+    let lowercasedUri =
+        System.Text.RegularExpressions.Regex.Replace(
+            classFile.Uri,
+            "^file:///([A-Z]):",
+            fun m -> "file:///" + m.Groups[1].Value.ToLowerInvariant() + ":"
+        )
+
+    // a didOpen with the mismatched casing must reach the document too
+    let didOpenParams: DidOpenTextDocumentParams =
+        { TextDocument =
+            { Uri = lowercasedUri
+              LanguageId = "csharp"
+              Version = 1
+              Text = System.IO.File.ReadAllText(System.Uri(classFile.Uri).LocalPath) } }
+
+    client.Notify("textDocument/didOpen", didOpenParams)
+
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = lowercasedUri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None }
+
+    let hover: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    match hover with
+    | Some { Contents = U3.C1 c } ->
+        Assert.That(c.Value.ReplaceLineEndings("\n"), Is.EqualTo("```csharp\nvoid Class.MethodA(string arg)\n```"))
+    | _ -> Assert.Fail("hover through a lowercased drive-letter uri should answer contents")
