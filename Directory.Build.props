@@ -5,6 +5,10 @@
     <Product>csharp-ls</Product>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <ChangelogFile>$(MSBuildThisFileDirectory)CHANGELOG.md</ChangelogFile>
+    <!-- Pin to LangVersion 9 to disable the F# 10 type subsumption cache, which causes
+         sustained ~150% CPU in FSAC/Ionide on this codebase's multi-project solution.
+         See https://github.com/dotnet/fsharp/issues/19368. -->
+    <LangVersion>9.0</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
