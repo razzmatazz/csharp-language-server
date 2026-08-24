@@ -383,12 +383,14 @@ Tests do **not** use in-process hosting. Instead:
    feeds it via `rpcLogCallback` and `UpdateState` posts from notification handlers.
 
 3. **Concurrency control** — `activeClientsSemaphore` (`SemaphoreSlim` initialized to
-   `Environment.ProcessorCount`), owned by `Fixtures.fs`, throttles simultaneous server
-   processes; analyzers are disabled by default in tests so per-server CPU cost is low
-   enough to run one process per logical core safely. `LspTestClient` itself (`Tooling.fs`)
-   doesn't know about the semaphore — its constructor takes a `releaseSlot: unit -> unit`
-   callback, invoked once from `Dispose`, so `Fixtures.fs` can gate/track admission for
-   both pooled and ad-hoc boots the same way (see 7.4)
+   `Environment.ProcessorCount`, or the `CSHARP_LS_TEST_MAX_CONCURRENT_CLIENTS` env var if
+   set — used to lower this on CI runners prone to more contention per core, e.g. Windows),
+   owned by `Fixtures.fs`, throttles simultaneous server processes; analyzers are disabled
+   by default in tests so per-server CPU cost is low enough to run one process per logical
+   core safely. `LspTestClient` itself (`Tooling.fs`) doesn't know about the semaphore —
+   its constructor takes a `releaseSlot: unit -> unit` callback, invoked once from
+   `Dispose`, so `Fixtures.fs` can gate/track admission for both pooled and ad-hoc boots the
+   same way (see 7.4)
 
 ### 7.3 Key Test Classes
 
