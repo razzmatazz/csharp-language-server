@@ -221,6 +221,44 @@ let resolveDefaultWorkspaceProps (targetFramework: string option) : Map<string, 
 
     Map.empty |> applyTargetFrameworkProp
 
+/// Turns MSBuildWorkspace's per-operation load progress into one progress
+/// report per project. A project goes through its Evaluate/Build/Resolve
+/// operations once per target framework, so completion is counted on the
+/// first Resolve seen for each project file.
+type private SolutionLoadProgressObserver(totalProjectCount: int, progressReport: string * uint -> Async<unit>) =
+    let completedProjects = HashSet<string>()
+    let syncRoot = obj ()
+
+    // Reports are forwarded through a mailbox so they reach the client in
+    // the order they were produced without blocking the loader's callback.
+    let reportQueue =
+        MailboxProcessor<string * uint>.Start(fun inbox -> async {
+            while true do
+                let! report = inbox.Receive()
+                do! progressReport report
+        })
+
+    interface IProgress<ProjectLoadProgress> with
+        member _.Report(loadProgress: ProjectLoadProgress) =
+            if loadProgress.Operation = ProjectLoadOperation.Resolve then
+                let reportMaybe =
+                    lock syncRoot (fun () ->
+                        match completedProjects.Add loadProgress.FilePath with
+                        | false -> None
+                        | true ->
+                            // The workspace may load more projects than the
+                            // solution file declares — LoadMetadataForReferencedProjects
+                            // follows references to non-member projects — so the
+                            // denominator widens as extras appear, keeping the
+                            // percentage monotonic and at most 100.
+                            let total = max totalProjectCount completedProjects.Count
+                            let percent = uint (100 * completedProjects.Count / max 1 total)
+                            let projectName = Path.GetFileNameWithoutExtension loadProgress.FilePath
+
+                            Some(sprintf "%s (%d/%d)" projectName completedProjects.Count total, percent))
+
+                reportMaybe |> Option.iter reportQueue.Post
+
 let selectPreferredSolution (slnFiles: string list) : option<string> =
     let getProjectCount (slnPath: string) =
         try
@@ -238,7 +276,11 @@ let selectPreferredSolution (slnFiles: string list) : option<string> =
         |> Seq.map snd
         |> Seq.tryHead
 
-let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) : Async<option<Workspace * Solution>> =
+let solutionTryLoadOnPath
+    (lspClient: ILspClient)
+    (progressReport: string * uint -> Async<unit>)
+    (solutionPath: string)
+    : Async<option<Workspace * Solution>> =
     assert Path.IsPathRooted solutionPath
 
     let logMessage m =
@@ -267,7 +309,12 @@ let solutionTryLoadOnPath (lspClient: ILspClient) (solutionPath: string) : Async
 
             msbuildWorkspace.LoadMetadataForReferencedProjects <- true
 
-            let! solution = msbuildWorkspace.OpenSolutionAsync solutionPath |> Async.AwaitTask
+            let loadProgressObserver =
+                SolutionLoadProgressObserver(Set.count projs, progressReport)
+
+            let! solution =
+                msbuildWorkspace.OpenSolutionAsync(solutionPath, progress = loadProgressObserver)
+                |> Async.AwaitTask
 
             for diag in msbuildWorkspace.Diagnostics do
                 logger.LogInformation("msbuildWorkspace.Diagnostics: {message}", diag.ToString())
@@ -381,7 +428,11 @@ let solutionFindAndLoadOnDir
 
             return! solutionTryLoadFromProjectFiles lspClient logMessage progressReport projFiles
 
-        | Some solutionPath -> return! solutionTryLoadOnPath lspClient solutionPath
+        | Some solutionPath ->
+            let progressReport (message, percent) =
+                progressReporter.Report(false, message, percent)
+
+            return! solutionTryLoadOnPath lspClient progressReport solutionPath
     }
 
 let solutionLoadSolutionWithPathOrOnDir
@@ -397,7 +448,10 @@ let solutionLoadSolutionWithPathOrOnDir
             | true -> solutionPath
             | false -> Path.Combine(dir, solutionPath)
 
-        return! solutionTryLoadOnPath lspClient rootedSolutionPath
+        let progressReport (message, percent) =
+            progressReporter.Report(false, message, percent)
+
+        return! solutionTryLoadOnPath lspClient progressReport rootedSolutionPath
       }
 
     | None -> async {
