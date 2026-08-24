@@ -49,14 +49,17 @@ jobs:
             --results-directory ./TestResults \
             -- NUnit.NumberOfTestWorkers=$WORKERS
 
+      # Windows runners are more prone to CPU contention between parallel workers than
+      # Linux (each worker spins up a full in-process LSP server + Roslyn/MSBuild
+      # workspace), which has caused flaky request timeouts and timing-sensitive test
+      # failures. Use a single worker here to keep the run stable, at the cost of speed.
       - name: Run Tests
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $cores = [int]$env:NUMBER_OF_PROCESSORS
-          $workers = [Math]::Max(1, [Math]::Floor($cores / 2))
+          $workers = 1
 
-          Write-Host "Total cores: $cores, running tests with $workers workers"
+          Write-Host "Running tests with $workers worker(s)"
           dotnet test --no-build `
             --blame-hang-timeout 3m --blame-hang-dump-type full `
             --results-directory ./TestResults `
