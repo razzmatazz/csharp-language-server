@@ -71,6 +71,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  lint-and-pack:
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore tools
+        run: dotnet tool restore
+
       - name: Run Fantomas check tests
         run: dotnet fantomas --check tests
 
@@ -78,7 +94,6 @@ jobs:
         run: dotnet fantomas --check src/CSharpLanguageServer
 
       - name: Check dotnet pack works for Release config
-        if: ${{ matrix.os != 'windows-latest' }}
         run: |
           dotnet build -c Release
           dotnet pack -c Release -o release
