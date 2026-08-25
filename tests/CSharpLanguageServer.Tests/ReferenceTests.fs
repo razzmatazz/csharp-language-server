@@ -184,6 +184,60 @@ let testReferenceWorksDotnet8 () =
     Assert.That(locations2.Value, Is.EqualTo(box expectedLocations2))
 
 [<Test>]
+let testReferenceIncludeDeclarationWorksAcrossProjectsWithDifferentMetadataReferences () =
+    // Regression test for a crash observed in the wild (csharp-ls-rpc.log): a
+    // textDocument/references request with IncludeDeclaration=true on a symbol whose
+    // declaration lives in metadata (e.g. a NuGet package) crashed with
+    //   -32603 Internal error: Exception
+    //   "A non-null value was expected: compilation.GetMetadataReference(containingAssembly)"
+    //
+    // Root cause: References.fs resolves decompiled/metadata locations using
+    // `let anyProject = solution.Projects |> Seq.head` -- an arbitrary "first" project in
+    // the solution, not necessarily one that references the symbol's containing assembly.
+    // `compilation.GetMetadataReference(containingAssembly)` returns null when the chosen
+    // project's compilation has no reference to that assembly, which `Util.nonNull` then
+    // turns into an unhandled exception.
+    //
+    // This fixture reproduces that: ProjectA is listed first in Solution.sln and does NOT
+    // reference Newtonsoft.Json; ProjectB (listed second) does, and uses
+    // JsonConvert.SerializeObject. `solution.Projects |> Seq.head` picks ProjectA, whose
+    // compilation has no metadata reference for the Newtonsoft.Json assembly.
+    //
+    // The pre-build (like the platformSpecificTfm regression test) is what makes this
+    // meaningful: it produces a project.assets.json for ProjectB so JsonConvert actually
+    // resolves to a real (metadata) symbol instead of a compile error.
+    let prebuild (solutionDir: string) =
+        let exitCode, stdout, stderr = runDotnetBuild solutionDir
+
+        if exitCode <> 0 then
+            failwithf
+                "Pre-build of multiProjectReferencesMetadata fixture failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
+                exitCode
+                stdout
+                stderr
+
+    use client =
+        activateFixtureExt "multiProjectReferencesMetadata" defaultClientProfile prebuild id
+
+    use classBFile = client.Open "ProjectB/ClassB.cs"
+
+    // ClassB.cs line 4 (0-indexed): `        return Newtonsoft.Json.JsonConvert.SerializeObject(value);`
+    //                                                                ^^^^^^^^^^^^^^^^
+    //                                                                char 43-58
+    let referenceParams: ReferenceParams =
+        { TextDocument = { Uri = classBFile.Uri }
+          Position = { Line = 4u; Character = 48u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = { IncludeDeclaration = true } }
+
+    let locations: Location[] option =
+        client.Request("textDocument/references", referenceParams)
+
+    Assert.That(locations.IsSome, Is.True, "Expected Some locations")
+    Assert.That(locations.Value.Length > 0, Is.True, "Expected at least one location")
+
+[<Test>]
 let testReferenceWorksToRazorPageReferencedValue () =
     use client = rentFixture "aspnetProject"
 
