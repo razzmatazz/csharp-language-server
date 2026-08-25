@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fix `textDocument/references` with `includeDeclaration` crashing (`-32603 Internal error`) on a symbol from an assembly not referenced by an arbitrary "first" project in the solution; metadata locations are now resolved against the project that owns the requesting document instead
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/416
+
 ## [0.27.0] - 2026-08-24 / Vartai
 * Speed up the per-request document lookup: resolve the request uri through Roslyn's indexed `Solution.GetDocumentIdsWithFilePath` instead of scanning every document of every project (~6x faster `textDocument/definition` on a large solution)
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/414
