@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+* Match request uris to workspace folders case-insensitively on Windows: Windows paths are case-insensitive, and a client may send a differently cased uri (for example a lowercase drive letter) than the announced workspace root, which previously made requests silently miss the workspace and answer null
+  - By @pbednarcik
 * Fix `textDocument/references` with `includeDeclaration` crashing (`-32603 Internal error`) on a symbol from an assembly not referenced by an arbitrary "first" project in the solution; metadata locations are now resolved against the project that owns the requesting document instead
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/416
 
