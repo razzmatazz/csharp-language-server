@@ -57,7 +57,7 @@ module References =
 
                 match symInfo with
                 | None -> return LspResult.success None, LspWorkspaceUpdate.Empty
-                | Some(symbol, _, _) ->
+                | Some(symbol, symbolProject, _) ->
                     let wfPathToUri path = workspaceFolderPathToUri path wf
 
                     // SymbolFinder.FindReferencesAsync(symbol, solution) does not search
@@ -98,15 +98,20 @@ module References =
                             // that useMetadataUris decompilation is triggered for BCL symbols, just
                             // like textDocument/definition and textDocument/implementation.
                             //
-                            // Any project suffices for metadata decompilation; for source symbols
-                            // Location.fromRoslynLocation resolves without a project.
-                            let anyProject = solution.Projects |> Seq.head
-
+                            // Use the project that owns the document the request originated from
+                            // (the same project `workspaceFolderDocumentSymbol` resolved `symbol`
+                            // against), not an arbitrary project from the solution. Metadata
+                            // decompilation needs a project whose compilation actually references
+                            // the found symbol's containing assembly:
+                            // `compilation.GetMetadataReference(containingAssembly)` returns null
+                            // (crashing with "A non-null value was expected") when handed a project
+                            // that has no such reference, which an arbitrary "first" project in a
+                            // large multi-project solution is not guaranteed to have.
                             let! symbolLocations, wfUpdates =
                                 wf
                                 |> workspaceFolderSymbolsLocations
                                     context.Config
-                                    anyProject
+                                    symbolProject
                                     (refs |> Seq.map _.Definition)
 
                             return symbolLocations |> List.collect snd, wfUpdates
