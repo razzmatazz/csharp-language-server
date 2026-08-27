@@ -1,5 +1,17 @@
 # TODO
 
+## High CPU usage from `workspace/diagnostic` recompute cascade
+
+See `plans/high-cpu-usage-investigation.md` for the full investigation (live
+`dotnet-trace` profiling + RPC log analysis against a real VS Code session). Summary:
+project-granularity `resultId` invalidation in `Handlers/Diagnostic.fs` causes a single
+edit to trigger full Roslyn recompilation of every dependent project on every
+subsequent `workspace/diagnostic` poll, for the life of the session. Confirmed via the
+RPC log that analyzers were disabled throughout data collection, so this is the
+baseline (non-analyzer) `Compilation.GetDiagnostics()` path being expensive at scale —
+upstream PR #404 (analyzer-result caching) is related but does not cover this path.
+Several candidate fixes are proposed but none implemented yet.
+
 ## Bump Microsoft.Build.Locator version
 
 ## Test performance improvements
