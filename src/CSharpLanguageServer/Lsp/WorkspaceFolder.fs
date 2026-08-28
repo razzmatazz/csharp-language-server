@@ -409,6 +409,37 @@ let workspaceFolderSymbolsLocations
         return results |> List.rev, aggregatedWfUpdates
     }
 
+/// Pick which target-framework flavor of a multi-targeted project answers for
+/// a document. MSBuildWorkspace names the flavors "Project(net10.0)" style, so
+/// the TFM is recovered from the project name and the same bestTfm rule that
+/// drives workspace-global TFM selection picks the winner -- mirroring how
+/// Visual Studio auto-selects a default project context for a document. When
+/// no name yields a TFM, fall back to a stable name sort so the answer is
+/// deterministic but never None.
+let private selectMultiTfmFlavor (docs: Document list) : Document =
+    let flavorTfm (d: Document) =
+        let name = d.Project.Name
+        let openIdx = name.LastIndexOf '('
+
+        if openIdx >= 0 && name.EndsWith ")" then
+            name.Substring(openIdx + 1, name.Length - openIdx - 2) |> tryNormalizeTfm
+        else
+            None
+
+    let parsedFlavors =
+        docs |> List.choose (fun d -> flavorTfm d |> Option.map (fun tfm -> d, tfm))
+
+    let bestFlavorMaybe =
+        parsedFlavors
+        |> List.map snd
+        |> bestTfm
+        |> Option.bind (fun best -> parsedFlavors |> List.tryFind (fun (_, tfm) -> tfm = best))
+        |> Option.map fst
+
+    match bestFlavorMaybe with
+    | Some doc -> doc
+    | None -> docs |> List.sortBy (fun d -> d.Project.Name) |> List.head
+
 let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) =
     match wf.Solution with
     | Uninitialized -> None
@@ -418,16 +449,14 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
         // Indexed lookup instead of scanning every document of every project:
         // this runs on every position-based request, so on a large solution
         // the scan (which also allocated a Uri per document for the
-        // comparison) dominates the per-request cost. Multiple ids for one
-        // path (e.g. a multi-targeted or linked file) keep resolving to None,
-        // matching the previous exactly-one-match behavior.
+        // comparison) dominates the per-request cost.
         let matchingUserDocumentMaybe =
             workspaceFolderUriToPath u wf
             |> Option.bind (fun path ->
                 // The ids can include non-source documents (additional /
                 // analyzer-config files, depending on the Roslyn version), so
-                // resolve through GetDocument first and require exactly one
-                // SOURCE document, matching the previous scan over
+                // resolve through GetDocument first and only count SOURCE
+                // documents, matching the previous scan over
                 // project.Documents only.
                 match
                     solution.GetDocumentIdsWithFilePath path
@@ -435,7 +464,26 @@ let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) 
                     |> List.ofSeq
                 with
                 | [ doc ] -> Some doc
-                | _ -> None)
+                | [] -> None
+                | (doc :: _) as docs ->
+                    // Several source documents for one path: a multi-targeted
+                    // project loads as one Roslyn project per target framework,
+                    // all sharing the same project FilePath, and every source
+                    // file in it appears once per flavor. Those are the same
+                    // file, so pick a flavor rather than answer None -- None
+                    // here makes every position-based request on the project
+                    // answer null (#75, #198). A path shared by *different*
+                    // project files (a linked file) stays ambiguous, as before.
+                    let projectFilePath = doc.Project.FilePath
+
+                    let allFlavorsOfOneProject =
+                        not (String.IsNullOrEmpty projectFilePath)
+                        && docs |> List.forall (fun d -> d.Project.FilePath = projectFilePath)
+
+                    if allFlavorsOfOneProject then
+                        Some(selectMultiTfmFlavor docs)
+                    else
+                        None)
             |> Option.map (fun d -> d, UserDocument)
 
         let matchingDecompiledDocumentMaybe =

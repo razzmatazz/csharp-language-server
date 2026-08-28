@@ -174,7 +174,7 @@ let frameworkIsCompatible a b =
 /// Normalise a declared TFM to its canonical short folder name so that equivalent
 /// spellings intersect correctly.  Returns None for values NuGet cannot make sense of
 /// (GetShortFolderName throws on unsupported frameworks).
-let private tryNormalizeTfm (tfm: string) : string option =
+let tryNormalizeTfm (tfm: string) : string option =
     try
         let fx = NuGetFramework.Parse tfm
 
