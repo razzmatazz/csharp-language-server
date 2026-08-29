@@ -122,39 +122,11 @@ let private makeMultiTfmSolution (baseName: string) (flavorNames: string list) =
     let solution = flavorNames |> List.fold addFlavor ws.CurrentSolution
     makeWorkspaceFolder solution, path
 
-// A multi-targeted project loads as one Roslyn project per target framework,
-// all sharing the same project FilePath, so every source file in it has
-// several DocumentIds. That must not read as ambiguity: the flavors hold the
-// same file, and answering None would turn every position-based request on
-// the project into a null answer.
-
-[<Test>]
-let ``a multi targeted project resolves to its best tfm flavor`` () =
-    let wf, path =
-        makeMultiTfmSolution
-            "MultiTfm"
-            [ "MultiTfm(net472)"
-              "MultiTfm(netstandard2.0)"
-              "MultiTfm(net8.0)"
-              "MultiTfm(net10.0)" ]
-
-    match workspaceFolderDocument AnyDocument (fileUri path) wf with
-    | Some doc -> Assert.That(doc.Project.Name, Is.EqualTo("MultiTfm(net10.0)"))
-    | None -> Assert.Fail("a file of a multi-targeted project should resolve to one of its flavors")
-
-[<Test>]
-let ``the chosen flavor does not depend on project insertion order`` () =
-    let wf, path =
-        makeMultiTfmSolution
-            "MultiTfmReversed"
-            [ "MultiTfmReversed(net10.0)"
-              "MultiTfmReversed(net8.0)"
-              "MultiTfmReversed(netstandard2.0)"
-              "MultiTfmReversed(net472)" ]
-
-    match workspaceFolderDocument AnyDocument (fileUri path) wf with
-    | Some doc -> Assert.That(doc.Project.Name, Is.EqualTo("MultiTfmReversed(net10.0)"))
-    | None -> Assert.Fail("a file of a multi-targeted project should resolve to one of its flavors")
+// The happy path of multi-TFM flavor selection is covered by an integration test
+// (InitializationTests.testMultiTargetProjectWithNoCommonTfmAnswersFromBestFlavor,
+// on the multiTargetProjectNoCommonTfm fixture). The fallback below stays a unit
+// test: a real MSBuildWorkspace load always names flavors with the "(tfm)" suffix,
+// so a flavor name without one cannot be produced through a fixture.
 
 [<Test>]
 let ``flavors without a parseable tfm still resolve deterministically`` () =
