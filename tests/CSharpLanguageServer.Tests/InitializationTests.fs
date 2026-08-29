@@ -201,6 +201,22 @@ let testMultiTargetProjectLoads () =
 
     Assert.That(client.ServerMessageLogContains(fun m -> m.Contains "loading project"), Is.True)
 
+/// Unlike the fixture above, this solution has no TFM common to every project, so the
+/// workspace-global TargetFramework property (issues #75 / #198) does not engage and the
+/// multi-targeted project genuinely loads as one Roslyn project per TFM flavor.  Document
+/// lookup used to read those flavors as ambiguity and answer null to every position-based
+/// request on the project.  The hovered method only exists under NET8_0, so this also
+/// verifies the best-TFM flavor (net8.0, not net6.0) is the one answering.
+[<Test>]
+let testMultiTargetProjectWithNoCommonTfmAnswersFromBestFlavor () =
+    use client = activateFixture "multiTargetProjectNoCommonTfm"
+
+    assertHoverWorks
+        client
+        "Project/Class.cs"
+        { Line = 3u; Character = 16u }
+        "```csharp\nvoid Class.Method(string arg)\n```"
+
 /// Regression test for https://github.com/razzmatazz/csharp-language-server/issues/405:
 /// a solution mixing a plain net10.0 project with a net10.0-windows one used to have the
 /// platform-specific TFM applied as a workspace-global MSBuild property, overriding the
