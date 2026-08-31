@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 * Fix `textDocument/completion` (and other interactive requests) stalling when analyzers are enabled on a multi-project solution: `workspace/diagnostic` now analyzes one project at a time instead of fanning out across every project concurrently
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/421
 * Fix every position-based request answering null on multi-targeted projects: a file of a `<TargetFrameworks>` project has one Roslyn document per target framework, which the document lookup treated as ambiguous and resolved to `None`; the lookup now picks the flavor with the best TFM (same rule as workspace-global TFM selection, mirroring how Visual Studio auto-selects a default project context), leaving genuinely linked files (one path in different project files) ambiguous as before
-  - By @pbednarcik
+  - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/420
 * Report per-project progress while loading a solution: `$/progress` reports now carry a message like `Project (34/88)` and a monotonically increasing percentage, so clients can display load progress and estimate readiness
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/417
 * Match request uris to workspace folders case-insensitively on Windows: Windows paths are case-insensitive, and a client may send a differently cased uri (for example a lowercase drive letter) than the announced workspace root, which previously made requests silently miss the workspace and answer null
