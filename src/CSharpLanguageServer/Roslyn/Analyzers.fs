@@ -21,7 +21,21 @@ let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Comp
     else
         // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
         // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        let cwa = compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
+        //
+        // concurrentAnalysis is explicitly disabled so a single project's analyzer pass
+        // cannot itself fan out across every core via Roslyn's AnalyzerDriver, matching
+        // the precedent set by Roslyn's own IDE layer (DiagnosticIncrementalAnalyzer.
+        // CompilationManager) and OmniSharp, both of which always run analyzers
+        // non-concurrently to avoid starving other interactive work on the same process.
+        let analysisOptions =
+            CompilationWithAnalyzersOptions(
+                options = project.AnalyzerOptions,
+                onAnalyzerException = null,
+                concurrentAnalysis = false,
+                logAnalyzerExecutionTime = false
+            )
+
+        let cwa = compilation.WithAnalyzers(analyzers, analysisOptions)
         let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
         return allDiags |> List.ofSeq
 }
@@ -46,8 +60,18 @@ let getDocumentDiagnosticsWithAnalyzers (project: Project) (semanticModel: Seman
     else
         // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
         // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
-        let cwa =
-            semanticModel.Compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)
+        //
+        // concurrentAnalysis is explicitly disabled — see the comment in
+        // getCompilationDiagnosticsWithAnalyzers above for the rationale.
+        let analysisOptions =
+            CompilationWithAnalyzersOptions(
+                options = project.AnalyzerOptions,
+                onAnalyzerException = null,
+                concurrentAnalysis = false,
+                logAnalyzerExecutionTime = false
+            )
+
+        let cwa = semanticModel.Compilation.WithAnalyzers(analyzers, analysisOptions)
 
         let! allDiags = cwa.GetAllDiagnosticsAsync(ct) |> Async.AwaitTask
 

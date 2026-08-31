@@ -223,16 +223,23 @@ When `config.analyzersEnabled = true`, calls
 back to `semanticModel.GetDiagnostics(ct)`.
 
 **Workspace pull (`getWorkspaceDiagnosticReports`):** Takes `config`, a `knownResultIds`
-map (for unchanged-report optimization), and the list of workspace folders. For each project:
+map (for unchanged-report optimization), and the list of workspace folders. Processes
+projects **strictly sequentially** — one project at a time, across all workspace
+folders — via a plain nested `for` loop over `asyncSeq { yield! ... }`; there is no
+`Async.Start` fan-out. This is deliberate: both compilation construction
+(`GetCompilationAsync`/`GetSourceGeneratedDocumentsAsync`) and the analyzer pass are
+CPU-bound, and running them concurrently across many projects previously starved
+interactive requests (completion, hover, …) sharing the same `ThreadPool` — see
+`plans/interactive-request-latency-vs-analyzers.md` for the full history. A single
+project's failure is caught with `try/with` around its `AsyncSeq` so it doesn't abort
+the rest of the sweep. For each project (`generateProjectDiagnosticReports`):
 - Builds `resultId = "{project.Version}/{analyzersEnabled}"` so toggling `analyzersEnabled`
   invalidates any cached "unchanged" result the client holds
 - Checks if the client already holds results for this `resultId` → emits `Unchanged`
 - Otherwise calls `project.GetCompilationAsync(ct)`; when `config.analyzersEnabled = true`
   uses `Analyzers.getCompilationDiagnosticsWithAnalyzers project compilation`, otherwise
-  `compilation.GetDiagnostics()`; groups diagnostics by document URI and emits `Full` reports
-- Results flow through a bounded `Channel<WorkspaceDiagnosticsReportsChannelItem>(256)` with
-  one `Async.Start` per project writing to the channel and the main consumer yielding from
-  it as `AsyncSeq`
+  `compilation.GetDiagnostics()`; groups diagnostics by document URI and yields `Full`
+  reports directly from the `asyncSeq`
 
 The `handleWorkspaceDiagnostic` function supports two modes based on `PartialResultToken`:
 - `None` → collects all reports into a single `WorkspaceDiagnosticReport`
@@ -252,8 +259,16 @@ Two functions used by all three diagnostic code paths:
 
 **`getCompilationDiagnosticsWithAnalyzers project compilation ct`**
 - Falls back to `compilation.GetDiagnostics(ct)` when no analyzers are present.
-- Otherwise calls `compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)` →
+- Otherwise calls `compilation.WithAnalyzers(analyzers, analysisOptions)` →
   `GetAllDiagnosticsAsync(ct)`.
+
+**`concurrentAnalysis: false`:** Both functions pass a `CompilationWithAnalyzersOptions`
+with `concurrentAnalysis = false`, matching the precedent set by Roslyn's own IDE layer
+(`DiagnosticIncrementalAnalyzer.CompilationManager`) and OmniSharp. This prevents a
+*single* project's analyzer pass from internally fanning out across every core via
+Roslyn's `AnalyzerDriver`, bounding all analyzer-driven diagnostic computation (push,
+pull-per-document, pull-workspace) to one core system-wide by construction, on top of
+the sequential per-project processing in `getWorkspaceDiagnosticReports` above.
 
 **Key design point:** `project.AnalyzerOptions` is the `AnalyzerOptions` instance that
 `MSBuildWorkspace` builds from the project's `<Analyzer>` items and `.editorconfig` files.

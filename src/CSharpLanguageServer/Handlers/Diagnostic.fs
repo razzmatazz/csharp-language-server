@@ -1,7 +1,6 @@
 namespace CSharpLanguageServer.Handlers
 
 open System
-open System.Threading.Channels
 
 open FSharp.Control
 open Ionide.LanguageServerProtocol.Server
@@ -136,22 +135,13 @@ module Diagnostic =
                 | None -> return emptyReport |> U2.C1 |> LspResult.success, LspWorkspaceUpdate.Empty
         }
 
-    type WorkspaceDiagnosticsReportsChannelItem =
-        | DiagnosticsReport of WorkspaceDocumentDiagnosticReport
-        | ReportingDoneForProject
-
     let private getWorkspaceDiagnosticReports
         (config: CSharpConfiguration)
         (knownResultIds: Map<string, string>)
         (workspaceFolders: LspWorkspaceFolder list)
         : AsyncSeq<WorkspaceDocumentDiagnosticReport> =
         asyncSeq {
-            let channel = Channel.CreateBounded<WorkspaceDiagnosticsReportsChannelItem>(256)
-
-            let writeToChannel item =
-                channel.Writer.WriteAsync(item) |> _.AsTask() |> Async.AwaitTask
-
-            let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = async {
+            let generateProjectDiagnosticReports' wf (project: Microsoft.CodeAnalysis.Project) = asyncSeq {
                 let analyzersEnabled = config.analyzersEnabled |> Option.defaultValue false
                 // Include analyzersEnabled in the resultId so that toggling the setting
                 // invalidates any cached "unchanged" result the client holds.
@@ -185,7 +175,7 @@ module Diagnostic =
                                   Uri = uri
                                   Version = None }
 
-                        do! writeToChannel (DiagnosticsReport documentReport)
+                        yield documentReport
                 else
                     let! ct = Async.CancellationToken
                     let! compilation = project.GetCompilationAsync(ct) |> Async.AwaitTask
@@ -240,7 +230,7 @@ module Diagnostic =
                                       Items = items
                                       Version = None }
 
-                            do! writeToChannel (DiagnosticsReport documentReport)
+                            yield documentReport
 
                         // Also emit an explicit empty full report for any URI the client
                         // previously knew about (via previousResultIds) that now has zero
@@ -270,48 +260,31 @@ module Diagnostic =
                                       Items = [||]
                                       Version = None }
 
-                            do! writeToChannel (DiagnosticsReport documentReport)
+                            yield documentReport
             }
 
-            let generateProjectDiagnosticReports wf (project: Microsoft.CodeAnalysis.Project) = async {
-                try
-                    do! generateProjectDiagnosticReports' wf project
-                with _ ->
-                    ()
-
-                do! writeToChannel ReportingDoneForProject
-            }
-
-            // generate project diagnostics in parallel
-            let mutable numProjectsBeingProcessed = 0
-
+            // Process one project at a time (previously: unbounded per-project
+            // `Async.Start` fan-out feeding a shared `Channel`). Both compilation
+            // construction and the analyzer pass are CPU-bound; running them
+            // concurrently across every project starves interactive requests
+            // (completion, hover, …) sharing the same ThreadPool. See
+            // plans/interactive-request-latency-vs-analyzers.md (Option C).
             for wf in workspaceFolders do
                 let solutionProjects =
                     match wf.Solution with
                     | Loaded(_, solution) -> solution.Projects |> List.ofSeq
                     | _ -> []
 
-                numProjectsBeingProcessed <- numProjectsBeingProcessed + solutionProjects.Length
-
                 for project in solutionProjects do
-                    Async.Start(generateProjectDiagnosticReports wf project)
+                    // A single project's failure should not abort the rest of the sweep.
+                    let projectReports = asyncSeq {
+                        try
+                            yield! generateProjectDiagnosticReports' wf project
+                        with _ ->
+                            ()
+                    }
 
-            // if there were no projects at all, complete the channel immediately so the consumer loop below doesn't hang
-            if numProjectsBeingProcessed = 0 then
-                channel.Writer.Complete()
-
-            // eat from channel and yield diagnostic reports as they come
-            while! channel.Reader.WaitToReadAsync() |> _.AsTask() |> Async.AwaitTask do
-                let mutable item = ReportingDoneForProject
-
-                while channel.Reader.TryRead(&item) do
-                    match item with
-                    | DiagnosticsReport r -> yield r
-                    | ReportingDoneForProject ->
-                        numProjectsBeingProcessed <- numProjectsBeingProcessed - 1
-
-                        if numProjectsBeingProcessed = 0 then
-                            channel.Writer.Complete()
+                    yield! projectReports
         }
 
     let handleWorkspaceDiagnostic
