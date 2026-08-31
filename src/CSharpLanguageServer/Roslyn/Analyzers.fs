@@ -22,16 +22,19 @@ let getCompilationDiagnosticsWithAnalyzers (project: Project) (compilation: Comp
         // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
         // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
         //
-        // concurrentAnalysis is explicitly disabled so a single project's analyzer pass
-        // cannot itself fan out across every core via Roslyn's AnalyzerDriver, matching
-        // the precedent set by Roslyn's own IDE layer (DiagnosticIncrementalAnalyzer.
-        // CompilationManager) and OmniSharp, both of which always run analyzers
-        // non-concurrently to avoid starving other interactive work on the same process.
+        // concurrentAnalysis is left enabled. Only one project is ever being analyzed
+        // at a time (getWorkspaceDiagnosticReports processes projects sequentially),
+        // so letting a single project's own analyzer pass use every core is safe —
+        // there's no second project's pass competing for the same cores concurrently.
+        // Confirmed against a real multi-project session with analyzers enabled:
+        // interactive requests (completion, hover, ...) stayed responsive throughout
+        // a full workspace/diagnostic sweep. See "Post-implementation notes (Option
+        // C)" in plans/interactive-request-latency-vs-analyzers.md.
         let analysisOptions =
             CompilationWithAnalyzersOptions(
                 options = project.AnalyzerOptions,
                 onAnalyzerException = null,
-                concurrentAnalysis = false,
+                concurrentAnalysis = true,
                 logAnalyzerExecutionTime = false
             )
 
@@ -61,13 +64,13 @@ let getDocumentDiagnosticsWithAnalyzers (project: Project) (semanticModel: Seman
         // project.AnalyzerOptions is provided by MSBuildWorkspace and already contains
         // the AnalyzerConfigOptionsProvider that reads .editorconfig severity rules.
         //
-        // concurrentAnalysis is explicitly disabled — see the comment in
+        // concurrentAnalysis is left enabled — see the comment in
         // getCompilationDiagnosticsWithAnalyzers above for the rationale.
         let analysisOptions =
             CompilationWithAnalyzersOptions(
                 options = project.AnalyzerOptions,
                 onAnalyzerException = null,
-                concurrentAnalysis = false,
+                concurrentAnalysis = true,
                 logAnalyzerExecutionTime = false
             )
 

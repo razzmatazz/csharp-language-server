@@ -494,21 +494,21 @@ trade-off for the push pipeline; Option C simply extends the same principle to t
 pull-workspace pipeline instead of trying to preserve its parallelism through isolation.
 
 **Interaction with `PushDiagnostics.fs`.** No changes needed — it already
-processes one document at a time (`CurrentDocTask`), and will pick up
-`concurrentAnalysis: false` automatically once the shared `Analyzers.fs` entry
-points are updated.
+processes one document at a time (`CurrentDocTask`), so it's unaffected either way
+by whichever `concurrentAnalysis` setting `Analyzers.fs` ends up using.
 
 ### Post-implementation notes (Option C)
 
-Option C has been implemented as described above:
+Option C has been implemented as described above, with one deviation from the
+original write-up (see "concurrentAnalysis re-enabled" below):
 
 - `Roslyn/Analyzers.fs`: both `getCompilationDiagnosticsWithAnalyzers` and
   `getDocumentDiagnosticsWithAnalyzers` now build a `CompilationWithAnalyzersOptions`
-  with `concurrentAnalysis = false` (and `logAnalyzerExecutionTime = false`,
-  `onAnalyzerException = null`) instead of using the plain
-  `compilation.WithAnalyzers(analyzers, project.AnalyzerOptions)` overload. No
-  `AnalyzerPool`/Option-B machinery existed in the codebase at the time Option C was
-  implemented, so there was nothing to remove there.
+  explicitly (with `logAnalyzerExecutionTime = false`, `onAnalyzerException = null`)
+  instead of using the plain `compilation.WithAnalyzers(analyzers,
+  project.AnalyzerOptions)` overload. No `AnalyzerPool`/Option-B machinery existed in
+  the codebase at the time Option C was implemented, so there was nothing to remove
+  there.
 - `Handlers/Diagnostic.fs`: `getWorkspaceDiagnosticReports`'s unbounded per-project
   `Async.Start` fan-out and the `Channel<WorkspaceDiagnosticsReportsChannelItem>`
   fan-in were both removed, keeping the diff minimal by leaving
@@ -527,6 +527,27 @@ Option C has been implemented as described above:
   regressions in diagnostic *results*, per the Acceptance Criteria note that results are
   unaffected. Revisit the Testing Checklist if stronger concurrency guarantees need to be
   asserted in CI rather than by code inspection.
+
+**`concurrentAnalysis` re-enabled.** The write-up above disables
+`concurrentAnalysis` on the theory that it matches Roslyn's own IDE-layer precedent
+and caps analyzer CPU usage to one core "by construction." In practice, once the
+sequential per-project processing above was in place, `concurrentAnalysis: true` was
+tried instead and validated against a real multi-project session with analyzers
+enabled: interactive requests stayed responsive through a full `workspace/diagnostic`
+sweep. This makes sense in hindsight — the actual failure mode this whole doc is
+about was many projects' analyzer passes competing at once, not one project's pass
+using multiple cores; with cross-project concurrency already eliminated, there is no
+second pass left to compete with the one project currently being analyzed, so
+Roslyn's own internal fan-out no longer has anything to starve. `concurrentAnalysis`
+is therefore left at its default (`true`) in both `Analyzers.fs` entry points — the
+one-project-at-a-time sequencing in `getWorkspaceDiagnosticReports` is what's doing
+the actual work of protecting interactivity, and disabling `concurrentAnalysis` on
+top of it would only slow down each individual project's sweep for no additional
+interactivity benefit. If a future regression is ever traced back to a single very
+large project's analyzer pass saturating every core during its own sweep, revisit
+this — that failure mode (unlike the original multi-project one) is bounded to that
+project's duration rather than the whole sweep's, so it's expected to be far less
+severe if it occurs at all.
 
 ### Relationship to `plans/workspace-diagnostics-flood.md`
 
@@ -561,11 +582,13 @@ symptom; bounding the CPU-heavy work at its source is the direct fix.
   the first reference log, and ids 39/56/57 did in the post-Option-B reference
   log).
 - At most one project is ever being processed (compilation construction *and*
-  analyzer execution) by `getWorkspaceDiagnosticReports` at any moment, and
-  within that project, `CompilationWithAnalyzers.GetAllDiagnosticsAsync` runs
-  with `concurrentAnalysis: false` — i.e. analyzer-driven diagnostic
-  computation never occupies more than one core system-wide, across all three
-  pipelines (push, pull-document, pull-workspace) combined.
+  analyzer execution) by `getWorkspaceDiagnosticReports` at any moment — i.e.
+  analyzer-driven diagnostic computation is bounded to a single project system-wide,
+  across all three pipelines (push, pull-document, pull-workspace) combined. Within
+  that one project, `CompilationWithAnalyzers.GetAllDiagnosticsAsync` runs with
+  `concurrentAnalysis: true` (Roslyn's default) rather than `false` — see
+  "`concurrentAnalysis` re-enabled" under "Post-implementation notes (Option C)"
+  above for why this was found not to reintroduce the starvation this plan targets.
 - Existing `AnalyzerTests.fs`, `DiagnosticTests.fs`, and push-diagnostics tests
   continue to pass — total diagnostic *results* are unaffected, only the
   concurrency of computing them changes.
