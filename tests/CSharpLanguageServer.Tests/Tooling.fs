@@ -559,6 +559,7 @@ let prepareTempTestDirFrom (sourceTestDir: DirectoryInfo) : string =
         || file.Extension = ".csproj"
         || file.Extension = ".sln"
         || file.Extension = ".slnx"
+        || file.Extension = ".slnf"
         || file.Extension = ".cshtml"
         || file.Extension = ".txt"
 

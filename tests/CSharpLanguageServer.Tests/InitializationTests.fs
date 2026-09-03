@@ -562,6 +562,19 @@ let testInitializeSucceedsWhenRootPathIsNotAValidUri () =
     Assert.That(client.ServerDidRespondTo "initialize", Is.True)
     Assert.That(client.ClientDidSendNotification "initialized", Is.True)
 
+/// Every report-kind `$/progress` value the server sent so far, as (message, percentage).
+let loadProgressReports (client: LspTestClient) =
+    client.GetRpcLog()
+    |> Seq.filter (fun m ->
+        m.Source = Server
+        && (Some m.Message |> jeStringProp "method") = Some "$/progress")
+    |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> indexJE "value")
+    |> Seq.filter (fun v -> (v |> jeStringProp "kind") = Some "report")
+    |> Seq.map (fun v ->
+        (v |> jeStringProp "message" |> Option.defaultValue ""),
+        (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
+    |> List.ofSeq
+
 [<Test>]
 let testSolutionLoadReportsPerProjectProgress () =
     use client = activateFixture "nestedProjects"
@@ -576,17 +589,7 @@ let testSolutionLoadReportsPerProjectProgress () =
 
     let _hover: Hover option = client.Request("textDocument/hover", hoverParams)
 
-    let reports =
-        client.GetRpcLog()
-        |> Seq.filter (fun m ->
-            m.Source = Server
-            && (Some m.Message |> jeStringProp "method") = Some "$/progress")
-        |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> indexJE "value")
-        |> Seq.filter (fun v -> (v |> jeStringProp "kind") = Some "report")
-        |> Seq.map (fun v ->
-            (v |> jeStringProp "message" |> Option.defaultValue ""),
-            (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
-        |> List.ofSeq
+    let reports = loadProgressReports client
 
     // the fixture solution has two projects, so the load reports two
     // per-project completions with rising percentages
@@ -599,6 +602,44 @@ let testSolutionLoadReportsPerProjectProgress () =
     Assert.That((percentages = List.sort percentages), Is.True, "percentages should be monotonic")
     Assert.That(percentages |> List.forall (fun p -> p <= 100u), Is.True)
     Assert.That(List.last percentages, Is.EqualTo(100u))
+
+/// A .slnf solution filter selects a subset of its parent solution.  The declared
+/// project set used to be read from the parent, so on a filtered solution the load
+/// progress counted every project of the parent (reports like "(74/358)" whose
+/// percentage never reached 100) and the workspace-global TFM intersection ran over
+/// the excluded projects too.
+[<Test>]
+let testSolutionLoadProgressCountsOnlySolutionFilterProjects () =
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    solutionPathOverride = Some "Partial.slnf" } }
+
+    use client = activateFixtureExt "solutionWithFilter" profile emptyFixturePatch id
+    use classDocument = client.Open("ProjectA/Class.cs")
+
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = classDocument.Uri }
+          Position = { Line = 2u; Character = 16u }
+          WorkDoneToken = None }
+
+    let _hover: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    let reports = loadProgressReports client
+
+    // Full.sln declares three projects; Partial.slnf keeps two of them
+    let projectReports = reports |> List.filter (fun (msg, _) -> msg.EndsWith "/2)")
+
+    Assert.That(List.length projectReports, Is.EqualTo(2), sprintf "all report-kind progress seen: %A" reports)
+
+    Assert.That(
+        reports |> List.exists (fun (msg, _) -> msg.EndsWith "/3)"),
+        Is.False,
+        "the filter's parent solution must not set the progress denominator"
+    )
+
+    Assert.That(List.last (projectReports |> List.choose snd), Is.EqualTo(100u))
 
 [<Test>]
 let testSolutionLoadProgressStaysWithinBoundsWithOutOfSolutionReferences () =
@@ -616,17 +657,7 @@ let testSolutionLoadProgressStaysWithinBoundsWithOutOfSolutionReferences () =
 
     let _hover: Hover option = client.Request("textDocument/hover", hoverParams)
 
-    let reports =
-        client.GetRpcLog()
-        |> Seq.filter (fun m ->
-            m.Source = Server
-            && (Some m.Message |> jeStringProp "method") = Some "$/progress")
-        |> Seq.map (fun m -> Some m.Message |> indexJE "params" |> indexJE "value")
-        |> Seq.filter (fun v -> (v |> jeStringProp "kind") = Some "report")
-        |> Seq.map (fun v ->
-            (v |> jeStringProp "message" |> Option.defaultValue ""),
-            (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
-        |> List.ofSeq
+    let reports = loadProgressReports client
 
     let projectReports = reports |> List.filter (fun (msg, _) -> msg.Contains "/")
 
