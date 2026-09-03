@@ -2,6 +2,7 @@ module CSharpLanguageServer.Roslyn.Solution
 
 open System
 open System.IO
+open System.Reflection
 open System.Threading
 open System.Collections.Generic
 open System.Xml.Linq
@@ -67,14 +68,52 @@ let initializeMSBuild () : unit =
 
     MSBuildLocator.RegisterInstance(vsInstance)
 
+/// Tells whether a project of this solution survives its `.slnf` filter, answering
+/// true for every project when the solution is not a filter.
+///
+/// MSBuild applies the filter internally but exposes no public way to query it, so
+/// this reaches its own `ProjectShouldBuild` rather than reimplementing the match:
+/// that normalizes path separators and compares case-sensitively on Linux only, and
+/// a hand-written comparison is what would make us disagree with the build about
+/// which projects a filter selects.
+///
+/// Unlike the Roslyn internals reflected elsewhere in this server, Microsoft.Build
+/// is whichever assembly MSBuildLocator found in the installed SDK, so a member that
+/// stops existing must not fail the whole solution load: it degrades to loading
+/// every project the solution declares.
+let private projectShouldBuildPredicate (solutionFile: SolutionFile) : string -> bool =
+    match typeof<SolutionFile>.GetMethod("ProjectShouldBuild", BindingFlags.Instance ||| BindingFlags.NonPublic) with
+    | null ->
+        logger.LogWarning(
+            "MSBuild SolutionFile has no ProjectShouldBuild method; .slnf solution filters will be ignored"
+        )
+
+        fun _ -> true
+
+    | projectShouldBuild ->
+        fun relativePath ->
+            projectShouldBuild.Invoke(solutionFile, [| relativePath |])
+            |> nonNull "SolutionFile.ProjectShouldBuild()"
+            |> unbox<bool>
+
 let solutionLoadProjectFilenames (solutionPath: string) =
     assert Path.IsPathRooted solutionPath
     let projectFilenames = new List<string>()
 
     let solutionFile = SolutionFile.Parse solutionPath
 
+    // For a .slnf, ProjectsInOrder lists every project of the PARENT solution, not
+    // just the filtered set. Without applying the filter a filtered solution
+    // over-counts the load-progress denominator (reports like "(74/358)" stuck at
+    // 20% on dotnet/roslyn's Compilers.slnf) and widens the workspace-global TFM
+    // intersection to projects the filter excludes.
+    let projectShouldBuild = projectShouldBuildPredicate solutionFile
+
     for project in solutionFile.ProjectsInOrder do
-        if project.ProjectType = SolutionProjectType.KnownToBeMSBuildFormat then
+        if
+            project.ProjectType = SolutionProjectType.KnownToBeMSBuildFormat
+            && projectShouldBuild project.RelativePath
+        then
             projectFilenames.Add project.AbsolutePath
 
     projectFilenames |> Set.ofSeq
