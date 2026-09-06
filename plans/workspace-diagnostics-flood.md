@@ -303,3 +303,119 @@ a feature addition, not a fix for the current flood.
 - `Handlers/Diagnostic.fs` — `getWorkspaceDiagnosticReports`, `handleWorkspaceDiagnostic`
 - `Runtime/PushDiagnostics.fs` — push-diagnostics subsystem (separate; not affected)
 - `Roslyn/Conversions.fs` — `Diagnostic.fromRoslynDiagnostic`
+
+---
+
+## Update: two more per-poll optimizations prototyped, then reverted
+
+With Fix 1 and Fix 2 above already implemented (resultId caching + generated-file
+filtering) and the sequential per-project processing from
+`plans/interactive-request-latency-vs-analyzers.md` (Option C) also in place, a
+live `csharp-ls` session against a real, large multi-project solution (73
+projects, `~/csharp-ls-rpc.log`) still showed periodic CPU spikes (up to ~17% sustained,
+occasionally much higher) and a rapidly-growing rpc log (140 MB+ within a single
+session). Two additional, narrower inefficiencies were identified in
+`Handlers/Diagnostic.fs` and prototyped:
+
+1. **One `$/progress` write per document, never batched.** In
+   `handleWorkspaceDiagnostic`'s streaming branch, `Items` was always a
+   single-element array — for a large solution, a poll that touches thousands of
+   documents meant thousands of individual JSON-serialize + JSON-RPC-write round
+   trips, even when every item was a cheap `"unchanged"` stub.
+2. **O(files-in-solution × projects) cache lookup per poll.** In
+   `generateProjectDiagnosticReports'`, `clientKnownResultsForProject` was
+   computed as `knownResultIds |> Map.toSeq |> Seq.filter (fun (uri, _) ->
+   projectDocumentUris.Contains uri)` — re-walking the *entire*, solution-wide
+   `knownResultIds` map once per project, rather than probing per-document with
+   `Map.tryFind`.
+
+Both were implemented, built cleanly, and all 20 existing `DiagnosticTests.fs` /
+`AnalyzerTests.fs` tests passed unchanged. Observed effect on the live session
+after a VS Code restart: `$/progress` messages dropped from one line per file to
+one line per ~200 files (confirmed in the rpc log — batches of exactly 200
+`"unchanged"` items per line), and a tail sample of the log after the initial
+cold sweep was **100% `"unchanged"` reports** (cache hits, no re-analysis),
+confirming both changes worked as intended and didn't change results.
+
+### Why the real-world win was small anyway
+
+Investigating why CPU/log growth continued well past the initial cold sweep led
+to reading the actual client-side scheduling logic in
+[`microsoft/vscode-languageserver-node`](https://github.com/microsoft/vscode-languageserver-node),
+`client/src/common/diagnostic.ts` (`main` branch), `DiagnosticFeatureProviderImpl.pullWorkspace`:
+
+```typescript
+public pullWorkspace(): void {
+    if (this.isDisposed) {
+        return;
+    }
+    this.pullWorkspaceAsync().then(() => {
+        this.workspaceTimeout = RAL().timer.setTimeout(() => {
+            this.pullWorkspace();
+        }, 2000);
+    }, (error) => {
+        if (!(error instanceof LSPCancellationError) && !DiagnosticServerCancellationData.is(error.data)) {
+            this.client.error(`Workspace diagnostic pull failed.`, error, false);
+            this.workspaceErrorCounter++;
+        }
+        if (this.workspaceErrorCounter <= 5) {
+            this.workspaceTimeout = RAL().timer.setTimeout(() => {
+                this.pullWorkspace();
+            }, 2000);
+        }
+    });
+}
+```
+
+`pullWorkspace()` is self-perpetuating: the moment one `workspace/diagnostic`
+round trip finishes (success, or failure up to 5 consecutive errors), it
+schedules the *next* one via a hardcoded `setTimeout(..., 2000)`. This runs for
+the entire lifetime of the editor session — forever, roughly every ~2 seconds —
+as long as the server advertises `WorkspaceDiagnostics = true` in
+`DiagnosticRegistrationOptions`, **completely independent of whether anything in
+the solution changed**. This matches
+[microsoft/vscode-languageserver-node#1261](https://github.com/microsoft/vscode-languageserver-node/issues/1261),
+which reports exactly this cadence ("vscode repeats the workspace diagnostic
+request every 2 seconds").
+
+This reframes the whole problem: no matter how cheap a single poll is made
+server-side (resultId caching, batched `$/progress`, indexed lookups), the
+server still has to touch every project and every known document — at minimum a
+`GetDependentVersionAsync` call and a document-uri scan per project — **on every
+one of these ~2-second ticks, for as long as VS Code is connected**. For a
+73-project, several-thousand-file solution that recurring per-project baseline
+cost, multiplied by roughly 1800 ticks/hour, is a real, continuous CPU/IO cost
+that per-poll micro-optimizations cannot remove — they only make each tick
+somewhat cheaper, not less frequent. A live comparison bore this out: CPU stayed
+bursty (spikes well over 100%, multi-core) for 20+ minutes after the initial cold
+sweep had already completed and the log showed only cache hits, because the
+*rate* of polling — not the cost of an individual poll — is what's driving the
+sustained load for a solution this size.
+
+### Decision
+
+Given the above, the batching and indexed-lookup changes were **implemented,
+verified, and then reverted** (`src/CSharpLanguageServer/Handlers/Diagnostic.fs`
+is back to its pre-change state) — the win was real but small relative to the
+~2-second, solution-size-independent polling cadence that dominates the cost for
+a solution this large. They remain a reasonable future win for solutions with
+enough live churn that individual polls (rather than polling frequency) are the
+bottleneck, but are not currently justified as a standalone change.
+
+The only lever that actually addresses the *recurring, forever* cost for very
+large solutions is **Fix 3 above** (`WorkspaceDiagnostics = false`), since that's
+the sole way to stop `pullWorkspace()` from ever starting client-side. That
+remains the next thing to evaluate if this keeps being a problem in practice —
+e.g. gating it behind a size heuristic (project count) or a user-facing config
+option, since disabling it outright loses workspace-wide diagnostics for closed
+files.
+
+### References (this update)
+
+- `client/src/common/diagnostic.ts` (`DiagnosticFeatureProviderImpl.pullWorkspace`) —
+  https://github.com/microsoft/vscode-languageserver-node/blob/main/client/src/common/diagnostic.ts
+- https://github.com/microsoft/vscode-languageserver-node/issues/1261 — "Workspace
+  diagnostic pull retries continuously even when sending
+  DiagnosticServerCancellationData error"
+- Reference session: `~/csharp-ls-rpc.log` against a large real-world solution
+  (73 projects), captured after a VS Code restart with both prototyped fixes live

@@ -36,8 +36,8 @@ every enabled Roslyn analyzer.
 
 ## Observed Symptom
 
-Reproduced from a real session's `csharp-ls-rpc.log` against a solution with a
-`printlog.sln` composed of **59 projects**, `analyzersEnabled: true`.
+Reproduced from a real session's `csharp-ls-rpc.log` against a large real-world
+solution composed of **59 projects**, `analyzersEnabled: true`.
 
 Right after the client opens a document and starts typing, three
 `textDocument/completion` requests are issued in short succession while
@@ -388,7 +388,7 @@ serviced by `max 1 Environment.ProcessorCount` dedicated, background,
 `getWorkspaceDiagnosticReports` was left unchanged, per the design.
 
 A second reference session was captured against the same 59-project
-`printlog.sln` (`~/csharp-ls-rpc.log`, distinct from the log referenced
+solution (`~/csharp-ls-rpc.log`, distinct from the log referenced
 elsewhere in this doc) with the fix live. The result: **no material
 improvement.** Completion requests issued while `workspace/diagnostic`'s
 initial full-solution scan was in flight (ids `39`, `56`, `57` in that log,
@@ -626,7 +626,7 @@ symptom; bounding the CPU-heavy work at its source is the direct fix.
 | # | Question | Notes |
 |---|---|---|
 | 1 | Should there be a config knob to opt back into higher concurrency (e.g. for CI/batch use with no interactive client attached, where sweep latency matters more than completion responsiveness)? | Not needed for the interactive-editor use case this plan targets; worth keeping in mind if a batch/headless mode (`--diagnose` or similar) is ever built on top of the same code path, but out of scope for this fix. |
-| 2 | Does disabling `concurrentAnalysis` measurably slow down cancellation responsiveness for a single project's analyzer pass (since there's no longer a second thread free to notice a cancellation token promptly)? | Needs empirical check once implemented; Roslyn's own IDE layer runs this way in practice without reported issues, so expected to be a non-issue, but worth verifying against the project sizes seen in `printlog.sln`. |
+| 2 | Does disabling `concurrentAnalysis` measurably slow down cancellation responsiveness for a single project's analyzer pass (since there's no longer a second thread free to notice a cancellation token promptly)? | Needs empirical check once implemented; Roslyn's own IDE layer runs this way in practice without reported issues, so expected to be a non-issue, but worth verifying against the project sizes seen in that reference solution. |
 | 3 | Should `getWorkspaceDiagnosticReports`'s existing `Channel`-based plumbing be removed outright, or kept (with a single producer) so future work can reintroduce bounded concurrency more easily? | Lean toward removing it — simpler code that matches what's actually happening (sequential) is preferable to keeping infrastructure for a concurrency model that was just abandoned; can be re-added if a future need arises. |
 
 ## Out of Scope
