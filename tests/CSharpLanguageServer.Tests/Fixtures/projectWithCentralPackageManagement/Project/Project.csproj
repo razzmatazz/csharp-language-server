@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Central Package Management (CPM): version comes from Directory.Packages.props,
+         not from this PackageReference item. See
+         https://github.com/razzmatazz/csharp-language-server/issues/318 -->
+    <PackageReference Include="Newtonsoft.Json" />
+  </ItemGroup>
+</Project>
