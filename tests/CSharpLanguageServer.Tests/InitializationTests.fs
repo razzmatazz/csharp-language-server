@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Tests.InitializationTests
 
 open System
+open System.IO
 
 open NUnit.Framework
 
@@ -268,6 +269,76 @@ let testPlatformSpecificTfmDoesNotBreakSiblingProjects () =
 
         Assert.That(errors.Length, Is.EqualTo(0), $"expected no errors on Project/Class.cs, got: {errorsStr}")
     | _ -> failwith "U2.C1 (full report) was expected"
+
+/// Regression test for https://github.com/razzmatazz/csharp-language-server/issues/318 —
+/// projects using NuGet Central Package Management (CPM) via `Directory.Packages.props`
+/// (a `<PackageReference>` with no `Version` attribute) reportedly fail to load in the
+/// Roslyn MSBuildWorkspace, with a `[Failure]` msbuildWorkspace diagnostic and zero code
+/// intelligence for the affected project.
+[<Test>]
+let testCentralPackageManagementProjectLoadsWithoutMsbuildWorkspaceFailure () =
+    // Pre-build both projects so that obj/project.assets.json exists for each (restored
+    // against the centrally-managed package version) before MSBuildWorkspace opens the
+    // solution. DependentProject has no direct PackageReference of its own — it only
+    // pulls in Newtonsoft.Json transitively via the ProjectReference to Project,
+    // mirroring the "DependentProject" symptom reported in the issue.
+    let prebuildProjects (solutionDir: string) =
+        for projectName in [ "Project"; "DependentProject" ] do
+            let projectDir = Path.Combine(solutionDir, projectName)
+            let exitCode, stdout, stderr = runDotnetBuild projectDir
+
+            if exitCode <> 0 then
+                failwithf
+                    "Pre-build of CPM fixture project '%s' failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
+                    projectName
+                    exitCode
+                    stdout
+                    stderr
+
+    use client =
+        activateFixtureExt "projectWithCentralPackageManagement" defaultClientProfile prebuildProjects id
+
+    use classFile = client.Open("Project/Class.cs")
+    use consumerFile = client.Open("DependentProject/Consumer.cs")
+
+    // The bug in #318 manifests as a `[Failure]` msbuildWorkspace.Diagnostics entry
+    // logged (via window/logMessage) while the solution is being loaded — either for the
+    // CPM-managed project itself, or for a project that depends on it.
+    let hasMsbuildWorkspaceFailure =
+        client.ServerMessageLogContains(fun m -> m.Contains("msbuildWorkspace.Diagnostics") && m.Contains("[Failure]"))
+
+    Assert.That(
+        hasMsbuildWorkspaceFailure,
+        Is.False,
+        "Expected the CPM-managed project (and its dependent project) to load without a msbuildWorkspace [Failure] diagnostic"
+    )
+
+    // Sanity-check that code intelligence actually works for the CPM-managed package
+    // reference: hovering over `JsonConvert` should resolve to the Newtonsoft.Json type.
+    let hoverParams: HoverParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 6u; Character = 15u } // `JsonConvert` in `JsonConvert.SerializeObject(o)`
+          WorkDoneToken = None }
+
+    let hover: Hover option = client.Request("textDocument/hover", hoverParams)
+
+    match hover with
+    | Some { Contents = U3.C1 c } -> Assert.That(c.Value, Does.Contain("JsonConvert"))
+    | _ -> failwith "Expected hover to resolve JsonConvert from the CPM-managed Newtonsoft.Json reference"
+
+    // Sanity-check code intelligence for the dependent project too: hovering over
+    // `MyClass` (defined in the CPM-managed project) should resolve.
+    let dependentHoverParams: HoverParams =
+        { TextDocument = { Uri = consumerFile.Uri }
+          Position = { Line = 4u; Character = 28u } // `MyClass` in `new MyClass()`
+          WorkDoneToken = None }
+
+    let dependentHover: Hover option =
+        client.Request("textDocument/hover", dependentHoverParams)
+
+    match dependentHover with
+    | Some { Contents = U3.C1 c } -> Assert.That(c.Value, Does.Contain("MyClass"))
+    | _ -> failwith "Expected hover to resolve MyClass from the ProjectReference to the CPM-managed project"
 
 [<Test>]
 let testMultiTargetWorkspace () =

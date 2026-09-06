@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Deliberately no direct PackageReference to Newtonsoft.Json: it is only
+         consumed transitively through the ProjectReference below, mirroring the
+         "DependentProject" scenario in
+         https://github.com/razzmatazz/csharp-language-server/issues/318 -->
+    <ProjectReference Include="..\Project\Project.csproj" />
+  </ItemGroup>
+</Project>
