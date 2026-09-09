@@ -1,5 +1,15 @@
 # TODO
 
+## Roslyn-from-SDK runtime loading (architecture question, planning only)
+
+See `plans/roslyn-from-sdk-runtime-loading.md` for the full plan. Tracks whether csharp-ls
+should load Roslyn assemblies from the installed .NET SDK at runtime (like it already does for
+`Microsoft.Build*` via `MSBuildLocator`) instead of a NuGet-pinned `RoslynPackageVersion`, to
+stop future SDK upgrades from silently breaking already-released csharp-ls builds (the
+recurring Razor source-generator breakage in `plans/razor-sdk-300-investigation.md` is the
+concrete symptom). Not started — gated on trigger criteria in the plan file before even a
+spike is scheduled.
+
 ## Bump Microsoft.Build.Locator version
 
 ## Test performance improvements
