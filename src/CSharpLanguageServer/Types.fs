@@ -12,12 +12,21 @@ type CSharpDebugConfiguration =
         { solutionLoadDelay = None
           debugMode = None }
 
+type CSharpCompletionConfiguration =
+    { completeUnimportedTypes: bool option
+      showNameSuggestions: bool option }
+
+    static member Default =
+        { completeUnimportedTypes = None
+          showNameSuggestions = None }
+
 type CSharpConfiguration =
     { logLevel: string option
       applyFormattingOptions: bool option
       analyzersEnabled: bool option
       useMetadataUris: bool option
       razorSupport: bool option
+      completion: CSharpCompletionConfiguration option
       locale: string option
       debug: CSharpDebugConfiguration option
       solutionPathOverride: string option }
@@ -34,6 +43,7 @@ type CSharpConfiguration =
           analyzersEnabled = None
           useMetadataUris = None
           razorSupport = None
+          completion = None
           locale = None
           debug = None
           solutionPathOverride = None }
@@ -46,6 +56,17 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
       analyzersEnabled = newConfig.analyzersEnabled |> Option.orElse oldConfig.analyzersEnabled
       useMetadataUris = newConfig.useMetadataUris |> Option.orElse oldConfig.useMetadataUris
       razorSupport = newConfig.razorSupport |> Option.orElse oldConfig.razorSupport
+      completion =
+        match newConfig.completion with
+        | Some newCompletion ->
+            Some
+                { completeUnimportedTypes =
+                    newCompletion.completeUnimportedTypes
+                    |> Option.orElse (oldConfig.completion |> Option.bind _.completeUnimportedTypes)
+                  showNameSuggestions =
+                    newCompletion.showNameSuggestions
+                    |> Option.orElse (oldConfig.completion |> Option.bind _.showNameSuggestions) }
+        | None -> oldConfig.completion
       locale = newConfig.locale |> Option.orElse oldConfig.locale
       debug =
         match newConfig.debug with

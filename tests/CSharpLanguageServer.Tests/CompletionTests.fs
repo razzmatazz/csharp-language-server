@@ -7,6 +7,7 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 open CSharpLanguageServer.Tests.Fixtures
 
@@ -38,7 +39,7 @@ let ``completion works in a .cs file`` () =
 
     match completion0 with
     | Some(U2.C2 cl) ->
-        Assert.That(cl.IsIncomplete, Is.True)
+        Assert.That(cl.IsIncomplete, Is.False)
         Assert.That(cl.ItemDefaults.IsSome, Is.False)
         Assert.That(cl.Items.Length, Is.EqualTo(6))
 
@@ -280,3 +281,214 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
     let resolved: CompletionItem = client.Request("completionItem/resolve", itemJson)
 
     Assert.That(resolved.Detail, Is.EqualTo(Some "void ClassForCompletion.MethodA(string arg)"))
+
+[<Test>]
+let ``completion suggests types from unimported namespaces by default`` () =
+    // https://github.com/razzmatazz/csharp-language-server/issues/210
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    // Roslyn builds the unimported-types symbol index asynchronously in the background,
+    // so the first request or two may not have it ready yet; retry for a bit.
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    let rec pollForCompletion attemptsLeft =
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        if hasUnimportedItem completion || attemptsLeft <= 0 then
+            completion
+        else
+            Thread.Sleep(500)
+            pollForCompletion (attemptsLeft - 1)
+
+    let completion = pollForCompletion 20
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let unimportedItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+
+        Assert.That(
+            unimportedItem.IsSome,
+            Is.True,
+            sprintf
+                "expected a completion item for 'TypeOnlyInUnimportedNamespace' from an unimported namespace. Got: %s"
+                (cl.Items |> Array.map (fun i -> i.Label) |> String.concat ", ")
+        )
+    | _ -> failwith "Some U2.C2 was expected"
+
+[<Test>]
+let ``completion inserts using directive when accepting an unimported-namespace item`` () =
+    // https://github.com/razzmatazz/csharp-language-server/issues/210
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    let rec pollForCompletion attemptsLeft =
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        if hasUnimportedItem completion || attemptsLeft <= 0 then
+            completion
+        else
+            Thread.Sleep(500)
+            pollForCompletion (attemptsLeft - 1)
+
+    let completion = pollForCompletion 20
+
+    let item =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.find (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> failwith "Some U2.C2 was expected"
+
+    let resolved: CompletionItem = client.Request("completionItem/resolve", item)
+
+    // The primary insertion is still done via `InsertText` (no `TextEdit`), unaffected by this change.
+    Assert.That(resolved.InsertText, Is.EqualTo(Some "TypeOnlyInUnimportedNamespace"))
+    Assert.That(resolved.TextEdit.IsSome, Is.False)
+
+    match resolved.AdditionalTextEdits with
+    | Some edits ->
+        let hasUsingEdit =
+            edits |> Array.exists (fun e -> e.NewText.Contains("using Project.Unimported;"))
+
+        Assert.That(
+            hasUsingEdit,
+            Is.True,
+            sprintf
+                "expected an additional text edit inserting 'using Project.Unimported;'. Got: %s"
+                (edits |> Array.map (fun e -> e.NewText) |> String.concat " | ")
+        )
+    | None -> failwith "expected AdditionalTextEdits to be Some when accepting an unimported-namespace item"
+
+[<Test>]
+let ``completion does not suggest types from unimported namespaces when disabled via config`` () =
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    completion =
+                        Some
+                            { CSharpCompletionConfiguration.Default with
+                                completeUnimportedTypes = Some false } } }
+
+    use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    // Poll repeatedly (as long as the passing test above needs to see the item appear once
+    // Roslyn's unimported-types index has warmed up) and assert it never shows up.
+    for _ in 1..20 do
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        Assert.That(
+            hasUnimportedItem completion,
+            Is.False,
+            "did not expect a completion item for 'TypeOnlyInUnimportedNamespace' when the setting is disabled"
+        )
+
+        Thread.Sleep(500)
+
+[<Test>]
+let ``completion does not suggest names by default`` () =
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/NameSuggestionCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 34u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let completion: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams)
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let nameSuggestionItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "stringBuilder")
+
+        Assert.That(
+            nameSuggestionItem.IsNone,
+            Is.True,
+            "did not expect a name-suggestion completion item 'stringBuilder' by default"
+        )
+    | _ -> failwith "Some U2.C2 was expected"
+
+[<Test>]
+let ``completion suggests names when enabled via config`` () =
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    completion =
+                        Some
+                            { CSharpCompletionConfiguration.Default with
+                                showNameSuggestions = Some true } } }
+
+    use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
+
+    use classFile = client.Open("Project/NameSuggestionCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 34u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let completion: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams)
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let nameSuggestionItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "stringBuilder")
+
+        Assert.That(
+            nameSuggestionItem.IsSome,
+            Is.True,
+            sprintf
+                "expected a name-suggestion completion item 'stringBuilder'. Got: %s"
+                (cl.Items |> Array.map (fun i -> i.Label) |> String.concat ", ")
+        )
+    | _ -> failwith "Some U2.C2 was expected"

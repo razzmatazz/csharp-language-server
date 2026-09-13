@@ -51,11 +51,28 @@ The `--no-build` flag skips recompiling the test project, which means type error
 code are silently ignored and the stale binary from a previous build is used instead.
 There is no meaningful performance win from skipping the build step.
 
+## Anonymize private code in plans, prose, and examples
+
+When writing anything that will be committed or otherwise persisted (`plans/*.md`,
+design docs, PR descriptions, code comments) and it draws on a real session against a
+user's private solution — namespaces, type names, file names, log excerpts — replace
+those with fictional equivalents (e.g. `Fabrikam.Processing`, `ExchangeRateSource`,
+`MiscDataCleanupHandlers.cs`) before committing. Keep the *shape* of the example intact
+(same structure, same character offsets/prefixes where they matter to the point being
+made) so the technical content is unaffected — only the identifying names change. This
+does not apply to this project's own public identifiers (namespaces under
+`CSharpLanguageServer.*`, file paths under `src/`, GitHub issue/PR numbers on this repo)
+since those aren't private.
+
 ## Code Style & Commit Conventions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 
-Commit messages should be a short single-line summary — no bullet lists of individual changes.
+Commit messages use [Conventional Commits](https://www.conventionalcommits.org/) style —
+`<type>(<scope>): <short summary>` (e.g. `fix(completion): avoid NullReferenceException on
+empty import list`) — as a short single-line summary, no bullet lists of individual changes.
+See [CONTRIBUTING.md#commit-messages](CONTRIBUTING.md#commit-messages) for the full list of
+`type`s and more examples.
 
 ## Key Docs
 

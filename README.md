@@ -70,6 +70,17 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
   defaults to `false`
 
+- `csharp.completion.completeUnimportedTypes` - include types from namespaces
+  that aren't yet imported in `textDocument/completion` results, inserting the
+  missing `using` (via `additionalTextEdits`) when one of those items is
+  accepted; may increase completion latency on large solutions; defaults to
+  `true`
+
+- `csharp.completion.showNameSuggestions` - include suggested identifier names
+  (e.g. `stringBuilder` when completing after `StringBuilder `) in
+  `textDocument/completion` results; may increase completion latency;
+  defaults to `false`
+
 - `csharp.solutionPathOverride` - override the solution path to load; useful for
   specifying an alternative solution when multiple exist in the workspace;
   can also be set via the `--solution` CLI flag; defaults to `null`

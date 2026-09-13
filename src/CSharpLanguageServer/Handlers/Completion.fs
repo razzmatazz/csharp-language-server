@@ -128,6 +128,29 @@ module Completion =
         member __.GetDescriptionAsync(doc, item, ct) =
             service.GetDescriptionAsync(doc, item, ct)
 
+    /// Builds Roslyn completion options from the effective `csharp.completion.*` configuration.
+    /// `ShowItemsFromUnimportedNamespaces` defaults to `true` (re-enabling suggestions for
+    /// types whose namespace isn't imported yet — https://github.com/razzmatazz/csharp-language-server/issues/210).
+    /// Selecting one of those items commits as a complex text edit (see `IsComplexTextEdit` below)
+    /// that both inserts the type name and adds the missing `using` — `completeUnimportedTypes`
+    /// controls both behaviors together, since offering an item that doesn't compile without an
+    /// import the user has to add by hand isn't very useful on its own.
+    /// `ShowNameSuggestions` defaults to `false` since it's rarely useful over LSP and adds latency.
+    let private getRoslynCompletionOptions (context: RequestContext) =
+        let completeUnimportedTypes =
+            context.Config.completion
+            |> Option.bind _.completeUnimportedTypes
+            |> Option.defaultValue true
+
+        let showNameSuggestions =
+            context.Config.completion
+            |> Option.bind _.showNameSuggestions
+            |> Option.defaultValue false
+
+        RoslynCompletionOptions.Default()
+        |> _.WithBool("ShowItemsFromUnimportedNamespaces", completeUnimportedTypes)
+        |> _.WithBool("ShowNameSuggestions", showNameSuggestions)
+
     let private dynamicRegistration (cc: ClientCapabilities) =
         cc.TextDocument
         |> Option.bind _.Completion
@@ -313,10 +336,7 @@ module Completion =
                                 Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                                 |> RoslynCompletionServiceWrapper
 
-                            let completionOptions =
-                                RoslynCompletionOptions.Default()
-                                |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
-                                |> _.WithBool("ShowNameSuggestions", false)
+                            let completionOptions = context |> getRoslynCompletionOptions
 
                             let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
 
@@ -355,10 +375,7 @@ module Completion =
                     Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                     |> RoslynCompletionServiceWrapper
 
-                let completionOptions =
-                    RoslynCompletionOptions.Default()
-                    |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
-                    |> _.WithBool("ShowNameSuggestions", false)
+                let completionOptions = context |> getRoslynCompletionOptions
 
                 let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
 
@@ -417,13 +434,56 @@ module Completion =
                     lspCompletionItemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item)
 
                 return
-                    { IsIncomplete = true
+                    // Roslyn's `CompletionList` has no concept of "there's more, ask again" — it
+                    // always returns its full candidate set for the current cursor context in one
+                    // call, unfiltered by the typed prefix (LSP expects the client to filter
+                    // `items` locally using `filterText` as the user keeps typing). Reporting
+                    // `IsIncomplete = true` here would instead make the client re-request on every
+                    // keystroke via `TriggerForIncompleteCompletions`, redoing this same
+                    // (potentially expensive, e.g. unimported-namespace) computation each time.
+                    { IsIncomplete = false
                       Items = items
                       ItemDefaults = None }
                     |> U2.C2
                     |> Some
                     |> LspResult.success,
                     LspWorkspaceUpdate.Empty
+        }
+
+    /// For completion items that need more than inserting `DisplayText` at their original
+    /// `Span` on commit (`IsComplexTextEdit`) — e.g. an item from an unimported namespace,
+    /// which also needs a `using` inserted at the top of the file — resolves the full set of
+    /// changes Roslyn would make and returns everything other than the primary in-place edit
+    /// as LSP `AdditionalTextEdits`, so accepting the item also adds the missing import.
+    let private getAdditionalTextEditsForComplexItem
+        (completionService: Microsoft.CodeAnalysis.Completion.CompletionService)
+        (doc: Document)
+        (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
+        (ct: System.Threading.CancellationToken)
+        : Async<TextEdit[] option> =
+        async {
+            if not item.IsComplexTextEdit then
+                return None
+            else
+                let! change =
+                    completionService.GetChangeAsync(doc, item, System.Nullable(), ct)
+                    |> Async.AwaitTask
+
+                if change.TextChanges.IsDefaultOrEmpty then
+                    return None
+                else
+                    let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+
+                    let additionalEdits =
+                        change.TextChanges
+                        |> Seq.filter (fun tc -> tc.Span <> item.Span)
+                        |> Seq.map (TextEdit.fromTextChange sourceText.Lines)
+                        |> Array.ofSeq
+
+                    return
+                        match additionalEdits with
+                        | [||] -> None
+                        | edits -> Some edits
         }
 
     let resolve
@@ -462,10 +522,14 @@ module Completion =
                           Value = d }
                         |> U2.C2)
 
+                let! additionalTextEdits =
+                    getAdditionalTextEditsForComplexItem completionService doc roslynCompletionItem ct
+
                 return
                     { item with
                         Detail = synopsis
-                        Documentation = updatedItemDocumentation }
+                        Documentation = updatedItemDocumentation
+                        AdditionalTextEdits = additionalTextEdits |> Option.orElse item.AdditionalTextEdits }
                     |> LspResult.success,
                     LspWorkspaceUpdate.Empty
 
