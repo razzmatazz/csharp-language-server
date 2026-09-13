@@ -434,7 +434,14 @@ module Completion =
                     lspCompletionItemsWithCacheInfo |> Array.map (fun (item, _, _, _) -> item)
 
                 return
-                    { IsIncomplete = true
+                    // Roslyn's `CompletionList` has no concept of "there's more, ask again" — it
+                    // always returns its full candidate set for the current cursor context in one
+                    // call, unfiltered by the typed prefix (LSP expects the client to filter
+                    // `items` locally using `filterText` as the user keeps typing). Reporting
+                    // `IsIncomplete = true` here would instead make the client re-request on every
+                    // keystroke via `TriggerForIncompleteCompletions`, redoing this same
+                    // (potentially expensive, e.g. unimported-namespace) computation each time.
+                    { IsIncomplete = false
                       Items = items
                       ItemDefaults = None }
                     |> U2.C2

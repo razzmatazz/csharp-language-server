@@ -39,7 +39,7 @@ let ``completion works in a .cs file`` () =
 
     match completion0 with
     | Some(U2.C2 cl) ->
-        Assert.That(cl.IsIncomplete, Is.True)
+        Assert.That(cl.IsIncomplete, Is.False)
         Assert.That(cl.ItemDefaults.IsSome, Is.False)
         Assert.That(cl.Items.Length, Is.EqualTo(6))
 

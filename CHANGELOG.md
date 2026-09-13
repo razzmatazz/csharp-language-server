@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and matching the previous hardcoded behavior
   - Reported by @kervanaslan in https://github.com/razzmatazz/csharp-language-server/issues/210 and
     fixed by @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/425
+* Stop reporting `textDocument/completion` results as incomplete, which was forcing editors to
+  re-request the full completion list (including the unimported-namespace scan above) on every
+  keystroke instead of filtering the already-returned list locally; this could produce a large,
+  redundant `textDocument/completion` response per character typed on large solutions
 
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
