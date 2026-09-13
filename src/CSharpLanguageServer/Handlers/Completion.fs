@@ -128,6 +128,25 @@ module Completion =
         member __.GetDescriptionAsync(doc, item, ct) =
             service.GetDescriptionAsync(doc, item, ct)
 
+    /// Builds Roslyn completion options from the effective `csharp.completion.*` configuration.
+    /// `ShowItemsFromUnimportedNamespaces` defaults to `true` (re-enabling suggestions for
+    /// types whose namespace isn't imported yet — https://github.com/razzmatazz/csharp-language-server/issues/210);
+    /// `ShowNameSuggestions` defaults to `false` since it's rarely useful over LSP and adds latency.
+    let private getRoslynCompletionOptions (context: RequestContext) =
+        let showItemsFromUnimportedNamespaces =
+            context.Config.completion
+            |> Option.bind _.showItemsFromUnimportedNamespaces
+            |> Option.defaultValue true
+
+        let showNameSuggestions =
+            context.Config.completion
+            |> Option.bind _.showNameSuggestions
+            |> Option.defaultValue false
+
+        RoslynCompletionOptions.Default()
+        |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
+        |> _.WithBool("ShowNameSuggestions", showNameSuggestions)
+
     let private dynamicRegistration (cc: ClientCapabilities) =
         cc.TextDocument
         |> Option.bind _.Completion
@@ -313,14 +332,7 @@ module Completion =
                                 Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                                 |> RoslynCompletionServiceWrapper
 
-                            let showItemsFromUnimportedNamespaces =
-                                context.Config.completionShowItemsFromUnimportedNamespaces
-                                |> Option.defaultValue true
-
-                            let completionOptions =
-                                RoslynCompletionOptions.Default()
-                                |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
-                                |> _.WithBool("ShowNameSuggestions", false)
+                            let completionOptions = context |> getRoslynCompletionOptions
 
                             let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
 
@@ -359,14 +371,7 @@ module Completion =
                     Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                     |> RoslynCompletionServiceWrapper
 
-                let showItemsFromUnimportedNamespaces =
-                    context.Config.completionShowItemsFromUnimportedNamespaces
-                    |> Option.defaultValue true
-
-                let completionOptions =
-                    RoslynCompletionOptions.Default()
-                    |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
-                    |> _.WithBool("ShowNameSuggestions", false)
+                let completionOptions = context |> getRoslynCompletionOptions
 
                 let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
 

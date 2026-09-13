@@ -7,6 +7,7 @@ open NUnit.Framework
 open Ionide.LanguageServerProtocol.Types
 open Ionide.LanguageServerProtocol.Server
 
+open CSharpLanguageServer.Types
 open CSharpLanguageServer.Tests.Tooling
 open CSharpLanguageServer.Tests.Fixtures
 
@@ -334,7 +335,10 @@ let ``completion does not suggest types from unimported namespaces when disabled
         { defaultClientProfile with
             ServerConfig =
                 { defaultClientProfile.ServerConfig with
-                    completionShowItemsFromUnimportedNamespaces = Some false } }
+                    completion =
+                        Some
+                            { CSharpCompletionConfiguration.Default with
+                                showItemsFromUnimportedNamespaces = Some false } } }
 
     use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
 
@@ -365,3 +369,70 @@ let ``completion does not suggest types from unimported namespaces when disabled
         )
 
         Thread.Sleep(500)
+
+[<Test>]
+let ``completion does not suggest names by default`` () =
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/NameSuggestionCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 34u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let completion: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams)
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let nameSuggestionItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "stringBuilder")
+
+        Assert.That(
+            nameSuggestionItem.IsNone,
+            Is.True,
+            "did not expect a name-suggestion completion item 'stringBuilder' by default"
+        )
+    | _ -> failwith "Some U2.C2 was expected"
+
+[<Test>]
+let ``completion suggests names when enabled via config`` () =
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    completion =
+                        Some
+                            { CSharpCompletionConfiguration.Default with
+                                showNameSuggestions = Some true } } }
+
+    use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
+
+    use classFile = client.Open("Project/NameSuggestionCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 34u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let completion: U2<CompletionItem array, CompletionList> option =
+        client.Request("textDocument/completion", completionParams)
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let nameSuggestionItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "stringBuilder")
+
+        Assert.That(
+            nameSuggestionItem.IsSome,
+            Is.True,
+            sprintf
+                "expected a name-suggestion completion item 'stringBuilder'. Got: %s"
+                (cl.Items |> Array.map (fun i -> i.Label) |> String.concat ", ")
+        )
+    | _ -> failwith "Some U2.C2 was expected"

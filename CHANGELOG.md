@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Re-enable completion suggestions for types from unimported namespaces (with the missing
   `using` added via `textDocument/codeAction`), gated behind the new
-  `csharp.completionShowItemsFromUnimportedNamespaces` setting, defaulting to `true`
-  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/210
+  `csharp.completion.showItemsFromUnimportedNamespaces` setting, defaulting to `true`; also add
+  `csharp.completion.showNameSuggestions` to control whether `textDocument/completion` includes
+  suggested identifier names (e.g. `stringBuilder` for a `StringBuilder`), defaulting to `false`
+  and matching the previous hardcoded behavior
+  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/210 and fixed in
+    https://github.com/razzmatazz/csharp-language-server/pull/425
 
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
