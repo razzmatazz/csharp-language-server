@@ -55,7 +55,11 @@ There is no meaningful performance win from skipping the build step.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 
-Commit messages should be a short single-line summary — no bullet lists of individual changes.
+Commit messages use [Conventional Commits](https://www.conventionalcommits.org/) style —
+`<type>(<scope>): <short summary>` (e.g. `fix(completion): avoid NullReferenceException on
+empty import list`) — as a short single-line summary, no bullet lists of individual changes.
+See [CONTRIBUTING.md#commit-messages](CONTRIBUTING.md#commit-messages) for the full list of
+`type`s and more examples.
 
 ## Key Docs
 
