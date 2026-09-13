@@ -18,6 +18,7 @@ type CSharpConfiguration =
       analyzersEnabled: bool option
       useMetadataUris: bool option
       razorSupport: bool option
+      completionShowItemsFromUnimportedNamespaces: bool option
       locale: string option
       debug: CSharpDebugConfiguration option
       solutionPathOverride: string option }
@@ -34,6 +35,7 @@ type CSharpConfiguration =
           analyzersEnabled = None
           useMetadataUris = None
           razorSupport = None
+          completionShowItemsFromUnimportedNamespaces = None
           locale = None
           debug = None
           solutionPathOverride = None }
@@ -46,6 +48,9 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
       analyzersEnabled = newConfig.analyzersEnabled |> Option.orElse oldConfig.analyzersEnabled
       useMetadataUris = newConfig.useMetadataUris |> Option.orElse oldConfig.useMetadataUris
       razorSupport = newConfig.razorSupport |> Option.orElse oldConfig.razorSupport
+      completionShowItemsFromUnimportedNamespaces =
+        newConfig.completionShowItemsFromUnimportedNamespaces
+        |> Option.orElse oldConfig.completionShowItemsFromUnimportedNamespaces
       locale = newConfig.locale |> Option.orElse oldConfig.locale
       debug =
         match newConfig.debug with

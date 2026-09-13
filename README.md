@@ -70,6 +70,11 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
   defaults to `false`
 
+- `csharp.completionShowItemsFromUnimportedNamespaces` - include types from
+  namespaces that aren't yet imported in `textDocument/completion` results
+  (adding the missing `using` is left to `textDocument/codeAction`); may
+  increase completion latency on large solutions; defaults to `true`
+
 - `csharp.solutionPathOverride` - override the solution path to load; useful for
   specifying an alternative solution when multiple exist in the workspace;
   can also be set via the `--solution` CLI flag; defaults to `null`

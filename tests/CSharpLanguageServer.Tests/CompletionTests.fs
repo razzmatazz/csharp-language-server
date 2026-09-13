@@ -280,3 +280,88 @@ let ``completionItem/resolve handles sentinel -1 positions in textEdit`` () =
     let resolved: CompletionItem = client.Request("completionItem/resolve", itemJson)
 
     Assert.That(resolved.Detail, Is.EqualTo(Some "void ClassForCompletion.MethodA(string arg)"))
+
+[<Test>]
+let ``completion suggests types from unimported namespaces by default`` () =
+    // https://github.com/razzmatazz/csharp-language-server/issues/210
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    // Roslyn builds the unimported-types symbol index asynchronously in the background,
+    // so the first request or two may not have it ready yet; retry for a bit.
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    let rec pollForCompletion attemptsLeft =
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        if hasUnimportedItem completion || attemptsLeft <= 0 then
+            completion
+        else
+            Thread.Sleep(500)
+            pollForCompletion (attemptsLeft - 1)
+
+    let completion = pollForCompletion 20
+
+    match completion with
+    | Some(U2.C2 cl) ->
+        let unimportedItem =
+            cl.Items |> Seq.tryFind (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+
+        Assert.That(
+            unimportedItem.IsSome,
+            Is.True,
+            sprintf
+                "expected a completion item for 'TypeOnlyInUnimportedNamespace' from an unimported namespace. Got: %s"
+                (cl.Items |> Array.map (fun i -> i.Label) |> String.concat ", ")
+        )
+    | _ -> failwith "Some U2.C2 was expected"
+
+[<Test>]
+let ``completion does not suggest types from unimported namespaces when disabled via config`` () =
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    completionShowItemsFromUnimportedNamespaces = Some false } }
+
+    use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    // Poll repeatedly (as long as the passing test above needs to see the item appear once
+    // Roslyn's unimported-types index has warmed up) and assert it never shows up.
+    for _ in 1..20 do
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        Assert.That(
+            hasUnimportedItem completion,
+            Is.False,
+            "did not expect a completion item for 'TypeOnlyInUnimportedNamespace' when the setting is disabled"
+        )
+
+        Thread.Sleep(500)

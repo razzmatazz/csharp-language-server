@@ -313,9 +313,13 @@ module Completion =
                                 Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                                 |> RoslynCompletionServiceWrapper
 
+                            let showItemsFromUnimportedNamespaces =
+                                context.Config.completionShowItemsFromUnimportedNamespaces
+                                |> Option.defaultValue true
+
                             let completionOptions =
                                 RoslynCompletionOptions.Default()
-                                |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
+                                |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
                                 |> _.WithBool("ShowNameSuggestions", false)
 
                             let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
@@ -355,9 +359,13 @@ module Completion =
                     Microsoft.CodeAnalysis.Completion.CompletionService.GetService(doc)
                     |> RoslynCompletionServiceWrapper
 
+                let showItemsFromUnimportedNamespaces =
+                    context.Config.completionShowItemsFromUnimportedNamespaces
+                    |> Option.defaultValue true
+
                 let completionOptions =
                     RoslynCompletionOptions.Default()
-                    |> _.WithBool("ShowItemsFromUnimportedNamespaces", false)
+                    |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
                     |> _.WithBool("ShowNameSuggestions", false)
 
                 let completionTrigger = p.Context |> codeActionContextToCompletionTrigger
