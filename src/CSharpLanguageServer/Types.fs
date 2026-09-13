@@ -13,11 +13,11 @@ type CSharpDebugConfiguration =
           debugMode = None }
 
 type CSharpCompletionConfiguration =
-    { showItemsFromUnimportedNamespaces: bool option
+    { completeUnimportedTypes: bool option
       showNameSuggestions: bool option }
 
     static member Default =
-        { showItemsFromUnimportedNamespaces = None
+        { completeUnimportedTypes = None
           showNameSuggestions = None }
 
 type CSharpConfiguration =
@@ -60,9 +60,9 @@ let mergeCSharpConfiguration (oldConfig: CSharpConfiguration) (newConfig: CSharp
         match newConfig.completion with
         | Some newCompletion ->
             Some
-                { showItemsFromUnimportedNamespaces =
-                    newCompletion.showItemsFromUnimportedNamespaces
-                    |> Option.orElse (oldConfig.completion |> Option.bind _.showItemsFromUnimportedNamespaces)
+                { completeUnimportedTypes =
+                    newCompletion.completeUnimportedTypes
+                    |> Option.orElse (oldConfig.completion |> Option.bind _.completeUnimportedTypes)
                   showNameSuggestions =
                     newCompletion.showNameSuggestions
                     |> Option.orElse (oldConfig.completion |> Option.bind _.showNameSuggestions) }

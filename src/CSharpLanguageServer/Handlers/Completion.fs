@@ -130,12 +130,16 @@ module Completion =
 
     /// Builds Roslyn completion options from the effective `csharp.completion.*` configuration.
     /// `ShowItemsFromUnimportedNamespaces` defaults to `true` (re-enabling suggestions for
-    /// types whose namespace isn't imported yet — https://github.com/razzmatazz/csharp-language-server/issues/210);
+    /// types whose namespace isn't imported yet — https://github.com/razzmatazz/csharp-language-server/issues/210).
+    /// Selecting one of those items commits as a complex text edit (see `IsComplexTextEdit` below)
+    /// that both inserts the type name and adds the missing `using` — `completeUnimportedTypes`
+    /// controls both behaviors together, since offering an item that doesn't compile without an
+    /// import the user has to add by hand isn't very useful on its own.
     /// `ShowNameSuggestions` defaults to `false` since it's rarely useful over LSP and adds latency.
     let private getRoslynCompletionOptions (context: RequestContext) =
-        let showItemsFromUnimportedNamespaces =
+        let completeUnimportedTypes =
             context.Config.completion
-            |> Option.bind _.showItemsFromUnimportedNamespaces
+            |> Option.bind _.completeUnimportedTypes
             |> Option.defaultValue true
 
         let showNameSuggestions =
@@ -144,7 +148,7 @@ module Completion =
             |> Option.defaultValue false
 
         RoslynCompletionOptions.Default()
-        |> _.WithBool("ShowItemsFromUnimportedNamespaces", showItemsFromUnimportedNamespaces)
+        |> _.WithBool("ShowItemsFromUnimportedNamespaces", completeUnimportedTypes)
         |> _.WithBool("ShowNameSuggestions", showNameSuggestions)
 
     let private dynamicRegistration (cc: ClientCapabilities) =
@@ -439,6 +443,42 @@ module Completion =
                     LspWorkspaceUpdate.Empty
         }
 
+    /// For completion items that need more than inserting `DisplayText` at their original
+    /// `Span` on commit (`IsComplexTextEdit`) — e.g. an item from an unimported namespace,
+    /// which also needs a `using` inserted at the top of the file — resolves the full set of
+    /// changes Roslyn would make and returns everything other than the primary in-place edit
+    /// as LSP `AdditionalTextEdits`, so accepting the item also adds the missing import.
+    let private getAdditionalTextEditsForComplexItem
+        (completionService: Microsoft.CodeAnalysis.Completion.CompletionService)
+        (doc: Document)
+        (item: Microsoft.CodeAnalysis.Completion.CompletionItem)
+        (ct: System.Threading.CancellationToken)
+        : Async<TextEdit[] option> =
+        async {
+            if not item.IsComplexTextEdit then
+                return None
+            else
+                let! change =
+                    completionService.GetChangeAsync(doc, item, System.Nullable(), ct)
+                    |> Async.AwaitTask
+
+                if change.TextChanges.IsDefaultOrEmpty then
+                    return None
+                else
+                    let! sourceText = doc.GetTextAsync(ct) |> Async.AwaitTask
+
+                    let additionalEdits =
+                        change.TextChanges
+                        |> Seq.filter (fun tc -> tc.Span <> item.Span)
+                        |> Seq.map (TextEdit.fromTextChange sourceText.Lines)
+                        |> Array.ofSeq
+
+                    return
+                        match additionalEdits with
+                        | [||] -> None
+                        | edits -> Some edits
+        }
+
     let resolve
         (_context: RequestContext)
         (item: CompletionItem)
@@ -475,10 +515,14 @@ module Completion =
                           Value = d }
                         |> U2.C2)
 
+                let! additionalTextEdits =
+                    getAdditionalTextEditsForComplexItem completionService doc roslynCompletionItem ct
+
                 return
                     { item with
                         Detail = synopsis
-                        Documentation = updatedItemDocumentation }
+                        Documentation = updatedItemDocumentation
+                        AdditionalTextEdits = additionalTextEdits |> Option.orElse item.AdditionalTextEdits }
                     |> LspResult.success,
                     LspWorkspaceUpdate.Empty
 

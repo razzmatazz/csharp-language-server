@@ -70,10 +70,11 @@ Settings are read from the `csharp` workspace configuration section
 - `csharp.razorSupport` - enable Razor (`.cshtml`) document support;
   defaults to `false`
 
-- `csharp.completion.showItemsFromUnimportedNamespaces` - include types from
-  namespaces that aren't yet imported in `textDocument/completion` results
-  (adding the missing `using` is left to `textDocument/codeAction`); may
-  increase completion latency on large solutions; defaults to `true`
+- `csharp.completion.completeUnimportedTypes` - include types from namespaces
+  that aren't yet imported in `textDocument/completion` results, inserting the
+  missing `using` (via `additionalTextEdits`) when one of those items is
+  accepted; may increase completion latency on large solutions; defaults to
+  `true`
 
 - `csharp.completion.showNameSuggestions` - include suggested identifier names
   (e.g. `stringBuilder` when completing after `StringBuilder `) in

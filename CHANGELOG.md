@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
-* Re-enable completion suggestions for types from unimported namespaces (with the missing
-  `using` added via `textDocument/codeAction`), gated behind the new
-  `csharp.completion.showItemsFromUnimportedNamespaces` setting, defaulting to `true`; also add
+* Re-enable completion suggestions for types from unimported namespaces, now inserting the
+  missing `using` (via `additionalTextEdits`) when one of those items is accepted, gated behind
+  the new `csharp.completion.completeUnimportedTypes` setting, defaulting to `true`; also add
   `csharp.completion.showNameSuggestions` to control whether `textDocument/completion` includes
   suggested identifier names (e.g. `stringBuilder` for a `StringBuilder`), defaulting to `false`
   and matching the previous hardcoded behavior

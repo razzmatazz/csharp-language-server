@@ -330,6 +330,62 @@ let ``completion suggests types from unimported namespaces by default`` () =
     | _ -> failwith "Some U2.C2 was expected"
 
 [<Test>]
+let ``completion inserts using directive when accepting an unimported-namespace item`` () =
+    // https://github.com/razzmatazz/csharp-language-server/issues/210
+    use client = rentFixture "genericProject"
+
+    use classFile = client.Open("Project/UnimportedNamespaceCompletionTests.cs")
+
+    let completionParams: CompletionParams =
+        { TextDocument = { Uri = classFile.Uri }
+          Position = { Line = 4u; Character = 16u }
+          WorkDoneToken = None
+          PartialResultToken = None
+          Context = None }
+
+    let hasUnimportedItem (completion: U2<CompletionItem array, CompletionList> option) =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.exists (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> false
+
+    let rec pollForCompletion attemptsLeft =
+        let completion: U2<CompletionItem array, CompletionList> option =
+            client.Request("textDocument/completion", completionParams)
+
+        if hasUnimportedItem completion || attemptsLeft <= 0 then
+            completion
+        else
+            Thread.Sleep(500)
+            pollForCompletion (attemptsLeft - 1)
+
+    let completion = pollForCompletion 20
+
+    let item =
+        match completion with
+        | Some(U2.C2 cl) -> cl.Items |> Seq.find (fun i -> i.Label = "TypeOnlyInUnimportedNamespace")
+        | _ -> failwith "Some U2.C2 was expected"
+
+    let resolved: CompletionItem = client.Request("completionItem/resolve", item)
+
+    // The primary insertion is still done via `InsertText` (no `TextEdit`), unaffected by this change.
+    Assert.That(resolved.InsertText, Is.EqualTo(Some "TypeOnlyInUnimportedNamespace"))
+    Assert.That(resolved.TextEdit.IsSome, Is.False)
+
+    match resolved.AdditionalTextEdits with
+    | Some edits ->
+        let hasUsingEdit =
+            edits |> Array.exists (fun e -> e.NewText.Contains("using Project.Unimported;"))
+
+        Assert.That(
+            hasUsingEdit,
+            Is.True,
+            sprintf
+                "expected an additional text edit inserting 'using Project.Unimported;'. Got: %s"
+                (edits |> Array.map (fun e -> e.NewText) |> String.concat " | ")
+        )
+    | None -> failwith "expected AdditionalTextEdits to be Some when accepting an unimported-namespace item"
+
+[<Test>]
 let ``completion does not suggest types from unimported namespaces when disabled via config`` () =
     let profile =
         { defaultClientProfile with
@@ -338,7 +394,7 @@ let ``completion does not suggest types from unimported namespaces when disabled
                     completion =
                         Some
                             { CSharpCompletionConfiguration.Default with
-                                showItemsFromUnimportedNamespaces = Some false } } }
+                                completeUnimportedTypes = Some false } } }
 
     use client = activateFixtureExt "genericProject" profile emptyFixturePatch id
 
