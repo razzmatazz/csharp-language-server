@@ -4,10 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
-  - Reported in https://github.com/razzmatazz/csharp-language-server/issues/403
+  - Reported and fixed by @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/issues/403 and https://github.com/razzmatazz/csharp-language-server/pull/404
 * Fix `.slnf` solution filters being ignored when the declared project set is read from the solution: the set was read from the filter's parent solution, so on a filtered solution the load progress reported counts like `(74/358)` with the percentage stuck at 20, and the workspace-global `TargetFramework` intersection wrongly included projects the filter excludes
-  - By @pbednarcik
+  - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/422
 * Fix `textDocument/completion` (and other interactive requests) stalling when analyzers are enabled on a multi-project solution: `workspace/diagnostic` now analyzes one project at a time instead of fanning out across every project concurrently
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/421
 * Fix every position-based request answering null on multi-targeted projects: a file of a `<TargetFrameworks>` project has one Roslyn document per target framework, which the document lookup treated as ambiguous and resolved to `None`; the lookup now picks the flavor with the best TFM (same rule as workspace-global TFM selection, mirroring how Visual Studio auto-selects a default project context), leaving genuinely linked files (one path in different project files) ambiguous as before
@@ -18,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By @pbednarcik in https://github.com/razzmatazz/csharp-language-server/pull/418
 * Fix `textDocument/references` with `includeDeclaration` crashing (`-32603 Internal error`) on a symbol from an assembly not referenced by an arbitrary "first" project in the solution; metadata locations are now resolved against the project that owns the requesting document instead
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/416
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.27.0...0.28.0
 
 ## [0.27.0] - 2026-08-24 / Vartai
 * Speed up the per-request document lookup: resolve the request uri through Roslyn's indexed `Solution.GetDocumentIdsWithFilePath` instead of scanning every document of every project (~6x faster `textDocument/definition` on a large solution)
