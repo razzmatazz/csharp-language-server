@@ -1,5 +1,14 @@
 # TODO
 
+## Support loose `.cs` files without a `.sln`/`.csproj` (#188)
+
+See `plans/standalone-cs-files-support.md` for the full plan. Covers both a bare folder
+of `.cs` files (the original issue ask) and .NET 10 file-based apps (`#:` directives,
+`dotnet run app.cs`) by synthesizing virtual `.csproj` files on the fly and loading them
+through the existing `solutionTryLoadFromProjectFiles` path.
+
+---
+
 ## Bump Microsoft.Build.Locator version
 
 ## Test performance improvements
