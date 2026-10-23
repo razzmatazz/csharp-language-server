@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Accept settings in the `initialize` request's `initializationOptions`, in the same `{ "csharp": { ... } }` shape as `workspace/didChangeConfiguration`, applied before the server capabilities are computed; `$/csharp/debugInfo` now reports the effective configuration
+
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
   - Reported and fixed by @alsi-lawr in https://github.com/razzmatazz/csharp-language-server/issues/403 and https://github.com/razzmatazz/csharp-language-server/pull/404

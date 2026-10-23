@@ -37,10 +37,7 @@ let testServerRegistersCapabilitiesWithTheClient () =
     // Phase reaches Configured after the initialized handler completes and the
     // InitializedGate fires.  Wait for it rather than asserting immediately, since
     // GetDebugInfo can race with the initialized handler still running.
-    waitUntilOrTimeout
-        (TimeSpan.FromSeconds 5.0)
-        (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
-        "workspace never reached Configured after initialized"
+    waitUntilWorkspaceConfigured client
 
     let serverInfo = client.GetState().ServerInfo.Value
     Assert.That(serverInfo.Name, Is.EqualTo("csharp-ls"))
@@ -573,10 +570,7 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
     // fires (including the workspace/configuration round-trip delivering
     // solutionLoadDelay).  Opening a document then advances it to Loading; with
     // solutionLoadDelay we can catch it in Configured first.
-    waitUntilOrTimeout
-        (TimeSpan.FromSeconds 5.0)
-        (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
-        "workspace never reached Configured after initialized"
+    waitUntilWorkspaceConfigured client
 
     // ── Loading ──────────────────────────────────────────────────────────────────
     // Opening a document is the trigger that kicks off solution loading
@@ -742,3 +736,88 @@ let testSolutionLoadProgressStaysWithinBoundsWithOutOfSolutionReferences () =
         Is.True,
         sprintf "percentages should never exceed 100, got %A" percentages
     )
+
+let private withInitializationOptions options (p: InitializeParams) =
+    { p with
+        InitializationOptions = options |> serialize |> Some }
+
+[<Test>]
+let testInitializationOptionsConfigureServerWithoutWorkspaceConfiguration () =
+    // The client can't answer workspace/configuration, so `initializationOptions`
+    // is the only place these settings can come from.
+    let profile =
+        { defaultClientProfile with
+            ClientCapabilities =
+                { defaultClientCapabilities with
+                    Workspace =
+                        defaultClientCapabilities.Workspace
+                        |> Option.map (fun ws -> { ws with Configuration = Some false }) } }
+
+    let options =
+        {| csharp =
+            {| razorSupport = false
+               applyFormattingOptions = true |} |}
+
+    use client =
+        activateFixtureExt "genericProject" profile emptyFixturePatch (withInitializationOptions options)
+
+    waitUntilWorkspaceConfigured client
+
+    // The test server runs with `--features razor-support`; `initializationOptions`
+    // must override it before the capabilities are computed.
+    match client.GetState().ServerCapabilities.Value.DiagnosticProvider with
+    | Some(U2.C2 diagnosticOptions) ->
+        Assert.That(diagnosticOptions.DocumentSelector, Is.EqualTo(Some documentSelectorForCSharpDocuments))
+    | x -> failwithf "DiagnosticRegistrationOptions expected, got %A" x
+
+    let config = client.GetDebugInfo().config
+    Assert.That(config.razorSupport, Is.EqualTo(Some false))
+    Assert.That(config.applyFormattingOptions, Is.EqualTo(Some true))
+
+    // `experimental.csharp.metadataUris` from the client capabilities still applies:
+    // `initializationOptions` didn't set useMetadataUris.
+    Assert.That(config.useMetadataUris, Is.EqualTo(Some true))
+
+    // `applyFormattingOptions` takes effect: the client's `insertFinalNewline` is honoured.
+    let source = "class C\r\n{\r\n}"
+    use classFile = client.OpenWithText("Project/Class.cs", source)
+
+    let formattingParams: DocumentFormattingParams =
+        { TextDocument = { Uri = classFile.Uri }
+          WorkDoneToken = None
+          Options =
+            { TabSize = 4u
+              InsertSpaces = true
+              TrimTrailingWhitespace = None
+              InsertFinalNewline = Some true
+              TrimFinalNewlines = None } }
+
+    let textEdits: TextEdit[] option =
+        client.Request("textDocument/formatting", formattingParams)
+
+    Assert.That(classFile.GetFileContentsWithTextEditsApplied(textEdits.Value), Is.EqualTo(source + "\r\n"))
+
+[<Test>]
+let testWorkspaceConfigurationOverridesInitializationOptions () =
+    // `defaultClientProfile` answers workspace/configuration with
+    // `analyzersEnabled = false`, which wins over `initializationOptions`;
+    // settings only `initializationOptions` sets are kept.
+    let profile =
+        { defaultClientProfile with
+            ServerConfig =
+                { defaultClientProfile.ServerConfig with
+                    analyzersEnabled = Some false } }
+
+    let options =
+        {| csharp =
+            {| analyzersEnabled = true
+               applyFormattingOptions = true |} |}
+
+    use client =
+        activateFixtureExt "genericProject" profile emptyFixturePatch (withInitializationOptions options)
+
+    waitUntilWorkspaceConfigured client
+
+    let config = client.GetDebugInfo().config
+    Assert.That(config.analyzersEnabled, Is.EqualTo(Some false))
+    Assert.That(config.applyFormattingOptions, Is.EqualTo(Some true))
