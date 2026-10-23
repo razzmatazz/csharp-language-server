@@ -229,11 +229,14 @@ let processServerEvent state postServerEvent (inbox: MailboxProcessor<ServerEven
         if wsUpdate.ClientShutdownEmitted then
             do postServerEvent ClientShutdown
 
-        wsUpdate.ClientCapabilityChange
-        |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
-
+        // ConfigurationChange replaces the whole config, while ClientCapabilityChange
+        // only layers capability-derived settings (e.g. `experimental.csharp.metadataUris`)
+        // on top of it, so the former must be applied first: `initialize` emits both.
         wsUpdate.ConfigurationChange
         |> Option.iter (fun cfg -> do postServerEvent (ConfigurationChange cfg))
+
+        wsUpdate.ClientCapabilityChange
+        |> Option.iter (fun caps -> do postServerEvent (ClientCapabilityChange caps))
 
         wsUpdate.TraceLevelChange
         |> Option.iter (fun level -> do postServerEvent (TraceLevelChange level))

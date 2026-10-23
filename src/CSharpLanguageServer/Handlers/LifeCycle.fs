@@ -88,8 +88,28 @@ module LifeCycle =
 
             logger.LogInformation("handleInitialize: using workspaceFolders: {folders}", serialize workspaceFolders)
 
+            // `initializationOptions` take the same `{ "csharp": { ... } }` shape as
+            // `workspace/didChangeConfiguration` settings.  They are applied before the
+            // capabilities are computed, so e.g. `razorSupport` is reflected in them.
+            let initOptionsConfig =
+                p.InitializationOptions
+                |> Option.bind deserialize<DidChangeConfigurationSettingsDto option>
+                |> Option.bind _.csharp
+
+            let config =
+                initOptionsConfig
+                |> Option.map (mergeCSharpConfiguration context.Config)
+                |> Option.defaultValue context.Config
+
+            initOptionsConfig
+            |> Option.iter (fun _ ->
+                logger.LogInformation(
+                    "handleInitialize: csharp config from initializationOptions: {config}",
+                    config |> string
+                ))
+
             let initializeResult =
-                let serverCapabilities = getServerCapabilities context.Config p
+                let serverCapabilities = getServerCapabilities config p
 
                 let assemblyVersion =
                     Assembly.GetExecutingAssembly().GetName().Version
@@ -109,6 +129,11 @@ module LifeCycle =
                     .WithTraceLevelChange(initialTraceLevel)
                     .WithClientCapabilityChange(p.Capabilities)
                     .WithFolderReconfiguration(workspaceFolders)
+
+            let wsUpdate =
+                match initOptionsConfig with
+                | Some _ -> wsUpdate.WithConfigurationChange(config)
+                | None -> wsUpdate
 
             return initializeResult |> LspResult.success, wsUpdate
         }

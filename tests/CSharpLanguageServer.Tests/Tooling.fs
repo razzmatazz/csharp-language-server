@@ -1100,6 +1100,14 @@ let waitUntilOrTimeout (timeout: TimeSpan) (predicate: unit -> bool) (failureMes
     if stopwatch.Elapsed >= timeout then
         Assert.Fail(failureMessage)
 
+/// Wait for the workspace to reach the Configured phase, which it does once the
+/// `initialized` handler has completed and the InitializedGate has fired.
+let waitUntilWorkspaceConfigured (client: LspTestClient) =
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
+        "workspace never reached Configured after initialized"
+
 let getWorkspaceDiagnosticsForUri (client: ILspRequestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None

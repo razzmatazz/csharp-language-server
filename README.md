@@ -54,6 +54,13 @@ Once installed, your editor's LSP client should automatically detect and start
 Settings are read from the `csharp` workspace configuration section
 (`workspace/configuration`) and can also be provided via `workspace/didChangeConfiguration`.
 
+They can also be passed in the `initialize` request's `initializationOptions`, in the
+same shape as `workspace/didChangeConfiguration` settings, e.g.
+`{ "csharp": { "razorSupport": true } }`; this suits clients that configure a server per
+connection rather than through a global workspace configuration.  Each setting is taken
+from the last of these that sets it: command line arguments, `initializationOptions`,
+extended client capabilities, then workspace configuration.
+
 - `csharp.logLevel` - log level for server output forwarded via `$/logTrace`;
   one of `trace`, `debug`, `info`, `warning`, `error`; defaults to `info`
 

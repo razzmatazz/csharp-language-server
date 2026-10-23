@@ -52,7 +52,8 @@ type DebugRpcStats =
       recentlyTimedOutCallCount: int }
 
 type DebugInfo =
-    { workspace: DebugWorkspaceInfo
+    { config: CSharpConfiguration
+      workspace: DebugWorkspaceInfo
       requestQueue: DebugRequestQueueInfo
       jsonRpc: DebugRpcStats option }
 
@@ -100,7 +101,8 @@ let assembleDebugInfo
                   recentlyTimedOutCallCount = r.RecentlyTimedOutCallCount })
 
         Some
-            { workspace =
+            { config = config
+              workspace =
                 { phase = string workspace.Phase
                   folders = workspace.Folders |> List.map toDebugWorkspaceFolderInfo }
               requestQueue =
@@ -151,6 +153,9 @@ let private formatDebugRequestStats (stats: DebugRequestStatsInfo list) : string
 // Logging
 
 let dumpDebugInfo (info: DebugInfo) : unit =
+    logger.LogDebug("------ Config ------")
+    logger.LogDebug("  {config}", info.config |> string)
+
     logger.LogDebug("------ Workspace ({phase}) ------", info.workspace.phase)
 
     if not (List.isEmpty info.workspace.folders) then
