@@ -490,6 +490,55 @@ let testDynamicRegistrationsUsePulledWorkspaceConfiguration () =
 
     Assert.That(diagnosticOptions.DocumentSelector.Value, Is.EqualTo(box expectedDocumentSelector))
 
+[<Test>]
+let testCodeActionIsNotAdvertisedStaticallyWhenRegisteredDynamically () =
+    // A client that supports both code action literals and dynamic registration
+    // (e.g. VS Code) must get the capability once, via client/registerCapability,
+    // not also as a static `codeActionProvider`.
+    let clientCaps =
+        { defaultClientCapabilities with
+            TextDocument =
+                Some
+                    { defaultClientCapabilities.TextDocument.Value with
+                        CodeAction =
+                            defaultClientCapabilities.TextDocument.Value.CodeAction
+                            |> Option.map (fun ca ->
+                                { ca with
+                                    DynamicRegistration = Some true }) } }
+
+    use client =
+        activateFixtureExt
+            "genericProject"
+            { defaultClientProfile with
+                ClientCapabilities = clientCaps }
+            emptyFixturePatch
+            id
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 5.0)
+        (fun () -> client.ServerDidInvoke "client/registerCapability")
+        "server never sent client/registerCapability after initialized"
+
+    Assert.That(client.GetState().ServerCapabilities.Value.CodeActionProvider, Is.EqualTo(None))
+
+    let registrationParams =
+        client.GetRpcLog()
+        |> Seq.find (fun message ->
+            message.Source = Server
+            && (Some message.Message |> jeStringProp "method") = Some "client/registerCapability")
+        |> _.Message
+        |> Some
+        |> indexJE "params"
+        |> Option.get
+        |> LSPAny.fromJsonElement
+        |> deserialize<RegistrationParams>
+
+    Assert.That(
+        registrationParams.Registrations
+        |> Array.exists (fun registration -> registration.Method = "textDocument/codeAction"),
+        Is.True
+    )
+
 [<TestCase(false, TestName = "absent: not sent")>]
 [<TestCase(true, TestName = "Some true: sent")>]
 let testWorkspaceConfigurationCapabilityGate (configurationSupported: bool) =

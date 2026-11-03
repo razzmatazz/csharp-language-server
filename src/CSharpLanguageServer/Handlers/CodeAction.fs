@@ -312,26 +312,27 @@ module CodeAction =
                           Disabled = None }
         }
 
+    let private dynamicRegistration (cc: ClientCapabilities) =
+        cc.TextDocument
+        |> Option.bind _.CodeAction
+        |> Option.bind _.DynamicRegistration
+        |> Option.defaultValue false
+
     let provider (cc: ClientCapabilities) : U2<bool, CodeActionOptions> option =
         let literalSupport =
             cc.TextDocument
             |> Option.bind _.CodeAction
             |> Option.bind _.CodeActionLiteralSupport
 
-        match literalSupport with
-        | Some _ ->
+        match dynamicRegistration cc, literalSupport with
+        | true, _ -> None
+        | false, Some _ ->
             { CodeActionKinds = None
               ResolveProvider = Some true
               WorkDoneProgress = None }
             |> U2.C2
             |> Some
-        | None -> true |> U2.C1 |> Some
-
-    let private dynamicRegistration (cc: ClientCapabilities) =
-        cc.TextDocument
-        |> Option.bind _.CodeAction
-        |> Option.bind _.DynamicRegistration
-        |> Option.defaultValue false
+        | false, None -> true |> U2.C1 |> Some
 
     let registration (config: CSharpConfiguration) (cc: ClientCapabilities) : Registration option =
         match dynamicRegistration cc with
