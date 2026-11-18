@@ -60,6 +60,12 @@ Commit messages should be a short single-line summary — no bullet lists of ind
 CHANGELOG.md entries should be as short as possible — ideally one line saying what changed
 for the user, followed by the usual `- By @… in <PR link>` line. Leave details to the PR.
 
+## Releasing
+
+See [docs/releasing.md](docs/releasing.md): the version comes from the top `CHANGELOG.md`
+heading (no `[Unreleased]` above it), tag the release commit with the bare version, then run
+the manual `Build` workflow to produce the `.nupkg` artifact.
+
 ## Key Docs
 
 | Topic | File |
@@ -69,3 +75,4 @@ for the user, followed by the usual `- By @… in <PR link>` line. Leave details
 | JSON-RPC transport internals | [docs/jsonrpc.md](docs/jsonrpc.md) |
 | Contributing / build / test / code style & commits | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Architecture deep-dive | [docs/codebase-architecture.md](docs/codebase-architecture.md) |
+| Releasing a new version | [docs/releasing.md](docs/releasing.md) |
