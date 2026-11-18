@@ -31,6 +31,24 @@ jobs:
       - name: Run Build
         run: dotnet build -c Debug
 
+      # The server restores the (unrestored) fixtures as it loads them, so a cold NuGet cache
+      # puts package downloads inside each test's first request, which on a CI runner can
+      # outlast the test client's request timeout. Downloading them up front leaves those
+      # restores as cache hits. Like the tests, this restores copies outside the repository,
+      # whose Directory.*.props would otherwise apply; a failure (e.g. a Windows-only TFM on
+      # Linux) only means that fixture stays cold.
+      - name: Warm NuGet cache for test fixtures
+        shell: bash
+        run: |
+          fixtures="${RUNNER_TEMP:-$(mktemp -d)}/fixtures"
+          cp -R tests/CSharpLanguageServer.Tests/Fixtures "$fixtures"
+          find "$fixtures" -name '*.csproj' | while read -r project; do
+            dotnet restore "$project" -nodeReuse:false > /dev/null || echo "warm-up restore failed: $project"
+          done
+          # CodeActionTests also runs genericProject retargeted to net8.0.
+          dotnet restore "$fixtures/genericProject/Project/Project.csproj" -p:TargetFramework=net8.0 -nodeReuse:false > /dev/null \
+            || echo "warm-up restore failed: genericProject (net8.0)"
+
       # --blame-hang-* detects a hung *individual* test after 3 minutes, kills it, takes
       # a full process dump, and lets the run continue — instead of a hang silently
       # consuming the whole `timeout-minutes: 15` job budget with zero diagnostics.
