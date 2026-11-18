@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Accept settings in the `initialize` request's `initializationOptions`, in the same `{ "csharp": { ... } }` shape as `workspace/didChangeConfiguration`, applied before the server capabilities are computed; `$/csharp/debugInfo` now reports the effective configuration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/428
+* Fix `textDocument/codeAction` being advertised both statically in the `initialize` response and via `client/registerCapability` when the client supports dynamic registration; `codeActionProvider` is now omitted from server capabilities in that case
+  - By @razzmatazz
 * Run `dotnet restore` on projects that look unrestored when loading the solution, then load it again, like Roslyn's own language server does; this also covers projects restored by a different .NET SDK, which otherwise load silently with no framework references (e.g. a `net10.0` project once SDK 11 is installed)
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/429
 * Fix Razor (`.cshtml`) support when the project is evaluated by .NET SDK 11, whose Razor source generator needs Roslyn 5.12: bump Roslyn to 5.12.0, ICSharpCode.Decompiler to 11.2 and other dependencies
