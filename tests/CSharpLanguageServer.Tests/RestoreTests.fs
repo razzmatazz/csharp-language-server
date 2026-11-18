@@ -1,5 +1,6 @@
 module CSharpLanguageServer.Tests.RestoreTests
 
+open System
 open System.IO
 
 open NUnit.Framework
@@ -97,3 +98,74 @@ let testProjectMissingItsTargetingPackIsRestoredOnLoad () =
         Is.True,
         "expected the server's restore to have downloaded the targeting pack"
     )
+
+[<Test>]
+let testPackageReferenceAddedToRestoredProjectIsRestoredOnReload () =
+    use client = activateFixture "genericProject"
+    use _classFile = client.Open("Project/Class.cs")
+
+    let loadedGeneration () =
+        match client.GetDebugInfo().workspace.folders with
+        | [ folder ] when folder.solutionState.StartsWith "Loaded" -> Some folder.generation
+        | _ -> None
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 30.0)
+        (fun () -> loadedGeneration().IsSome)
+        "workspace never finished loading"
+
+    let initialGeneration = loadedGeneration ()
+
+    Assert.That(
+        File.Exists(assetsFilePath client.SolutionDir),
+        Is.True,
+        "precondition: the project must be restored before its PackageReference is added"
+    )
+
+    // Hand-edit the project the way a user would, without restoring it.
+    let projectFilename = Path.Combine(client.SolutionDir, "Project", "Project.csproj")
+
+    File.WriteAllText(
+        projectFilename,
+        """<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <NuGetAudit>false</NuGetAudit>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    </ItemGroup>
+</Project>
+"""
+    )
+
+    File.WriteAllText(
+        Path.Combine(client.SolutionDir, "Project", "UsesPackage.cs"),
+        """using Newtonsoft.Json;
+
+class UsesPackage
+{
+    public string Serialize(object value) => JsonConvert.SerializeObject(value);
+}
+"""
+    )
+
+    let changes: DidChangeWatchedFilesParams =
+        { Changes =
+            [| { Uri = projectFilename |> Uri |> string
+                 Type = FileChangeType.Changed } |] }
+
+    client.Notify("workspace/didChangeWatchedFiles", changes)
+
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 60.0)
+        (fun () ->
+            match loadedGeneration () with
+            | Some generation -> Some generation <> initialGeneration
+            | None -> false)
+        "workspace was never reloaded after the .csproj change"
+
+    let errors = documentErrorCodes client "Project/UsesPackage.cs"
+
+    Assert.That(errors, Is.Empty, "expected the added package to resolve once the project has been restored")

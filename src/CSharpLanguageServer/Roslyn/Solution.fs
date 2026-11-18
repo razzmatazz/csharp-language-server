@@ -6,6 +6,7 @@ open System.IO
 open System.Reflection
 open System.Threading
 open System.Collections.Generic
+open System.Text.Json
 open System.Xml.Linq
 
 open Ionide.LanguageServerProtocol
@@ -475,28 +476,86 @@ let solutionFindAndLoadOnDir
             return! solutionTryLoadOnPath lspClient progressReport solutionPath
     }
 
-/// Tells whether NuGet restore output exists for a project. That is `obj/project.assets.json`
-/// unless the project moves its intermediate output (e.g. `UseArtifactsOutput`), which only
-/// an MSBuild evaluation can tell, so one is done only when the default location has no file.
-/// A project that has no assets file at all (non-SDK-style, packages.config) counts as restored.
-let private projectAssetsFileExists (projectFilename: string) : bool =
+/// Finds the NuGet restore output of a project: `obj/project.assets.json` unless the project
+/// moves its intermediate output (e.g. `UseArtifactsOutput`), which only an MSBuild evaluation
+/// can tell, so one is done only when the default location has no file. Some(None) means the
+/// project has no assets file to look for (non-SDK-style, packages.config), None that it is missing.
+let private tryFindProjectAssetsFile (projectFilename: string) : string option option =
     let projectDir =
         Path.GetDirectoryName projectFilename
         |> nonNull "Path.GetDirectoryName(projectFilename)"
 
-    File.Exists(Path.Combine(projectDir, "obj", "project.assets.json"))
-    || (use projectCollection = new Microsoft.Build.Evaluation.ProjectCollection()
+    let defaultAssetsFile = Path.Combine(projectDir, "obj", "project.assets.json")
+
+    if File.Exists defaultAssetsFile then
+        Some(Some defaultAssetsFile)
+    else
+        use projectCollection = new Microsoft.Build.Evaluation.ProjectCollection()
 
         try
             let buildProject =
                 projectCollection.LoadProject(projectFilename, Dictionary<string, string>(), toolsVersion = null)
 
             match buildProject.GetPropertyValue "ProjectAssetsFile" |> noneIfEmpty with
-            | Some assetsFile -> File.Exists assetsFile
-            | None -> true
+            | Some assetsFile when File.Exists assetsFile -> Some(Some assetsFile)
+            | Some _ -> None
+            | None -> Some None
         with :? InvalidProjectFileException ->
             // A restore can't fix a project MSBuild can't evaluate.
-            true)
+            Some None
+
+/// Names of the packages a project file references with a literal, unconditional
+/// `<PackageReference Include="...">`. Only the project file itself is read, as that is what
+/// gets edited by hand; whether a conditional reference applies would need an evaluation.
+let private tryGetLiteralPackageReferences (projectFilename: string) : string list =
+    try
+        let hasCondition (el: XElement) =
+            el.AncestorsAndSelf()
+            |> Seq.exists (fun e -> e.Attribute(XName.Get "Condition") <> null)
+
+        XDocument.Load(projectFilename).Descendants()
+        |> Seq.filter (fun el -> el.Name.LocalName = "PackageReference" && not (hasCondition el))
+        |> Seq.choose (fun el -> el.Attribute(XName.Get "Include") |> Option.ofObj |> Option.map _.Value)
+        |> Seq.collect _.Split(';')
+        |> Seq.map _.Trim()
+        |> Seq.filter (fun name -> name <> "" && not (name.Contains "$("))
+        |> List.ofSeq
+    with _ ->
+        []
+
+/// Names of the packages a project.assets.json was restored with as direct dependencies,
+/// over all target frameworks; None if the file can't be read.
+let private tryGetAssetsFileDirectDependencies (assetsFile: string) : Set<string> option =
+    try
+        use assets = JsonDocument.Parse(File.ReadAllText assetsFile)
+
+        assets.RootElement.GetProperty("project").GetProperty("frameworks").EnumerateObject()
+        |> Seq.collect (fun framework ->
+            match framework.Value.TryGetProperty "dependencies" with
+            | true, dependencies -> dependencies.EnumerateObject() |> Seq.map _.Name |> List.ofSeq
+            | false, _ -> [])
+        |> Seq.map _.ToLowerInvariant()
+        |> Set.ofSeq
+        |> Some
+    with _ ->
+        None
+
+/// Tells whether a project's NuGet restore output is missing or out of date, as Roslyn's own
+/// language server checks: no assets file, or a package reference the assets file lacks (one
+/// added by hand without restoring).
+let private projectAssetsNeedRestore (projectFilename: string) : bool =
+    match tryFindProjectAssetsFile projectFilename with
+    | None -> true
+    | Some None -> false
+    | Some(Some assetsFile) ->
+        match tryGetLiteralPackageReferences projectFilename with
+        | [] -> false
+        | packageReferences ->
+            match tryGetAssetsFileDirectDependencies assetsFile with
+            | None -> true
+            | Some restoredPackages ->
+                packageReferences
+                |> List.exists (fun name -> not (restoredPackages.Contains(name.ToLowerInvariant())))
 
 let private coreLibraryFileNames =
     HashSet<string>(
@@ -523,8 +582,8 @@ let private projectHasCoreLibraryReference (project: Project) : bool =
         | _ -> false)
 
 /// Project files of the C# projects in the solution that look like they need a NuGet restore:
-/// ones with no restore output, as Roslyn's own language server checks, and ones restored
-/// without the targeting pack they now need (see `projectHasCoreLibraryReference`).
+/// ones with missing or out of date restore output (see `projectAssetsNeedRestore`), and ones
+/// restored without the targeting pack they now need (see `projectHasCoreLibraryReference`).
 let solutionProjectsNeedingRestore (solution: Solution) : string list =
     solution.Projects
     |> Seq.filter (fun project -> project.Language = LanguageNames.CSharp)
@@ -533,7 +592,7 @@ let solutionProjectsNeedingRestore (solution: Solution) : string list =
     |> Seq.groupBy fst
     |> Seq.filter (fun (projectFilename, projects) ->
         not (projects |> Seq.forall (snd >> projectHasCoreLibraryReference))
-        || not (projectAssetsFileExists projectFilename))
+        || projectAssetsNeedRestore projectFilename)
     |> Seq.map fst
     |> List.ofSeq
 
