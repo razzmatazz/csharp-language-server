@@ -99,6 +99,8 @@
     <PackageReference Include="Microsoft.Build.Locator" />
     <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" />
+    <!-- A dependency of Microsoft.Build; it too must come from the SDK MSBuildLocator registers. -->
+    <PackageReference Include="Microsoft.NET.StringTools" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" />
