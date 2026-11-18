@@ -346,13 +346,13 @@ let testMultiTargetWorkspace () =
     (*
     Assert.That(
         client.ServerProgressLogContains(fun str ->
-            str.Contains("Finished loading workspace folder") && str.Contains("/folder0")),
+            str = "Loaded folder0"),
         Is.True
     )
 
     Assert.That(
         client.ServerProgressLogContains(fun str ->
-            str.Contains("Finished loading workspace folder") && str.Contains("/folder1")),
+            str = "Loaded folder1"),
         Is.True
     )
 *)

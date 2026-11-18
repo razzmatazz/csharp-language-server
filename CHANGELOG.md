@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/430
 * Target .NET 11: csharp-ls now requires the .NET 11 SDK; projects targeting `net10.0` and older keep loading as before
   - Reported by @Krujo in https://github.com/razzmatazz/csharp-language-server/issues/427, fixed by @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/431
-* Report solution load failures as a short error instead of an info popup with the full exception: a `global.json` pinning a .NET SDK that is not installed now names the missing SDK version and the `global.json` path, other failures show the underlying error's message; the full exception still goes to the log, and the load progress now ends with "Failed to load workspace folder" instead of "Finished loading"
+* Show a short, actionable error (e.g. the missing .NET SDK) when a solution fails to load, and shorten load progress messages
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/432
 
 ## [0.28.0] - 2026-09-13 / Klebiškis

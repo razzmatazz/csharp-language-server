@@ -422,7 +422,7 @@ let solutionTryLoadFromProjectFiles
     (projs: string list)
     : Async<option<Workspace * Solution>> =
     async {
-        do! progressReport ($"Loading {projs.Length} project(s)...", 0u)
+        do! progressReport ($"{projs.Length} project(s)", 0u)
         let loadedProj = ref 0
 
         let! tfmsPerProject = loadProjectTfms projs
@@ -445,10 +445,10 @@ let solutionTryLoadFromProjectFiles
                 logger.LogError("could not OpenProjectAsync('{file}'): {exception}", file, string ex)
 
             let projectFile = new FileInfo(file)
-            let projName = projectFile.Name
+            let projName = Path.GetFileNameWithoutExtension projectFile.Name
             let loaded = Interlocked.Increment loadedProj
             let percent = 100 * loaded / projs.Length |> uint
-            do! progressReport ($"{projName} {loaded}/{projs.Length}", percent)
+            do! progressReport ($"{projName} ({loaded}/{projs.Length})", percent)
 
         for diag in msbuildWorkspace.Diagnostics do
             logger.LogTrace("msbuildWorkspace.Diagnostics: {message}", diag.ToString())
@@ -749,7 +749,12 @@ let solutionLoadSolutionWithPathOrOnDir
                 workspace.Dispose()
 
                 for restoreTarget in restoreTargets do
-                    do! progressReporter.Report(false, sprintf "Restoring %s.." (Path.GetFileName restoreTarget))
+                    let restoreMessage =
+                        match restoreTargets with
+                        | [ _ ] -> "restoring packages"
+                        | _ -> sprintf "restoring %s" (Path.GetFileNameWithoutExtension restoreTarget)
+
+                    do! progressReporter.Report(false, restoreMessage)
                     let! _ = runDotnetRestore restoreTarget
                     ()
 

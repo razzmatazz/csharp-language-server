@@ -783,24 +783,22 @@ let workspaceFolderSolutionLoad
 
         let wfRootDir = workspaceFolderUriToPath wf.Uri wf |> _.Value
 
-        let beginMessageSolutionPath =
+        // Clients show progress as "<title>: <message>" in narrow places like a status
+        // bar, so name just the solution (or folder) here; full paths go to the log.
+        let loadTarget =
             wf.SolutionPathOverride
             |> Option.map Path.GetFileName
-            |> Option.map (sprintf ", solution \"%s\"")
-            |> Option.defaultValue ""
+            |> Option.defaultValue (Path.GetFileName(Path.TrimEndingDirectorySeparator wfRootDir))
 
-        let beginMessage =
-            sprintf "Loading workspace folder \"%s\"%s.." wfRootDir beginMessageSolutionPath
-
-        do! progressReporter.Begin(beginMessage)
+        do! progressReporter.Begin(sprintf "Loading %s" loadTarget)
 
         let! newSolution =
             solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
 
         let endMessage =
             match newSolution with
-            | Some _ -> sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
-            | None -> sprintf "Failed to load workspace folder \"%s\"" (string wfRootDir)
+            | Some _ -> sprintf "Loaded %s" loadTarget
+            | None -> sprintf "Failed to load %s" loadTarget
 
         do! progressReporter.End(endMessage)
 

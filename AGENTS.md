@@ -57,6 +57,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md#code-style).
 
 Commit messages should be a short single-line summary — no bullet lists of individual changes.
 
+CHANGELOG.md entries should be as short as possible — ideally one line saying what changed
+for the user, followed by the usual `- By @… in <PR link>` line. Leave details to the PR.
+
 ## Key Docs
 
 | Topic | File |
