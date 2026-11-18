@@ -35,7 +35,8 @@ See [docs/codebase-architecture.md](docs/codebase-architecture.md) for an overvi
 
 # Quick Start
 
-csharp-ls requires the .NET 10 SDK or later to be installed on your machine.
+csharp-ls requires the .NET 11 SDK or later to be installed on your machine;
+it can still load projects targeting older frameworks (e.g. `net10.0`).
 Please head to [Download .NET](https://dotnet.microsoft.com/en-us/download) to
 download it.
 

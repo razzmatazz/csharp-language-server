@@ -19,7 +19,7 @@ csharp-language-server/
 ├── docs/
 │
 ├── src/CSharpLanguageServer/        # ── Main server project ──
-│   ├── CSharpLanguageServer.fsproj  # Target: net10.0, OutputType: Exe, PackAsTool: csharp-ls
+│   ├── CSharpLanguageServer.fsproj  # Target: net11.0, OutputType: Exe, PackAsTool: csharp-ls
 │   ├── Program.fs                   # [<EntryPoint>] — CLI parsing, server bootstrap
 │   ├── Logging.fs                   # Logging setup + LspTraceLoggerProvider ($/logTrace bridge)
 │   ├── Util.fs                      # General utilities
@@ -53,7 +53,7 @@ csharp-language-server/
 │       └── (...)
 │
 └── tests/CSharpLanguageServer.Tests/  # ── Test project ──
-    ├── CSharpLanguageServer.Tests.fsproj  # NUnit, net10.0, references main project
+    ├── CSharpLanguageServer.Tests.fsproj  # NUnit, net11.0, references main project
     ├── Tooling.fs                         # Test harness (~1110 lines)
     ├── Fixtures.fs                        # activateFixture(Ext)/(WithLoggingEnabled) + FixturePool
     ├── AssemblyInfo.fs                    # [<Parallelizable(ParallelScope.All)>]
@@ -380,7 +380,7 @@ These are sent to the client during `handleInitialized` via `client/registerCapa
 ### 7.1 Test Framework
 
 - **NUnit** with `[<Parallelizable(ParallelScope.All)>]` — all tests run in parallel
-- **net10.0** target, references main server project directly
+- **net11.0** target, references main server project directly
 - `Tooling.fs` is the test harness, compiled before all test files
 
 ### 7.2 Integration Test Architecture: Out-of-Process via stdio

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download) (version 10.0.100 or later,
+- [.NET 11 SDK](https://dotnet.microsoft.com/en-us/download) (version 11.0.100 or later,
   as specified in `global.json`)
 
 ## Build
