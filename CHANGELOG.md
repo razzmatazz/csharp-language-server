@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [0.29.0] - 2026-11-18 / Merkinė
 * Accept settings in the `initialize` request's `initializationOptions`, in the same `{ "csharp": { ... } }` shape as `workspace/didChangeConfiguration`, applied before the server capabilities are computed; `$/csharp/debugInfo` now reports the effective configuration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/428
 * Fix `textDocument/codeAction` being advertised both statically in the `initialize` response and via `client/registerCapability` when the client supports dynamic registration; `codeActionProvider` is now omitted from server capabilities in that case
@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Reported by @Krujo in https://github.com/razzmatazz/csharp-language-server/issues/427, fixed by @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/431
 * Show a short, actionable error (e.g. the missing .NET SDK) when a solution fails to load, and shorten load progress messages
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/432
+
+**Full Changelog**: https://github.com/razzmatazz/csharp-language-server/compare/0.28.0...0.29.0
 
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
