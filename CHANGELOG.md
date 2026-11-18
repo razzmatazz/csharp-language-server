@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/429
 * Fix Razor (`.cshtml`) support when the project is evaluated by .NET SDK 11, whose Razor source generator needs Roslyn 5.12: bump Roslyn to 5.12.0, ICSharpCode.Decompiler to 11.2 and other dependencies
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/430
+* Target .NET 11: csharp-ls now requires the .NET 11 SDK; projects targeting `net10.0` and older keep loading as before
+  - Reported by @Krujo in https://github.com/razzmatazz/csharp-language-server/issues/427, fixed by @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/431
 
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
