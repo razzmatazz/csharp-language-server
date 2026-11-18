@@ -17,6 +17,8 @@ let ``code action menu appears on request`` (tfm: string) =
         activateFixtureExt "genericProject" defaultClientProfile patchFixture id
 
     use classFile = client.Open "Project/Class.cs"
+    // Retargeted to e.g. net8.0, the fixture's load restores a targeting pack first.
+    waitUntilWorkspaceReady client
 
     let caParams: CodeActionParams =
         { TextDocument = { Uri = classFile.Uri }

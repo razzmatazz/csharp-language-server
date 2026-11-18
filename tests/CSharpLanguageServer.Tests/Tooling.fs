@@ -1115,6 +1115,16 @@ let waitUntilWorkspaceConfigured (client: LspTestClient) =
         (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
         "workspace never reached Configured after initialized"
 
+/// Wait for the workspace to reach the Ready phase, i.e. for its solution load to finish.
+/// Use before a test's first request when the fixture's load may restore it (downloading
+/// packages or targeting packs), which on a slow CI runner can take most of a request's
+/// timeout by itself.
+let waitUntilWorkspaceReady (client: LspTestClient) =
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 120.0)
+        (fun () -> client.GetDebugInfo().workspace.phase = "Ready")
+        "workspace never reached Ready"
+
 let getWorkspaceDiagnosticsForUri (client: ILspRequestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =
         { WorkDoneToken = None
