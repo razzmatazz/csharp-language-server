@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Description>Library for implementing Language Server Protocol in F#.</Description>
     <PackageTags>LSP, editor tooling</PackageTags>
     <Authors>chethusk; Krzysztof-Cieslak</Authors>
@@ -30,14 +30,12 @@
     <Compile Include="LanguageServerProtocol.fs" />
     <None Include="../README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
-  <ItemGroup>
-    <!-- Neither Newtonsoft.Json nor StreamJsonRpc is referenced: the only remaining consumers of
-         them (the legacy StreamJsonRpc-based Server.defaultJsonRpcFormatter/Server.start*, the
-         generated Mappings.routeMappings, and the hand-rolled Client module) are disabled behind
-         `#if NEWTONSOFT_LEGACY_UNUSED`, which is never defined. Re-add both package references if
-         that symbol is ever defined. -->
-    <PackageReference Include="System.Text.Json" />
-  </ItemGroup>
+  <!-- No package references: System.Text.Json ships with the framework. Neither Newtonsoft.Json
+       nor StreamJsonRpc is referenced: the only remaining consumers of them (the legacy
+       StreamJsonRpc-based Server.defaultJsonRpcFormatter/Server.start*, the generated
+       Mappings.routeMappings, and the hand-rolled Client module) are disabled behind
+       `#if NEWTONSOFT_LEGACY_UNUSED`, which is never defined. Re-add both package references if
+       that symbol is ever defined. -->
 
   <ItemGroup>
     <_MetaModelInputs
