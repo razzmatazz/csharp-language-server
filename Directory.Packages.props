@@ -14,7 +14,6 @@
     <PackageVersion Include="FSharp.Core" Version="10.0.101" />
     <PackageVersion Include="Argu" Version="6.2.5" />
     <PackageVersion Include="Fabulous.AST" Version="[1.2.0]" />
-    <PackageVersion Include="StreamJsonRpc" Version="2.16.36" />
     <PackageVersion Include="System.Text.Json" Version="10.0.8" />
     <PackageVersion Include="Castle.Core" Version="5.2.1" />
     <PackageVersion Include="coverlet.collector" Version="10.1.1" />
