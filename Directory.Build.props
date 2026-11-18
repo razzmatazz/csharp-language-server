@@ -16,6 +16,13 @@
     <PackageReference Include="Ionide.KeepAChangelog.Tasks" PrivateAssets="All" />
   </ItemGroup>
 
+  <!-- The F# SDK disables its implicit FSharp.Core reference under central package
+       management, which leaves fsc compiling against its own bundled FSharp.Core (whichever
+       version the SDK ships) rather than the centrally pinned one that gets deployed. -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj'">
+    <PackageReference Include="FSharp.Core" />
+  </ItemGroup>
+
   <!-- Extract the release codename from the CHANGELOG entry matching the current $(Version).
        Header format: ## [X.Y.Z] - YYYY-MM-DD / Codename
        If the top entry is [Unreleased] (Version falls back to 1.0.0) or has no codename,
