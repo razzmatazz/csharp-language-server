@@ -75,3 +75,34 @@ let testSymbolGetMetadataNameForGlobalNamespaceType () =
         // Before fix: returns ".GlobalType" (spurious leading dot from the empty global ns name)
         // After fix:  returns "GlobalType"
         Assert.That(result, Is.EqualTo("GlobalType"))
+
+[<Test>]
+let ``describeSolutionLoadFailure names the missing SDK and global.json`` () =
+    // Shape of the error Roslyn's build host reports when global.json pins an SDK
+    // that is not installed: the hostfxr text, wrapped in an AggregateException.
+    let hostfxrText =
+        "An exception of type System.InvalidOperationException was thrown: Error while calling hostfxr function hostfxr_resolve_sdk2. Error code: -2147450725 Detailed error: A compatible .NET SDK was not found.\n\n"
+        + "Requested SDK version: 10.0.402\n"
+        + "global.json file: /src/app/global.json\n\n"
+        + "Installed SDKs:\n\n"
+        + "Install the [10.0.402] .NET SDK or update [/src/app/global.json] to match an installed SDK.\n"
+
+    let ex = AggregateException(InvalidOperationException(hostfxrText))
+
+    let message = describeSolutionLoadFailure "/src/app/app.sln" ex
+
+    Assert.That(message, Does.Contain(".NET SDK 10.0.402"))
+    Assert.That(message, Does.Contain("\"/src/app/global.json\""))
+    Assert.That(message, Does.Not.Contain("hostfxr"))
+    Assert.That(message, Does.Not.Contain("\n"))
+
+[<Test>]
+let ``describeSolutionLoadFailure reports the innermost error's first line`` () =
+    let ex =
+        AggregateException(InvalidOperationException("outer", ArgumentException("the real problem\nmore detail")))
+
+    let message = describeSolutionLoadFailure "/src/app/app.sln" ex
+
+    Assert.That(message, Does.Contain("the real problem"))
+    Assert.That(message, Does.Not.Contain("more detail"))
+    Assert.That(message, Does.Not.Contain("outer"))

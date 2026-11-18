@@ -317,6 +317,49 @@ let selectPreferredSolution (slnFiles: string list) : option<string> =
         |> Seq.map snd
         |> Seq.tryHead
 
+/// Short, actionable summary of a solution load failure for window/showMessage; the
+/// full exception goes to the log.  Roslyn's build host wraps the real error in an
+/// AggregateException/RemoteInvocationException, so we search the whole text for it.
+let describeSolutionLoadFailure (solutionPath: string) (ex: exn) : string =
+    let text = ex.ToString()
+
+    let tryCapture (pattern: string) =
+        let m = Text.RegularExpressions.Regex.Match(text, pattern)
+        if m.Success then Some(m.Groups[1].Value.Trim()) else None
+
+    if text.Contains "A compatible .NET SDK was not found" then
+        let requested = tryCapture @"Requested SDK version:\s*(\S+)"
+        let globalJson = tryCapture @"global\.json file:\s*(.+)"
+
+        match requested, globalJson with
+        | Some version, Some globalJsonPath ->
+            sprintf
+                "Solution \"%s\" could not be loaded: .NET SDK %s, requested by \"%s\", is not installed. Install that SDK (`dotnet --list-sdks` shows what is installed) or update global.json, then reload."
+                solutionPath
+                version
+                globalJsonPath
+        | _ ->
+            sprintf
+                "Solution \"%s\" could not be loaded: no compatible .NET SDK was found. Check that a .NET SDK is installed and matches any global.json, then reload."
+                solutionPath
+    else
+        let rec innermost (e: exn) =
+            match e with
+            | :? AggregateException as ae when ae.InnerExceptions.Count = 1 -> innermost ae.InnerExceptions[0]
+            | e when not (isNull e.InnerException) -> innermost e.InnerException
+            | e -> e
+
+        let firstLine =
+            (innermost ex).Message.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.tryHead
+            |> Option.map _.Trim()
+            |> Option.defaultValue (ex.GetType().Name)
+
+        sprintf
+            "Solution \"%s\" could not be loaded: %s (see the csharp-ls output log for details)"
+            solutionPath
+            firstLine
+
 let solutionTryLoadOnPath
     (lspClient: ILspClient)
     (progressReport: string * uint -> Async<unit>)
@@ -329,9 +372,9 @@ let solutionTryLoadOnPath
             { Type = MessageType.Info
               Message = sprintf "csharp-ls: %s" m }
 
-    let showMessage m =
+    let showError m =
         lspClient.WindowShowMessage
-            { Type = MessageType.Info
+            { Type = MessageType.Error
               Message = sprintf "csharp-ls: %s" m }
 
     async {
@@ -366,10 +409,9 @@ let solutionTryLoadOnPath
 
             return Some(msbuildWorkspace, solution)
         with ex ->
-            let errorMessage =
-                sprintf "Solution \"%s\" could not be loaded: %s" solutionPath (ex.ToString())
-
-            do! showMessage errorMessage
+            logger.LogError(ex, "Solution {solutionPath} could not be loaded", solutionPath)
+            do! logMessage (sprintf "Solution \"%s\" could not be loaded: %s" solutionPath (ex.ToString()))
+            do! showError (describeSolutionLoadFailure solutionPath ex)
             return None
     }
 

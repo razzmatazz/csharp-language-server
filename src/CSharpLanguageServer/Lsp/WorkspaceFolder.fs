@@ -798,7 +798,9 @@ let workspaceFolderSolutionLoad
             solutionLoadSolutionWithPathOrOnDir lspClient progressReporter wf.SolutionPathOverride wfRootDir
 
         let endMessage =
-            sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
+            match newSolution with
+            | Some _ -> sprintf "Finished loading workspace folder \"%s\"" (string wfRootDir)
+            | None -> sprintf "Failed to load workspace folder \"%s\"" (string wfRootDir)
 
         do! progressReporter.End(endMessage)
 
