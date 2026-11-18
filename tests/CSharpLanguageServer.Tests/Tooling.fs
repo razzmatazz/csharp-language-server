@@ -1000,12 +1000,15 @@ type LspTestClient(clientProfile: LspClientProfile, releaseSlot: unit -> unit) =
         notify method ((serialize ``params``).JsonElement)
 
     member __.Request<'Request, 'Response>(method: string, request: 'Request) : 'Response =
+        // Generous: a request waits for the solution load, and a load restores fixtures that
+        // haven't been, which on a busy CI runner can take most of 15s by itself. Genuine
+        // hangs are caught by `dotnet test --blame-hang-timeout` instead.
         let result =
             sendJsonRpcCallWithTimeout
                 (rpcTransport ())
                 method
                 ((serialize request).JsonElement)
-                (Some(TimeSpan.FromSeconds 15.0))
+                (Some(TimeSpan.FromSeconds 60.0))
             |> Async.RunSynchronously
 
         match result with
@@ -1114,16 +1117,6 @@ let waitUntilWorkspaceConfigured (client: LspTestClient) =
         (TimeSpan.FromSeconds 5.0)
         (fun () -> client.GetDebugInfo().workspace.phase = "Configured")
         "workspace never reached Configured after initialized"
-
-/// Wait for the workspace to reach the Ready phase, i.e. for its solution load to finish.
-/// Use before a test's first request when the fixture's load may restore it (downloading
-/// packages or targeting packs), which on a slow CI runner can take most of a request's
-/// timeout by itself.
-let waitUntilWorkspaceReady (client: LspTestClient) =
-    waitUntilOrTimeout
-        (TimeSpan.FromSeconds 120.0)
-        (fun () -> client.GetDebugInfo().workspace.phase = "Ready")
-        "workspace never reached Ready"
 
 let getWorkspaceDiagnosticsForUri (client: ILspRequestClient) uri =
     let diagnosticParams: WorkspaceDiagnosticParams =

@@ -210,7 +210,6 @@ let testReferenceIncludeDeclarationWorksAcrossProjectsWithDifferentMetadataRefer
         activateFixtureExt "multiProjectReferencesMetadata" defaultClientProfile emptyFixturePatch id
 
     use classBFile = client.Open "ProjectB/ClassB.cs"
-    waitUntilWorkspaceReady client
 
     // ClassB.cs line 4 (0-indexed): `        return Newtonsoft.Json.JsonConvert.SerializeObject(value);`
     //                                                                ^^^^^^^^^^^^^^^^

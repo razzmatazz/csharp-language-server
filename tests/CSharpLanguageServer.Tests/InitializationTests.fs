@@ -569,7 +569,7 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
     // Drives the full Configured → Loading → Ready → ShuttingDown chain in one pass.
     //
     // solutionLoadDelay holds the server in Loading long enough to assert on it
-    // without a race (5 s — well above any scheduling jitter, well below the 15 s
+    // without a race (5 s — well above any scheduling jitter, well below the 60 s
     // request timeout used everywhere else).
     //
     // To observe ShuttingDown we send "shutdown" and "exit" as separate steps with
@@ -614,10 +614,10 @@ let testWorkspacePhaseTransitionConfiguredLoadingReadyShuttingDown () =
 
     // ── Ready ────────────────────────────────────────────────────────────────────
     // After solutionLoadDelay expires and the solution finishes loading,
-    // the workspace phase should advance to Ready.  We wait up to 15 s —
-    // well above the 5 s delay and any Roslyn startup overhead.
+    // the workspace phase should advance to Ready.  We wait up to 60 s, like a request
+    // would: well above the 5 s delay, Roslyn startup overhead and the load's restore.
     waitUntilOrTimeout
-        (TimeSpan.FromSeconds 15.0)
+        (TimeSpan.FromSeconds 60.0)
         (fun () ->
             let info = client.GetDebugInfo()
             info.workspace.phase = "Ready")
