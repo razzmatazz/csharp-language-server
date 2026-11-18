@@ -21,9 +21,7 @@ let private loadedGeneration (client: LspTestClient) =
     | [ folder ] when folder.solutionState.StartsWith "Loaded" -> Some folder.generation
     | _ -> None
 
-/// Waits for the solution load to finish before requests that would block on it: a load
-/// that restores (downloading packages when NuGet's HTTP cache is cold, as on CI) can take
-/// longer than a request is allowed to.
+/// Waits for the solution load to finish, e.g. to take its generation before a reload.
 let private waitUntilLoaded (client: LspTestClient) =
     waitUntilOrTimeout
         (TimeSpan.FromSeconds 120.0)
@@ -32,7 +30,6 @@ let private waitUntilLoaded (client: LspTestClient) =
 
 let private documentErrorCodes (client: LspTestClient) (filename: string) : string list =
     use file = client.Open(filename)
-    waitUntilLoaded client
 
     let diagnosticParams: DocumentDiagnosticParams =
         { WorkDoneToken = None
