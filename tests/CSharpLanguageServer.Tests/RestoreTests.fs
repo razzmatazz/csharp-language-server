@@ -15,8 +15,24 @@ open CSharpLanguageServer.Tests.Fixtures
 // its missing-targeting-pack error for design-time builds); e.g. a net10.0 project
 // restored with SDK 10 loses all of System once SDK 11 is installed.
 
+/// Generation of the workspace's only folder, once its solution has been loaded.
+let private loadedGeneration (client: LspTestClient) =
+    match client.GetDebugInfo().workspace.folders with
+    | [ folder ] when folder.solutionState.StartsWith "Loaded" -> Some folder.generation
+    | _ -> None
+
+/// Waits for the solution load to finish before requests that would block on it: a load
+/// that restores (downloading packages when NuGet's HTTP cache is cold, as on CI) can take
+/// longer than a request is allowed to.
+let private waitUntilLoaded (client: LspTestClient) =
+    waitUntilOrTimeout
+        (TimeSpan.FromSeconds 120.0)
+        (fun () -> (loadedGeneration client).IsSome)
+        "workspace never finished loading"
+
 let private documentErrorCodes (client: LspTestClient) (filename: string) : string list =
     use file = client.Open(filename)
+    waitUntilLoaded client
 
     let diagnosticParams: DocumentDiagnosticParams =
         { WorkDoneToken = None
@@ -103,18 +119,9 @@ let testProjectMissingItsTargetingPackIsRestoredOnLoad () =
 let testPackageReferenceAddedToRestoredProjectIsRestoredOnReload () =
     use client = activateFixture "genericProject"
     use _classFile = client.Open("Project/Class.cs")
+    waitUntilLoaded client
 
-    let loadedGeneration () =
-        match client.GetDebugInfo().workspace.folders with
-        | [ folder ] when folder.solutionState.StartsWith "Loaded" -> Some folder.generation
-        | _ -> None
-
-    waitUntilOrTimeout
-        (TimeSpan.FromSeconds 30.0)
-        (fun () -> loadedGeneration().IsSome)
-        "workspace never finished loading"
-
-    let initialGeneration = loadedGeneration ()
+    let initialGeneration = loadedGeneration client
 
     Assert.That(
         File.Exists(assetsFilePath client.SolutionDir),
@@ -159,9 +166,9 @@ class UsesPackage
     client.Notify("workspace/didChangeWatchedFiles", changes)
 
     waitUntilOrTimeout
-        (TimeSpan.FromSeconds 60.0)
+        (TimeSpan.FromSeconds 120.0)
         (fun () ->
-            match loadedGeneration () with
+            match loadedGeneration client with
             | Some generation -> Some generation <> initialGeneration
             | None -> false)
         "workspace was never reloaded after the .csproj change"
