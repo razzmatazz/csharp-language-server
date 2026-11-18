@@ -1,4 +1,4 @@
-#I "../CSharpLanguageServer.Tests/bin/Debug/net10.0"
+#I "../CSharpLanguageServer.Tests/bin/Debug/net11.0"
 #r "Ionide.LanguageServerProtocol.dll"
 #r "nunit.framework.dll"
 #r "CSharpLanguageServer.dll"
@@ -46,7 +46,7 @@ let requestDiagnostics (client: LspTestClient) uri =
 
 let run () =
     let outputDirectory =
-        Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "../CSharpLanguageServer.Tests/bin/Debug/net10.0"))
+        Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "../CSharpLanguageServer.Tests/bin/Debug/net11.0"))
 
     Directory.SetCurrentDirectory(outputDirectory)
 
