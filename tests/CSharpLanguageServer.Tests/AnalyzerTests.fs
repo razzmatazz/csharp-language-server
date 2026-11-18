@@ -164,22 +164,10 @@ let private analyzerClientProfile =
                         { defaultClientCapabilities.Workspace.Value with
                             Diagnostics = Some { RefreshSupport = Some true } } } }
 
-/// Pre-build the project so that obj/project.assets.json exists and MSBuildWorkspace
-/// can resolve AnalyzerReferences from the project file.
-let private prebuildProject (solutionDir: string) =
-    let projectDir = Path.Combine(solutionDir, "Project")
-    let exitCode, stdout, stderr = runDotnetBuild projectDir
-
-    // Exit code 1 is acceptable here — it means warnings-as-errors fired (the IDE
-    // diagnostics we want to test), but the restore + assets file are still produced.
-    // We only fail on truly unexpected exit codes (e.g. restore failure).
-    if exitCode <> 0 && exitCode <> 1 then
-        failwithf "Pre-build of analyzer fixture failed (exit %d):\nstdout:\n%s\nstderr:\n%s" exitCode stdout stderr
-
 [<Test>]
 let testPullDiagnosticsIncludeEditorConfigAnalyzerRules () =
     use client =
-        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile prebuildProject id
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile emptyFixturePatch id
 
     use classFile = client.Open("Project/Class.cs")
 
@@ -219,7 +207,7 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
                     analyzersEnabled = Some true } }
 
     use client =
-        activateFixtureExt "projectWithEditorConfigAnalyzers" pushAnalyzerProfile prebuildProject id
+        activateFixtureExt "projectWithEditorConfigAnalyzers" pushAnalyzerProfile emptyFixturePatch id
 
     use classFile = client.Open("Project/Class.cs")
 
@@ -246,7 +234,7 @@ let testPushDiagnosticsIncludeEditorConfigAnalyzerRules () =
 [<Test>]
 let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
     use client =
-        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile prebuildProject id
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile emptyFixturePatch id
 
     // Open a file to ensure the solution is fully loaded and the workspace/configuration
     // SettingsChange (analyzersEnabled = true) has been applied before we fire
@@ -282,7 +270,7 @@ let testWorkspaceDiagnosticsIncludeAnalyzerDiagnostics () =
 [<Test>]
 let testWorkspaceDiagnosticResultIdChangesAfterDocumentEdit () =
     use client =
-        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile prebuildProject id
+        activateFixtureExt "projectWithEditorConfigAnalyzers" analyzerClientProfile emptyFixturePatch id
 
     use classFile = client.Open("Project/Class.cs")
     let consumerUri = "Project/Consumer.cs" |> fileUriForProjectDir client.SolutionDir

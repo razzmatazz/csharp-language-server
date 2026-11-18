@@ -1,6 +1,7 @@
 module CSharpLanguageServer.Roslyn.Solution
 
 open System
+open System.Diagnostics
 open System.IO
 open System.Reflection
 open System.Threading
@@ -474,7 +475,123 @@ let solutionFindAndLoadOnDir
             return! solutionTryLoadOnPath lspClient progressReport solutionPath
     }
 
-let solutionLoadSolutionWithPathOrOnDir
+/// Tells whether NuGet restore output exists for a project. That is `obj/project.assets.json`
+/// unless the project moves its intermediate output (e.g. `UseArtifactsOutput`), which only
+/// an MSBuild evaluation can tell, so one is done only when the default location has no file.
+/// A project that has no assets file at all (non-SDK-style, packages.config) counts as restored.
+let private projectAssetsFileExists (projectFilename: string) : bool =
+    let projectDir =
+        Path.GetDirectoryName projectFilename
+        |> nonNull "Path.GetDirectoryName(projectFilename)"
+
+    File.Exists(Path.Combine(projectDir, "obj", "project.assets.json"))
+    || (use projectCollection = new Microsoft.Build.Evaluation.ProjectCollection()
+
+        try
+            let buildProject =
+                projectCollection.LoadProject(projectFilename, Dictionary<string, string>(), toolsVersion = null)
+
+            match buildProject.GetPropertyValue "ProjectAssetsFile" |> noneIfEmpty with
+            | Some assetsFile -> File.Exists assetsFile
+            | None -> true
+        with :? InvalidProjectFileException ->
+            // A restore can't fix a project MSBuild can't evaluate.
+            true)
+
+let private coreLibraryFileNames =
+    HashSet<string>(
+        [ "System.Runtime.dll"
+          "System.Private.CoreLib.dll"
+          "netstandard.dll"
+          "mscorlib.dll" ],
+        StringComparer.OrdinalIgnoreCase
+    )
+
+/// A design-time build that can't find the project's targeting pack doesn't fail: the SDK
+/// turns that error off for design-time builds, so the project just loads with no framework
+/// references. This happens when the project was restored by an SDK other than the one now
+/// evaluating it, e.g. a net10.0 project restored with SDK 10 (whose targeting pack ships in
+/// dotnet/packs) and then evaluated by SDK 11 (which downloads a newer 10.0.x one on restore).
+let private projectHasCoreLibraryReference (project: Project) : bool =
+    project.MetadataReferences
+    |> Seq.exists (fun reference ->
+        match reference with
+        | :? PortableExecutableReference as peReference ->
+            peReference.FilePath
+            |> Option.ofObj
+            |> Option.exists (Path.GetFileName >> coreLibraryFileNames.Contains)
+        | _ -> false)
+
+/// Project files of the C# projects in the solution that look like they need a NuGet restore:
+/// ones with no restore output, as Roslyn's own language server checks, and ones restored
+/// without the targeting pack they now need (see `projectHasCoreLibraryReference`).
+let solutionProjectsNeedingRestore (solution: Solution) : string list =
+    solution.Projects
+    |> Seq.filter (fun project -> project.Language = LanguageNames.CSharp)
+    |> Seq.choose (fun project -> project.FilePath |> Option.ofObj |> Option.map (fun path -> path, project))
+    // A multi-targeted project is loaded as one Roslyn project per target framework.
+    |> Seq.groupBy fst
+    |> Seq.filter (fun (projectFilename, projects) ->
+        not (projects |> Seq.forall (snd >> projectHasCoreLibraryReference))
+        || not (projectAssetsFileExists projectFilename))
+    |> Seq.map fst
+    |> List.ofSeq
+
+/// Runs `dotnet restore` on a solution or project file, in its own directory so that the SDK
+/// is picked the same way as for the design-time build (global.json is honored).
+let private runDotnetRestore (restoreTarget: string) : Async<bool> = async {
+    let psi = ProcessStartInfo("dotnet")
+    psi.ArgumentList.Add "restore"
+    psi.ArgumentList.Add restoreTarget
+    // Worker nodes outlive the restore and would inherit the redirected pipes, so reading
+    // them to the end would wait for the nodes rather than the restore.
+    psi.ArgumentList.Add "-nodeReuse:false"
+    psi.WorkingDirectory <- Path.GetDirectoryName restoreTarget
+    // Our own stdin/stdout carry the LSP connection: don't let the child inherit them.
+    psi.RedirectStandardInput <- true
+    psi.RedirectStandardOutput <- true
+    psi.RedirectStandardError <- true
+    psi.UseShellExecute <- false
+
+    // MSBuildLocator points these at the SDK it registered in this process, which needn't
+    // be the one `dotnet` picks for the restore target; left in place, the CLI runs that
+    // other SDK's MSBuild and fails without any output.
+    for variable in [ "MSBUILD_EXE_PATH"; "MSBuildSDKsPath"; "MSBuildExtensionsPath" ] do
+        psi.Environment.Remove variable |> ignore
+
+    use proc = Process.Start psi |> nonNull "Process.Start(dotnet restore)"
+    proc.StandardInput.Close()
+
+    let stdoutTask = proc.StandardOutput.ReadToEndAsync()
+    let stderrTask = proc.StandardError.ReadToEndAsync()
+    do! proc.WaitForExitAsync() |> Async.AwaitTask
+    let! stdout = stdoutTask |> Async.AwaitTask
+    let! stderr = stderrTask |> Async.AwaitTask
+
+    if proc.ExitCode = 0 then
+        logger.LogInformation("dotnet restore \"{target}\" succeeded", restoreTarget)
+    else
+        logger.LogWarning(
+            "dotnet restore \"{target}\" failed with exit code {exitCode}:\n{stdout}\n{stderr}",
+            restoreTarget,
+            proc.ExitCode,
+            stdout,
+            stderr
+        )
+
+    return proc.ExitCode = 0
+}
+
+let private showProjectsStillNeedingRestore (lspClient: ILspClient) (projectFilenames: string list) =
+    lspClient.WindowShowMessage
+        { Type = MessageType.Warning
+          Message =
+            sprintf
+                "csharp-ls: %d project(s) still look unrestored after `dotnet restore`, so some of their references are missing: %s"
+                projectFilenames.Length
+                (String.Join(", ", projectFilenames)) }
+
+let private solutionLoadSolutionWithPathOrOnDirOnce
     (lspClient: ILspClient)
     (progressReporter: ProgressReporter)
     (solutionPathMaybe: string option)
@@ -502,6 +619,50 @@ let solutionLoadSolutionWithPathOrOnDir
 
         return! solutionFindAndLoadOnDir progressReporter lspClient dir
       }
+
+/// Loads the solution and, like Roslyn's own language server, restores the projects that
+/// turn out to need it (`solutionProjectsNeedingRestore`) and loads the solution again.
+let solutionLoadSolutionWithPathOrOnDir
+    (lspClient: ILspClient)
+    (progressReporter: ProgressReporter)
+    (solutionPathMaybe: string option)
+    (dir: string)
+    : Async<option<Workspace * Solution>> =
+    let load () =
+        solutionLoadSolutionWithPathOrOnDirOnce lspClient progressReporter solutionPathMaybe dir
+
+    async {
+        match! load () with
+        | Some(workspace, solution) as loaded ->
+            match solutionProjectsNeedingRestore solution with
+            | [] -> return loaded
+
+            | projectFilenames ->
+                // One restore of the whole solution rather than one per project: restoring
+                // projects that don't need it is a quick no-op.
+                let restoreTargets =
+                    match solution.FilePath |> Option.ofObj with
+                    | Some solutionPath -> [ solutionPath ]
+                    | None -> projectFilenames
+
+                workspace.Dispose()
+
+                for restoreTarget in restoreTargets do
+                    do! progressReporter.Report(false, sprintf "Restoring %s.." (Path.GetFileName restoreTarget))
+                    let! _ = runDotnetRestore restoreTarget
+                    ()
+
+                match! load () with
+                | Some(_, reloadedSolution) as reloaded ->
+                    match solutionProjectsNeedingRestore reloadedSolution with
+                    | [] -> ()
+                    | stillNeedingRestore -> do! showProjectsStillNeedingRestore lspClient stillNeedingRestore
+
+                    return reloaded
+                | None -> return None
+
+        | None -> return None
+    }
 
 let solutionGetRazorDocumentForPath
     (solution: Solution)

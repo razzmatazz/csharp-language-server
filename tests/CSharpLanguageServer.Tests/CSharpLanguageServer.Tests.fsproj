@@ -15,6 +15,7 @@
     <Compile Include="AnalyzerTests.fs" />
     <Compile Include="LocaleTests.fs" />
     <Compile Include="InitializationTests.fs" />
+    <Compile Include="RestoreTests.fs" />
     <Compile Include="ReconfigurationTests.fs" />
     <Compile Include="RenameTests.fs" />
     <Compile Include="CodeActionTests.fs" />
