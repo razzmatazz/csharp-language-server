@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 * Accept settings in the `initialize` request's `initializationOptions`, in the same `{ "csharp": { ... } }` shape as `workspace/didChangeConfiguration`, applied before the server capabilities are computed; `$/csharp/debugInfo` now reports the effective configuration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/428
+* Run `dotnet restore` on projects that look unrestored when loading the solution, then load it again, like Roslyn's own language server does; this also covers projects restored by a different .NET SDK, which otherwise load silently with no framework references (e.g. a `net10.0` project once SDK 11 is installed)
+  - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/429
 
 ## [0.28.0] - 2026-09-13 / Klebiškis
 * Speed up analyzer-enabled diagnostics by sharing project-wide analyzer results across document requests for the same Roslyn solution snapshot
