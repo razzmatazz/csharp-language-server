@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Keep restore offline-friendly: vulnerability auditing is irrelevant to the test
+         and would add an unrelated network call. -->
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Package references resolve only through project.assets.json, which this fixture
+         deliberately lacks (it is never restored before the server loads it). -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+</Project>

@@ -1026,13 +1026,14 @@ type LspTestClient(clientProfile: LspClientProfile, releaseSlot: unit -> unit) =
         file.OpenWithText(text)
         file
 
-/// Serializes all `dotnet build` invocations across the test suite so that concurrent
-/// test runs on Windows (where MSBuild file-locking is stricter) do not interfere.
+/// Serializes all `dotnet build`/`dotnet restore` invocations across the test suite so
+/// that concurrent test runs on Windows (where MSBuild file-locking is stricter) do not
+/// interfere.
 let private dotnetBuildSemaphore = new SemaphoreSlim(1, 1)
 
-/// Run `dotnet build` in <paramref name="dir"/>, serialized globally so that at most
-/// one build runs at a time.  Returns (exitCode, stdout, stderr).
-let runDotnetBuild (dir: string) =
+/// Run `dotnet <command> <args>` in <paramref name="dir"/>, serialized globally so that at
+/// most one runs at a time.  Returns (exitCode, stdout, stderr).
+let private runDotnetCommand (command: string) (args: string) (dir: string) =
     dotnetBuildSemaphore.Wait()
 
     try
@@ -1042,7 +1043,7 @@ let runDotnetBuild (dir: string) =
         // `dotnet build` itself has exited (observed in CI hang dumps as a thread
         // parked forever in Task.GetResultCore inside this function).
         let psi =
-            ProcessStartInfo("dotnet", "build -nodeReuse:false -p:UseSharedCompilation=false")
+            ProcessStartInfo("dotnet", sprintf "%s -nodeReuse:false -p:UseSharedCompilation=false %s" command args)
 
         psi.WorkingDirectory <- dir
         psi.RedirectStandardOutput <- true
@@ -1051,7 +1052,7 @@ let runDotnetBuild (dir: string) =
 
         let proc =
             match Process.Start(psi) with
-            | null -> failwith "Failed to start dotnet build process"
+            | null -> failwithf "Failed to start dotnet %s process" command
             | p -> p
 
         use _ = proc
@@ -1080,11 +1081,17 @@ let runDotnetBuild (dir: string) =
         let stderr = readOrGiveUp stderrTask
 
         if not exited then
-            failwithf "dotnet build timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" stdout stderr
+            failwithf "dotnet %s timed out after 120 seconds\nstdout:\n%s\nstderr:\n%s" command stdout stderr
 
         proc.ExitCode, stdout, stderr
     finally
         dotnetBuildSemaphore.Release() |> ignore
+
+/// Run `dotnet build` in <paramref name="dir"/>.  Returns (exitCode, stdout, stderr).
+let runDotnetBuild (dir: string) = runDotnetCommand "build" "" dir
+
+/// Run `dotnet restore <args>` in <paramref name="dir"/>.  Returns (exitCode, stdout, stderr).
+let runDotnetRestore (args: string) (dir: string) = runDotnetCommand "restore" args dir
 
 module TextEdit =
     let normalizeNewText (s: TextEdit) =

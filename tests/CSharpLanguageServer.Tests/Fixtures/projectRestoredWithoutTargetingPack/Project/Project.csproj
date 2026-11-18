@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <NuGetAudit>false</NuGetAudit>
+    <!-- A packages folder private to the fixture copy, so whether the targeting pack below
+         is present depends only on what the test restored, never on the machine's global
+         NuGet cache. Kept outside the project dir so its contents aren't globbed as items. -->
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)../packages</RestorePackagesPath>
+  </PropertyGroup>
+  <!-- Simulates a project restored by one SDK and loaded by another that wants a targeting
+       pack the restore never downloaded, e.g. a net10.0 project restored with SDK 10 (whose
+       targeting pack ships in dotnet/packs) and then evaluated by SDK 11 (which wants a newer
+       10.0.x one from NuGet). Pinning a version no SDK bundles makes any SDK need the
+       download; restoring with SimulateOlderSdkRestore=true skips it, leaving
+       project.assets.json in place but the targeting pack missing. -->
+  <ItemGroup Condition="'$(SimulateOlderSdkRestore)' != 'true'">
+    <KnownFrameworkReference Update="Microsoft.NETCore.App" TargetingPackVersion="10.0.2" />
+  </ItemGroup>
+</Project>

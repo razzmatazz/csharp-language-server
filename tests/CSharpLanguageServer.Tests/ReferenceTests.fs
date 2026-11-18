@@ -203,21 +203,11 @@ let testReferenceIncludeDeclarationWorksAcrossProjectsWithDifferentMetadataRefer
     // JsonConvert.SerializeObject. `solution.Projects |> Seq.head` picks ProjectA, whose
     // compilation has no metadata reference for the Newtonsoft.Json assembly.
     //
-    // The pre-build (like the platformSpecificTfm regression test) is what makes this
-    // meaningful: it produces a project.assets.json for ProjectB so JsonConvert actually
-    // resolves to a real (metadata) symbol instead of a compile error.
-    let prebuild (solutionDir: string) =
-        let exitCode, stdout, stderr = runDotnetBuild solutionDir
-
-        if exitCode <> 0 then
-            failwithf
-                "Pre-build of multiProjectReferencesMetadata fixture failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
-                exitCode
-                stdout
-                stderr
-
+    // The server's restore on load (like in the platformSpecificTfm regression test) is
+    // what makes this meaningful: it produces a project.assets.json for ProjectB so
+    // JsonConvert actually resolves to a real (metadata) symbol instead of a compile error.
     use client =
-        activateFixtureExt "multiProjectReferencesMetadata" defaultClientProfile prebuild id
+        activateFixtureExt "multiProjectReferencesMetadata" defaultClientProfile emptyFixturePatch id
 
     use classBFile = client.Open "ProjectB/ClassB.cs"
 

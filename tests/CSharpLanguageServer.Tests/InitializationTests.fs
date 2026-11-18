@@ -223,20 +223,10 @@ let testMultiTargetProjectWithNoCommonTfmAnswersFromBestFlavor () =
 /// the server reported phantom errors on code that compiles cleanly.
 [<Test>]
 let testPlatformSpecificTfmDoesNotBreakSiblingProjects () =
-    // The restore is what makes this test meaningful: it produces a project.assets.json
-    // for Project containing a net10.0 target and nothing else.
-    let prebuild (solutionDir: string) =
-        let exitCode, stdout, stderr = runDotnetBuild solutionDir
-
-        if exitCode <> 0 then
-            failwithf
-                "Pre-build of platformSpecificTfm fixture failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
-                exitCode
-                stdout
-                stderr
-
+    // The server's restore on load is what makes this test meaningful: it produces a
+    // project.assets.json for Project containing a net10.0 target and nothing else.
     use client =
-        activateFixtureExt "platformSpecificTfm" defaultClientProfile prebuild id
+        activateFixtureExt "platformSpecificTfm" defaultClientProfile emptyFixturePatch id
 
     assertHoverWorks
         client
@@ -274,26 +264,13 @@ let testPlatformSpecificTfmDoesNotBreakSiblingProjects () =
 /// intelligence for the affected project.
 [<Test>]
 let testCentralPackageManagementProjectLoadsWithoutMsbuildWorkspaceFailure () =
-    // Pre-build both projects so that obj/project.assets.json exists for each (restored
-    // against the centrally-managed package version) before MSBuildWorkspace opens the
-    // solution. DependentProject has no direct PackageReference of its own — it only
+    // The server's restore on load produces obj/project.assets.json for both projects
+    // (restored against the centrally-managed package version) before the solution is
+    // loaded again. DependentProject has no direct PackageReference of its own — it only
     // pulls in Newtonsoft.Json transitively via the ProjectReference to Project,
     // mirroring the "DependentProject" symptom reported in the issue.
-    let prebuildProjects (solutionDir: string) =
-        for projectName in [ "Project"; "DependentProject" ] do
-            let projectDir = Path.Combine(solutionDir, projectName)
-            let exitCode, stdout, stderr = runDotnetBuild projectDir
-
-            if exitCode <> 0 then
-                failwithf
-                    "Pre-build of CPM fixture project '%s' failed (exit %d):\nstdout:\n%s\nstderr:\n%s"
-                    projectName
-                    exitCode
-                    stdout
-                    stderr
-
     use client =
-        activateFixtureExt "projectWithCentralPackageManagement" defaultClientProfile prebuildProjects id
+        activateFixtureExt "projectWithCentralPackageManagement" defaultClientProfile emptyFixturePatch id
 
     use classFile = client.Open("Project/Class.cs")
     use consumerFile = client.Open("DependentProject/Consumer.cs")
@@ -689,9 +666,19 @@ let loadProgressReports (client: LspTestClient) =
         (v |> indexJE "percentage" |> Option.map _.GetUInt32()))
     |> List.ofSeq
 
+/// Restores a fixture before the server starts, so that its progress is that of a single
+/// load rather than of one before and one after the server's own restore.
+let private prerestore (restoreArgs: string) (solutionDir: string) =
+    let exitCode, stdout, stderr = runDotnetRestore restoreArgs solutionDir
+
+    if exitCode <> 0 then
+        failwithf "Pre-restore failed (exit %d):\nstdout:\n%s\nstderr:\n%s" exitCode stdout stderr
+
 [<Test>]
 let testSolutionLoadReportsPerProjectProgress () =
-    use client = activateFixture "nestedProjects"
+    use client =
+        activateFixtureExt "nestedProjects" defaultClientProfile (prerestore "") id
+
     use scratchDocument = client.Open("App/Tests/Scratch.cs")
 
     // any position request blocks until the workspace load completes,
@@ -730,7 +717,9 @@ let testSolutionLoadProgressCountsOnlySolutionFilterProjects () =
                 { defaultClientProfile.ServerConfig with
                     solutionPathOverride = Some "Partial.slnf" } }
 
-    use client = activateFixtureExt "solutionWithFilter" profile emptyFixturePatch id
+    use client =
+        activateFixtureExt "solutionWithFilter" profile (prerestore "Partial.slnf") id
+
     use classDocument = client.Open("ProjectA/Class.cs")
 
     let hoverParams: HoverParams =
