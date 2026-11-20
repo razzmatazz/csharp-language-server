@@ -272,9 +272,10 @@ module Diagnostic =
             // plans/interactive-request-latency-vs-analyzers.md (Option C).
             for wf in workspaceFolders do
                 let solutionProjects =
-                    match wf.Solution with
-                    | Loaded(_, solution) -> solution.Projects |> List.ofSeq
-                    | _ -> []
+                    wf
+                    |> workspaceFolderLoadedSolution
+                    |> Option.map (_.Projects >> List.ofSeq)
+                    |> Option.defaultValue []
 
                 for project in solutionProjects do
                     // A single project's failure should not abort the rest of the sweep.

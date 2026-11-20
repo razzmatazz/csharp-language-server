@@ -80,12 +80,7 @@ type RequestContext
     member _.LoadWorkspaceFolder(uri) = async {
         let! wf = loadWorkspaceFolder uri
 
-        match wf with
-        | None -> return None, None
-        | Some wf ->
-            match wf.Solution with
-            | Loaded(_, solution) -> return Some wf, Some solution
-            | _ -> return Some wf, None
+        return wf, wf |> Option.bind workspaceFolderLoadedSolution
     }
 
 type RequestInfo =
