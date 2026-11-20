@@ -250,6 +250,35 @@ let private bootClientAsync
 let private disposeInBackground (client: LspTestClient) =
     Async.Start(async { (client :> IDisposable).Dispose() })
 
+/// Starts `work` as a hot `Task` (`Async.StartAsTask`, so it begins running immediately,
+/// same as the `Async.StartWithContinuations` this replaced) and arranges for `onDone` to
+/// be posted back to `poolManager` with its outcome once it finishes -- covers a normal
+/// result, a thrown exception, and (in case a cancellation token is ever wired into
+/// `bootClientAsync` later) cancellation, all folded into a `RentReply` so a boot's
+/// `InFlightBoots` slot is reliably released exactly once regardless of how it ended.
+/// Returns the `Task` itself so the caller (`startPooledBoot`/`AdHocBoot`) can record it in
+/// `PoolState.InFlightBoots`.
+let private startBootTask (work: Async<RentReply>) (onDone: RentReply -> unit) : Task =
+    let task = Async.StartAsTask work
+
+    task.ContinueWith(fun (t: Task<RentReply>) ->
+        // `Task.Exception` is only non-null when `IsFaulted`; matching on it directly
+        // (rather than branching on `IsFaulted` and then dereferencing separately) keeps
+        // the compiler's nullness checking happy without an unchecked null-forgiving cast.
+        let result =
+            match t.Exception with
+            | null ->
+                if t.IsCanceled then
+                    Error(OperationCanceledException() :> exn)
+                else
+                    t.Result
+            | ex -> Error(ex.GetBaseException())
+
+        onDone result)
+    |> ignore
+
+    task :> Task
+
 /// Per-fixture-name pool state. `CreatedCount` tracks how many live instances exist (idle
 /// + currently leased, *including* ones a boot has been reserved for but hasn't finished
 /// yet) so we never kick off more than `maxPoolSize ()` concurrent boots for this fixture.
@@ -301,17 +330,80 @@ let private evictIfSaturated (state: Map<string, FixturePoolState>) : Map<string
     else
         state
 
-/// All state `poolManager` owns: the per-fixture pools plus the idle-TTL sweep timer's
-/// handle. `SweepTimer` is `None` until `Initialize` runs (right after the actor starts)
-/// and disposed/cleared again by `Shutdown` (at assembly teardown, via `disposeAll`) --
-/// see the module doc comment.
+/// All state `poolManager` owns: the per-fixture pools, the idle-TTL sweep timer's
+/// handle, and the concurrent-boot throttle (`InFlightBoots`/`PendingBoots`, see
+/// `maxConcurrentBoots` below). `SweepTimer` is `None` until `Initialize` runs (right
+/// after the actor starts) and disposed/cleared again by `Shutdown` (at assembly
+/// teardown, via `disposeAll`) -- see the module doc comment.
+///
+/// `InFlightBoots` holds the actual `Task` for each currently-booting instance (not just a
+/// count) -- lets `Shutdown` (or future diagnostics) see/wait on genuinely in-flight boots
+/// instead of only the idle-instance teardown it already does. Nothing currently reads a
+/// task's identity/result out of this list; membership (and, via `IsCompleted`, whether an
+/// entry is stale) is all `admitOrQueueBoot`/`releaseBootSlot` need.
 type private PoolState =
     { Fixtures: Map<string, FixturePoolState>
-      SweepTimer: Timer option }
+      SweepTimer: Timer option
+      InFlightBoots: Task list
+      PendingBoots: (unit -> Task) list }
 
 let private emptyPoolState =
     { Fixtures = Map.empty
-      SweepTimer = None }
+      SweepTimer = None
+      InFlightBoots = []
+      PendingBoots = [] }
+
+/// Caps how many boots (`LoadSolution`: process spawn + prebuild `dotnet build` callback +
+/// MSBuild solution load -- the CPU/disk-heavy phase) may be in flight at once, separate
+/// from `activeClientsSemaphore` (which caps total *live* instances, including idle pooled
+/// ones sitting around costing ~no CPU). Suspected that letting up to `ProcessorCount`
+/// boots race each other -- several nested `dotnet build` calls plus MSBuild's own node --
+/// causes the contention/idle-CPU gaps observed between fixture-test bursts (see chat
+/// history / profiling notes); an initial fixed value of 2 measured faster locally (10
+/// vCPUs) than the unthrottled baseline.
+///
+/// Scales with core count instead of a flat constant so it stays sane on small CI runners:
+/// one boot slot per 4 logical cores, floor, minimum 1 -- e.g. 1 up to 7 cores (so a 4-vCPU
+/// GitHub Actions runner gets exactly 1, never bootstrapping two `dotnet build`/MSBuild
+/// solution loads at once on a box that can barely give one its own core), 2 at 8-11 cores,
+/// and so on. Tune the divisor based on further measurement.
+let private maxConcurrentBoots = max 1 (Environment.ProcessorCount / 4)
+
+/// Starts `kickoff` (a boot's `Async.StartAsTask` call, see `startPooledBoot`/`AdHocBoot`)
+/// immediately if fewer than `maxConcurrentBoots` boots are currently in flight, recording
+/// its returned `Task` in `InFlightBoots`; otherwise queues `kickoff` itself to run once a
+/// slot frees up (see `releaseBootSlot`, invoked from `BootCompleted`/`AdHocBootCompleted`).
+/// `PendingBoots` order is FIFO, same fairness guarantee as `FixturePoolState.Waiters`.
+let private admitOrQueueBoot (state: PoolState) (kickoff: unit -> Task) : PoolState =
+    if List.length state.InFlightBoots < maxConcurrentBoots then
+        let task = kickoff ()
+
+        { state with
+            InFlightBoots = task :: state.InFlightBoots }
+    else
+        { state with
+            PendingBoots = state.PendingBoots @ [ kickoff ] }
+
+/// Called whenever a boot finishes (success or failure) to free its concurrent-boot slot.
+/// First drops any task(s) in `InFlightBoots` that have already completed -- at minimum
+/// the one whose completion triggered this call, possibly more if several finished in
+/// quick succession before the actor got around to processing their messages. If another
+/// boot is already queued (`PendingBoots`), starts it immediately instead of letting
+/// `InFlightBoots` shrink -- keeps a steady stream of requests running exactly
+/// `maxConcurrentBoots` boots at a time rather than bursting back up to the cap each time.
+let private releaseBootSlot (state: PoolState) : PoolState =
+    let stillRunning = state.InFlightBoots |> List.filter (fun t -> not t.IsCompleted)
+
+    match state.PendingBoots with
+    | next :: rest ->
+        let task = next ()
+
+        { state with
+            InFlightBoots = task :: stillRunning
+            PendingBoots = rest }
+    | [] ->
+        { state with
+            InFlightBoots = stillRunning }
 
 /// Every message `poolManager` handles. Ad-hoc boots (`AdHocBoot`/`AdHocBootCompleted`)
 /// are deliberately not `Rent`/`CheckIn`: a booted ad-hoc instance is never tracked in any
@@ -339,15 +431,15 @@ type private PoolMessage =
 /// many pending waiters as possible from `Idle`. If none are idle but there's still room
 /// to grow (`CreatedCount < maxPoolSize ()`), reserves the slot immediately (so a burst of
 /// concurrent `Rent` calls can't over-request boots), evicts an idle instance elsewhere if
-/// the semaphore looks saturated, and fires the actual boot off as a background `Async`
-/// that reports back via `BootCompleted` whenever it finishes — this function itself never
-/// blocks, regardless of how long that boot ends up taking.
-let rec private drainWaiters
-    (fixtureName: string)
-    (state: Map<string, FixturePoolState>)
-    : Map<string, FixturePoolState> =
+/// the semaphore looks saturated, and admits the actual boot through `admitOrQueueBoot`
+/// (starting it now, or queuing it, depending on `maxConcurrentBoots`) — this function
+/// itself never blocks, regardless of how long that boot ends up taking or whether it
+/// starts immediately.
+let rec private drainWaiters (fixtureName: string) (state: PoolState) : PoolState =
     let fps =
-        state |> Map.tryFind fixtureName |> Option.defaultValue emptyFixturePoolState
+        state.Fixtures
+        |> Map.tryFind fixtureName
+        |> Option.defaultValue emptyFixturePoolState
 
     match fps.Waiters, fps.Idle with
     | rc :: restWaiters, (client, _since) :: restIdle ->
@@ -355,27 +447,34 @@ let rec private drainWaiters
 
         drainWaiters
             fixtureName
-            (state
-             |> Map.add
-                 fixtureName
-                 { fps with
-                     Waiters = restWaiters
-                     Idle = restIdle })
+            { state with
+                Fixtures =
+                    state.Fixtures
+                    |> Map.add
+                        fixtureName
+                        { fps with
+                            Waiters = restWaiters
+                            Idle = restIdle } }
     | rc :: restWaiters, [] when fps.CreatedCount < maxPoolSize () ->
         // Evict here, right before committing to the boot -- not any earlier -- so it can
         // never cannibalize an idle instance this very fixture could otherwise have handed
         // straight to `rc` in the branch above.
-        let state = evictIfSaturated state
-        startPooledBoot fixtureName rc
+        let state =
+            { state with
+                Fixtures = evictIfSaturated state.Fixtures }
+
+        let state = admitOrQueueBoot state (fun () -> startPooledBoot fixtureName rc)
 
         drainWaiters
             fixtureName
-            (state
-             |> Map.add
-                 fixtureName
-                 { fps with
-                     Waiters = restWaiters
-                     CreatedCount = fps.CreatedCount + 1 })
+            { state with
+                Fixtures =
+                    state.Fixtures
+                    |> Map.add
+                        fixtureName
+                        { fps with
+                            Waiters = restWaiters
+                            CreatedCount = fps.CreatedCount + 1 } }
     | _ -> state
 
 and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
@@ -395,15 +494,15 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
             |> Map.tryFind fixtureName
             |> Option.defaultValue emptyFixturePoolState
 
-        { state with
-            Fixtures =
-                drainWaiters
-                    fixtureName
-                    (state.Fixtures
-                     |> Map.add
-                         fixtureName
-                         { fps with
-                             Waiters = fps.Waiters @ [ rc ] }) }
+        drainWaiters
+            fixtureName
+            { state with
+                Fixtures =
+                    state.Fixtures
+                    |> Map.add
+                        fixtureName
+                        { fps with
+                            Waiters = fps.Waiters @ [ rc ] } }
 
     | CheckIn(fixtureName, client) ->
         let fps =
@@ -435,11 +534,14 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
                 { fps with
                     CreatedCount = fps.CreatedCount - 1 }
 
-        { state with
-            Fixtures = drainWaiters fixtureName (state.Fixtures |> Map.add fixtureName fps) }
+        drainWaiters
+            fixtureName
+            { state with
+                Fixtures = state.Fixtures |> Map.add fixtureName fps }
 
     | BootCompleted(fixtureName, rc, result) ->
         rc.Reply(result)
+        let state = releaseBootSlot state
 
         match result with
         | Ok _ ->
@@ -454,31 +556,29 @@ and private processMessage (state: PoolState) (msg: PoolMessage) : PoolState =
                 |> Map.tryFind fixtureName
                 |> Option.defaultValue emptyFixturePoolState
 
-            { state with
-                Fixtures =
-                    drainWaiters
-                        fixtureName
-                        (state.Fixtures
-                         |> Map.add
-                             fixtureName
-                             { fps with
-                                 CreatedCount = fps.CreatedCount - 1 }) }
+            drainWaiters
+                fixtureName
+                { state with
+                    Fixtures =
+                        state.Fixtures
+                        |> Map.add
+                            fixtureName
+                            { fps with
+                                CreatedCount = fps.CreatedCount - 1 } }
 
     | AdHocBoot(fixtureName, clientProfile, patchFixtureDir, initializeParamsUpdate, rc) ->
-        let fixtures = evictIfSaturated state.Fixtures
+        let state =
+            { state with
+                Fixtures = evictIfSaturated state.Fixtures }
 
-        Async.StartWithContinuations(
-            bootClientAsync fixtureName clientProfile patchFixtureDir initializeParamsUpdate,
-            (fun result -> poolManager.Post(AdHocBootCompleted(rc, result))),
-            (fun ex -> poolManager.Post(AdHocBootCompleted(rc, Error ex))),
-            (fun _ -> ())
-        )
-
-        { state with Fixtures = fixtures }
+        admitOrQueueBoot state (fun () ->
+            startBootTask
+                (bootClientAsync fixtureName clientProfile patchFixtureDir initializeParamsUpdate)
+                (fun result -> poolManager.Post(AdHocBootCompleted(rc, result))))
 
     | AdHocBootCompleted(rc, result) ->
         rc.Reply(result)
-        state
+        releaseBootSlot state
 
     | EvictExpiredIdle ->
         let now = DateTime.UtcNow
@@ -545,16 +645,14 @@ and private poolManager: MailboxProcessor<PoolMessage> =
 /// Fires a pooled boot for `fixtureName` off `poolManager`'s thread and reports the
 /// outcome back via `BootCompleted` once it finishes (success or failure), whenever that
 /// ends up being — see the module doc comment for why this must never block the caller.
-/// Explicit type annotation: `drainWaiters` (defined above, in the same `let rec ... and
-/// ...` group) calls this before the compiler has otherwise inferred its type from its own
-/// definition here — without the annotation that lookup is of indeterminate type (FS0072).
-and private startPooledBoot (fixtureName: string) (rc: AsyncReplyChannel<RentReply>) : unit =
-    Async.StartWithContinuations(
-        bootClientAsync fixtureName defaultClientProfile emptyFixturePatch id,
-        (fun result -> poolManager.Post(BootCompleted(fixtureName, rc, result))),
-        (fun ex -> poolManager.Post(BootCompleted(fixtureName, rc, Error ex))),
-        (fun _ -> ())
-    )
+/// Returns the `Task` (see `startBootTask`) so `admitOrQueueBoot` can record it in
+/// `PoolState.InFlightBoots`. Explicit return type annotation: `drainWaiters` (defined
+/// above, in the same `let rec ... and ...` group) calls this before the compiler has
+/// otherwise inferred its type from its own definition here — without the annotation that
+/// lookup is of indeterminate type (FS0072).
+and private startPooledBoot (fixtureName: string) (rc: AsyncReplyChannel<RentReply>) : Task =
+    startBootTask (bootClientAsync fixtureName defaultClientProfile emptyFixturePatch id) (fun result ->
+        poolManager.Post(BootCompleted(fixtureName, rc, result)))
 
 let private checkIn fixtureName (client: LspTestClient) =
     poolManager.Post(CheckIn(fixtureName, client))
