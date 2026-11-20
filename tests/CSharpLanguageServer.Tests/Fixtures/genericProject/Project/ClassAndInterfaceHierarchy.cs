@@ -46,3 +46,8 @@ class Dog : Animal
 {
     public override string Sound() => "Woof";
 }
+
+class Plant
+{
+    public virtual string Name() => "plant";
+}

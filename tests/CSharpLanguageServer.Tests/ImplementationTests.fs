@@ -151,3 +151,75 @@ let testImplementationOnInterfaceTypeWorks () =
         Assert.That(lines, Is.EqualTo(box [| 9u; 24u |]))
 
     | _ -> failwithf "Some Location[] was expected but %s received" (string result)
+
+[<Test>]
+let testImplementationOnVirtualMemberReturnsOverrides () =
+    // Issue #434: cursor on a virtual member should return its overrides, not the declaration.
+    use client = rentFixture "genericProject"
+    use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
+
+    // Line 18 (0-indexed), Character 26 is on "GetGreeting" in "public virtual string GetGreeting()"
+    let implParams: ImplementationParams =
+        { TextDocument = { Uri = hierarchyFile.Uri }
+          Position = { Line = 18u; Character = 26u }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let result: U2<Definition, DefinitionLink array> option =
+        client.Request("textDocument/implementation", implParams)
+
+    // Should find Student.GetGreeting (line 33) as the override
+    match result with
+    | Some(U2.C1(U2.C2 locations)) ->
+        Assert.That(locations.Length, Is.EqualTo(1))
+        Assert.That(locations[0].Uri, Is.EqualTo(hierarchyFile.Uri))
+        Assert.That(locations[0].Range.Start.Line, Is.EqualTo(33u))
+
+    | _ -> failwithf "Some Location[] was expected but %s received" (string result)
+
+[<Test>]
+let testImplementationOnAbstractMemberReturnsOverrides () =
+    // Issue #434: cursor on an abstract member should return its overrides, not the declaration.
+    use client = rentFixture "genericProject"
+    use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
+
+    // Line 41 (0-indexed), Character 27 is on "Sound" in "public abstract string Sound()"
+    let implParams: ImplementationParams =
+        { TextDocument = { Uri = hierarchyFile.Uri }
+          Position = { Line = 41u; Character = 27u }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let result: U2<Definition, DefinitionLink array> option =
+        client.Request("textDocument/implementation", implParams)
+
+    // Should find Dog.Sound (line 46) as the override
+    match result with
+    | Some(U2.C1(U2.C2 locations)) ->
+        Assert.That(locations.Length, Is.EqualTo(1))
+        Assert.That(locations[0].Uri, Is.EqualTo(hierarchyFile.Uri))
+        Assert.That(locations[0].Range.Start.Line, Is.EqualTo(46u))
+
+    | _ -> failwithf "Some Location[] was expected but %s received" (string result)
+
+[<Test>]
+let testImplementationOnVirtualMemberWithoutOverridesReturnsNothing () =
+    // Issue #434: a source symbol with no implementations should not fall back to its own
+    // declaration -- clients must be able to tell "no implementations" from "you are here".
+    use client = rentFixture "genericProject"
+    use hierarchyFile = client.Open "Project/ClassAndInterfaceHierarchy.cs"
+
+    // Line 51 (0-indexed), Character 26 is on "Name" in "public virtual string Name()"
+    let implParams: ImplementationParams =
+        { TextDocument = { Uri = hierarchyFile.Uri }
+          Position = { Line = 51u; Character = 26u }
+          WorkDoneToken = None
+          PartialResultToken = None }
+
+    let result: U2<Definition, DefinitionLink array> option =
+        client.Request("textDocument/implementation", implParams)
+
+    match result with
+    | None -> ()
+    | Some(U2.C1(U2.C2 locations)) -> Assert.That(locations, Is.Empty)
+    | _ -> failwithf "None or empty Location[] was expected but %s received" (string result)
