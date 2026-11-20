@@ -86,6 +86,11 @@ type CSharpDocumentUri =
     | GeneratedDocumentUri of projectFilePath: string * hintName: string
     | UnrecognizedDocumentUri
 
+let workspaceFolderLoadedSolution (wf: LspWorkspaceFolder) : Solution option =
+    match wf.Solution with
+    | Loaded(_, solution) -> Some solution
+    | _ -> None
+
 let workspaceFolderLoadedSolutionUpdated (update: Solution -> Solution) wf =
     match wf.Solution with
     | Loaded(workspace, solution) ->
@@ -445,11 +450,9 @@ let private selectMultiTfmFlavor (docs: Document list) : Document =
     | None -> docs |> List.sortBy (fun d -> d.Project.Name) |> List.head
 
 let workspaceFolderDocumentDetails docType (u: string) (wf: LspWorkspaceFolder) =
-    match wf.Solution with
-    | Uninitialized -> None
-    | Loading -> None
-    | Defunct _ -> None
-    | Loaded(_, solution) ->
+    match workspaceFolderLoadedSolution wf with
+    | None -> None
+    | Some solution ->
         // Indexed lookup instead of scanning every document of every project:
         // this runs on every position-based request, so on a large solution
         // the scan (which also allocated a Uri per document for the
@@ -538,9 +541,7 @@ let workspaceFolderProjectForPath (filePath: string) wf : Project option =
         |> Seq.sortByDescending (fun p -> Path.GetDirectoryName(p.FilePath).Length)
         |> Seq.tryHead
 
-    match wf.Solution with
-    | Loaded(_, solution) -> findMatchingFileInSolution solution
-    | _ -> None
+    wf |> workspaceFolderLoadedSolution |> Option.bind findMatchingFileInSolution
 
 let workspaceFolderAdditionalTextDocumentForPath (filePath: string) (wf: LspWorkspaceFolder) : TextDocument option =
     let project = workspaceFolderProjectForPath filePath wf

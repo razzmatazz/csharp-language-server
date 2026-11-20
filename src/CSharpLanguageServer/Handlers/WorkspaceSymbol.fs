@@ -57,8 +57,8 @@ module WorkspaceSymbol =
                 let wfPathToUri path = workspaceFolderPathToUri path wf
 
                 let! symbols =
-                    match wf.Solution with
-                    | Loaded(_, solution) ->
+                    match workspaceFolderLoadedSolution wf with
+                    | Some solution ->
                         match pattern with
                         | Some pat ->
                             SymbolFinder.FindSourceDeclarationsWithPatternAsync(
@@ -78,7 +78,7 @@ module WorkspaceSymbol =
                                 cancellationToken = ct
                             )
                             |> Async.AwaitTask
-                    | _ -> async.Return Seq.empty
+                    | None -> async.Return Seq.empty
 
                 let symbolInfosForWf =
                     symbols

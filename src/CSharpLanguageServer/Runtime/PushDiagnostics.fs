@@ -81,8 +81,8 @@ let processPendingPushDiagnostics
                 | Some wf, None ->
                     let cshtmlPath = workspaceFolderUriToPath docUri wf |> _.Value
 
-                    match wf.Solution with
-                    | Loaded(_, solution) ->
+                    match workspaceFolderLoadedSolution wf with
+                    | Some solution ->
                         match! solutionGetRazorDocumentForPath solution cshtmlPath with
                         | Some(_, compilation, cshtmlTree) ->
                             let semanticModelMaybe = compilation.GetSemanticModel cshtmlTree |> Option.ofObj
@@ -108,12 +108,12 @@ let processPendingPushDiagnostics
                                 "handleProcessPending: could not find document w/ uri \"{docUri}\"",
                                 string docUri
                             )
-                    | _ ->
+                    | None ->
                         // could not find document for this enqueued uri
                         logger.LogDebug(
                             "handleProcessPending: wf folder is not in Loaded state as resolved for \"{docUri}\" but is {wfState}",
                             string docUri,
-                            wf.GetType()
+                            string wf.Solution
                         )
 
                     return newState
