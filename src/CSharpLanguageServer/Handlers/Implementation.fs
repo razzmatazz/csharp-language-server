@@ -46,7 +46,7 @@ module Implementation =
 
         match wf.Solution with
         | Loaded(_, solution) ->
-            let! baseImpls =
+            let baseImpls =
                 SymbolFinder.FindImplementationsAsync(sym, solution, cancellationToken = ct)
                 |> Async.AwaitTask
 
@@ -54,23 +54,43 @@ module Implementation =
             // implementations, not derived classes. For class symbols also enumerate
             // transitively-derived classes via FindDerivedClassesAsync so
             // textDocument/implementation behaves correctly on class declarations.
-            let! derivedClasses = async {
+            let derivedClasses = async {
                 match sym with
                 | :? INamedTypeSymbol as nts when nts.TypeKind = TypeKind.Class ->
                     let! derivedClasses =
                         SymbolFinder.FindDerivedClassesAsync(nts, solution, true, cancellationToken = ct)
                         |> Async.AwaitTask
 
-                    return derivedClasses |> List.ofSeq
-                | _ -> return []
+                    return derivedClasses |> Seq.cast<ISymbol>
+                | _ -> return Seq.empty
             }
 
-            let impls = Seq.append baseImpls (derivedClasses |> Seq.cast<ISymbol>) |> List.ofSeq
+            // FindImplementationsAsync on a virtual/abstract/override member returns only
+            // interface implementations, not overrides; those come from FindOverridesAsync.
+            let overrides = async {
+                if sym.IsVirtual || sym.IsAbstract || sym.IsOverride then
+                    return!
+                        SymbolFinder.FindOverridesAsync(sym, solution, cancellationToken = ct)
+                        |> Async.AwaitTask
+                else
+                    return Seq.empty
+            }
 
-            // If Roslyn found no implementations/overrides/derived types, fall back to
-            // the symbol's own declaration locations so that useMetadataUris decompilation
-            // is triggered just like textDocument/definition.
-            let symbolsToResolve = if impls.IsEmpty then [ sym ] else impls
+            // The lookups are independent and Solution is immutable, so run them concurrently.
+            let! results = Async.Parallel [ baseImpls; derivedClasses; overrides ]
+
+            let impls = results |> Seq.concat |> Seq.distinct |> List.ofSeq
+
+            // If Roslyn found no implementations/overrides/derived types for a metadata
+            // symbol, fall back to the symbol's own declaration locations so that
+            // useMetadataUris decompilation is triggered just like textDocument/definition.
+            // Symbols declared in source get an empty result instead, so clients can tell
+            // "no implementations" apart from "here is where you already are".
+            let symbolsToResolve =
+                match impls with
+                | [] when sym.Locations |> Seq.exists _.IsInSource -> []
+                | [] -> [ sym ]
+                | _ -> impls
 
             let! symbolLocations, aggregatedWfUpdates =
                 wf |> workspaceFolderSymbolsLocations config project symbolsToResolve

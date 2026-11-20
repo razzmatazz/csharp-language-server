@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+* Fix `textDocument/implementation` on a virtual/abstract member returning the declaration itself instead of its overrides
+  - Reported by @CresentMoon in https://github.com/razzmatazz/csharp-language-server/issues/434, fixed by @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/435
+
 ## [0.29.0] - 2026-11-18 / Merkinė
 * Accept settings in the `initialize` request's `initializationOptions`, in the same `{ "csharp": { ... } }` shape as `workspace/didChangeConfiguration`, applied before the server capabilities are computed; `$/csharp/debugInfo` now reports the effective configuration
   - By @razzmatazz in https://github.com/razzmatazz/csharp-language-server/pull/428
